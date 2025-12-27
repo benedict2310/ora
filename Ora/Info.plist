@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Menu bar agent (no dock icon) -->
+    <key>LSUIElement</key>
+    <true/>
+
+    <!-- App identity -->
+    <key>CFBundleName</key>
+    <string>Ora</string>
+    <key>CFBundleDisplayName</key>
+    <string>Ora</string>
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+
+    <!-- Permissions (descriptions) -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Ora needs microphone access to hear your voice commands.</string>
+    <key>NSCalendarsUsageDescription</key>
+    <string>Ora needs calendar access to manage your events.</string>
+    <key>NSRemindersUsageDescription</key>
+    <string>Ora needs reminders access to create and manage tasks.</string>
+    <key>NSContactsUsageDescription</key>
+    <string>Ora needs contacts access to look up people you mention.</string>
+
+    <!-- Minimum system -->
+    <key>LSMinimumSystemVersion</key>
+    <string>26.0</string>
+</dict>
+</plist>

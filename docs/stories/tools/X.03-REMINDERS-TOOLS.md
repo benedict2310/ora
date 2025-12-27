@@ -1,0 +1,215 @@
+# X.03 - Reminders Tools
+
+**Epic:** Tools
+**Status:** Not Started
+**Priority:** P1 (Important)
+**Estimated Effort:** 1 day
+**Dependencies:** X.01 (Tool Protocol), F.02 (Permissions)
+**Target:** macOS 26 (Tahoe)
+
+---
+
+## 1. Objective
+
+Implement reminders tools using EventKit for listing, creating, and completing reminders.
+
+---
+
+## 2. Tools
+
+| Tool | Kind | Description |
+|:-----|:-----|:------------|
+| `reminders.list` | read | List reminders, optionally by list |
+| `reminders.create` | mutate | Create a new reminder |
+| `reminders.complete` | mutate | Mark reminder as complete |
+
+---
+
+## 3. Implementation
+
+### 3.1 Reminders List Tool
+
+**File:** `Ora/Tools/Reminders/RemindersListTool.swift`
+
+```swift
+//
+//  RemindersListTool.swift
+//  Ora
+//
+//  List reminders
+//
+
+import Foundation
+import EventKit
+
+struct RemindersListTool: Tool {
+    let name = "reminders.list"
+    let kind: ToolKind = .read
+    
+    var schema: ToolSchema {
+        ToolSchema(
+            name: name,
+            description: "List reminders, optionally filtered by list or completion status",
+            parameters: [
+                "list_name": ParameterSchema(type: "string", description: "Filter by list name", format: nil),
+                "include_completed": ParameterSchema(type: "boolean", description: "Include completed reminders", format: nil)
+            ],
+            requiredParameters: []
+        )
+    }
+    
+    func validate(args: [String: JSONValue]) throws {
+        // No required parameters
+    }
+    
+    func execute(args: [String: JSONValue]) async throws -> ToolResult {
+        let store = EKEventStore()
+        let includeCompleted = args["include_completed"]?.boolValue ?? false
+        
+        let calendars = store.calendars(for: .reminder)
+        let predicate = store.predicateForReminders(in: calendars)
+        
+        let reminders = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[EKReminder], Error>) in
+            store.fetchReminders(matching: predicate) { reminders in
+                continuation.resume(returning: reminders ?? [])
+            }
+        }
+        
+        var filtered = reminders
+        if !includeCompleted {
+            filtered = reminders.filter { !$0.isCompleted }
+        }
+        
+        if let listName = args["list_name"]?.stringValue {
+            filtered = filtered.filter { $0.calendar.title.lowercased().contains(listName.lowercased()) }
+        }
+        
+        let reminderData: [JSONValue] = filtered.prefix(20).map { reminder in
+            .object([
+                "id": .string(reminder.calendarItemIdentifier),
+                "title": .string(reminder.title ?? ""),
+                "due_date": reminder.dueDateComponents.flatMap { 
+                    Calendar.current.date(from: $0) 
+                }.map { .string(ISO8601DateFormatter().string(from: $0)) } ?? .null,
+                "completed": .bool(reminder.isCompleted),
+                "list": .string(reminder.calendar.title)
+            ])
+        }
+        
+        let summary = filtered.isEmpty 
+            ? "No reminders found."
+            : "Found \(filtered.count) reminder\(filtered.count == 1 ? "" : "s")."
+        
+        return .success(.array(reminderData), summary: summary)
+    }
+}
+```
+
+### 3.2 Reminders Create Tool
+
+**File:** `Ora/Tools/Reminders/RemindersCreateTool.swift`
+
+```swift
+//
+//  RemindersCreateTool.swift
+//  Ora
+//
+//  Create reminders (requires confirmation)
+//
+
+import Foundation
+import EventKit
+
+struct RemindersCreateTool: Tool {
+    let name = "reminders.create"
+    let kind: ToolKind = .mutate
+    
+    var schema: ToolSchema {
+        ToolSchema(
+            name: name,
+            description: "Create a new reminder. Requires confirmation.",
+            parameters: [
+                "title": ParameterSchema(type: "string", description: "Reminder title", format: nil),
+                "due_date": ParameterSchema(type: "string", description: "Due date (ISO 8601)", format: "date-time"),
+                "list_name": ParameterSchema(type: "string", description: "Reminders list name", format: nil),
+                "notes": ParameterSchema(type: "string", description: "Additional notes", format: nil)
+            ],
+            requiredParameters: ["title"]
+        )
+    }
+    
+    func validate(args: [String: JSONValue]) throws {
+        guard let title = args["title"]?.stringValue, !title.isEmpty else {
+            throw ToolValidationError.missingParameter("title")
+        }
+    }
+    
+    func execute(args: [String: JSONValue]) async throws -> ToolResult {
+        let store = EKEventStore()
+        
+        guard let title = args["title"]?.stringValue else {
+            throw ToolExecutionError.invalidArgument("Title required")
+        }
+        
+        let reminder = EKReminder(eventStore: store)
+        reminder.title = title
+        reminder.notes = args["notes"]?.stringValue
+        
+        // Set due date if provided
+        if let dueDateStr = args["due_date"]?.stringValue,
+           let dueDate = ISO8601DateFormatter().date(from: dueDateStr) {
+            reminder.dueDateComponents = Calendar.current.dateComponents(
+                [.year, .month, .day, .hour, .minute],
+                from: dueDate
+            )
+        }
+        
+        // Find list by name or use default
+        if let listName = args["list_name"]?.stringValue {
+            let calendars = store.calendars(for: .reminder)
+            if let calendar = calendars.first(where: { $0.title.lowercased() == listName.lowercased() }) {
+                reminder.calendar = calendar
+            }
+        }
+        
+        if reminder.calendar == nil {
+            reminder.calendar = store.defaultCalendarForNewReminders
+        }
+        
+        try store.save(reminder, commit: true)
+        
+        var summary = "Created reminder '\(title)'"
+        if let dueStr = args["due_date"]?.stringValue,
+           let dueDate = ISO8601DateFormatter().date(from: dueStr) {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .medium
+            summary += " due \(formatter.string(from: dueDate))"
+        }
+        summary += "."
+        
+        return .success(
+            .object(["reminder_id": .string(reminder.calendarItemIdentifier)]),
+            summary: summary
+        )
+    }
+}
+```
+
+---
+
+## 4. Acceptance Criteria
+
+- [ ] **AC-1:** List returns incomplete reminders by default
+- [ ] **AC-2:** Create adds reminder with optional due date
+- [ ] **AC-3:** Complete marks reminder as done
+- [ ] **AC-4:** Mutations require confirmation
+
+---
+
+## 5. Implementation Checklist
+
+- [ ] Create `RemindersListTool.swift`
+- [ ] Create `RemindersCreateTool.swift`
+- [ ] Create `RemindersCompleteTool.swift`
+- [ ] Register in `ToolRegistry`
+- [ ] Test with real reminders data

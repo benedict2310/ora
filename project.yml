@@ -1,0 +1,41 @@
+name: Ora
+options:
+  bundleIdPrefix: com.ora
+  deploymentTarget:
+    macOS: "26.0"
+  xcodeVersion: "16.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    MACOSX_DEPLOYMENT_TARGET: "26.0"
+    CODE_SIGN_IDENTITY: "-"
+    PRODUCT_BUNDLE_IDENTIFIER: com.ora.app
+    ENABLE_HARDENED_RUNTIME: NO
+
+targets:
+  Ora:
+    type: application
+    platform: macOS
+    sources:
+      - path: Ora
+    settings:
+      base:
+        INFOPLIST_FILE: Ora/Info.plist
+        LD_RUNPATH_SEARCH_PATHS: "@executable_path/../Frameworks"
+        PRODUCT_NAME: Ora
+    dependencies: []
+
+  OraTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: OraTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.ora.app.tests
+    dependencies:
+      - target: Ora

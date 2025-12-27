@@ -1,0 +1,97 @@
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+DerivedData/
+
+# Build artifacts
+build/
+*.app
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+Packages/
+Package.resolved
+*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+
+# CocoaPods (if used)
+Pods/
+Podfile.lock
+
+# Carthage (if used)
+Carthage/Build/
+Carthage/Checkouts/
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# Code Injection
+iOSInjectionProject/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Thumbnails
+Thumbs.db
+
+# IDE
+*.swp
+*.swo
+*~
+.idea/
+*.iml
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
+
+# Logs
+*.log
+
+# Environment and secrets
+.env
+.env.*
+*.pem
+*.p12
+*.mobileprovision
+credentials.json
+secrets/
+
+# Models (large binary files - download separately)
+Models/
+*.mlmodelc
+*.mlpackage
+
+# Vendor binaries (download separately)
+Vendor/*.framework
+Vendor/*.xcframework
+Vendor/Parakeet/
+Vendor/Kokoro/
+
+# Test artifacts
+*.profraw
+*.profdata
+coverage/
+test-results/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Agent metadata
+.claude/
+.codex/

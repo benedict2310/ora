@@ -1,0 +1,584 @@
+# A.01 - Audio Service
+
+**Epic:** ASR Integration
+**Status:** Not Started
+**Priority:** P0 (Critical Path)
+**Estimated Effort:** 1-2 days
+**Dependencies:** F.05 (Global Hotkey), Parakeet S.02 (Audio Capture)
+**Target:** macOS 26 (Tahoe)
+
+---
+
+## 1. Objective
+
+Create an `AudioService` actor that wraps the Parakeet audio capture pipeline and coordinates with the PTT hotkey lifecycle.
+
+### Responsibilities
+
+- Start audio capture when hotkey pressed
+- Stop audio capture when hotkey released
+- Provide `AsyncStream<AudioFrame>` for ASR consumption
+- Handle audio session interruptions gracefully
+- Manage microphone permission state
+
+---
+
+## 2. Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      AudioService                            │
+│                        (Actor)                               │
+├─────────────────────────────────────────────────────────────┤
+│  - Owns AudioCapture (from Parakeet S.02)                   │
+│  - Owns StreamingRingBuffer                                 │
+│  - Listens to hotkey notifications                          │
+│  - Exposes AsyncStream<AudioFrame>                          │
+└─────────────────────────────────────────────────────────────┘
+         │                    │
+         ▼                    ▼
+┌──────────────────┐  ┌──────────────────┐
+│  AudioCapture    │  │ StreamingRing    │
+│  (AVAudioEngine) │  │    Buffer        │
+└──────────────────┘  └──────────────────┘
+```
+
+---
+
+## 3. Implementation
+
+### 3.1 Audio Frame
+
+**File:** `Ora/Audio/AudioFrame.swift`
+
+```swift
+//
+//  AudioFrame.swift
+//  Ora
+//
+//  Audio frame for ASR processing
+//
+
+import Foundation
+
+/// A chunk of audio samples for ASR processing
+struct AudioFrame: Sendable {
+    /// PCM samples (16kHz mono Float32)
+    let samples: [Float]
+    
+    /// Sample rate (always 16000 for Parakeet)
+    let sampleRate: Int
+    
+    /// Timestamp (samples since stream start)
+    let timestamp: UInt64
+    
+    /// Duration in seconds
+    var duration: TimeInterval {
+        Double(samples.count) / Double(sampleRate)
+    }
+    
+    init(samples: [Float], sampleRate: Int = 16000, timestamp: UInt64 = 0) {
+        self.samples = samples
+        self.sampleRate = sampleRate
+        self.timestamp = timestamp
+    }
+}
+```
+
+### 3.2 Audio Service
+
+**File:** `Ora/Audio/AudioService.swift`
+
+```swift
+//
+//  AudioService.swift
+//  Ora
+//
+//  Coordinates audio capture with PTT lifecycle
+//
+
+import Foundation
+import AVFoundation
+import os
+
+/// Audio service states
+enum AudioServiceState: Sendable {
+    case idle
+    case starting
+    case recording
+    case stopping
+    case error(String)
+}
+
+/// Manages audio capture for voice input
+actor AudioService {
+    
+    // MARK: - Singleton
+    
+    static let shared = AudioService()
+    
+    // MARK: - Properties
+    
+    private let logger = Logger(subsystem: "com.ora.app", category: "AudioService")
+    
+    private var audioCapture: AudioCapture?
+    private var ringBuffer: StreamingRingBuffer?
+    private var framesContinuation: AsyncStream<AudioFrame>.Continuation?
+    
+    private(set) var state: AudioServiceState = .idle
+    private var sampleCounter: UInt64 = 0
+    
+    // Configuration
+    private let sampleRate = 16000
+    private let frameSize = 1600  // 100ms at 16kHz
+    
+    // MARK: - Initialization
+    
+    private init() {
+        setupNotifications()
+    }
+    
+    // MARK: - Public API
+    
+    /// Start audio capture and return frame stream
+    func start() async throws -> AsyncStream<AudioFrame> {
+        guard state == .idle || state.isError else {
+            logger.warning("Cannot start: already in state \(String(describing: self.state))")
+            throw AudioServiceError.invalidState
+        }
+        
+        // Check microphone permission
+        let permStatus = await PermissionsManager.shared.check(.microphone)
+        guard permStatus == .authorized else {
+            throw AudioServiceError.microphoneNotAuthorized
+        }
+        
+        state = .starting
+        sampleCounter = 0
+        
+        // Create ring buffer
+        let bufferCapacity = sampleRate * 12  // 12 seconds
+        ringBuffer = StreamingRingBuffer(capacity: bufferCapacity)
+        
+        // Create audio capture
+        audioCapture = AudioCapture()
+        audioCapture?.onSamples = { [weak self] samples in
+            Task { await self?.handleSamples(samples) }
+        }
+        
+        // Start capture
+        try await audioCapture?.start()
+        
+        state = .recording
+        logger.info("Audio capture started")
+        
+        // Create and return frame stream
+        return AsyncStream<AudioFrame> { continuation in
+            self.framesContinuation = continuation
+            
+            continuation.onTermination = { [weak self] _ in
+                Task { await self?.handleStreamTermination() }
+            }
+        }
+    }
+    
+    /// Stop audio capture
+    func stop() async {
+        guard state == .recording else { return }
+        
+        state = .stopping
+        
+        await audioCapture?.stop()
+        framesContinuation?.finish()
+        framesContinuation = nil
+        
+        // Clear buffers
+        ringBuffer = nil
+        audioCapture = nil
+        
+        state = .idle
+        logger.info("Audio capture stopped")
+    }
+    
+    /// Cancel immediately (for interruption)
+    func cancel() async {
+        framesContinuation?.finish()
+        framesContinuation = nil
+        await audioCapture?.stop()
+        audioCapture = nil
+        ringBuffer = nil
+        state = .idle
+        logger.debug("Audio capture cancelled")
+    }
+    
+    // MARK: - Private
+    
+    private func handleSamples(_ samples: [Float]) {
+        guard state == .recording else { return }
+        
+        // Add to ring buffer
+        ringBuffer?.append(samples)
+        
+        // Emit frames
+        sampleCounter += UInt64(samples.count)
+        
+        // Check if we have enough for a frame
+        if let buffer = ringBuffer, buffer.availableSamples >= frameSize {
+            let frameSamples = buffer.read(count: frameSize)
+            let frame = AudioFrame(
+                samples: frameSamples,
+                sampleRate: sampleRate,
+                timestamp: sampleCounter
+            )
+            framesContinuation?.yield(frame)
+        }
+    }
+    
+    private func handleStreamTermination() {
+        logger.debug("Frame stream terminated")
+    }
+    
+    private func setupNotifications() {
+        // Listen for hotkey events
+        NotificationCenter.default.addObserver(
+            forName: .hotkeyDidPress,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            Task { await self?.onHotkeyPress() }
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: .hotkeyDidRelease,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            Task { await self?.onHotkeyRelease() }
+        }
+    }
+    
+    private func onHotkeyPress() async {
+        // Audio start is triggered by orchestrator, not directly
+        logger.debug("Hotkey pressed - ready for audio start")
+    }
+    
+    private func onHotkeyRelease() async {
+        // Stop will be triggered by orchestrator
+        logger.debug("Hotkey released - ready for audio stop")
+    }
+}
+
+// MARK: - State Extension
+
+extension AudioServiceState {
+    var isError: Bool {
+        if case .error = self { return true }
+        return false
+    }
+}
+
+// MARK: - Errors
+
+enum AudioServiceError: LocalizedError {
+    case invalidState
+    case microphoneNotAuthorized
+    case captureError(String)
+    
+    var errorDescription: String? {
+        switch self {
+        case .invalidState:
+            return "Audio service is not in a valid state for this operation."
+        case .microphoneNotAuthorized:
+            return "Microphone access is required. Please grant permission in System Settings."
+        case .captureError(let message):
+            return "Audio capture error: \(message)"
+        }
+    }
+}
+```
+
+### 3.3 Audio Capture Wrapper
+
+**File:** `Ora/Audio/AudioCapture.swift`
+
+```swift
+//
+//  AudioCapture.swift
+//  Ora
+//
+//  AVAudioEngine wrapper for microphone capture
+//
+
+import Foundation
+import AVFoundation
+import os
+
+/// Captures microphone audio and converts to 16kHz mono
+final class AudioCapture: @unchecked Sendable {
+    
+    // MARK: - Properties
+    
+    private let logger = Logger(subsystem: "com.ora.app", category: "AudioCapture")
+    
+    private var engine: AVAudioEngine?
+    private var converter: AVAudioConverter?
+    
+    /// Callback for audio samples (16kHz mono Float32)
+    var onSamples: (([Float]) -> Void)?
+    
+    private let targetSampleRate: Double = 16000
+    private let targetChannels: AVAudioChannelCount = 1
+    
+    // MARK: - Public API
+    
+    func start() async throws {
+        let engine = AVAudioEngine()
+        self.engine = engine
+        
+        let inputNode = engine.inputNode
+        let inputFormat = inputNode.outputFormat(forBus: 0)
+        
+        logger.debug("Input format: \(inputFormat.sampleRate)Hz, \(inputFormat.channelCount) channels")
+        
+        // Create target format (16kHz mono)
+        guard let targetFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: targetSampleRate,
+            channels: targetChannels,
+            interleaved: false
+        ) else {
+            throw AudioServiceError.captureError("Failed to create target format")
+        }
+        
+        // Create converter if needed
+        if inputFormat.sampleRate != targetSampleRate || inputFormat.channelCount != targetChannels {
+            converter = AVAudioConverter(from: inputFormat, to: targetFormat)
+        }
+        
+        // Install tap
+        let bufferSize: AVAudioFrameCount = 2048
+        inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: inputFormat) { [weak self] buffer, time in
+            self?.processBuffer(buffer)
+        }
+        
+        // Start engine
+        engine.prepare()
+        try engine.start()
+        
+        logger.info("Audio engine started")
+    }
+    
+    func stop() async {
+        engine?.inputNode.removeTap(onBus: 0)
+        engine?.stop()
+        engine = nil
+        converter = nil
+        logger.info("Audio engine stopped")
+    }
+    
+    // MARK: - Private
+    
+    private func processBuffer(_ buffer: AVAudioPCMBuffer) {
+        let samples: [Float]
+        
+        if let converter = converter {
+            // Need to convert
+            guard let converted = convertBuffer(buffer, using: converter) else { return }
+            samples = extractSamples(from: converted)
+        } else {
+            // Already in target format
+            samples = extractSamples(from: buffer)
+        }
+        
+        onSamples?(samples)
+    }
+    
+    private func convertBuffer(_ buffer: AVAudioPCMBuffer, using converter: AVAudioConverter) -> AVAudioPCMBuffer? {
+        let ratio = targetSampleRate / buffer.format.sampleRate
+        let outputFrameCount = AVAudioFrameCount(Double(buffer.frameLength) * ratio)
+        
+        guard let targetFormat = converter.outputFormat as AVAudioFormat?,
+              let outputBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outputFrameCount) else {
+            return nil
+        }
+        
+        var error: NSError?
+        let status = converter.convert(to: outputBuffer, error: &error) { inNumPackets, outStatus in
+            outStatus.pointee = .haveData
+            return buffer
+        }
+        
+        if status == .error {
+            logger.warning("Conversion error: \(error?.localizedDescription ?? "unknown")")
+            return nil
+        }
+        
+        return outputBuffer
+    }
+    
+    private func extractSamples(from buffer: AVAudioPCMBuffer) -> [Float] {
+        guard let channelData = buffer.floatChannelData else { return [] }
+        let frameLength = Int(buffer.frameLength)
+        
+        // Take first channel (mono)
+        return Array(UnsafeBufferPointer(start: channelData[0], count: frameLength))
+    }
+}
+```
+
+### 3.4 Streaming Ring Buffer
+
+**File:** `Ora/Audio/StreamingRingBuffer.swift`
+
+```swift
+//
+//  StreamingRingBuffer.swift
+//  Ora
+//
+//  Thread-safe circular buffer for audio samples
+//
+
+import Foundation
+
+/// Lock-free ring buffer for audio streaming
+final class StreamingRingBuffer: @unchecked Sendable {
+    
+    private var buffer: [Float]
+    private var writeIndex: Int = 0
+    private var readIndex: Int = 0
+    private var count: Int = 0
+    private let capacity: Int
+    private let lock = NSLock()
+    
+    var availableSamples: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return count
+    }
+    
+    init(capacity: Int) {
+        self.capacity = capacity
+        self.buffer = [Float](repeating: 0, count: capacity)
+    }
+    
+    /// Append samples to the buffer
+    func append(_ samples: [Float]) {
+        lock.lock()
+        defer { lock.unlock() }
+        
+        for sample in samples {
+            buffer[writeIndex] = sample
+            writeIndex = (writeIndex + 1) % capacity
+            
+            if count < capacity {
+                count += 1
+            } else {
+                // Overwrite oldest data
+                readIndex = (readIndex + 1) % capacity
+            }
+        }
+    }
+    
+    /// Read samples from the buffer
+    func read(count requestedCount: Int) -> [Float] {
+        lock.lock()
+        defer { lock.unlock() }
+        
+        let readCount = min(requestedCount, count)
+        var result = [Float](repeating: 0, count: readCount)
+        
+        for i in 0..<readCount {
+            result[i] = buffer[(readIndex + i) % capacity]
+        }
+        
+        readIndex = (readIndex + readCount) % capacity
+        count -= readCount
+        
+        return result
+    }
+    
+    /// Peek at samples without consuming
+    func peek(count requestedCount: Int) -> [Float] {
+        lock.lock()
+        defer { lock.unlock() }
+        
+        let peekCount = min(requestedCount, count)
+        var result = [Float](repeating: 0, count: peekCount)
+        
+        for i in 0..<peekCount {
+            result[i] = buffer[(readIndex + i) % capacity]
+        }
+        
+        return result
+    }
+    
+    /// Clear the buffer
+    func reset() {
+        lock.lock()
+        defer { lock.unlock() }
+        
+        writeIndex = 0
+        readIndex = 0
+        count = 0
+    }
+}
+```
+
+---
+
+## 4. Acceptance Criteria
+
+- [ ] **AC-1:** `AudioService.start()` returns `AsyncStream<AudioFrame>`
+- [ ] **AC-2:** Frames contain 16kHz mono Float32 samples
+- [ ] **AC-3:** `AudioService.stop()` cleanly terminates stream
+- [ ] **AC-4:** Microphone permission checked before starting
+- [ ] **AC-5:** Ring buffer prevents memory growth
+- [ ] **AC-6:** Audio format conversion works (48kHz → 16kHz)
+
+---
+
+## 5. Test Cases
+
+```swift
+// AudioServiceTests.swift
+
+import XCTest
+@testable import Ora
+
+final class AudioServiceTests: XCTestCase {
+    
+    // TC-1: Ring buffer capacity
+    func test_ringBuffer_respectsCapacity() {
+        let buffer = StreamingRingBuffer(capacity: 100)
+        buffer.append(Array(repeating: 1.0, count: 150))
+        XCTAssertEqual(buffer.availableSamples, 100)
+    }
+    
+    // TC-2: Ring buffer read
+    func test_ringBuffer_readConsumes() {
+        let buffer = StreamingRingBuffer(capacity: 100)
+        buffer.append([1, 2, 3, 4, 5])
+        let read = buffer.read(count: 3)
+        XCTAssertEqual(read, [1, 2, 3])
+        XCTAssertEqual(buffer.availableSamples, 2)
+    }
+    
+    // TC-3: Audio frame duration
+    func test_audioFrame_duration() {
+        let frame = AudioFrame(samples: Array(repeating: 0, count: 1600), sampleRate: 16000)
+        XCTAssertEqual(frame.duration, 0.1, accuracy: 0.001)
+    }
+}
+```
+
+---
+
+## 6. Implementation Checklist
+
+- [ ] Create `AudioFrame.swift`
+- [ ] Create `AudioService.swift`
+- [ ] Create `AudioCapture.swift`
+- [ ] Create `StreamingRingBuffer.swift`
+- [ ] Test audio capture with real microphone
+- [ ] Test format conversion
+- [ ] Integrate with hotkey lifecycle
