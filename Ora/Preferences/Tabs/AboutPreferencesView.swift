@@ -47,27 +47,23 @@ struct AboutPreferencesView: View {
 
             // Actions Section
             Section {
-                HStack {
-                    Spacer()
-                    Button {
-                        showAuditLog = true
-                    } label: {
-                        Label("View Audit Log", systemImage: "list.bullet.clipboard")
-                    }
-                    Spacer()
+                Button {
+                    showAuditLog = true
+                } label: {
+                    Label("View Audit Log", systemImage: "list.bullet.clipboard")
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .buttonStyle(.plain)
 
-                HStack {
-                    Spacer()
-                    Button {
-                        if let url = URL(string: "https://github.com/benedict2310/ora") {
-                            NSWorkspace.shared.open(url)
-                        }
-                    } label: {
-                        Label("GitHub", systemImage: "link")
+                Button {
+                    if let url = URL(string: "https://github.com/benedict2310/ora") {
+                        NSWorkspace.shared.open(url)
                     }
-                    Spacer()
+                } label: {
+                    Label("GitHub", systemImage: "link")
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .buttonStyle(.plain)
             }
 
             // Privacy Section
