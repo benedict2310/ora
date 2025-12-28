@@ -761,3 +761,49 @@ final class OverlayViewModelTests: XCTestCase {
 - [x] Tests passing
 - [x] Build succeeds
 - [x] Working tree clean
+
+---
+
+## 9. Code Review Findings
+
+**Reviewer:** Claude Code
+**Date:** 2025-12-28
+**Commit reviewed:** a8b57de
+
+### Summary
+- Files reviewed: 5 (+ 1 story doc update)
+- Tests run: Yes (212 tests, all passing)
+- Build status: Pass
+
+### Issues Found
+
+#### P0 - Critical (Must fix before merge)
+*None identified*
+
+#### P1 - Major (Should fix before merge)
+*None identified*
+
+#### P2 - Minor (Can fix in follow-up)
+*None identified*
+
+### Code Quality Notes
+
+**Strengths:**
+1. Clean separation of concerns (State, Controller, View)
+2. Proper MainActor isolation throughout
+3. Full accessibility support (VoiceOver labels, Reduce Motion)
+4. Comprehensive test coverage (18 unit tests)
+5. Follows existing codebase patterns (explicit self, MARK organization)
+6. Good use of Swift 6 concurrency features
+
+**Design Decisions (Approved):**
+1. Singleton pattern for OverlayWindowController is appropriate for single overlay
+2. NSPanel with `.nonactivatingPanel` correctly prevents focus stealing
+3. `.glassEffect()` usage aligns with macOS 26 Liquid Glass design language
+4. NotificationCenter for proposal confirm/deny matches existing patterns
+
+### Approval Status
+- [x] All P0 issues resolved (none found)
+- [x] All P1 issues resolved (none found)
+- [x] Coverage target met (18 tests for new code)
+- [x] Ready for merge
