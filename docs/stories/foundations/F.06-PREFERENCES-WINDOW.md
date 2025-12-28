@@ -1220,3 +1220,27 @@ Ora/
 - [x] PR merged: https://github.com/benedict2310/ora/pull/5
 - [x] Merged to main: 98fd38c
 - [x] Date: 2025-12-28
+
+---
+
+## Post-Merge UI Refinements
+
+**Date:** 2025-12-28
+**Commits:** 3af2c7f, b946951
+
+### Issues Fixed
+
+1. **Empty boxes in General tab** - Removed `Divider()` elements that were creating empty card-like boxes between form sections when using `.formStyle(.grouped)`
+
+2. **Tab bar card borders** - Replaced `TabView` with a `Picker` using `.segmented` style to eliminate the card-like borders around tab items that appeared in macOS Tahoe's Liquid Glass UI
+
+3. **Tab bar spacing** - Added top padding (12pt) between the window title bar and the tab picker for better visual balance
+
+### Architecture Change
+
+The preferences window now uses a manual tab switching approach:
+- `Picker` with `.pickerStyle(.segmented)` for tab selection
+- `switch` statement to render the appropriate content view
+- Explicit padding control for proper spacing
+
+This provides better control over the UI appearance compared to the native `TabView` which had styling issues on macOS Tahoe.
