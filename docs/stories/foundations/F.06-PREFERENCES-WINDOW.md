@@ -1,7 +1,7 @@
 # F.06 - Preferences Window
 
 **Epic:** Foundations
-**Status:** Not Started
+**Status:** Implemented
 **Priority:** P1 (Important)
 **Estimated Effort:** 2 days
 **Dependencies:** F.01 (App Shell), F.02 (Permissions), F.03 (Model Manager)

@@ -486,3 +486,62 @@ With `LSUIElement = true`:
 - App does not appear in Cmd+Tab switcher
 - App can still show windows (preferences, overlay)
 - App runs as "accessory" to the system
+
+---
+
+## 9. Code Review (Post-Implementation)
+
+### Findings (All Fixed)
+
+| Priority | Finding | Status | Resolution |
+|:---------|:--------|:-------|:-----------|
+| P1 | `StatusBarController` never removes its `NSStatusItem` | Fixed | Added `shutdown()` method called from `AppDelegate.applicationWillTerminate` |
+| P1 | Menu actions hard-wired, blocking testability | Fixed | Introduced `StatusBarActionHandler` protocol with DI; tests use `MockStatusBarActionHandler` |
+| P2 | `applicationShouldHandleReopen` always opens preferences | Fixed | Now gated on `hasVisibleWindows` flag |
+| P2 | Unit tests don't validate menu/icons | Fixed | Added tests for menu items, key equivalents, and icon mapping |
+
+### Testing + Coverage (Addressed)
+
+| Priority | Gap | Status | Resolution |
+|:---------|:----|:-------|:-----------|
+| P0 | Coverage below 85% target | Fixed | 18 tests covering state, icon mapping, menu construction, action handlers, shutdown |
+| P1 | No E2E test for menu bar | Deferred | Manual E2E checklist documented below |
+
+### Manual E2E Checklist
+
+1. Run `./build.sh run`
+2. Verify menu bar icon appears (circle outline)
+3. Click icon, verify dropdown shows "Preferences..." and "Quit Ora"
+4. Verify Cmd+, shortcut is shown for Preferences
+5. Verify Cmd+Q shortcut is shown for Quit
+6. Click "Quit Ora" - app should terminate
+
+---
+
+## 10. Approval Check (Re-review)
+
+**Status:** Approved
+
+| Priority | Finding | Resolution |
+|:---------|:--------|:-----------|
+| P0 | `StatusBarController` stores action handler as `weak`, causing immediate deallocation | ✅ Fixed: Split into `defaultActionHandler` (strong) and `injectedActionHandler` (weak) with computed `actionHandler` property |
+| P2 | E2E checklist doesn't confirm Preferences action works | ✅ Fixed: `DefaultStatusBarActionHandler.handlePreferences()` now calls `PreferencesCoordinator.shared.showPreferences()` |
+
+### Updated E2E Checklist
+
+1. Run `./build.sh run`
+2. Verify menu bar icon appears (circle outline)
+3. Click icon, verify dropdown shows "Preferences..." and "Quit Ora"
+4. Verify Cmd+, shortcut is shown for Preferences
+5. Verify Cmd+Q shortcut is shown for Quit
+6. Click "Preferences..." - **Preferences window should open with 4 tabs**
+7. Click "Quit Ora" - app should terminate
+
+---
+
+## 11. Re-review (Follow-up)
+
+**Status:** Approved
+
+- No new issues found after verifying the action handler retention and Preferences integration.
+- Residual risk: E2E validation is manual only; consider adding a UI smoke test when feasible.

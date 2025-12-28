@@ -32,11 +32,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         self.logger.info("Ora terminating...")
+        self.statusBarController?.shutdown()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        // If user clicks dock icon (if visible), show preferences or activate
-        self.statusBarController?.showPreferences()
+        // Only show preferences if no windows are visible
+        // This avoids surprising UX when user expects to see existing windows
+        if !flag {
+            self.statusBarController?.showPreferences()
+        }
         return true
     }
 

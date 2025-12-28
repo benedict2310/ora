@@ -91,6 +91,15 @@ Voice → (FluidAudio Parakeet) → (MLX + Qwen 2.5) → (Kokoro TTS) → Voice/
   xcodebuild test -project Ora.xcodeproj -scheme Ora-TSan
   ```
 
+### Review Learnings (Keep Concise)
+- Keep action handlers alive; do not `weak` the only instance (menu actions must execute).
+- Tear down `NSStatusItem` on shutdown to avoid duplicate menu icons.
+- Ensure menu actions have observable behavior and are covered by tests.
+- Permission flows: use correct APIs (events vs reminders), map `.authorized`/`.writeOnly` correctly, and prompt accessibility before opening Settings.
+- Permission checks must update shared state and post notifications.
+- Implement required/optional permission requests as specified; keep docs and code aligned.
+- Cover request flows and settings opening in tests; record manual E2E checklists for permission/menu flows.
+
 ### Commit & PR Guidelines
 - Commit messages: short imperative clauses (e.g., "Add calendar tool", "Fix ASR latency"); keep commits scoped.
 - PRs/patches should list summary, commands run, screenshots/GIFs for UI changes, and linked issue/reference when relevant.
