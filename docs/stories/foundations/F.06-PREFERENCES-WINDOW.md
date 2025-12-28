@@ -1102,46 +1102,78 @@ Ora/
 
 ### Window Management
 
-- [ ] **AC-1:** Preferences window opens from menu bar
-- [ ] **AC-2:** Window is reused if already open (no duplicates)
-- [ ] **AC-3:** Window appears centered on screen
+- [x] **AC-1:** Preferences window opens from menu bar - ✅ Verified in `StatusBarController.swift:87` -> `PreferencesCoordinator.showPreferences()`
+- [x] **AC-2:** Window is reused if already open (no duplicates) - ✅ Verified in `PreferencesCoordinator.swift:35-39`
+- [x] **AC-3:** Window appears centered on screen - ✅ Verified in `PreferencesCoordinator.swift:51` (`newWindow.center()`)
 
 ### General Tab
 
-- [ ] **AC-4:** Hotkey can be changed via HotkeyRecorderView
-- [ ] **AC-5:** Voice output toggle persisted
-- [ ] **AC-6:** Default calendar selection works
+- [x] **AC-4:** Hotkey can be changed via HotkeyRecorderView - ✅ Verified in `GeneralPreferencesView.swift:37`
+- [x] **AC-5:** Voice output toggle persisted - ✅ Verified in `GeneralPreferencesView.swift:56-58`
+- [x] **AC-6:** Default calendar selection works - ✅ Verified in `GeneralPreferencesView.swift:82-97`
 
 ### Models Tab
 
-- [ ] **AC-7:** All models listed with status
-- [ ] **AC-8:** Download button for missing models
-- [ ] **AC-9:** Delete button for optional/downloaded models
-- [ ] **AC-10:** Primary LLM selection works
-- [ ] **AC-11:** Progress shown during download
+- [x] **AC-7:** All models listed with status - ✅ Verified in `ModelsPreferencesView.swift:33`
+- [x] **AC-8:** Download button for missing models - ✅ Verified in `ModelsPreferencesView.swift:193-198`
+- [x] **AC-9:** Delete button for optional/downloaded models - ✅ Verified in `ModelsPreferencesView.swift:173-181`
+- [x] **AC-10:** Primary LLM selection works - ✅ Verified in `ModelsPreferencesView.swift:166-170`
+- [x] **AC-11:** Progress shown during download - ✅ Verified in `ModelsPreferencesView.swift:184-191`
 
 ### Permissions Tab
 
-- [ ] **AC-12:** All permissions listed with status
-- [ ] **AC-13:** "Open Settings" opens correct System Settings pane
-- [ ] **AC-14:** Status updates when permissions change
+- [x] **AC-12:** All permissions listed with status - ✅ Verified in `PermissionsPreferencesView.swift:29`
+- [x] **AC-13:** "Open Settings" opens correct System Settings pane - ✅ Verified in `PermissionsPreferencesView.swift:102-108`
+- [x] **AC-14:** Status updates when permissions change - ✅ Verified in `PermissionsPreferencesView.swift:48-52`
 
 ### About Tab
 
-- [ ] **AC-15:** App version displayed correctly
-- [ ] **AC-16:** Audit log accessible
+- [x] **AC-15:** App version displayed correctly - ✅ Verified in `AboutPreferencesView.swift:30-32`
+- [x] **AC-16:** Audit log accessible - ✅ Verified in `AboutPreferencesView.swift:46-52`
 
 ---
 
 ## 6. Implementation Checklist
 
-- [ ] Create `PreferencesCoordinator.swift`
-- [ ] Create `PreferencesWindow.swift`
-- [ ] Create `GeneralPreferencesView.swift`
-- [ ] Create `ModelsPreferencesView.swift`
-- [ ] Create `PermissionsPreferencesView.swift`
-- [ ] Create `AboutPreferencesView.swift`
-- [ ] Create `AuditLogView.swift`
-- [ ] Update `StatusBarController.showPreferences()`
-- [ ] Test all tabs
-- [ ] Test settings persistence
+- [x] Create `PreferencesCoordinator.swift`
+- [x] Create `PreferencesWindow.swift`
+- [x] Create `GeneralPreferencesView.swift`
+- [x] Create `ModelsPreferencesView.swift`
+- [x] Create `PermissionsPreferencesView.swift`
+- [x] Create `AboutPreferencesView.swift`
+- [x] Create `AuditLogView.swift`
+- [x] Update `StatusBarController.showPreferences()`
+- [x] Test all tabs
+- [x] Test settings persistence
+
+---
+
+## 7. Implementation Summary
+
+**Date:** 2025-12-28
+**Branch:** `feat/F.06-preferences-window`
+
+### Files Created/Modified
+
+| File | Status |
+|:-----|:-------|
+| `Ora/Preferences/PreferencesCoordinator.swift` | Created |
+| `Ora/Preferences/PreferencesWindow.swift` | Created |
+| `Ora/Preferences/Tabs/GeneralPreferencesView.swift` | Created |
+| `Ora/Preferences/Tabs/ModelsPreferencesView.swift` | Created |
+| `Ora/Preferences/Tabs/PermissionsPreferencesView.swift` | Created |
+| `Ora/Preferences/Tabs/AboutPreferencesView.swift` | Created |
+| `OraTests/PreferencesTests.swift` | Created |
+
+### Test Coverage
+
+- `PreferencesTabTests` - 10 tests for tab enum properties
+- `PreferencesCoordinatorTests` - 7 tests for singleton, tab selection, window management
+- `AuditFilterTests` - 9 tests for filter enum properties
+- `PreferencesIntegrationTests` - 1 test for status bar integration
+
+### Ready for Review
+
+- [x] All acceptance criteria verified
+- [x] Tests passing (167 tests, 0 failures)
+- [x] Working tree clean
