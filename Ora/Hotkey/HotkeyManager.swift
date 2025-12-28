@@ -63,16 +63,20 @@ final class HotkeyManager {
     /// Start listening for hotkey events
     /// - Note: Requires accessibility permission to work
     func start() {
+        self.logger.warning("HotkeyManager.start() called")
         guard !self.isEnabled else {
+            self.logger.warning("Already enabled, returning")
             self.logger.debug("Hotkey manager already started")
             return
         }
 
         // Check accessibility permission
         guard AXIsProcessTrusted() else {
+            self.logger.warning("Accessibility NOT trusted!")
             self.logger.error("Cannot start hotkey manager: Accessibility permission not granted")
             return
         }
+        self.logger.warning("Accessibility is trusted")
 
         // Register global event monitor for events outside our app
         self.globalMonitor = NSEvent.addGlobalMonitorForEvents(
@@ -82,6 +86,7 @@ final class HotkeyManager {
                 self?.handleEvent(event)
             }
         }
+        self.logger.warning("Global monitor registered")
 
         // Register local event monitor for events inside our app
         self.localMonitor = NSEvent.addLocalMonitorForEvents(
@@ -92,8 +97,10 @@ final class HotkeyManager {
             }
             return event
         }
+        self.logger.warning("Local monitor registered")
 
         self.isEnabled = true
+        self.logger.warning("Hotkey manager started, listening for \(self.configuration.displayString)")
         self.logger.info("Hotkey manager started, listening for \(self.configuration.displayString)")
     }
 
@@ -192,13 +199,19 @@ final class HotkeyManager {
         // Ignore repeated events
         guard !event.isARepeat else { return }
 
+        self.logger.warning("handleKeyDown keyCode=\(event.keyCode) modifiers=\(event.modifierFlags.carbonFlags) expected keyCode=\(self.configuration.keyCode) modifiers=\(self.configuration.modifiers)")
+
         // Check if this is our hotkey
-        guard self.matchesHotkey(event) else { return }
+        guard self.matchesHotkey(event) else {
+            return
+        }
+        self.logger.warning("Matches hotkey!")
 
         // Ignore if already pressed
         guard !self.isHotkeyDown else { return }
 
         self.isHotkeyDown = true
+        self.logger.warning("Posting hotkeyDidPress notification")
         self.logger.debug("Hotkey pressed")
         NotificationCenter.default.post(name: .hotkeyDidPress, object: nil)
     }

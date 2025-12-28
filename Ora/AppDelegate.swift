@@ -86,12 +86,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func onHotkeyPress() {
+        print("DEBUG: onHotkeyPress called")
         self.logger.debug("Hotkey pressed - start PTT")
         self.statusBarController?.setState(.listening)
 
         // Show overlay and set to listening mode
+        print("DEBUG: Setting overlay mode to listening")
         OverlayWindowController.shared.mode = .listening
+        print("DEBUG: Calling overlay show()")
         OverlayWindowController.shared.show()
+        print("DEBUG: overlay.isVisible = \(OverlayWindowController.shared.isVisible)")
     }
 
     private func onHotkeyRelease() {

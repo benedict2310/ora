@@ -906,3 +906,98 @@ Added `OverlayWindowControllerTests` class with 11 tests:
 - [x] Post-merge verification passed
 - [x] Date completed: 2025-12-28
 - [x] Bug fix: Overlay not appearing - PR #7, merged 118c245
+- [ ] Bug investigation: Overlay still not appearing after fix (in progress)
+
+---
+
+## 12. Open Investigation: Overlay Still Not Appearing
+
+**Status:** In Progress
+**Date:** 2025-12-28
+
+### Problem Description
+
+After applying the fix in PR #7, the overlay panel still does not appear when pressing the hotkey. The user reports:
+- The hotkey (Option+Space) is intercepted by another app on their system
+- Even when changing to Option+Shift+Space, the overlay does not appear
+- The hotkey appears to be detected (visible in some UI) but the overlay doesn't show
+
+### Investigation Findings
+
+1. **Hotkey conflict**: Option+Space is taken by another app (Raycast/Alfred/etc.)
+2. **Notification chain not firing**: Debug statements in `onHotkeyPress()` never execute, meaning the `hotkeyDidPress` notification isn't reaching AppDelegate
+3. **Console output not visible**: `print()` statements don't appear in GUI app output; must use `os.Logger` with `.warning` level to see in unified log
+
+### Debug Instrumentation Added
+
+The following debug logging has been added (uncommitted) to trace the issue:
+
+#### `Ora/Hotkey/HotkeyManager.swift`
+
+```swift
+// In start() method:
+self.logger.warning("HotkeyManager.start() called")
+self.logger.warning("Accessibility is trusted")  // or "NOT trusted!"
+self.logger.warning("Global monitor registered")
+self.logger.warning("Local monitor registered")
+self.logger.warning("Hotkey manager started, listening for \(self.configuration.displayString)")
+
+// In handleKeyDown() method:
+self.logger.warning("handleKeyDown keyCode=\(event.keyCode) modifiers=\(event.modifierFlags.carbonFlags) expected keyCode=\(self.configuration.keyCode) modifiers=\(self.configuration.modifiers)")
+self.logger.warning("Matches hotkey!")
+self.logger.warning("Posting hotkeyDidPress notification")
+```
+
+#### `Ora/AppDelegate.swift`
+
+```swift
+// In onHotkeyPress() method:
+print("DEBUG: onHotkeyPress called")
+print("DEBUG: Setting overlay mode to listening")
+print("DEBUG: Calling overlay show()")
+print("DEBUG: overlay.isVisible = \(OverlayWindowController.shared.isVisible)")
+```
+
+#### `Ora/Overlay/OverlayWindowController.swift`
+
+```swift
+// In show() method:
+print("DEBUG: OverlayWindowController.show() called")
+print("DEBUG: Panel is nil, creating...")
+print("DEBUG: Panel exists, frame = \(NSStringFromRect(panel.frame))")
+print("DEBUG: Panel positioned at \(NSStringFromRect(panel.frame))")
+print("DEBUG: makeKeyAndOrderFront called, isVisible = \(panel.isVisible)")
+print("DEBUG: Animation started, panel.alphaValue = \(panel.alphaValue)")
+```
+
+### How to View Logs
+
+```bash
+# Stream logs in real-time
+log stream --predicate 'subsystem == "com.ora.app"' --style compact
+
+# Show recent logs
+log show --predicate 'subsystem == "com.ora.app"' --last 1m --style compact
+```
+
+### Next Steps
+
+1. Verify `HotkeyManager.start()` is being called and accessibility is granted
+2. Check if `handleKeyDown` receives ANY key events
+3. Verify the stored hotkey configuration matches what the user is pressing
+4. Test changing the hotkey via Preferences → General tab
+5. Consider if the global event monitor is being registered correctly
+
+### Hotkey Configuration
+
+The hotkey is stored in UserDefaults as JSON:
+- Key: `com.ora.hotkeyConfiguration`
+- Format: `{"keyCode": 49, "modifiers": 2560}` for Option+Shift+Space
+  - `keyCode`: 49 = Space (kVK_Space)
+  - `modifiers`: 2048 = Option, 512 = Shift, 2560 = Option+Shift
+
+To change hotkey via command line:
+```bash
+# Option+Shift+Space (modifiers: 2048 + 512 = 2560)
+# Requires proper JSON encoding to data blob - use Preferences UI instead
+```

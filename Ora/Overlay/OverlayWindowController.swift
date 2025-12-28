@@ -49,14 +49,18 @@ final class OverlayWindowController {
 
     /// Show the overlay window
     func show() {
+        print("DEBUG: OverlayWindowController.show() called")
         if self.panel == nil {
+            print("DEBUG: Panel is nil, creating...")
             self.createPanel()
         }
 
         guard let panel = self.panel else {
+            print("DEBUG: FAILED to create panel!")
             self.logger.error("Failed to create panel")
             return
         }
+        print("DEBUG: Panel exists, frame = \(NSStringFromRect(panel.frame))")
 
         // Cancel any pending auto-dismiss
         self.autoDismissTask?.cancel()
@@ -64,7 +68,9 @@ final class OverlayWindowController {
 
         // Position and show
         self.positionPanel()
+        print("DEBUG: Panel positioned at \(NSStringFromRect(panel.frame))")
         panel.makeKeyAndOrderFront(nil)
+        print("DEBUG: makeKeyAndOrderFront called, isVisible = \(panel.isVisible)")
 
         // Animate in
         panel.alphaValue = 0
@@ -73,6 +79,7 @@ final class OverlayWindowController {
             panel.animator().alphaValue = 1
         }
 
+        print("DEBUG: Animation started, panel.alphaValue = \(panel.alphaValue)")
         self.logger.debug("Overlay shown")
     }
 
