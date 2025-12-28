@@ -186,11 +186,6 @@ final class SetupCoordinator: NSObject, ObservableObject {
 
         let recommendedLLM: ModelIdentifier = self.state.systemRAMGB >= 16 ? .qwen7B : .qwen3B
         self.state.recommendedModel = recommendedLLM.displayName
-
-        // Sync with ModelManager to ensure downloads use the correct model
-        Task {
-            await ModelManager.shared.setPrimaryLLM(recommendedLLM)
-        }
     }
 
     private func refreshPermissionsState() async {
@@ -200,6 +195,7 @@ final class SetupCoordinator: NSObject, ObservableObject {
     }
 
     private func startDownloads() async {
+        await self.ensurePrimaryLLMSelected()
         self.state.downloadProgress = 0
         self.state.downloadError = nil
         self.state.modelProgresses = [:]
@@ -240,6 +236,23 @@ final class SetupCoordinator: NSObject, ObservableObject {
         await self.downloadTask?.value
     }
 
+    private func ensurePrimaryLLMSelected() async {
+        let hasPersistedPrimary = await self.hasPersistedPrimaryLLM()
+        guard !hasPersistedPrimary else { return }
+        let recommendedLLM: ModelIdentifier = self.state.systemRAMGB >= 16 ? .qwen7B : .qwen3B
+        await ModelManager.shared.setPrimaryLLM(recommendedLLM)
+    }
+
+    private func hasPersistedPrimaryLLM() async -> Bool {
+        await Task.detached {
+            let url = ModelPaths.metadataFile
+            guard let data = try? Data(contentsOf: url) else { return false }
+            let decoder = JSONDecoder()
+            guard let metadata = try? decoder.decode([PersistedModelMetadata].self, from: data) else { return false }
+            return metadata.contains { $0.isPrimary && $0.identifier.category == .llm }
+        }.value
+    }
+
     private func completeSetup() {
         self.state.isComplete = true
         UserDefaults.standard.set(true, forKey: self.userDefaultsKey)
@@ -251,6 +264,11 @@ final class SetupCoordinator: NSObject, ObservableObject {
         // Notify app that setup is done
         NotificationCenter.default.post(name: .setupDidComplete, object: nil)
     }
+}
+
+private struct PersistedModelMetadata: Decodable {
+    let identifier: ModelIdentifier
+    let isPrimary: Bool
 }
 
 // MARK: - NSWindowDelegate

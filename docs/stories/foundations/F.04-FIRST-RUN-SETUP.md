@@ -1149,6 +1149,7 @@ Ora/
 - [x] `Ora/Setup/Steps/PermissionsStepView.swift:81` - The permissions UI refreshes locally, but `SetupNavigationView` gates "Continue" on `coordinator.state.permissionsGranted`; after granting permissions via System Settings (Open Settings), the coordinator state is never refreshed, leaving "Continue" disabled even though the row shows granted. **Fixed:** Added `updatePermissionsGranted()` method and `didBecomeActiveNotification` handler to refresh when returning from Settings.
 - [x] `Ora/Setup/SetupCoordinator.swift:41` - When setup is complete but models are missing, the coordinator jumps directly to `.download` without calling `startDownloads()`, so the download step shows 0% with no way to initiate downloads and the "Continue" button stays disabled. **Fixed:** Now calls `startDownloads()` after showing setup when resuming to download step.
 - [x] `Ora/Setup/SetupCoordinator.swift:176` - `state.recommendedModel` is derived from RAM, but `ModelManager.primaryLLM` is never updated to match; on <16GB systems the UI shows Qwen 3B while downloads still pull the 7B model, and the per-model progress never updates for the displayed model. **Fixed:** Now calls `ModelManager.shared.setPrimaryLLM()` in `loadSystemInfo()` to sync the recommended model.
+- [x] `Ora/Setup/SetupCoordinator.swift:190` - `loadSystemInfo()` always calls `ModelManager.shared.setPrimaryLLM(...)`, which overrides any user-selected primary LLM on every launch and can clobber persisted metadata before it loads; limit this to first-run setup or only when no primary selection exists. **Fixed:** Setup now checks the persisted metadata file and only sets the primary LLM when none is persisted (before downloads).
 
 #### P2 - Minor (Can fix in follow-up)
 - [x] `Ora/Setup/Steps/WelcomeStepView.swift:47` - Activation hotkey text is hardcoded; it can drift from the configured hotkey (default is ⌥ Space, and user-configured hotkeys will not be reflected). **Fixed:** Now uses `HotkeyConfiguration.load().displayString`.
@@ -1161,4 +1162,34 @@ Ora/
 - [x] All P0 issues resolved
 - [x] All P1 issues resolved or deferred with approval
 - [x] Coverage target met (128 tests passing)
+- [x] Ready for merge
+
+### Review Iteration 2
+**Date:** 2025-12-28
+**Commit reviewed:** a5653eb
+
+#### Resolved
+- [x] `Ora/Setup/Steps/PermissionsStepView.swift:78` - Permissions refresh loop removed by reading state from notification object.
+- [x] `Ora/Setup/Steps/PermissionsStepView.swift:81` - Coordinator permissions state now updates after returning from System Settings.
+- [x] `Ora/Setup/SetupCoordinator.swift:41` - Missing-models resume now starts downloads automatically.
+- [x] `Ora/Setup/SetupCoordinator.swift:176` - Recommended model now synced to download selection.
+- [x] `Ora/Setup/Steps/WelcomeStepView.swift:47` - Hotkey display now reflects configured value.
+- [x] `Ora/Setup/Steps/ReadyStepView.swift:35` - Tutorial hotkey display now reflects configured value.
+
+#### New Issues Found
+- [ ] `Ora/Setup/SetupCoordinator.swift:190` - `loadSystemInfo()` overrides user-selected primary LLM on every launch and can overwrite metadata before it loads.
+
+#### Status
+- [x] All previous P0/P1 resolved
+- [ ] New P1 issues need fixing → Continue to iteration 3
+
+### Review Iteration 3
+**Date:** 2025-12-28
+**Commit reviewed:** <pending>
+
+#### Resolved
+- [x] `Ora/Setup/SetupCoordinator.swift:190` - Setup now only sets the primary LLM when no persisted primary exists.
+
+#### Status
+- [x] All previous P0/P1 resolved
 - [x] Ready for merge
