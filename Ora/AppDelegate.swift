@@ -16,6 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusBarController: StatusBarController?
     private let logger = Logger(subsystem: "com.ora.app", category: "AppDelegate")
     private var setupObserver: NSObjectProtocol?
+    private var hotkeyPressObserver: NSObjectProtocol?
+    private var hotkeyReleaseObserver: NSObjectProtocol?
 
     // MARK: - NSApplicationDelegate
 
@@ -40,21 +42,77 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Check if setup is needed
         SetupCoordinator.shared.checkAndShowSetupIfNeeded()
 
+        // If setup was already complete, start immediately
+        if SetupCoordinator.shared.isSetupComplete {
+            self.onSetupComplete()
+        }
+
         self.logger.info("Ora ready")
     }
 
     private func onSetupComplete() {
         self.logger.info("Setup complete, initializing main functionality")
-        // Initialize hotkey, warmup models, etc.
-        // This will be expanded in future stories
+        self.startHotkeyManager()
+    }
+
+    private func startHotkeyManager() {
+        // Verify accessibility permission before starting
+        guard AXIsProcessTrusted() else {
+            self.logger.warning("Accessibility not granted, hotkey disabled")
+            return
+        }
+
+        // Start the hotkey manager
+        HotkeyManager.shared.start()
+
+        // Listen for hotkey events
+        self.hotkeyPressObserver = NotificationCenter.default.addObserver(
+            forName: .hotkeyDidPress,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.onHotkeyPress()
+        }
+
+        self.hotkeyReleaseObserver = NotificationCenter.default.addObserver(
+            forName: .hotkeyDidRelease,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.onHotkeyRelease()
+        }
+
+        self.logger.info("Hotkey manager started with: \(HotkeyManager.shared.currentHotkey.displayString)")
+    }
+
+    private func onHotkeyPress() {
+        self.logger.debug("Hotkey pressed - start PTT")
+        self.statusBarController?.setState(.listening)
+        // Will trigger overlay and audio capture in future stories
+    }
+
+    private func onHotkeyRelease() {
+        self.logger.debug("Hotkey released - end PTT")
+        self.statusBarController?.setState(.thinking)
+        // Will finalize transcription and send to LLM in future stories
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         self.logger.info("Ora terminating...")
+
+        // Stop hotkey manager
+        HotkeyManager.shared.stop()
+
         self.statusBarController?.shutdown()
 
-        // Clean up observer
+        // Clean up observers
         if let observer = self.setupObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = self.hotkeyPressObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = self.hotkeyReleaseObserver {
             NotificationCenter.default.removeObserver(observer)
         }
     }
