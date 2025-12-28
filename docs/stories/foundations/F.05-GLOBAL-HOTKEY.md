@@ -1,7 +1,7 @@
 # F.05 - Global Hotkey
 
 **Epic:** Foundations
-**Status:** Implementation Complete - Ready for Review
+**Status:** Complete
 **Priority:** P0 (Critical Path)
 **Estimated Effort:** 1-2 days
 **Dependencies:** F.01 (App Shell), F.02 (Permissions)
@@ -841,3 +841,14 @@ The app should gracefully handle missing permission:
 - [x] All P1 issues resolved (none found)
 - [x] Coverage target met (39 new tests, all paths covered)
 - [x] Ready for merge
+
+---
+
+## Completion Status
+
+- [x] Implementation complete
+- [x] Code review passed (1 iteration)
+- [x] PR merged: https://github.com/benedict2310/ora/pull/4
+- [x] Merged to main: a521c9e
+- [x] Post-merge verification passed
+- [x] Date completed: 2025-12-28
