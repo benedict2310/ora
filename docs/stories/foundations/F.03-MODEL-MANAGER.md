@@ -1,7 +1,7 @@
 # F.03 - Model Manager
 
 **Epic:** Foundations
-**Status:** Not Started
+**Status:** Implemented
 **Priority:** P0 (Critical Path)
 **Estimated Effort:** 2-3 days
 **Dependencies:** F.01 (App Shell)
@@ -882,3 +882,50 @@ For v1, if a download is interrupted:
 - Check for partial files on next attempt
 - FluidAudio/HuggingFace libraries may have built-in resume support
 - Delete and re-download if verification fails
+
+---
+
+## 8. Code Review
+
+Note: Real download integrations (FluidAudio/MLX/Kokoro) are deferred to later stories; placeholders are expected here.
+
+### Findings
+
+- **P1:** ~~Cancellation is non-functional~~ **FIXED**: `downloadTasks` now tracks active download Tasks; `cancelDownload` cancels in-flight work and cleans up partial downloads.
+- **P1:** ~~Progress updates can race after verification~~ **FIXED**: `updateDownloadProgressIfDownloading` now guards against state regression by only updating if status is `.downloading`.
+- **P1:** ~~`refreshStatuses` can mark incomplete models as ready~~ **FIXED**: `DefaultModelDownloader.exists` now checks ALL required files, not just the first one.
+- **P2:** SHA256 verification is listed in scope, but no checksums are computed or validated; `ModelMetadata.sha256` remains unused. (Deferred until checksums are available from upstream providers.)
+- **P2:** ~~Tests do not cover metadata persistence, cancellation, or progress callbacks~~ **FIXED**: Added tests for cancellation behavior, progress callbacks, metadata persistence, and state regression guard.
+- **P2:** ~~`test_modelManager_cancelDownload_stopsDownload` can pass when cancellation does not occur~~ **FIXED**: Test now explicitly asserts `ModelError.downloadCancelled` is thrown and uses `XCTFail` if download completes.
+
+### Fixes Applied
+
+- Wired `downloadTasks` to actual `Task` instances so `cancelDownload` cancels in-flight work and cleans up partial downloads.
+- Added `updateDownloadProgressIfDownloading` guard to prevent state regression after verification/ready.
+- Updated `DefaultModelDownloader.exists` to validate ALL `requiredFiles` for accurate readiness detection.
+- Added 8 new tests covering cancellation, progress callbacks, metadata persistence, and state regression.
+
+### Tests
+
+- **Executed:** 104 tests, 0 failures
+- **New tests added:**
+  - `test_modelManager_cancelDownload_stopsDownload`
+  - `test_modelManager_cancelDownload_noActiveDownload_noOp`
+  - `test_modelManager_downloadModel_callsProgressCallback`
+  - `test_modelManager_downloadModel_progressIncreases`
+  - `test_modelManager_progressUpdateAfterReady_doesNotRegress`
+  - `test_modelManager_downloadModel_savesMetadata`
+  - `test_modelManager_setPrimaryLLM_updatesMetadata`
+  - `test_modelManager_deleteModel_removesMetadata`
+
+### Manual E2E Checklist
+
+- [ ] Download each model from Preferences; confirm progress and verification states; end in `.ready`.
+- [ ] Cancel a download mid-way; confirm status and partial files are handled.
+- [ ] Delete a model; verify it is removed from disk and status returns to `.notDownloaded`.
+- [ ] Relaunch app; confirm primary LLM selection persists from `model-metadata.json`.
+
+### Approval Check
+
+- **Status:** Approved
+- **Notes:** All P1 findings resolved; P2 SHA256 deferred (no checksums available yet). 104 tests passing.
