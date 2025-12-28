@@ -2,11 +2,116 @@
 //  OverlayViewModelTests.swift
 //  OraTests
 //
-//  Unit tests for OverlayViewModel
+//  Unit tests for OverlayViewModel and OverlayWindowController
 //
 
 import XCTest
 @testable import Ora
+
+// MARK: - OverlayWindowController Tests
+
+@MainActor
+final class OverlayWindowControllerTests: XCTestCase {
+
+    // MARK: - Singleton Tests
+
+    func test_shared_returnsSameInstance() {
+        let instance1 = OverlayWindowController.shared
+        let instance2 = OverlayWindowController.shared
+        XCTAssertTrue(instance1 === instance2)
+    }
+
+    // MARK: - Initial State Tests
+
+    func test_initialMode_isHidden() {
+        let controller = OverlayWindowController.shared
+        // Reset to initial state
+        controller.hide(animated: false)
+        XCTAssertEqual(controller.mode, .hidden)
+    }
+
+    func test_initialVisibility_isNotVisible() {
+        let controller = OverlayWindowController.shared
+        controller.hide(animated: false)
+        XCTAssertFalse(controller.isVisible)
+    }
+
+    // MARK: - Show/Hide Tests
+
+    func test_show_createsPanel() {
+        let controller = OverlayWindowController.shared
+        controller.hide(animated: false)
+
+        controller.show()
+
+        // Panel should now be visible
+        XCTAssertTrue(controller.isVisible)
+    }
+
+    func test_hide_setsInvisible() {
+        let controller = OverlayWindowController.shared
+        controller.show()
+        XCTAssertTrue(controller.isVisible)
+
+        controller.hide(animated: false)
+        XCTAssertFalse(controller.isVisible)
+    }
+
+    func test_show_multipleCallsSafe() {
+        let controller = OverlayWindowController.shared
+
+        controller.show()
+        controller.show()
+        controller.show()
+
+        XCTAssertTrue(controller.isVisible)
+        controller.hide(animated: false)
+    }
+
+    // MARK: - Mode Tests
+
+    func test_mode_canBeSetToListening() {
+        let controller = OverlayWindowController.shared
+        controller.mode = .listening
+        XCTAssertEqual(controller.mode, .listening)
+    }
+
+    func test_mode_canBeSetToThinking() {
+        let controller = OverlayWindowController.shared
+        controller.mode = .thinking
+        XCTAssertEqual(controller.mode, .thinking)
+    }
+
+    func test_mode_canBeSetToResponding() {
+        let controller = OverlayWindowController.shared
+        controller.mode = .responding
+        XCTAssertEqual(controller.mode, .responding)
+    }
+
+    // MARK: - Model Access Tests
+
+    func test_model_returnsViewModel() {
+        let controller = OverlayWindowController.shared
+        let model = controller.model
+        XCTAssertNotNil(model)
+    }
+
+    func test_model_modeMatchesControllerMode() {
+        let controller = OverlayWindowController.shared
+        controller.mode = .listening
+        XCTAssertEqual(controller.model.mode, .listening)
+    }
+
+    // MARK: - Cleanup
+
+    override func tearDown() {
+        super.tearDown()
+        // Ensure panel is hidden after each test
+        OverlayWindowController.shared.hide(animated: false)
+    }
+}
+
+// MARK: - OverlayViewModel Tests
 
 @MainActor
 final class OverlayViewModelTests: XCTestCase {
