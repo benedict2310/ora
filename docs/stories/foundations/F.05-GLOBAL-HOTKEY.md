@@ -765,3 +765,79 @@ The app should gracefully handle missing permission:
 - [x] All acceptance criteria verified (14/14)
 - [x] Tests passing (167 total, 0 failures)
 - [x] Working tree clean
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Claude Code Review Agent
+**Date:** 2025-12-28
+**Commit reviewed:** 1018130
+
+### Summary
+
+- Files reviewed: 6
+- Tests run: Yes (167 tests, all passing)
+- Build status: Pass
+
+### Review Checklist
+
+#### Correctness & Logic
+- [x] Implementation matches acceptance criteria (14/14 ACs verified)
+- [x] Edge cases handled (repeat key events, modifier-before-key release)
+- [x] Error handling appropriate (graceful failure without accessibility permission)
+- [x] No obvious bugs or logic errors
+
+#### Architecture & Design
+- [x] Changes follow existing patterns in the codebase (singleton, MARK organization, explicit self)
+- [x] No unnecessary coupling introduced
+- [x] Appropriate separation of concerns (Configuration, Manager, View)
+- [x] Reuses existing patterns (notification-based communication)
+
+#### Integration & Regressions
+- [x] Changes integrate correctly with existing components (AppDelegate, SetupCoordinator)
+- [x] No breaking changes to public APIs
+- [x] No regressions in related functionality
+
+#### Test Coverage
+- [x] New code has corresponding tests (39 new tests)
+- [x] Tests cover happy path and error cases
+- [x] Tests are deterministic (no flaky tests observed)
+
+#### Security & Performance
+- [x] No hardcoded secrets or credentials
+- [x] Input validation present (accessibility check before start)
+- [x] No obvious performance regressions
+- [x] Memory management correct (weak self in closures, proper cleanup in stop())
+
+#### Code Quality
+- [x] Code is readable and self-documenting
+- [x] Naming is clear and consistent
+- [x] No dead code or commented-out blocks
+- [x] Good use of MARK organization
+
+### Issues Found
+
+#### P0 - Critical (Must fix before merge)
+(None)
+
+#### P1 - Major (Should fix before merge)
+(None)
+
+#### P2 - Minor (Can fix in follow-up)
+(None)
+
+### Notes
+
+1. **F-key Fix:** The fix for Carbon F-key codes being non-contiguous was necessary and correct. The original range `kVK_F1...kVK_F12` caused a runtime crash.
+
+2. **Event Dispatch:** The use of `Task { @MainActor in }` in event handlers creates a new task per event. This is acceptable for PTT (low event frequency) but worth monitoring if used for higher-frequency events in the future.
+
+3. **Conflict Detection:** The basic conflict detection covers common system shortcuts. Future enhancement could include reading from system preferences, but this is out of scope for v1.
+
+### Approval Status
+
+- [x] All P0 issues resolved (none found)
+- [x] All P1 issues resolved (none found)
+- [x] Coverage target met (39 new tests, all paths covered)
+- [x] Ready for merge
