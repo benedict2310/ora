@@ -46,7 +46,7 @@ Build the app shell and infrastructure before any AI features.
 | 5 | F.05 | [Global Hotkey](foundations/F.05-GLOBAL-HOTKEY.md) | 1d | ✅ |
 | 6 | F.07 | [Overlay Window](foundations/F.07-OVERLAY-WINDOW.md) | 2d | ✅ |
 | 7 | F.04 | [First-Run Setup](foundations/F.04-FIRST-RUN-SETUP.md) | 2-3d | ✅ |
-| 8 | F.06 | [Preferences Window](foundations/F.06-PREFERENCES-WINDOW.md) | 2d | |
+| 8 | F.06 | [Preferences Window](foundations/F.06-PREFERENCES-WINDOW.md) | 2d | ✅ |
 | 9 | F.00 | [Design Assets](foundations/F.00-DESIGN-ASSETS.md) | 1d | |
 
 **Milestone:** App launches, shows menu bar, hotkey works, overlay appears.

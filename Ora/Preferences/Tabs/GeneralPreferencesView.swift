@@ -1,0 +1,133 @@
+//
+//  GeneralPreferencesView.swift
+//  Ora
+//
+//  General settings tab
+//
+
+import SwiftUI
+import EventKit
+
+struct GeneralPreferencesView: View {
+
+    // MARK: - State
+
+    @State private var hotkeyConfig = HotkeyConfiguration.load()
+    @State private var voiceOutputEnabled = true
+    @State private var selectedCalendarID: String = ""
+    @State private var calendars: [EKCalendar] = []
+
+    // MARK: - Body
+
+    var body: some View {
+        Form {
+            // Hotkey Section
+            Section {
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text("Activation Hotkey")
+                            .font(.headline)
+                        Text("Press and hold to speak, release to send")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    HotkeyRecorderView(configuration: $hotkeyConfig)
+                }
+            }
+
+            Divider()
+                .padding(.vertical)
+
+            // Voice Output Section
+            Section {
+                Toggle(isOn: $voiceOutputEnabled) {
+                    VStack(alignment: .leading) {
+                        Text("Voice Output")
+                            .font(.headline)
+                        Text("Enable text-to-speech responses")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .toggleStyle(.switch)
+                .onChange(of: voiceOutputEnabled) { _, newValue in
+                    UserDefaults.standard.set(newValue, forKey: "com.ora.voiceOutputEnabled")
+                }
+            }
+
+            Divider()
+                .padding(.vertical)
+
+            // Default Calendar Section
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Default Calendar")
+                        .font(.headline)
+                    Text("Calendar used for new events")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    if calendars.isEmpty {
+                        HStack {
+                            Image(systemName: "exclamationmark.triangle")
+                                .foregroundColor(.orange)
+                            Text("No calendars available. Grant calendar access in Permissions.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    } else {
+                        Picker("", selection: $selectedCalendarID) {
+                            Text("Default").tag("")
+                            ForEach(calendars, id: \.calendarIdentifier) { calendar in
+                                HStack {
+                                    Circle()
+                                        .fill(Color(cgColor: calendar.cgColor ?? CGColor.black))
+                                        .frame(width: 10, height: 10)
+                                    Text(calendar.title)
+                                }
+                                .tag(calendar.calendarIdentifier)
+                            }
+                        }
+                        .labelsHidden()
+                        .onChange(of: selectedCalendarID) { _, newValue in
+                            UserDefaults.standard.set(newValue, forKey: "com.ora.defaultCalendarID")
+                        }
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear {
+            self.loadSettings()
+            self.loadCalendars()
+        }
+    }
+
+    // MARK: - Private Methods
+
+    private func loadSettings() {
+        // Voice output defaults to true if not set
+        if UserDefaults.standard.object(forKey: "com.ora.voiceOutputEnabled") == nil {
+            voiceOutputEnabled = true
+        } else {
+            voiceOutputEnabled = UserDefaults.standard.bool(forKey: "com.ora.voiceOutputEnabled")
+        }
+
+        selectedCalendarID = UserDefaults.standard.string(forKey: "com.ora.defaultCalendarID") ?? ""
+    }
+
+    private func loadCalendars() {
+        let store = EKEventStore()
+
+        // Check authorization first
+        switch EKEventStore.authorizationStatus(for: .event) {
+        case .fullAccess, .writeOnly:
+            calendars = store.calendars(for: .event).filter { $0.allowsContentModifications }
+        default:
+            calendars = []
+        }
+    }
+}
