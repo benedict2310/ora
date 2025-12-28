@@ -238,11 +238,13 @@ final class SetupCoordinator: NSObject, ObservableObject {
     }
 
     private func ensurePrimaryLLMSelected() async {
+        // Wait for ModelManager to finish loading metadata before modifying state
+        await ModelManager.shared.ensureInitialized()
+        
         // Check if there's already a persisted primary LLM
         if let persistedLLM = await self.getPersistedPrimaryLLM() {
             self.state.primaryLLM = persistedLLM
             // Sync to ModelManager to ensure downloads use the correct LLM
-            // (ModelManager.loadMetadata() runs async and may not have finished yet)
             await ModelManager.shared.setPrimaryLLM(persistedLLM)
             return
         }
