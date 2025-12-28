@@ -16,32 +16,38 @@ struct PermissionsPreferencesView: View {
     // MARK: - Body
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                Text("Permissions")
-                    .font(.headline)
-
-                Text("Ora needs these permissions to function properly.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                VStack(spacing: 12) {
-                    ForEach(PermissionType.allCases, id: \.self) { permission in
-                        PermissionRowView(
-                            type: permission,
-                            status: permissionsState[permission]
-                        )
-                    }
+        Form {
+            // Required permissions
+            Section {
+                ForEach(PermissionType.allCases.filter { $0.isRequired }, id: \.self) { permission in
+                    PermissionRowView(
+                        type: permission,
+                        status: permissionsState[permission]
+                    )
                 }
+            } header: {
+                Text("Required")
+            }
 
+            // Optional permissions
+            Section {
+                ForEach(PermissionType.allCases.filter { !$0.isRequired }, id: \.self) { permission in
+                    PermissionRowView(
+                        type: permission,
+                        status: permissionsState[permission]
+                    )
+                }
+            } header: {
+                Text("Optional")
+            }
+
+            Section {
                 Button("Refresh Status") {
                     self.refreshPermissions()
                 }
-                .buttonStyle(.glass)
             }
-            .padding()
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .formStyle(.grouped)
         .onAppear {
             self.refreshPermissions()
         }
@@ -72,20 +78,8 @@ struct PermissionRowView: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(type.displayName)
-                        .fontWeight(.medium)
-
-                    if type.isRequired {
-                        Text("Required")
-                            .font(.caption2)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.orange.opacity(0.2))
-                            .foregroundColor(.orange)
-                            .cornerRadius(4)
-                    }
-                }
+                Text(type.displayName)
+                    .fontWeight(.medium)
 
                 Text(type.explanation)
                     .font(.caption)
@@ -104,14 +98,10 @@ struct PermissionRowView: View {
                             await PermissionsManager.shared.openSettings(for: type)
                         }
                     }
-                    .buttonStyle(.glassProminent)
                     .controlSize(.small)
                 }
             }
         }
-        .padding()
-        .background(Color(nsColor: .controlBackgroundColor))
-        .cornerRadius(8)
     }
 
     @ViewBuilder

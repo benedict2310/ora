@@ -18,31 +18,54 @@ struct ModelsPreferencesView: View {
     // MARK: - Body
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                // Header
-                Text("AI Models")
-                    .font(.headline)
-
-                Text("Ora uses three AI models for speech recognition, language understanding, and voice synthesis.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                // Models List
-                VStack(spacing: 12) {
-                    ForEach(ModelIdentifier.allCases, id: \.self) { model in
-                        ModelRowView(
-                            model: model,
-                            status: modelsState.statuses[model] ?? .notDownloaded,
-                            isPrimary: model == modelsState.primaryLLM && model.category == .llm,
-                            onDownload: { await self.downloadModel(model) },
-                            onDelete: { self.confirmDelete(model) },
-                            onSetPrimary: { await self.setPrimary(model) }
-                        )
-                    }
+        Form {
+            // Models by category
+            Section {
+                ForEach(ModelIdentifier.allCases.filter { $0.category == .asr }, id: \.self) { model in
+                    ModelRowView(
+                        model: model,
+                        status: modelsState.statuses[model] ?? .notDownloaded,
+                        isPrimary: false,
+                        onDownload: { await self.downloadModel(model) },
+                        onDelete: { self.confirmDelete(model) },
+                        onSetPrimary: { }
+                    )
                 }
+            } header: {
+                Text("Speech Recognition")
+            }
 
-                // Storage info
+            Section {
+                ForEach(ModelIdentifier.allCases.filter { $0.category == .llm }, id: \.self) { model in
+                    ModelRowView(
+                        model: model,
+                        status: modelsState.statuses[model] ?? .notDownloaded,
+                        isPrimary: model == modelsState.primaryLLM,
+                        onDownload: { await self.downloadModel(model) },
+                        onDelete: { self.confirmDelete(model) },
+                        onSetPrimary: { await self.setPrimary(model) }
+                    )
+                }
+            } header: {
+                Text("Language Model")
+            }
+
+            Section {
+                ForEach(ModelIdentifier.allCases.filter { $0.category == .tts }, id: \.self) { model in
+                    ModelRowView(
+                        model: model,
+                        status: modelsState.statuses[model] ?? .notDownloaded,
+                        isPrimary: false,
+                        onDownload: { await self.downloadModel(model) },
+                        onDelete: { self.confirmDelete(model) },
+                        onSetPrimary: { }
+                    )
+                }
+            } header: {
+                Text("Text to Speech")
+            }
+
+            Section {
                 HStack {
                     Image(systemName: "internaldrive")
                         .foregroundColor(.secondary)
@@ -51,9 +74,8 @@ struct ModelsPreferencesView: View {
                         .foregroundColor(.secondary)
                 }
             }
-            .padding()
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .formStyle(.grouped)
         .onAppear {
             self.refreshModels()
         }
@@ -135,10 +157,6 @@ struct ModelRowView: View {
                     }
                 }
 
-                Text(model.category.rawValue.uppercased())
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-
                 Text(self.formatBytes(model.estimatedSizeBytes))
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -149,9 +167,6 @@ struct ModelRowView: View {
             // Status and actions
             self.statusView
         }
-        .padding()
-        .background(Color(nsColor: .controlBackgroundColor))
-        .cornerRadius(8)
     }
 
     @ViewBuilder
@@ -166,7 +181,6 @@ struct ModelRowView: View {
                     Button("Set Primary") {
                         Task { await onSetPrimary() }
                     }
-                    .buttonStyle(.glass)
                     .controlSize(.small)
                 }
 
@@ -176,7 +190,6 @@ struct ModelRowView: View {
                     } label: {
                         Image(systemName: "trash")
                     }
-                    .buttonStyle(.glass)
                     .controlSize(.small)
                 }
             }
@@ -194,7 +207,6 @@ struct ModelRowView: View {
             Button("Download") {
                 Task { await onDownload() }
             }
-            .buttonStyle(.glassProminent)
             .controlSize(.small)
 
         case .verifying:
@@ -212,7 +224,6 @@ struct ModelRowView: View {
                 Button("Retry") {
                     Task { await onDownload() }
                 }
-                .buttonStyle(.glassProminent)
                 .controlSize(.small)
             }
             .help(error)
@@ -226,7 +237,6 @@ struct ModelRowView: View {
                 Button("Re-download") {
                     Task { await onDownload() }
                 }
-                .buttonStyle(.glassProminent)
                 .controlSize(.small)
             }
         }

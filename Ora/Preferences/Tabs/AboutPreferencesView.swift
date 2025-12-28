@@ -17,6 +17,9 @@ struct AboutPreferencesView: View {
 
     var body: some View {
         VStack(spacing: 24) {
+            Spacer()
+                .frame(height: 8)
+
             // App Icon and Name
             VStack(spacing: 12) {
                 Image(systemName: "waveform.circle.fill")
