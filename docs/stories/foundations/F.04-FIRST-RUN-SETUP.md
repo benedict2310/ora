@@ -1236,7 +1236,20 @@ Ora/
 **Commit reviewed:** 092cc26
 
 #### New Issues Found
-- [ ] `Ora/Setup/SetupCoordinator.swift:245` - `setPrimaryLLM()` can overwrite the persisted metadata file before `ModelManager` loads metadata, erasing stored model metadata.
+- [x] `Ora/Setup/SetupCoordinator.swift:245` - `setPrimaryLLM()` can overwrite the persisted metadata file before `ModelManager` loads metadata, erasing stored model metadata. **Fixed:** Added `ensureInitialized()` method and call it before `setPrimaryLLM()`.
 
 #### Status
 - [ ] New P1 issues need fixing → Continue to iteration 8
+
+### Review Iteration 8
+**Date:** 2025-12-28
+**Commit reviewed:** b0396e9
+
+#### Resolved
+- [x] `Ora/Setup/SetupCoordinator.swift:245` - Added `ModelManager.ensureInitialized()` that waits for metadata to load, called before `setPrimaryLLM()`.
+
+#### Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Coverage target met (all tests passing)
+- [x] Ready for merge
