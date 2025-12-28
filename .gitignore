@@ -95,3 +95,4 @@ test-results/
 # Agent metadata
 .claude/
 .codex/
+docs/review-logs

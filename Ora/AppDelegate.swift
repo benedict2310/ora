@@ -88,13 +88,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func onHotkeyPress() {
         self.logger.debug("Hotkey pressed - start PTT")
         self.statusBarController?.setState(.listening)
-        // Will trigger overlay and audio capture in future stories
+
+        // Show overlay and set to listening mode
+        OverlayWindowController.shared.mode = .listening
+        OverlayWindowController.shared.show()
     }
 
     private func onHotkeyRelease() {
         self.logger.debug("Hotkey released - end PTT")
         self.statusBarController?.setState(.thinking)
-        // Will finalize transcription and send to LLM in future stories
+
+        // Update overlay mode to thinking
+        OverlayWindowController.shared.mode = .thinking
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -102,6 +107,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Stop hotkey manager
         HotkeyManager.shared.stop()
+
+        // Hide overlay
+        OverlayWindowController.shared.hide(animated: false)
 
         self.statusBarController?.shutdown()
 
