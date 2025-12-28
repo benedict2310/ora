@@ -11,30 +11,34 @@ struct PreferencesWindow: View {
     @EnvironmentObject var coordinator: PreferencesCoordinator
 
     var body: some View {
-        TabView(selection: $coordinator.selectedTab) {
-            GeneralPreferencesView()
-                .tabItem {
-                    Label(PreferencesTab.general.title, systemImage: PreferencesTab.general.icon)
+        VStack(spacing: 0) {
+            // Tab picker
+            Picker("", selection: $coordinator.selectedTab) {
+                ForEach(PreferencesTab.allCases, id: \.self) { tab in
+                    Label(tab.title, systemImage: tab.icon)
+                        .tag(tab)
                 }
-                .tag(PreferencesTab.general)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal, 80)
+            .padding(.top, 12)
+            .padding(.bottom, 16)
 
-            ModelsPreferencesView()
-                .tabItem {
-                    Label(PreferencesTab.models.title, systemImage: PreferencesTab.models.icon)
+            // Content area
+            Group {
+                switch coordinator.selectedTab {
+                case .general:
+                    GeneralPreferencesView()
+                case .models:
+                    ModelsPreferencesView()
+                case .permissions:
+                    PermissionsPreferencesView()
+                case .about:
+                    AboutPreferencesView()
                 }
-                .tag(PreferencesTab.models)
-
-            PermissionsPreferencesView()
-                .tabItem {
-                    Label(PreferencesTab.permissions.title, systemImage: PreferencesTab.permissions.icon)
-                }
-                .tag(PreferencesTab.permissions)
-
-            AboutPreferencesView()
-                .tabItem {
-                    Label(PreferencesTab.about.title, systemImage: PreferencesTab.about.icon)
-                }
-                .tag(PreferencesTab.about)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(minWidth: 550, minHeight: 450)
     }
