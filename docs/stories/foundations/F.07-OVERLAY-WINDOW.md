@@ -816,6 +816,8 @@ final class OverlayViewModelTests: XCTestCase {
 
 **Date:** 2025-12-28
 **Branch:** `fix/overlay-display-issue`
+**PR:** https://github.com/benedict2310/ora/pull/7
+**Merged:** 118c245
 
 ### Root Cause Analysis
 
@@ -903,4 +905,4 @@ Added `OverlayWindowControllerTests` class with 11 tests:
 - [x] Merged to main: 06d02ad
 - [x] Post-merge verification passed
 - [x] Date completed: 2025-12-28
-- [x] Bug fix: Overlay not appearing (pending merge)
+- [x] Bug fix: Overlay not appearing - PR #7, merged 118c245
