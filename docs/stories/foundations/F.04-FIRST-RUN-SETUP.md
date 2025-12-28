@@ -1200,7 +1200,8 @@ Ora/
 **Commit reviewed:** 4fa20c4
 
 #### New Issues Found
-- [ ] `Ora/Setup/Steps/DownloadStepView.swift:60` - Download UI uses `state.recommendedModel` instead of the persisted primary LLM, so the LLM row can show the wrong model/progress.
+- [x] `Ora/Setup/Steps/DownloadStepView.swift:60` - Download UI uses `state.recommendedModel` instead of the persisted primary LLM, so the LLM row can show the wrong model/progress. **Fixed:** Added `primaryLLM` field to `SetupState` that reflects the actual LLM being downloaded. `DownloadStepView` now uses `state.primaryLLM` for display and progress tracking.
 
 #### Status
-- [ ] New P1 issues need fixing → Continue to iteration 5
+- [x] All P1 issues resolved
+- [x] Ready for merge

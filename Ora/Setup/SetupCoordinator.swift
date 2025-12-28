@@ -186,6 +186,7 @@ final class SetupCoordinator: NSObject, ObservableObject {
 
         let recommendedLLM: ModelIdentifier = self.state.systemRAMGB >= 16 ? .qwen7B : .qwen3B
         self.state.recommendedModel = recommendedLLM.displayName
+        self.state.primaryLLM = recommendedLLM  // Initial default, may be updated by ensurePrimaryLLMSelected
     }
 
     private func refreshPermissionsState() async {
@@ -237,19 +238,25 @@ final class SetupCoordinator: NSObject, ObservableObject {
     }
 
     private func ensurePrimaryLLMSelected() async {
-        let hasPersistedPrimary = await self.hasPersistedPrimaryLLM()
-        guard !hasPersistedPrimary else { return }
+        // Check if there's already a persisted primary LLM
+        if let persistedLLM = await self.getPersistedPrimaryLLM() {
+            self.state.primaryLLM = persistedLLM
+            return
+        }
+
+        // No persisted primary - use the recommended model
         let recommendedLLM: ModelIdentifier = self.state.systemRAMGB >= 16 ? .qwen7B : .qwen3B
+        self.state.primaryLLM = recommendedLLM
         await ModelManager.shared.setPrimaryLLM(recommendedLLM)
     }
 
-    private func hasPersistedPrimaryLLM() async -> Bool {
+    private func getPersistedPrimaryLLM() async -> ModelIdentifier? {
         await Task.detached {
             let url = ModelPaths.metadataFile
-            guard let data = try? Data(contentsOf: url) else { return false }
+            guard let data = try? Data(contentsOf: url) else { return nil }
             let decoder = JSONDecoder()
-            guard let metadata = try? decoder.decode([PersistedModelMetadata].self, from: data) else { return false }
-            return metadata.contains { $0.isPrimary && $0.identifier.category == .llm }
+            guard let metadata = try? decoder.decode([PersistedModelMetadata].self, from: data) else { return nil }
+            return metadata.first { $0.isPrimary && $0.identifier.category == .llm }?.identifier
         }.value
     }
 

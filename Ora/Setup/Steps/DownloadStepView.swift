@@ -57,9 +57,9 @@ struct DownloadStepView: View {
                         progress: self.modelProgress(for: .parakeetTDT)
                     )
                     ModelDownloadRow(
-                        name: self.state.recommendedModel,
-                        size: self.state.recommendedModel.contains("7B") ? "~5 GB" : "~2 GB",
-                        progress: self.modelProgress(for: self.state.recommendedModel.contains("7B") ? .qwen7B : .qwen3B)
+                        name: self.state.primaryLLM.displayName,
+                        size: self.state.primaryLLM == .qwen7B ? "~5 GB" : "~2 GB",
+                        progress: self.modelProgress(for: self.state.primaryLLM)
                     )
                     ModelDownloadRow(
                         name: "Kokoro TTS",
