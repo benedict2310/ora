@@ -1253,4 +1253,4 @@ This provides better control over the UI appearance compared to the native `TabV
 
 6. **Permissions tab organization** - Separated permissions into Required and Optional sections
 
-7. **About tab spacing** - Added top spacing for consistent layout with other tabs
+7. **About tab redesign** - Converted to use `Form` with `.formStyle(.grouped)` for consistency, centered action buttons, updated GitHub URL
