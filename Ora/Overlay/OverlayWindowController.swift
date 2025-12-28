@@ -53,7 +53,10 @@ final class OverlayWindowController {
             self.createPanel()
         }
 
-        guard let panel = self.panel else { return }
+        guard let panel = self.panel else {
+            self.logger.error("Failed to create panel")
+            return
+        }
 
         // Cancel any pending auto-dismiss
         self.autoDismissTask?.cancel()
@@ -61,7 +64,7 @@ final class OverlayWindowController {
 
         // Position and show
         self.positionPanel()
-        panel.orderFront(nil)
+        panel.makeKeyAndOrderFront(nil)
 
         // Animate in
         panel.alphaValue = 0
@@ -84,9 +87,11 @@ final class OverlayWindowController {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.15
                 panel.animator().alphaValue = 0
-            } completionHandler: { [weak self] in
-                panel.orderOut(nil)
-                self?.viewModel.reset()
+            } completionHandler: {
+                Task { @MainActor [weak self] in
+                    panel.orderOut(nil)
+                    self?.viewModel.reset()
+                }
             }
         } else {
             panel.orderOut(nil)
@@ -119,11 +124,12 @@ final class OverlayWindowController {
             .environmentObject(self.viewModel)
 
         let hostingView = NSHostingView(rootView: contentView)
+        hostingView.setFrameSize(NSSize(width: 400, height: 300))
 
         // Create floating panel
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
-            styleMask: [.nonactivatingPanel, .fullSizeContentView],
+            styleMask: [.nonactivatingPanel, .borderless],
             backing: .buffered,
             defer: false
         )
@@ -135,8 +141,6 @@ final class OverlayWindowController {
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isMovableByWindowBackground = true
-        panel.titlebarAppearsTransparent = true
-        panel.titleVisibility = .hidden
 
         // Enable key events for keyboard navigation
         panel.becomesKeyOnlyIfNeeded = true
