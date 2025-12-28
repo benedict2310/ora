@@ -94,22 +94,28 @@ struct HotkeyRecorderView: View {
 
                 // Escape cancels recording
                 if keyCode == UInt16(kVK_Escape) {
-                    self.stopRecording()
+                    // Dispatch to main actor since HotkeyManager is MainActor-isolated
+                    Task { @MainActor in
+                        self.stopRecording()
+                    }
                     return nil
                 }
 
                 // Create new configuration
                 let newConfig = HotkeyConfiguration(keyCode: keyCode, modifiers: carbonModifiers)
 
-                // Check for potential conflicts using HotkeyManager
-                if HotkeyManager.shared.checkForConflicts(newConfig) {
-                    self.showConflictWarning = true
-                }
+                // Dispatch to main actor since HotkeyManager is MainActor-isolated
+                Task { @MainActor in
+                    // Check for potential conflicts using HotkeyManager
+                    if HotkeyManager.shared.checkForConflicts(newConfig) {
+                        self.showConflictWarning = true
+                    }
 
-                // Apply the new configuration via HotkeyManager
-                self.configuration = newConfig
-                HotkeyManager.shared.setHotkey(newConfig)
-                self.stopRecording()
+                    // Apply the new configuration via HotkeyManager
+                    self.configuration = newConfig
+                    HotkeyManager.shared.setHotkey(newConfig)
+                    self.stopRecording()
+                }
 
                 return nil // Consume the event
             }
