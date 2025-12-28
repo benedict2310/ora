@@ -1244,3 +1244,13 @@ The preferences window now uses a manual tab switching approach:
 - Explicit padding control for proper spacing
 
 This provides better control over the UI appearance compared to the native `TabView` which had styling issues on macOS Tahoe.
+
+### Additional Refinements (a2963a8)
+
+4. **Consistent tab styling** - Updated Models and Permissions tabs to use `Form` with `.formStyle(.grouped)` matching the General tab
+
+5. **Models tab organization** - Grouped models by category (Speech Recognition, Language Model, Text to Speech) with section headers
+
+6. **Permissions tab organization** - Separated permissions into Required and Optional sections
+
+7. **About tab spacing** - Added top spacing for consistent layout with other tabs
