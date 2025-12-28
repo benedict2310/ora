@@ -1185,7 +1185,7 @@ Ora/
 
 ### Review Iteration 3
 **Date:** 2025-12-28
-**Commit reviewed:** <pending>
+**Commit reviewed:** 66592d4
 
 #### Resolved
 - [x] `Ora/Setup/SetupCoordinator.swift:190` - Setup now only sets the primary LLM when no persisted primary exists.
