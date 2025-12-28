@@ -38,9 +38,6 @@ struct GeneralPreferencesView: View {
                 }
             }
 
-            Divider()
-                .padding(.vertical)
-
             // Voice Output Section
             Section {
                 Toggle(isOn: $voiceOutputEnabled) {
@@ -57,9 +54,6 @@ struct GeneralPreferencesView: View {
                     UserDefaults.standard.set(newValue, forKey: "com.ora.voiceOutputEnabled")
                 }
             }
-
-            Divider()
-                .padding(.vertical)
 
             // Default Calendar Section
             Section {
