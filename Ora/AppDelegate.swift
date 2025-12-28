@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var statusBarController: StatusBarController?
     private let logger = Logger(subsystem: "com.ora.app", category: "AppDelegate")
+    private var setupObserver: NSObjectProtocol?
 
     // MARK: - NSApplicationDelegate
 
@@ -27,12 +28,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Set activation policy (accessory = menu bar only)
         NSApp.setActivationPolicy(.accessory)
 
+        // Listen for setup completion
+        self.setupObserver = NotificationCenter.default.addObserver(
+            forName: .setupDidComplete,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.onSetupComplete()
+        }
+
+        // Check if setup is needed
+        SetupCoordinator.shared.checkAndShowSetupIfNeeded()
+
         self.logger.info("Ora ready")
+    }
+
+    private func onSetupComplete() {
+        self.logger.info("Setup complete, initializing main functionality")
+        // Initialize hotkey, warmup models, etc.
+        // This will be expanded in future stories
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         self.logger.info("Ora terminating...")
         self.statusBarController?.shutdown()
+
+        // Clean up observer
+        if let observer = self.setupObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
