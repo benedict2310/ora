@@ -1151,7 +1151,7 @@ Ora/
 - [x] `Ora/Setup/SetupCoordinator.swift:176` - `state.recommendedModel` is derived from RAM, but `ModelManager.primaryLLM` is never updated to match; on <16GB systems the UI shows Qwen 3B while downloads still pull the 7B model, and the per-model progress never updates for the displayed model. **Fixed:** Now calls `ModelManager.shared.setPrimaryLLM()` in `loadSystemInfo()` to sync the recommended model.
 - [x] `Ora/Setup/SetupCoordinator.swift:190` - `loadSystemInfo()` always calls `ModelManager.shared.setPrimaryLLM(...)`, which overrides any user-selected primary LLM on every launch and can clobber persisted metadata before it loads; limit this to first-run setup or only when no primary selection exists. **Fixed:** Setup now checks the persisted metadata file and only sets the primary LLM when none is persisted (before downloads).
 - [x] `Ora/Setup/Steps/DownloadStepView.swift:60` - The LLM download row is driven by `state.recommendedModel`, which can diverge from the persisted primary LLM; if a user selects a different primary model, the download UI shows the wrong model and its progress stays at 0. **Fixed:** Download UI now uses `state.primaryLLM` for display/progress.
-- [ ] `Ora/Setup/SetupCoordinator.swift:240` - When a persisted primary LLM exists, `ensurePrimaryLLMSelected()` updates only `state.primaryLLM` and returns without syncing `ModelManager`, so downloads can still select the default LLM if metadata hasn’t loaded yet.
+- [x] `Ora/Setup/SetupCoordinator.swift:240` - When a persisted primary LLM exists, `ensurePrimaryLLMSelected()` updates only `state.primaryLLM` and returns without syncing `ModelManager`, so downloads can still select the default LLM if metadata hasn’t loaded yet. **Fixed:** Now syncs to ModelManager before downloads start.
 
 #### P2 - Minor (Can fix in follow-up)
 - [x] `Ora/Setup/Steps/WelcomeStepView.swift:47` - Activation hotkey text is hardcoded; it can drift from the configured hotkey (default is ⌥ Space, and user-configured hotkeys will not be reflected). **Fixed:** Now uses `HotkeyConfiguration.load().displayString`.
@@ -1212,7 +1212,20 @@ Ora/
 **Commit reviewed:** e28d8ac
 
 #### New Issues Found
-- [ ] `Ora/Setup/SetupCoordinator.swift:240` - Persisted primary LLM isn’t synced into `ModelManager`, so downloads can still select the default LLM if metadata hasn’t loaded yet.
+- [x] `Ora/Setup/SetupCoordinator.swift:240` - Persisted primary LLM isn’t synced into `ModelManager`, so downloads can still select the default LLM if metadata hasn’t loaded yet. **Fixed:** Now calls `ModelManager.shared.setPrimaryLLM()` for persisted LLM too.
 
 #### Status
-- [ ] New P1 issues need fixing → Continue to iteration 6
+- [x] All P1 issues resolved
+
+### Review Iteration 6
+**Date:** 2025-12-28
+**Commit reviewed:** 092cc26
+
+#### Resolved
+- [x] `Ora/Setup/SetupCoordinator.swift:240` - `ensurePrimaryLLMSelected()` now syncs persisted LLM to ModelManager before downloads start.
+
+#### Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Coverage target met (all tests passing)
+- [x] Ready for merge
