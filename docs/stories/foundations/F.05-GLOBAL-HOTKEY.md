@@ -1,7 +1,7 @@
 # F.05 - Global Hotkey
 
 **Epic:** Foundations
-**Status:** Not Started
+**Status:** Implementation Complete - Ready for Review
 **Priority:** P0 (Critical Path)
 **Estimated Effort:** 1-2 days
 **Dependencies:** F.01 (App Shell), F.02 (Permissions)
@@ -597,29 +597,29 @@ private func onHotkeyRelease() {
 
 ### Core Functionality
 
-- [ ] **AC-1:** `HotkeyManager.shared` provides singleton access
-- [ ] **AC-2:** `start()` begins listening for hotkey events
-- [ ] **AC-3:** `stop()` stops listening
-- [ ] **AC-4:** Default hotkey is `⌥Space`
+- [x] **AC-1:** `HotkeyManager.shared` provides singleton access - ✅ Verified in `HotkeyManager.swift:28`
+- [x] **AC-2:** `start()` begins listening for hotkey events - ✅ Verified in `HotkeyManager.swift:62-86`
+- [x] **AC-3:** `stop()` stops listening - ✅ Verified in `HotkeyManager.swift:89-103`
+- [x] **AC-4:** Default hotkey is `⌥Space` - ✅ Verified by test `test_defaultHotkey_isOptionSpace`
 
 ### Event Handling
 
-- [ ] **AC-5:** `.hotkeyDidPress` posted on key down
-- [ ] **AC-6:** `.hotkeyDidRelease` posted on key up
-- [ ] **AC-7:** Repeated key down events are ignored (no spam)
-- [ ] **AC-8:** Release detected even if modifier released first
+- [x] **AC-5:** `.hotkeyDidPress` posted on key down - ✅ Verified in `HotkeyManager.swift:175`
+- [x] **AC-6:** `.hotkeyDidRelease` posted on key up - ✅ Verified in `HotkeyManager.swift:183`
+- [x] **AC-7:** Repeated key down events are ignored (no spam) - ✅ Verified in `HotkeyManager.swift:167` (`isARepeat` check)
+- [x] **AC-8:** Release detected even if modifier released first - ✅ Verified in `HotkeyManager.swift:186-197`
 
 ### Configuration
 
-- [ ] **AC-9:** Custom hotkey can be set via `setHotkey(_:)`
-- [ ] **AC-10:** Configuration persisted to UserDefaults
-- [ ] **AC-11:** `resetToDefault()` restores `⌥Space`
+- [x] **AC-9:** Custom hotkey can be set via `setHotkey(_:)` - ✅ Verified by test `test_setHotkey_updatesCurrentHotkey`
+- [x] **AC-10:** Configuration persisted to UserDefaults - ✅ Verified by test `test_configuration_persistence`
+- [x] **AC-11:** `resetToDefault()` restores `⌥Space` - ✅ Verified by test `test_resetToDefault_restoresDefaultHotkey`
 
 ### Safety
 
-- [ ] **AC-12:** Cannot start without Accessibility permission
-- [ ] **AC-13:** Basic conflict detection for system shortcuts
-- [ ] **AC-14:** Display string shows correct symbols (⌥, ⌘, ⇧, ⌃)
+- [x] **AC-12:** Cannot start without Accessibility permission - ✅ Verified in `HotkeyManager.swift:66-70`
+- [x] **AC-13:** Basic conflict detection for system shortcuts - ✅ Verified by multiple `test_conflictDetection_*` tests
+- [x] **AC-14:** Display string shows correct symbols (⌥, ⌘, ⇧, ⌃) - ✅ Verified by test `test_displayString_allModifiers`
 
 ---
 
@@ -697,14 +697,14 @@ Ora/
 
 ## 8. Implementation Checklist
 
-- [ ] Create `HotkeyConfiguration.swift`
-- [ ] Create `HotkeyManager.swift`
-- [ ] Create `HotkeyRecorderView.swift`
-- [ ] Integrate with AppDelegate
-- [ ] Test PTT flow (key down → key up)
-- [ ] Test hotkey customization
-- [ ] Test persistence
-- [ ] Verify accessibility permission check
+- [x] Create `HotkeyConfiguration.swift`
+- [x] Create `HotkeyManager.swift`
+- [x] Create `HotkeyRecorderView.swift`
+- [x] Integrate with AppDelegate
+- [x] Test PTT flow (key down → key up)
+- [x] Test hotkey customization
+- [x] Test persistence
+- [x] Verify accessibility permission check
 
 ---
 
@@ -733,3 +733,35 @@ The app should gracefully handle missing permission:
 - Key down → key up should feel instant
 - No artificial debounce needed for PTT
 - Handle edge case: modifier released before key (treat as release)
+
+---
+
+## Implementation Summary
+
+**Date:** 2025-12-28
+**Branch:** `feat/F.05-global-hotkey`
+
+### Files Changed
+
+| File | Status | Description |
+|:-----|:-------|:------------|
+| `Ora/Hotkey/HotkeyManager.swift` | Created | Core hotkey manager singleton with global event monitoring |
+| `Ora/Hotkey/HotkeyConfiguration.swift` | Modified | Fixed F-key range handling (Carbon key codes are non-contiguous) |
+| `Ora/Hotkey/HotkeyRecorderView.swift` | Modified | Updated to use HotkeyManager for conflict detection and configuration |
+| `Ora/AppDelegate.swift` | Modified | Integrated hotkey manager start/stop and event handlers |
+| `OraTests/HotkeyManagerTests.swift` | Created | 39 tests for configuration, manager, and notifications |
+
+### Test Coverage
+
+- **HotkeyConfigurationTests:** 14 tests (display strings, persistence, equatable)
+- **HotkeyManagerTests:** 17 tests (singleton, conflict detection, configuration changes, start/stop)
+- **HotkeyNotificationTests:** 2 tests (notification names)
+- **ModifierFlagsExtensionTests:** 6 tests (Carbon flag conversion)
+
+**Total:** 39 new tests, all passing
+
+### Ready for Review
+
+- [x] All acceptance criteria verified (14/14)
+- [x] Tests passing (167 total, 0 failures)
+- [x] Working tree clean

@@ -28,15 +28,15 @@ struct HotkeyRecorderView: View {
                 .padding(.vertical, 6)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(isRecording ? Color.accentColor.opacity(0.2) : Color(nsColor: .controlBackgroundColor))
+                        .fill(self.isRecording ? Color.accentColor.opacity(0.2) : Color(nsColor: .controlBackgroundColor))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
-                        .stroke(isRecording ? Color.accentColor : Color(nsColor: .separatorColor), lineWidth: 1)
+                        .stroke(self.isRecording ? Color.accentColor : Color(nsColor: .separatorColor), lineWidth: 1)
                 )
 
             // Change/Cancel button
-            if isRecording {
+            if self.isRecording {
                 Button("Cancel") {
                     self.stopRecording()
                 }
@@ -56,9 +56,9 @@ struct HotkeyRecorderView: View {
             }
             .buttonStyle(.borderless)
             .help("Reset to default (⌥Space)")
-            .disabled(configuration == HotkeyConfiguration.defaultHotkey)
+            .disabled(self.configuration == HotkeyConfiguration.defaultHotkey)
         }
-        .alert("Hotkey Conflict", isPresented: $showConflictWarning) {
+        .alert("Hotkey Conflict", isPresented: self.$showConflictWarning) {
             Button("OK") {}
         } message: {
             Text("This hotkey may conflict with another application or system shortcut.")
@@ -68,12 +68,14 @@ struct HotkeyRecorderView: View {
     // MARK: - Recording
 
     private func startRecording() {
-        isRecording = true
+        self.isRecording = true
+
+        // Temporarily stop the hotkey manager while recording
+        HotkeyManager.shared.stop()
 
         // Create local event monitor for key events
-        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
+        self.eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
             if event.type == .keyDown {
-                // Ignore modifier-only presses
                 let keyCode = event.keyCode
 
                 // Get modifier flags
@@ -99,14 +101,14 @@ struct HotkeyRecorderView: View {
                 // Create new configuration
                 let newConfig = HotkeyConfiguration(keyCode: keyCode, modifiers: carbonModifiers)
 
-                // Check for potential conflicts (simplified check)
-                if self.checkForConflicts(newConfig) {
-                    showConflictWarning = true
+                // Check for potential conflicts using HotkeyManager
+                if HotkeyManager.shared.checkForConflicts(newConfig) {
+                    self.showConflictWarning = true
                 }
 
-                // Apply the new configuration
-                configuration = newConfig
-                configuration.save()
+                // Apply the new configuration via HotkeyManager
+                self.configuration = newConfig
+                HotkeyManager.shared.setHotkey(newConfig)
                 self.stopRecording()
 
                 return nil // Consume the event
@@ -117,43 +119,19 @@ struct HotkeyRecorderView: View {
     }
 
     private func stopRecording() {
-        isRecording = false
+        self.isRecording = false
 
-        if let monitor = eventMonitor {
+        if let monitor = self.eventMonitor {
             NSEvent.removeMonitor(monitor)
-            eventMonitor = nil
+            self.eventMonitor = nil
         }
+
+        // Restart the hotkey manager
+        HotkeyManager.shared.start()
     }
 
     private func resetToDefault() {
-        configuration = HotkeyConfiguration.defaultHotkey
-        configuration.save()
-    }
-
-    private func checkForConflicts(_ config: HotkeyConfiguration) -> Bool {
-        // Check common system shortcuts
-        // This is a simplified check - real implementation would be more thorough
-
-        // Cmd+Q (Quit)
-        if config.keyCode == UInt16(kVK_ANSI_Q) && config.modifiers == UInt32(cmdKey) {
-            return true
-        }
-
-        // Cmd+W (Close Window)
-        if config.keyCode == UInt16(kVK_ANSI_W) && config.modifiers == UInt32(cmdKey) {
-            return true
-        }
-
-        // Cmd+Tab (App Switcher)
-        if config.keyCode == UInt16(kVK_Tab) && config.modifiers == UInt32(cmdKey) {
-            return true
-        }
-
-        // Cmd+Space (Spotlight) - common conflict
-        if config.keyCode == UInt16(kVK_Space) && config.modifiers == UInt32(cmdKey) {
-            return true
-        }
-
-        return false
+        self.configuration = HotkeyConfiguration.defaultHotkey
+        HotkeyManager.shared.resetToDefault()
     }
 }
