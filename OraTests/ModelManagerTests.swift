@@ -358,7 +358,7 @@ final class ModelManagerTests: XCTestCase {
     func test_modelManager_cancelDownload_stopsDownload() async throws {
         let mock = MockModelDownloader()
         mock.shouldSucceed = true
-        mock.downloadDelay = 0.5 // Slow enough to cancel
+        mock.downloadDelay = 1.0 // Long enough to guarantee cancellation
 
         let manager = ModelManager(downloader: mock)
 
@@ -368,17 +368,25 @@ final class ModelManagerTests: XCTestCase {
         }
 
         // Wait a bit then cancel
-        try await Task.sleep(for: .milliseconds(100))
+        try await Task.sleep(for: .milliseconds(50))
         await manager.cancelDownload(.kokoro)
 
-        // Wait for task to complete
+        // Wait for task to complete - must throw cancellation error
         do {
             try await downloadTask.value
-            // If we get here without error, the download completed before cancel
-        } catch {
-            // Expected - download was cancelled
+            XCTFail("Expected download to be cancelled, but it completed successfully")
+        } catch let error as ModelError {
+            // Verify it's specifically a cancellation error
+            if case .downloadCancelled(let model) = error {
+                XCTAssertEqual(model, .kokoro)
+            } else {
+                XCTFail("Expected downloadCancelled error, got: \(error)")
+            }
+            // Verify state is reset
             let state = await manager.state
             XCTAssertEqual(state.statuses[.kokoro], .notDownloaded)
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
         }
     }
 

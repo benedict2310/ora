@@ -896,6 +896,7 @@ Note: Real download integrations (FluidAudio/MLX/Kokoro) are deferred to later s
 - **P1:** ~~`refreshStatuses` can mark incomplete models as ready~~ **FIXED**: `DefaultModelDownloader.exists` now checks ALL required files, not just the first one.
 - **P2:** SHA256 verification is listed in scope, but no checksums are computed or validated; `ModelMetadata.sha256` remains unused. (Deferred until checksums are available from upstream providers.)
 - **P2:** ~~Tests do not cover metadata persistence, cancellation, or progress callbacks~~ **FIXED**: Added tests for cancellation behavior, progress callbacks, metadata persistence, and state regression guard.
+- **P2:** ~~`test_modelManager_cancelDownload_stopsDownload` can pass when cancellation does not occur~~ **FIXED**: Test now explicitly asserts `ModelError.downloadCancelled` is thrown and uses `XCTFail` if download completes.
 
 ### Fixes Applied
 
@@ -927,4 +928,4 @@ Note: Real download integrations (FluidAudio/MLX/Kokoro) are deferred to later s
 ### Approval Check
 
 - **Status:** Approved
-- **Notes:** P1 findings resolved; P2 SHA256 deferred (no checksums available yet). 104 tests passing.
+- **Notes:** All P1 findings resolved; P2 SHA256 deferred (no checksums available yet). 104 tests passing.
