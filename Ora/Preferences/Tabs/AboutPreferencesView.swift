@@ -16,62 +16,68 @@ struct AboutPreferencesView: View {
     // MARK: - Body
 
     var body: some View {
-        VStack(spacing: 24) {
-            Spacer()
-                .frame(height: 8)
+        Form {
+            // App Info Section
+            Section {
+                HStack {
+                    Spacer()
+                    VStack(spacing: 12) {
+                        Image(systemName: "waveform.circle.fill")
+                            .font(.system(size: 64))
+                            .foregroundStyle(.tint)
 
-            // App Icon and Name
-            VStack(spacing: 12) {
-                Image(systemName: "waveform.circle.fill")
-                    .font(.system(size: 64))
-                    .foregroundStyle(.tint)
+                        Text("Ora")
+                            .font(.title)
+                            .fontWeight(.bold)
 
-                Text("Ora")
-                    .font(.title)
-                    .fontWeight(.bold)
+                        Text("Version \(self.appVersion)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(.vertical, 8)
+            }
 
-                Text("Version \(self.appVersion)")
-                    .font(.caption)
+            // Description Section
+            Section {
+                Text("A privacy-first voice assistant that runs entirely on your Mac.")
                     .foregroundColor(.secondary)
             }
 
-            Divider()
-
-            // Description
-            Text("A privacy-first voice assistant that runs entirely on your Mac.")
-                .multilineTextAlignment(.center)
-                .foregroundColor(.secondary)
-
-            Spacer()
-
-            // Links and Actions
-            VStack(spacing: 12) {
-                Button {
-                    showAuditLog = true
-                } label: {
-                    Label("View Audit Log", systemImage: "list.bullet.clipboard")
-                }
-                .buttonStyle(.glass)
-
-                Button {
-                    // Open GitHub or website
-                    if let url = URL(string: "https://github.com/your-org/ora") {
-                        NSWorkspace.shared.open(url)
+            // Actions Section
+            Section {
+                HStack {
+                    Spacer()
+                    Button {
+                        showAuditLog = true
+                    } label: {
+                        Label("View Audit Log", systemImage: "list.bullet.clipboard")
                     }
-                } label: {
-                    Label("GitHub", systemImage: "link")
+                    Spacer()
                 }
-                .buttonStyle(.glass)
+
+                HStack {
+                    Spacer()
+                    Button {
+                        if let url = URL(string: "https://github.com/benedict2310/ora") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    } label: {
+                        Label("GitHub", systemImage: "link")
+                    }
+                    Spacer()
+                }
             }
 
-            Spacer()
-
-            // Privacy note
-            Label("All processing happens on your device.", systemImage: "lock.shield")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            // Privacy Section
+            Section {
+                Label("All processing happens on your device.", systemImage: "lock.shield")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
         }
-        .padding()
+        .formStyle(.grouped)
         .sheet(isPresented: $showAuditLog) {
             AuditLogView()
         }
@@ -159,12 +165,10 @@ struct AuditLogView: View {
                 Button("Export...") {
                     self.exportLog()
                 }
-                .buttonStyle(.glass)
 
                 Button("Clear Log", role: .destructive) {
                     showClearConfirmation = true
                 }
-                .buttonStyle(.glass)
             }
             .padding()
         }
