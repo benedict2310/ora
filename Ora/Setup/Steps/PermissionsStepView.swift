@@ -78,7 +78,15 @@ struct PermissionsStepView: View {
         .onAppear {
             self.refreshPermissions()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .permissionsStateDidChange)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .permissionsStateDidChange)) { notification in
+            // Read the state from the notification to avoid re-triggering refreshAll
+            if let state = notification.object as? PermissionsState {
+                self.permissionsState = state
+                self.coordinator.updatePermissionsGranted(state.requiredPermissionsGranted)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            // Refresh when returning from System Settings
             self.refreshPermissions()
         }
     }
@@ -86,7 +94,9 @@ struct PermissionsStepView: View {
     private func refreshPermissions() {
         Task {
             await PermissionsManager.shared.refreshAll()
-            self.permissionsState = await PermissionsManager.shared.state
+            let state = await PermissionsManager.shared.state
+            self.permissionsState = state
+            self.coordinator.updatePermissionsGranted(state.requiredPermissionsGranted)
         }
     }
 }

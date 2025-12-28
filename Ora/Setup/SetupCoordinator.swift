@@ -50,6 +50,8 @@ final class SetupCoordinator: NSObject, ObservableObject {
                     self.logger.warning("Setup was complete but models missing, restarting setup")
                     self.state.currentStep = .download
                     self.showSetup()
+                    // Start downloads automatically when resuming to download step
+                    await self.startDownloads()
                 }
             }
         } else {
@@ -171,12 +173,24 @@ final class SetupCoordinator: NSObject, ObservableObject {
         self.downloadTask = nil
     }
 
+    /// Update permissions granted state (called from PermissionsStepView)
+    func updatePermissionsGranted(_ granted: Bool) {
+        self.state.permissionsGranted = granted
+    }
+
     // MARK: - Private
 
     private func loadSystemInfo() {
         let ramBytes = ProcessInfo.processInfo.physicalMemory
         self.state.systemRAMGB = Int(ramBytes / (1024 * 1024 * 1024))
-        self.state.recommendedModel = self.state.systemRAMGB >= 16 ? "Qwen 2.5 7B" : "Qwen 2.5 3B"
+
+        let recommendedLLM: ModelIdentifier = self.state.systemRAMGB >= 16 ? .qwen7B : .qwen3B
+        self.state.recommendedModel = recommendedLLM.displayName
+
+        // Sync with ModelManager to ensure downloads use the correct model
+        Task {
+            await ModelManager.shared.setPrimaryLLM(recommendedLLM)
+        }
     }
 
     private func refreshPermissionsState() async {

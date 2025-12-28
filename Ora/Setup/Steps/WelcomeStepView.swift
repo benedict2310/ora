@@ -10,6 +10,10 @@ import SwiftUI
 struct WelcomeStepView: View {
     let state: SetupState
 
+    private var hotkeyDisplayString: String {
+        HotkeyConfiguration.load().displayString
+    }
+
     var body: some View {
         VStack(spacing: 24) {
             // App icon
@@ -47,7 +51,7 @@ struct WelcomeStepView: View {
                 SystemInfoRow(
                     icon: "keyboard",
                     title: "Activation Hotkey",
-                    value: "Space (Option + Space)"
+                    value: self.hotkeyDisplayString
                 )
             }
             .padding()

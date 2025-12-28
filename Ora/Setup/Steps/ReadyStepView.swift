@@ -8,6 +8,10 @@
 import SwiftUI
 
 struct ReadyStepView: View {
+    private var hotkeyDisplayString: String {
+        HotkeyConfiguration.load().displayString
+    }
+
     var body: some View {
         VStack(spacing: 24) {
             // Success icon
@@ -36,7 +40,7 @@ struct ReadyStepView: View {
                         number: 1,
                         icon: "keyboard",
                         title: "Press & Hold",
-                        description: "Space"
+                        description: self.hotkeyDisplayString
                     )
 
                     Image(systemName: "arrow.right")
