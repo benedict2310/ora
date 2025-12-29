@@ -1,7 +1,7 @@
 # F.08 - Persistence Layer
 
 **Epic:** Foundations
-**Status:** In Review
+**Status:** Complete
 **Priority:** P1 (Important)
 **Estimated Effort:** 1-2 days
 **Dependencies:** F.01 (App Shell)
@@ -778,18 +778,42 @@ SwiftData handles lightweight migrations automatically. For complex changes:
 - None
 
 ### Approval Status
-- [ ] All P0 issues resolved
-- [ ] All P1 issues resolved
-- [ ] Ready for merge
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
 
 ---
 
 ## Code Review Findings
 
 **Reviewer:** Codex Subagent
-**Date:** 2025-12-29T08:55:18Z
-**Commit reviewed:** 3b2ebe3
-**Iteration:** 2
+**Date:** 2025-12-29T09:01:20Z
+**Commit reviewed:** c549b60
+**Iteration:** 3 (APPROVED)
+
+### Summary
+- Files reviewed: 7
+- Build status: Pass (`./build.sh`)
+- Tests status: Pass (247 tests, `xcodebuild test -project Ora.xcodeproj -scheme Ora`)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [ ] None
+
+#### P1 - Major (Should fix)
+- [ ] None
+
+#### P2 - Minor (Can defer)
+- [ ] `OraTests/PersistenceTests.swift:253` - `test_appSettings_singleton` inserts two `AppSettings` with the same unique id, which triggers SwiftData unique-constraint error logs during tests; prefer validating the singleton via `PersistenceManager.settings` or asserting a single fetched instance without inserting duplicates.
+
+### Future Considerations (Out of Scope)
+- None
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
 
 ### Summary
 - Files reviewed: 7
