@@ -134,6 +134,49 @@ final class StreamingManagerTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(receivedFinal?.timestamp ?? .distantPast, testStartTime, "Timestamp should be after test start")
     }
 
+    /// TC-5.3: Multiple segments increment index
+    func test_multipleSegmentsIncrementIndex() async throws {
+        var segments: [ASRFinalSegment] = []
+        let expectation = expectation(description: "finals")
+        expectation.expectedFulfillmentCount = 3
+
+        manager.onFinal = { segment in
+            segments.append(segment)
+            expectation.fulfill()
+        }
+
+        mockEngine.mockTranscription = "First segment"
+
+        let samples = [Float](repeating: 0.1, count: 16000)
+        ringBuffer.append(samples)
+
+        try await manager.start()
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        // First finalization
+        await manager.forceFinalize()
+
+        // Second segment
+        mockEngine.mockTranscription = "Second segment"
+        ringBuffer.append(samples)
+        try await Task.sleep(nanoseconds: 200_000_000)
+        await manager.forceFinalize()
+
+        // Third segment
+        mockEngine.mockTranscription = "Third segment"
+        ringBuffer.append(samples)
+        try await Task.sleep(nanoseconds: 200_000_000)
+        await manager.forceFinalize()
+
+        await fulfillment(of: [expectation], timeout: 3.0)
+        await manager.stop()
+
+        XCTAssertEqual(segments.count, 3)
+        XCTAssertEqual(segments[0].segmentIndex, 0)
+        XCTAssertEqual(segments[1].segmentIndex, 1)
+        XCTAssertEqual(segments[2].segmentIndex, 2)
+    }
+
     /// TC-5.4: Start when already streaming throws
     func test_startWhenStreamingThrows() async throws {
         let samples = [Float](repeating: 0.1, count: 16000)

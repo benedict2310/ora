@@ -2344,3 +2344,37 @@ The following components already exist and will be reused:
 - [x] All P0 issues resolved
 - [x] All P1 issues resolved
 - [x] Ready for merge
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2025-12-29T21:59:41Z
+**Commit reviewed:** 6d47a51
+**Iteration:** 3
+
+### Summary
+- Files reviewed: 12
+- Build status: Pass
+- Tests status: Fail (xcodebuild test -project Ora.xcodeproj -scheme Ora timed out after 300s; partial run)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [ ] None.
+
+#### P1 - Major (Should fix)
+- [ ] `Ora/ASR/StreamingManager.swift:324` - If `engine.finalize(samples:)` returns nil without throwing, `finalizeCurrentSegment` emits no final segment even when `trimmedText` is available; force-finalize can drop output (AC-8).
+- [ ] `Ora/ASR/StreamingManager.swift:265` - VAD gating skips only before any speech; after speech ends, silence still runs full ASR processing while PTT is held, risking AC-12 CPU target during silence.
+
+#### P2 - Minor (Can defer)
+- [ ] `OraTests/StreamingManagerTests.swift:104` - No test covers segment index increment across multiple finalizations (AC-7 only asserts the first segment index).
+
+### Future Considerations (Out of Scope)
+- None.
+
+### Approval Status
+- [ ] All P0 issues resolved
+- [ ] All P1 issues resolved
+- [ ] Ready for merge

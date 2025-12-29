@@ -263,7 +263,8 @@ final class StreamingManager {
         }
 
         // Skip transcription during confirmed silence (if VAD enabled)
-        if configuration.enableVAD && !vadResult.isSpeech && lastSpeechTime == nil {
+        // This applies both before first speech and after speech ends
+        if configuration.enableVAD && !vadResult.isSpeech {
             return
         }
 
@@ -322,32 +323,27 @@ final class StreamingManager {
 
         // Get final transcription from engine
         let samples = ringBuffer.peekAll()
-        let finalResult: ASRFinalSegment?
+        var finalText = trimmedText
+        var finalWords: [ASRWord] = []
 
         do {
-            finalResult = try await engine.finalize(samples: samples)
+            if let result = try await engine.finalize(samples: samples), !result.text.isEmpty {
+                finalText = result.text
+                finalWords = result.words
+            }
         } catch {
-            // Fall back to last partial text
-            finalResult = ASRFinalSegment(
-                text: trimmedText,
-                words: [],
-                segmentIndex: currentSegmentIndex,
-                timestamp: now
-            )
             logger.warning("Finalization failed, using last partial: \(error.localizedDescription)")
         }
 
-        if let segment = finalResult, !segment.text.isEmpty {
-            // Create indexed segment with proper metadata
-            let indexedSegment = ASRFinalSegment(
-                text: segment.text,
-                words: segment.words,
-                segmentIndex: currentSegmentIndex,
-                timestamp: now
-            )
-            onFinal?(indexedSegment)
-            logger.info("Finalized segment \(self.currentSegmentIndex): \(segment.text)")
-        }
+        // Always emit final segment if we have text
+        let indexedSegment = ASRFinalSegment(
+            text: finalText,
+            words: finalWords,
+            segmentIndex: currentSegmentIndex,
+            timestamp: now
+        )
+        onFinal?(indexedSegment)
+        logger.info("Finalized segment \(self.currentSegmentIndex): \(finalText)")
 
         // Reset for next segment
         currentSegmentIndex += 1
