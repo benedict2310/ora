@@ -81,15 +81,17 @@ actor AuditLogger {
 
     @MainActor
     func recordError(message: String, context: String?, sessionID: UUID?) {
-        _ = PersistenceManager.shared.recordToolExecution(
+        let entry = PersistenceManager.shared.recordToolExecution(
             toolName: "",
             action: "error",
             category: .error,
             summary: context ?? "Error",
-            parameters: ["message": message],
+            parameters: [:],
             userConfirmed: false,
             sessionID: sessionID
         )
+        entry.setError(message)
+        PersistenceManager.shared.updateAuditEntry(entry, result: [:], succeeded: false)
         self.logger.error("Error recorded: \(message)")
     }
 

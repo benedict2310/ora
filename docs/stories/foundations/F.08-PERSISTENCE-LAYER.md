@@ -747,3 +747,37 @@ Future consideration: Add retention policies (e.g., delete sessions older than 3
 SwiftData handles lightweight migrations automatically. For complex changes:
 1. Use `@Attribute(.allowsCloudEncryption)` for future iCloud sync
 2. Consider versioned schemas for breaking changes
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2025-12-29T08:46:31Z
+**Commit reviewed:** 5a01713
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 7
+- Build status: Pass (`./build.sh`)
+- Tests status: Pass (238 tests, `xcodebuild test -project Ora.xcodeproj -scheme Ora`)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [ ] None
+
+#### P1 - Major (Should fix)
+- [x] `Ora/Persistence/AuditLogger.swift:83` - `recordError` no longer persists the error message to `errorMessage`, so error entries lose their details in the audit log UI; only a parameter is stored. **FIXED:** Now calls `entry.setError(message)` before updating.
+- [x] `Ora/Persistence/PersistenceManager.swift:83` - Core persistence flows (session lifecycle, audit updates, settings updates) have no tests exercising `PersistenceManager` APIs, despite being acceptance-criteria functionality. **FIXED:** Added 9 tests in `PersistenceManagerAPITests` class.
+
+#### P2 - Minor (Can defer)
+- [ ] None
+
+### Future Considerations (Out of Scope)
+- None
+
+### Approval Status
+- [ ] All P0 issues resolved
+- [ ] All P1 issues resolved
+- [ ] Ready for merge

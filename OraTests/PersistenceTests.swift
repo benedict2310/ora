@@ -311,3 +311,175 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(entriesForSession?.first?.toolName, "calendar")
     }
 }
+
+// MARK: - PersistenceManager API Tests
+
+@MainActor
+final class PersistenceManagerAPITests: XCTestCase {
+
+    // MARK: - Session API Tests
+
+    func test_persistenceManager_createSession_returnsNewSession() {
+        // When
+        let session = PersistenceManager.shared.createSession()
+
+        // Then
+        XCTAssertNotNil(session.id)
+        XCTAssertFalse(session.isComplete)
+
+        // Cleanup
+        PersistenceManager.shared.deleteSession(session)
+    }
+
+    func test_persistenceManager_currentSession_returnsActiveOrNew() {
+        // Given - clear any existing incomplete sessions
+        let existing = PersistenceManager.shared.currentSession()
+        PersistenceManager.shared.completeSession(existing)
+
+        // When
+        let session = PersistenceManager.shared.currentSession()
+
+        // Then
+        XCTAssertFalse(session.isComplete)
+
+        // Cleanup
+        PersistenceManager.shared.deleteSession(session)
+    }
+
+    func test_persistenceManager_completeSession_marksSummary() {
+        // Given
+        let session = PersistenceManager.shared.createSession()
+        session.addMessage(role: .user, content: "Hello, this is a test message")
+
+        // When
+        PersistenceManager.shared.completeSession(session)
+
+        // Then
+        XCTAssertTrue(session.isComplete)
+        XCTAssertNotNil(session.summary)
+        XCTAssertTrue(session.summary?.contains("Hello") ?? false)
+
+        // Cleanup
+        PersistenceManager.shared.deleteSession(session)
+    }
+
+    func test_persistenceManager_recentSessions_returnsCompletedOnly() {
+        // Given
+        let session1 = PersistenceManager.shared.createSession()
+        let session2 = PersistenceManager.shared.createSession()
+        PersistenceManager.shared.completeSession(session1)
+
+        // When
+        let recent = PersistenceManager.shared.recentSessions()
+
+        // Then
+        XCTAssertTrue(recent.contains { $0.id == session1.id })
+        XCTAssertFalse(recent.contains { $0.id == session2.id })
+
+        // Cleanup
+        PersistenceManager.shared.deleteSession(session1)
+        PersistenceManager.shared.deleteSession(session2)
+    }
+
+    // MARK: - Audit Log API Tests
+
+    func test_persistenceManager_recordToolExecution_createsEntry() {
+        // When
+        let entry = PersistenceManager.shared.recordToolExecution(
+            toolName: "testTool",
+            action: "testAction",
+            category: .toolExecution,
+            summary: "testTool.testAction",
+            parameters: ["key": "value"],
+            userConfirmed: true,
+            sessionID: nil
+        )
+
+        // Then
+        XCTAssertEqual(entry.toolName, "testTool")
+        XCTAssertEqual(entry.action, "testAction")
+        XCTAssertTrue(entry.userConfirmed)
+        XCTAssertNotNil(entry.parameters)
+
+        // Cleanup
+        PersistenceManager.shared.clearAuditLog()
+    }
+
+    func test_persistenceManager_updateAuditEntry_setsResult() {
+        // Given
+        let entry = PersistenceManager.shared.recordToolExecution(
+            toolName: "updateTest",
+            action: "test",
+            category: .toolExecution,
+            summary: "updateTest.test",
+            parameters: [:],
+            userConfirmed: false,
+            sessionID: nil
+        )
+
+        // When
+        PersistenceManager.shared.updateAuditEntry(
+            entry,
+            result: ["success": true],
+            succeeded: true
+        )
+
+        // Then
+        XCTAssertTrue(entry.succeeded)
+        XCTAssertNotNil(entry.result)
+
+        // Cleanup
+        PersistenceManager.shared.clearAuditLog()
+    }
+
+    func test_persistenceManager_recentAuditEntries_returnsEntries() {
+        // Given
+        let entry = PersistenceManager.shared.recordToolExecution(
+            toolName: "recentTest",
+            action: "list",
+            category: .toolExecution,
+            summary: "recentTest.list",
+            parameters: [:],
+            userConfirmed: false,
+            sessionID: nil
+        )
+
+        // When
+        let entries = PersistenceManager.shared.recentAuditEntries(limit: 10)
+
+        // Then
+        XCTAssertTrue(entries.contains { $0.id == entry.id })
+
+        // Cleanup
+        PersistenceManager.shared.clearAuditLog()
+    }
+
+    // MARK: - Settings API Tests
+
+    func test_persistenceManager_settings_returnsSingleton() {
+        // When
+        let settings1 = PersistenceManager.shared.settings
+        let settings2 = PersistenceManager.shared.settings
+
+        // Then
+        XCTAssertEqual(settings1.id, settings2.id)
+    }
+
+    func test_persistenceManager_updateSettings_persistsChanges() {
+        // Given
+        let originalValue = PersistenceManager.shared.settings.voiceOutputEnabled
+
+        // When
+        PersistenceManager.shared.updateSettings { settings in
+            settings.voiceOutputEnabled = !originalValue
+        }
+
+        // Then
+        XCTAssertEqual(PersistenceManager.shared.settings.voiceOutputEnabled, !originalValue)
+
+        // Restore
+        PersistenceManager.shared.updateSettings { settings in
+            settings.voiceOutputEnabled = originalValue
+        }
+    }
+}
