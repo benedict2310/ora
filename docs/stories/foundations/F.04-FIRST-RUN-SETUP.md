@@ -1,7 +1,7 @@
 # F.04 - First-Run Setup
 
 **Epic:** Foundations
-**Status:** Implementation Complete - Ready for Code Review
+**Status:** Implementation Complete - In Review
 **Priority:** P0 (Critical Path)
 **Estimated Effort:** 2-3 days
 **Dependencies:** F.01 (App Shell), F.02 (Permissions), F.03 (Model Manager)
@@ -97,7 +97,7 @@ enum SetupStep: Int, CaseIterable, Sendable {
     case permissions = 1
     case download = 2
     case ready = 3
-    
+
     var title: String {
         switch self {
         case .welcome: return "Welcome"
@@ -106,7 +106,7 @@ enum SetupStep: Int, CaseIterable, Sendable {
         case .ready: return "Ready"
         }
     }
-    
+
     var canGoBack: Bool {
         switch self {
         case .welcome: return false
@@ -121,19 +121,27 @@ enum SetupStep: Int, CaseIterable, Sendable {
 struct SetupState: Sendable {
     var currentStep: SetupStep = .welcome
     var isComplete: Bool = false
-    
+
     // Permissions
     var permissionsGranted: Bool = false
     var skippedOptionalPermissions: Bool = false
-    
+
     // Downloads
     var downloadProgress: Double = 0
     var downloadingModel: String? = nil
     var downloadError: String? = nil
-    
+    var modelProgresses: [ModelIdentifier: Double] = [:]
+    var primaryLLM: ModelIdentifier = .qwen7B  // The actual LLM being downloaded
+
     // System info
     var systemRAMGB: Int = 0
     var recommendedModel: String = "Qwen 2.5 7B"
+}
+
+// MARK: - Notifications
+
+extension Notification.Name {
+    static let setupDidComplete = Notification.Name("setupDidComplete")
 }
 ```
 
@@ -155,191 +163,252 @@ import os
 
 /// Manages the first-run setup experience
 @MainActor
-final class SetupCoordinator: ObservableObject {
-    
+final class SetupCoordinator: NSObject, ObservableObject {
+
     // MARK: - Published State
-    
+
     @Published private(set) var state = SetupState()
     @Published private(set) var isShowingSetup = false
-    
+
     // MARK: - Properties
-    
+
     private let logger = Logger(subsystem: "com.ora.app", category: "SetupCoordinator")
     private let userDefaultsKey = "com.ora.setupComplete"
-    
+    private var setupWindow: NSWindow?
+    private var downloadTask: Task<Void, Never>?
+
     // MARK: - Singleton
-    
+
     static let shared = SetupCoordinator()
-    
+
     // MARK: - Initialization
-    
-    private init() {
-        loadSystemInfo()
+
+    private override init() {
+        super.init()
+        self.loadSystemInfo()
     }
-    
+
     // MARK: - Public API
-    
+
     /// Check if setup is needed and show if required
-    func checkAndShowSetupIfNeeded() {
-        let isComplete = UserDefaults.standard.bool(forKey: userDefaultsKey)
-        
+    /// - Returns: `true` if setup is needed and was shown, `false` if setup was already complete and models are available
+    func checkAndShowSetupIfNeeded() async -> Bool {
+        let isComplete = UserDefaults.standard.bool(forKey: self.userDefaultsKey)
+
         if isComplete {
             // Verify models are still available
-            Task {
-                let modelsReady = await ModelManager.shared.requiredModelsAvailable()
-                if !modelsReady {
-                    logger.warning("Setup was complete but models missing, restarting setup")
-                    await MainActor.run {
-                        self.state.currentStep = .download
-                        self.showSetup()
-                    }
-                }
+            let modelsReady = await ModelManager.shared.requiredModelsAvailable()
+            if !modelsReady {
+                self.logger.warning("Setup was complete but models missing, restarting setup")
+                self.state.currentStep = .download
+                self.showSetup()
+                // Start downloads automatically when resuming to download step
+                await self.startDownloads()
+                return true  // Setup is needed
             }
+            return false  // Setup not needed, models ready
         } else {
-            showSetup()
+            self.showSetup()
+            return true  // Setup is needed
         }
     }
-    
+
+    /// Returns true if setup has been completed
+    var isSetupComplete: Bool {
+        UserDefaults.standard.bool(forKey: self.userDefaultsKey)
+    }
+
     /// Show the setup window
     func showSetup() {
-        isShowingSetup = true
-        logger.info("Showing setup window at step: \(self.state.currentStep.title)")
+        self.isShowingSetup = true
+        self.logger.info("Showing setup window at step: \(self.state.currentStep.title)")
+        // Create and configure NSWindow with NSHostingController...
     }
-    
+
     /// Dismiss setup (only when complete)
     func dismissSetup() {
-        guard state.isComplete else {
-            logger.warning("Cannot dismiss setup before completion")
+        guard self.state.isComplete else {
+            self.logger.warning("Cannot dismiss setup before completion")
             return
         }
-        isShowingSetup = false
+        self.isShowingSetup = false
+        self.setupWindow?.close()
+        self.setupWindow = nil
     }
-    
+
     /// Move to next step
     func nextStep() async {
-        switch state.currentStep {
+        switch self.state.currentStep {
         case .welcome:
-            state.currentStep = .permissions
-            
+            self.state.currentStep = .permissions
+            await self.refreshPermissionsState()
+
         case .permissions:
             // Validate required permissions
             let permState = await PermissionsManager.shared.state
             if permState.requiredPermissionsGranted {
-                state.permissionsGranted = true
-                state.currentStep = .download
+                self.state.permissionsGranted = true
+                self.state.currentStep = .download
                 // Start downloads automatically
-                await startDownloads()
+                await self.startDownloads()
             } else {
-                logger.warning("Required permissions not granted")
+                self.logger.warning("Required permissions not granted")
             }
-            
+
         case .download:
             // Only proceed if downloads complete
             let modelsReady = await ModelManager.shared.requiredModelsAvailable()
             if modelsReady {
-                state.currentStep = .ready
+                self.state.currentStep = .ready
             }
-            
+
         case .ready:
-            completeSetup()
+            self.completeSetup()
         }
     }
-    
+
     /// Go back to previous step
     func previousStep() {
-        guard state.currentStep.canGoBack else { return }
-        
-        if let previousIndex = SetupStep(rawValue: state.currentStep.rawValue - 1) {
-            state.currentStep = previousIndex
+        guard self.state.currentStep.canGoBack else { return }
+
+        if let previousIndex = SetupStep(rawValue: self.state.currentStep.rawValue - 1) {
+            self.state.currentStep = previousIndex
         }
     }
-    
+
     /// Request a specific permission
     func requestPermission(_ type: PermissionType) async {
         _ = await PermissionsManager.shared.request(type)
-        await refreshPermissionsState()
+        await self.refreshPermissionsState()
     }
-    
-    /// Request all required permissions
-    func requestRequiredPermissions() async {
-        _ = await PermissionsManager.shared.requestRequired()
-        await refreshPermissionsState()
-    }
-    
+
     /// Retry failed download
     func retryDownload() async {
-        state.downloadError = nil
-        await startDownloads()
+        self.state.downloadError = nil
+        await self.startDownloads()
     }
-    
+
     /// Postpone setup (show minimal UI)
     func postponeSetup() {
-        isShowingSetup = false
+        self.isShowingSetup = false
+        self.setupWindow?.close()
         // App remains in limited state until setup completes
-        logger.info("Setup postponed by user")
+        self.logger.info("Setup postponed by user")
     }
-    
+
+    /// Update permissions granted state (called from PermissionsStepView)
+    func updatePermissionsGranted(_ granted: Bool) {
+        self.state.permissionsGranted = granted
+    }
+
     // MARK: - Private
-    
+
     private func loadSystemInfo() {
         let ramBytes = ProcessInfo.processInfo.physicalMemory
-        state.systemRAMGB = Int(ramBytes / (1024 * 1024 * 1024))
-        state.recommendedModel = state.systemRAMGB >= 16 ? "Qwen 2.5 7B" : "Qwen 2.5 3B"
+        self.state.systemRAMGB = Int(ramBytes / (1024 * 1024 * 1024))
+
+        let recommendedLLM: ModelIdentifier = self.state.systemRAMGB >= 16 ? .qwen7B : .qwen3B
+        self.state.recommendedModel = recommendedLLM.displayName
+        self.state.primaryLLM = recommendedLLM
     }
-    
+
     private func refreshPermissionsState() async {
         await PermissionsManager.shared.refreshAll()
         let permState = await PermissionsManager.shared.state
-        state.permissionsGranted = permState.requiredPermissionsGranted
+        self.state.permissionsGranted = permState.requiredPermissionsGranted
     }
-    
+
     private func startDownloads() async {
-        state.downloadProgress = 0
-        state.downloadError = nil
-        
-        do {
-            try await ModelManager.shared.downloadRequiredModels { [weak self] progress in
-                Task { @MainActor in
-                    self?.state.downloadProgress = progress.overallProgress
-                    // Find currently downloading model
-                    for (model, modelProgress) in progress.models {
-                        if modelProgress.progress < 1.0 {
-                            self?.state.downloadingModel = model.displayName
-                            break
+        await self.ensurePrimaryLLMSelected()
+        self.state.downloadProgress = 0
+        self.state.downloadError = nil
+        self.state.modelProgresses = [:]
+
+        // Start the download in a tracked task for cancellation support
+        self.downloadTask = Task { @MainActor in
+            do {
+                try await ModelManager.shared.downloadRequiredModels { [weak self] progress in
+                    Task { @MainActor in
+                        guard let self = self else { return }
+                        self.state.downloadProgress = progress.overallProgress
+
+                        // Track individual model progress
+                        for (model, modelProgress) in progress.models {
+                            self.state.modelProgresses[model] = modelProgress.progress
+                            if modelProgress.progress < 1.0 && modelProgress.progress > 0 {
+                                self.state.downloadingModel = model.displayName
+                            }
                         }
                     }
                 }
+
+                self.state.downloadProgress = 1.0
+                self.state.downloadingModel = nil
+                self.logger.info("All downloads complete")
+
+                // Auto-advance to ready
+                self.state.currentStep = .ready
+
+            } catch {
+                if !Task.isCancelled {
+                    self.state.downloadError = error.localizedDescription
+                    self.logger.error("Download failed: \(error.localizedDescription)")
+                }
             }
-            
-            state.downloadProgress = 1.0
-            state.downloadingModel = nil
-            logger.info("All downloads complete")
-            
-            // Auto-advance to ready
-            state.currentStep = .ready
-            
-        } catch {
-            state.downloadError = error.localizedDescription
-            logger.error("Download failed: \(error.localizedDescription)")
         }
+
+        await self.downloadTask?.value
     }
-    
+
+    private func ensurePrimaryLLMSelected() async {
+        // Wait for ModelManager to finish loading metadata before modifying state
+        await ModelManager.shared.ensureInitialized()
+
+        // Check if there's already a persisted primary LLM
+        if let persistedLLM = await self.getPersistedPrimaryLLM() {
+            self.state.primaryLLM = persistedLLM
+            // Sync to ModelManager to ensure downloads use the correct LLM
+            await ModelManager.shared.setPrimaryLLM(persistedLLM)
+            return
+        }
+
+        // No persisted primary - use the recommended model
+        let recommendedLLM: ModelIdentifier = self.state.systemRAMGB >= 16 ? .qwen7B : .qwen3B
+        self.state.primaryLLM = recommendedLLM
+        await ModelManager.shared.setPrimaryLLM(recommendedLLM)
+    }
+
+    private func getPersistedPrimaryLLM() async -> ModelIdentifier? {
+        // Read from persisted metadata file...
+    }
+
     private func completeSetup() {
-        state.isComplete = true
-        UserDefaults.standard.set(true, forKey: userDefaultsKey)
-        isShowingSetup = false
-        logger.info("Setup completed successfully")
-        
+        self.state.isComplete = true
+        UserDefaults.standard.set(true, forKey: self.userDefaultsKey)
+        self.isShowingSetup = false
+        self.setupWindow?.close()
+        self.setupWindow = nil
+        self.logger.info("Setup completed successfully")
+
         // Notify app that setup is done
         NotificationCenter.default.post(name: .setupDidComplete, object: nil)
     }
 }
 
-// MARK: - Notifications
+// MARK: - NSWindowDelegate
 
-extension Notification.Name {
-    static let setupDidComplete = Notification.Name("setupDidComplete")
+extension SetupCoordinator: NSWindowDelegate {
+    nonisolated func windowShouldClose(_ sender: NSWindow) -> Bool {
+        // Allow closing only if not in download step or if downloads are complete
+        MainActor.assumeIsolated {
+            if self.state.currentStep == .download && self.state.downloadProgress < 1.0 {
+                return false
+            }
+            return true
+        }
+    }
 }
+
 ```
 
 ### 3.3 Setup Window
@@ -505,53 +574,57 @@ import SwiftUI
 
 struct WelcomeStepView: View {
     let state: SetupState
-    
+
+    private var hotkeyDisplayString: String {
+        HotkeyConfiguration.load().displayString
+    }
+
     var body: some View {
         VStack(spacing: 24) {
             // App icon
-            Image(systemName: "waveform.circle.fill")
-                .font(.system(size: 80))
-                .foregroundStyle(.tint)
-            
+            Image(nsImage: AppIcon.image)
+                .resizable()
+                .frame(width: 80, height: 80)
+
             // Welcome text
             Text("Welcome to Ora")
                 .font(.largeTitle)
                 .fontWeight(.bold)
-            
+
             Text("Your private voice assistant that runs entirely on your Mac.")
                 .font(.title3)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
-            
+
             Spacer()
                 .frame(height: 20)
-            
+
             // System info
             VStack(alignment: .leading, spacing: 12) {
                 SystemInfoRow(
                     icon: "memorychip",
                     title: "System Memory",
-                    value: "\(state.systemRAMGB) GB RAM"
+                    value: "\(self.state.systemRAMGB) GB RAM"
                 )
-                
+
                 SystemInfoRow(
                     icon: "cpu",
                     title: "Recommended Model",
-                    value: state.recommendedModel
+                    value: self.state.recommendedModel
                 )
-                
+
                 SystemInfoRow(
                     icon: "keyboard",
                     title: "Activation Hotkey",
-                    value: "⌥ Space (Option + Space)"
+                    value: self.hotkeyDisplayString
                 )
             }
             .padding()
             .background(Color(nsColor: .controlBackgroundColor))
             .cornerRadius(8)
-            
+
             Spacer()
-            
+
             // Privacy note
             Label("All processing happens on your device. No data is sent to the cloud.", systemImage: "lock.shield")
                 .font(.caption)
@@ -600,83 +673,93 @@ import SwiftUI
 struct PermissionsStepView: View {
     @ObservedObject var coordinator: SetupCoordinator
     @State private var permissionsState = PermissionsState()
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             Text("Permissions")
                 .font(.largeTitle)
                 .fontWeight(.bold)
-            
+
             Text("Ora needs a few permissions to work properly.")
                 .foregroundColor(.secondary)
-            
+
             VStack(spacing: 16) {
                 // Required permissions
                 Text("Required")
                     .font(.headline)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                
+
                 PermissionRow(
                     type: .microphone,
-                    status: permissionsState.microphone,
-                    onRequest: { await coordinator.requestPermission(.microphone) }
+                    status: self.permissionsState.microphone,
+                    onRequest: { await self.coordinator.requestPermission(.microphone) }
                 )
-                
+
                 PermissionRow(
                     type: .accessibility,
-                    status: permissionsState.accessibility,
-                    onRequest: { await coordinator.requestPermission(.accessibility) }
+                    status: self.permissionsState.accessibility,
+                    onRequest: { await self.coordinator.requestPermission(.accessibility) }
                 )
-                
+
                 Divider()
-                
+
                 // Optional permissions
                 Text("Optional")
                     .font(.headline)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                
+
                 PermissionRow(
                     type: .calendar,
-                    status: permissionsState.calendar,
-                    onRequest: { await coordinator.requestPermission(.calendar) }
+                    status: self.permissionsState.calendar,
+                    onRequest: { await self.coordinator.requestPermission(.calendar) }
                 )
-                
+
                 PermissionRow(
                     type: .reminders,
-                    status: permissionsState.reminders,
-                    onRequest: { await coordinator.requestPermission(.reminders) }
+                    status: self.permissionsState.reminders,
+                    onRequest: { await self.coordinator.requestPermission(.reminders) }
                 )
-                
+
                 PermissionRow(
                     type: .contacts,
-                    status: permissionsState.contacts,
-                    onRequest: { await coordinator.requestPermission(.contacts) }
+                    status: self.permissionsState.contacts,
+                    onRequest: { await self.coordinator.requestPermission(.contacts) }
                 )
             }
             .padding()
             .background(Color(nsColor: .controlBackgroundColor))
             .cornerRadius(8)
-            
+
             Spacer()
-            
-            if !permissionsState.requiredPermissionsGranted {
+
+            if !self.permissionsState.requiredPermissionsGranted {
                 Label("Microphone and Accessibility permissions are required to continue.", systemImage: "exclamationmark.triangle")
                     .font(.caption)
                     .foregroundColor(.orange)
             }
         }
         .onAppear {
-            refreshPermissions()
+            self.refreshPermissions()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .permissionsStateDidChange)) { _ in
-            refreshPermissions()
+        .onReceive(NotificationCenter.default.publisher(for: .permissionsStateDidChange)) { notification in
+            // Read the state from the notification to avoid re-triggering refreshAll
+            if let state = notification.object as? PermissionsState {
+                self.permissionsState = state
+                self.coordinator.updatePermissionsGranted(state.requiredPermissionsGranted)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            // Refresh when returning from System Settings
+            self.refreshPermissions()
         }
     }
-    
+
     private func refreshPermissions() {
         Task {
             await PermissionsManager.shared.refreshAll()
-            permissionsState = await PermissionsManager.shared.state
+            let state = await PermissionsManager.shared.state
+            self.permissionsState = state
+            self.coordinator.updatePermissionsGranted(state.requiredPermissionsGranted)
         }
     }
 }
@@ -752,84 +835,94 @@ import SwiftUI
 struct DownloadStepView: View {
     let state: SetupState
     let onRetry: () -> Void
-    
+
     var body: some View {
         VStack(spacing: 24) {
             Text("Downloading Models")
                 .font(.largeTitle)
                 .fontWeight(.bold)
-            
+
             Text("Ora is downloading the AI models needed for voice recognition and responses.")
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
-            
+
             Spacer()
                 .frame(height: 20)
-            
+
             // Overall progress
             VStack(spacing: 16) {
                 // Progress bar
-                ProgressView(value: state.downloadProgress)
+                ProgressView(value: self.state.downloadProgress)
                     .progressViewStyle(.linear)
-                
+
                 HStack {
-                    if let currentModel = state.downloadingModel {
+                    if let currentModel = self.state.downloadingModel {
                         Text("Downloading \(currentModel)...")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                    } else if state.downloadProgress >= 1.0 {
+                    } else if self.state.downloadProgress >= 1.0 {
                         Label("All models downloaded", systemImage: "checkmark.circle.fill")
                             .font(.caption)
                             .foregroundColor(.green)
                     }
-                    
+
                     Spacer()
-                    
-                    Text("\(Int(state.downloadProgress * 100))%")
+
+                    Text("\(Int(self.state.downloadProgress * 100))%")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .monospacedDigit()
                 }
-                
+
                 // Individual model status
                 VStack(alignment: .leading, spacing: 12) {
-                    ModelDownloadRow(name: "Parakeet ASR", size: "~600 MB", progress: modelProgress(for: .parakeetTDT))
-                    ModelDownloadRow(name: state.recommendedModel, size: state.recommendedModel.contains("7B") ? "~5 GB" : "~2 GB", progress: modelProgress(for: state.recommendedModel.contains("7B") ? .qwen7B : .qwen3B))
-                    ModelDownloadRow(name: "Kokoro TTS", size: "~500 MB", progress: modelProgress(for: .kokoro))
+                    ModelDownloadRow(
+                        name: "Parakeet ASR",
+                        size: "~600 MB",
+                        progress: self.modelProgress(for: .parakeetTDT)
+                    )
+                    ModelDownloadRow(
+                        name: self.state.primaryLLM.displayName,
+                        size: self.state.primaryLLM == .qwen7B ? "~5 GB" : "~2 GB",
+                        progress: self.modelProgress(for: self.state.primaryLLM)
+                    )
+                    ModelDownloadRow(
+                        name: "Kokoro TTS",
+                        size: "~500 MB",
+                        progress: self.modelProgress(for: .kokoro)
+                    )
                 }
                 .padding()
                 .background(Color(nsColor: .controlBackgroundColor))
                 .cornerRadius(8)
             }
-            
+
             Spacer()
-            
+
             // Error state
-            if let error = state.downloadError {
+            if let error = self.state.downloadError {
                 VStack(spacing: 12) {
                     Label(error, systemImage: "exclamationmark.triangle")
                         .foregroundColor(.red)
-                    
+
                     Button("Retry Download") {
-                        onRetry()
+                        self.onRetry()
                     }
                     .buttonStyle(.borderedProminent)
                 }
             }
-            
+
             // Note
-            if state.downloadError == nil && state.downloadProgress < 1.0 {
+            if self.state.downloadError == nil && self.state.downloadProgress < 1.0 {
                 Label("This may take a few minutes depending on your internet speed.", systemImage: "info.circle")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
         }
     }
-    
+
     private func modelProgress(for model: ModelIdentifier) -> Double {
-        // In a real implementation, this would come from ModelManager state
-        // For now, approximate based on overall progress
-        return state.downloadProgress
+        self.state.modelProgresses[model] ?? 0
     }
 }
 
@@ -880,50 +973,54 @@ struct ModelDownloadRow: View {
 import SwiftUI
 
 struct ReadyStepView: View {
+    private var hotkeyDisplayString: String {
+        HotkeyConfiguration.load().displayString
+    }
+
     var body: some View {
         VStack(spacing: 24) {
             // Success icon
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 80))
                 .foregroundColor(.green)
-            
+
             Text("You're All Set!")
                 .font(.largeTitle)
                 .fontWeight(.bold)
-            
+
             Text("Ora is ready to assist you.")
                 .font(.title3)
                 .foregroundColor(.secondary)
-            
+
             Spacer()
                 .frame(height: 20)
-            
+
             // Hotkey tutorial
             VStack(spacing: 16) {
                 Text("How to Use Ora")
                     .font(.headline)
-                
+
                 HStack(spacing: 20) {
                     TutorialStep(
                         number: 1,
                         icon: "keyboard",
                         title: "Press & Hold",
-                        description: "⌥ Space"
+                        description: self.hotkeyDisplayString
                     )
-                    
+
                     Image(systemName: "arrow.right")
                         .foregroundColor(.secondary)
-                    
+
                     TutorialStep(
                         number: 2,
                         icon: "waveform",
                         title: "Speak",
                         description: "Say your request"
                     )
-                    
+
                     Image(systemName: "arrow.right")
                         .foregroundColor(.secondary)
-                    
+
                     TutorialStep(
                         number: 3,
                         icon: "hand.raised",
@@ -935,9 +1032,9 @@ struct ReadyStepView: View {
             .padding()
             .background(Color(nsColor: .controlBackgroundColor))
             .cornerRadius(8)
-            
+
             Spacer()
-            
+
             Text("You can change settings anytime from the menu bar icon.")
                 .font(.caption)
                 .foregroundColor(.secondary)
@@ -984,22 +1081,29 @@ struct TutorialStep: View {
 ```swift
 func applicationDidFinishLaunching(_ notification: Notification) {
     // ... existing code ...
-    
-    // Check if setup is needed
-    SetupCoordinator.shared.checkAndShowSetupIfNeeded()
-    
+
     // Listen for setup completion
-    NotificationCenter.default.addObserver(
+    self.setupObserver = NotificationCenter.default.addObserver(
         forName: .setupDidComplete,
         object: nil,
         queue: .main
     ) { [weak self] _ in
         self?.onSetupComplete()
     }
+
+    // Check if setup is needed (async to wait for model verification)
+    Task { @MainActor in
+        let setupNeeded = await SetupCoordinator.shared.checkAndShowSetupIfNeeded()
+        if !setupNeeded {
+            // Setup was already complete and models are ready
+            self.onSetupComplete()
+        }
+        // If setup is needed, onSetupComplete will be called via notification when user completes setup
+    }
 }
 
 private func onSetupComplete() {
-    logger.info("Setup complete, initializing main functionality")
+    self.logger.info("Setup complete, initializing main functionality")
     // Initialize hotkey, warmup models, etc.
 }
 ```
@@ -1293,3 +1397,72 @@ Ora/
 - [x] PR merged: https://github.com/benedict2310/ora/pull/3
 - [x] Merged to main
 - [x] Date: 2025-12-28
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex (In-depth review)
+**Date:** 2025-12-29T10:05:00Z
+**Scope:** Story vs repository implementation + tests
+
+### Summary
+- Files reviewed: story + setup sources + setup tests
+- Build status: Not run (review only)
+- Tests status: Not run (review only)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [ ] None
+
+#### P1 - Major (Should fix)
+- [ ] `docs/stories/foundations/F.04-FIRST-RUN-SETUP.md:988` - The story’s AppDelegate integration only starts main functionality after `.setupDidComplete`, but the implementation also calls `onSetupComplete()` when `UserDefaults` says setup is complete; if models are missing and setup restarts at download, the app still starts hotkey/overlay, violating the objective that setup gates usability. Actual behavior: `Ora/AppDelegate.swift:46`, `Ora/AppDelegate.swift:49`.
+- [ ] `docs/stories/foundations/F.04-FIRST-RUN-SETUP.md:668` - The story’s `PermissionsStepView` re-calls `refreshAll()` on `.permissionsStateDidChange`, which can re-post the same notification and loop; repo code avoids this by reading the state from the notification and updating the coordinator. Actual behavior: `Ora/Setup/Steps/PermissionsStepView.swift:47`.
+- [ ] `docs/stories/foundations/F.04-FIRST-RUN-SETUP.md:1066` - Test coverage in the story claims full-flow validation (postpone/resume/download gating), but repo tests only validate `SetupStep`/`SetupState` basics and do not cover `checkAndShowSetupIfNeeded`, permission gating, download restart, or UserDefaults persistence. Evidence: `OraTests/SetupCoordinatorTests.swift:1`.
+
+#### P2 - Minor (Can defer)
+- [ ] `docs/stories/foundations/F.04-FIRST-RUN-SETUP.md:121` - `SetupState` in the story omits `modelProgresses` and `primaryLLM`, yet the implementation relies on those to show per-model progress and the persisted primary LLM. Actual behavior: `Ora/Setup/SetupState.swift:26`.
+- [ ] `docs/stories/foundations/F.04-FIRST-RUN-SETUP.md:795` - The download step in the story fakes per-model progress by returning overall progress, but AC-12 claims individual progress is displayed; the repo tracks per-model progress via `modelProgresses`. Actual behavior: `Ora/Setup/Steps/DownloadStepView.swift:47`.
+- [ ] `docs/stories/foundations/F.04-FIRST-RUN-SETUP.md:543` - Hotkey strings are hardcoded in the story (Welcome + Ready); the repo uses the configured `HotkeyConfiguration` display string, so docs will drift when users customize. Actual behavior: `Ora/Setup/Steps/WelcomeStepView.swift:13`, `Ora/Setup/Steps/ReadyStepView.swift:13`.
+
+### Future Considerations (Out of Scope)
+- None
+
+### Approval Status
+- [ ] All P0 issues resolved
+- [ ] All P1 issues resolved
+- [ ] Ready for merge
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2025-12-29T15:22:04Z
+**Commit reviewed:** 15546d2
+**Iteration:** 10
+
+### Summary
+- Files reviewed: 4
+- Build status: Pass
+- Tests status: Pass (274 tests)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [ ] None
+
+#### P1 - Major (Should fix)
+- [ ] None
+
+#### P2 - Minor (Can defer)
+- [ ] None
+
+### Future Considerations (Out of Scope)
+- None
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge

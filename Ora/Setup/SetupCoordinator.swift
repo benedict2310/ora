@@ -39,23 +39,25 @@ final class SetupCoordinator: NSObject, ObservableObject {
     // MARK: - Public API
 
     /// Check if setup is needed and show if required
-    func checkAndShowSetupIfNeeded() {
+    /// - Returns: `true` if setup is needed and was shown, `false` if setup was already complete and models are available
+    func checkAndShowSetupIfNeeded() async -> Bool {
         let isComplete = UserDefaults.standard.bool(forKey: self.userDefaultsKey)
 
         if isComplete {
             // Verify models are still available
-            Task {
-                let modelsReady = await ModelManager.shared.requiredModelsAvailable()
-                if !modelsReady {
-                    self.logger.warning("Setup was complete but models missing, restarting setup")
-                    self.state.currentStep = .download
-                    self.showSetup()
-                    // Start downloads automatically when resuming to download step
-                    await self.startDownloads()
-                }
+            let modelsReady = await ModelManager.shared.requiredModelsAvailable()
+            if !modelsReady {
+                self.logger.warning("Setup was complete but models missing, restarting setup")
+                self.state.currentStep = .download
+                self.showSetup()
+                // Start downloads automatically when resuming to download step
+                await self.startDownloads()
+                return true  // Setup is needed
             }
+            return false  // Setup not needed, models ready
         } else {
             self.showSetup()
+            return true  // Setup is needed
         }
     }
 
