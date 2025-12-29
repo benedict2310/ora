@@ -328,16 +328,13 @@ final class HotkeyManagerTests: XCTestCase {
         XCTAssertFalse(HotkeyManager.shared.isListening)
     }
 
-    func test_start_withoutAccessibility_doesNotStart() {
-        // This test verifies behavior when accessibility is not granted
-        // In CI or when permissions aren't granted, start() should fail gracefully
+    func test_start_setsIsListeningTrue() {
+        // Carbon Events don't require accessibility permission
+        // So start() should always enable listening
         HotkeyManager.shared.stop()
+        HotkeyManager.shared.start()
 
-        // If accessibility isn't trusted, start should not enable listening
-        if !AXIsProcessTrusted() {
-            HotkeyManager.shared.start()
-            XCTAssertFalse(HotkeyManager.shared.isListening)
-        }
+        XCTAssertTrue(HotkeyManager.shared.isListening)
     }
 }
 

@@ -1237,3 +1237,91 @@ If Carbon implementation fails:
 - Working implementation: `docs/references/HOTKEY_OVERLAY_INVESTIGATION.md`
 - Apple Carbon Event Manager (legacy but functional)
 - Key codes: `Carbon.HIToolbox` (`kVK_Space`, `kVK_ANSI_*`, etc.)
+
+---
+
+## 14. Carbon Hotkey Fix - Code Review Findings
+
+**Reviewer:** Claude Code Review Agent
+**Date:** 2025-12-29
+**Commit reviewed:** 99615c7
+**Branch:** `fix/carbon-hotkey-events`
+
+### Summary
+
+- Files reviewed: 4
+- Tests run: Yes (223 tests, all passing)
+- Build status: Pass
+
+### Files Changed
+
+| File | Lines Changed | Description |
+|:-----|:--------------|:------------|
+| `Ora/Hotkey/HotkeyManager.swift` | +143/-97 | Rewritten to use Carbon Events |
+| `Ora/AppDelegate.swift` | +5/-20 | Removed accessibility check, cleaned debug logs |
+| `Ora/Overlay/OverlayWindowController.swift` | -7 | Removed debug print statements |
+| `OraTests/HotkeyManagerTests.swift` | +4/-9 | Updated test for new behavior |
+
+### Review Checklist
+
+#### Correctness & Logic
+- [x] Implementation matches Section 13 implementation plan
+- [x] Carbon Event handler installed with `InstallEventHandler()`
+- [x] Hotkey registered with `RegisterEventHotKey()`
+- [x] Both press and release events handled (`kEventHotKeyPressed`, `kEventHotKeyReleased`)
+- [x] Proper cleanup with `UnregisterEventHotKey()` and `RemoveEventHandler()`
+- [x] MainActor dispatch for thread safety
+
+#### Architecture & Design
+- [x] Follows existing singleton pattern
+- [x] Maintains same public API (start/stop/setHotkey/resetToDefault)
+- [x] Clean separation between Carbon internals and public interface
+- [x] Appropriate use of MARK organization
+
+#### Integration & Regressions
+- [x] Notification names unchanged (`.hotkeyDidPress`, `.hotkeyDidRelease`)
+- [x] AppDelegate integration unchanged (just removed accessibility check)
+- [x] No breaking changes to public APIs
+
+#### Test Coverage
+- [x] All 223 tests pass
+- [x] Test updated to reflect Carbon doesn't need accessibility
+- [x] Existing configuration, conflict detection, and notification tests still valid
+
+#### Security & Performance
+- [x] No hardcoded secrets
+- [x] Proper memory management (weak self not needed - Carbon handles lifecycle)
+- [x] App signature properly defined (4-char code "ORAP")
+
+#### Code Quality
+- [x] Clear documentation explaining why Carbon is needed
+- [x] Debug logging removed
+- [x] Code is readable and well-organized
+
+### Issues Found
+
+#### P0 - Critical (Must fix before merge)
+(None)
+
+#### P1 - Major (Should fix before merge)
+(None)
+
+#### P2 - Minor (Can fix in follow-up)
+(None)
+
+### Notes
+
+1. **Carbon Framework:** The implementation correctly uses `import Carbon` instead of `import Carbon.HIToolbox` for full Carbon Event API access.
+
+2. **App Signature:** The 4-char code "ORAP" is properly defined using byte array for clarity.
+
+3. **Thread Safety:** The callback correctly dispatches to `@MainActor` using `Task { @MainActor in }`.
+
+4. **Cleanup:** Both `unregisterHotkey()` and `removeEventHandler()` are called in `stop()`, preventing resource leaks.
+
+### Approval Status
+
+- [x] All P0 issues resolved (none found)
+- [x] All P1 issues resolved (none found)
+- [x] Coverage target met (223 tests passing)
+- [x] Ready for merge
