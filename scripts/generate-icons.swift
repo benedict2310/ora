@@ -1,15 +1,12 @@
 #!/usr/bin/env swift
 //
 // generate-icons.swift
-// Generate placeholder icons for Ora from SF Symbols
+// Generate menu bar icons for Ora from SF Symbols
 //
 // Usage: swift scripts/generate-icons.swift
 //
-// This script generates:
-// - App icon (all required sizes) from a base design
-// - Menu bar icons (all states) from SF Symbols as placeholders
-//
-// Note: For production, replace with custom-designed assets.
+// This script generates menu bar icons (all states) from SF Symbols as placeholders.
+// For app icons, use: swift scripts/resize-app-icon.swift
 //
 
 import AppKit
@@ -28,20 +25,6 @@ let menuBarStates: [(name: String, symbol: String)] = [
     ("menubar-speaking", "speaker.wave.2.fill"),
     ("menubar-error", "exclamationmark.triangle"),
     ("menubar-setup", "arrow.down.circle")
-]
-
-// App icon sizes (pixels)
-let appIconSizes: [(name: String, size: Int)] = [
-    ("icon_16x16", 16),
-    ("icon_16x16@2x", 32),
-    ("icon_32x32", 32),
-    ("icon_32x32@2x", 64),
-    ("icon_128x128", 128),
-    ("icon_128x128@2x", 256),
-    ("icon_256x256", 256),
-    ("icon_256x256@2x", 512),
-    ("icon_512x512", 512),
-    ("icon_512x512@2x", 1024)
 ]
 
 // MARK: - Icon Generation
@@ -72,57 +55,6 @@ func generateMenuBarIcon(symbol: String, size: CGSize, color: NSColor = .black) 
 
     image.unlockFocus()
     image.isTemplate = true
-    return image
-}
-
-func generateAppIcon(size: Int) -> NSImage {
-    let image = NSImage(size: NSSize(width: size, height: size))
-    image.lockFocus()
-
-    // Background gradient (blue-ish)
-    let gradient = NSGradient(colors: [
-        NSColor(red: 0.259, green: 0.478, blue: 0.898, alpha: 1.0),
-        NSColor(red: 0.149, green: 0.298, blue: 0.698, alpha: 1.0)
-    ])
-
-    // Draw rounded rect background
-    let bounds = NSRect(x: 0, y: 0, width: size, height: size)
-    let cornerRadius = CGFloat(size) * 0.22 // macOS icon corner radius ratio
-    let path = NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius)
-    gradient?.draw(in: path, angle: -45)
-
-    // Draw a stylized "O" with waveform
-    let center = CGFloat(size) / 2
-    let outerRadius = CGFloat(size) * 0.35
-    let lineWidth = CGFloat(size) * 0.06
-
-    NSColor.white.setStroke()
-
-    // Outer circle
-    let circlePath = NSBezierPath(ovalIn: NSRect(
-        x: center - outerRadius,
-        y: center - outerRadius,
-        width: outerRadius * 2,
-        height: outerRadius * 2
-    ))
-    circlePath.lineWidth = lineWidth
-    circlePath.stroke()
-
-    // Waveform bars inside the circle
-    let barWidth = CGFloat(size) * 0.04
-    let barSpacing = CGFloat(size) * 0.06
-    let barHeights: [CGFloat] = [0.15, 0.25, 0.35, 0.25, 0.15]
-
-    NSColor.white.setFill()
-    for (index, height) in barHeights.enumerated() {
-        let x = center - (CGFloat(barHeights.count) / 2 - CGFloat(index)) * barSpacing - barWidth / 2
-        let barHeight = CGFloat(size) * height
-        let y = center - barHeight / 2
-        let bar = NSRect(x: x, y: y, width: barWidth, height: barHeight)
-        NSBezierPath(roundedRect: bar, xRadius: barWidth / 2, yRadius: barWidth / 2).fill()
-    }
-
-    image.unlockFocus()
     return image
 }
 
@@ -194,20 +126,9 @@ for state in menuBarStates {
     }
 }
 
-// Generate app icons
-print("\nGenerating app icons:")
-let appIconPath = assetsPath.appendingPathComponent("AppIcon.appiconset")
-for iconSize in appIconSizes {
-    let image = generateAppIcon(size: iconSize.size)
-    let path = appIconPath.appendingPathComponent("\(iconSize.name).png")
-    do {
-        try savePNG(image, to: path, pixelSize: iconSize.size)
-        print("  Created: \(iconSize.name).png (\(iconSize.size)x\(iconSize.size) px)")
-    } catch {
-        print("  Error saving \(iconSize.name).png: \(error)")
-    }
-}
+// NOTE: App icons are NOT generated here.
+// Use `swift scripts/resize-app-icon.swift` to resize the custom ora-icon.png source.
 
-print("\nDone! Icons generated successfully.")
-print("\nNote: These are placeholder icons using SF Symbols and basic shapes.")
-print("Replace with custom-designed assets for production.")
+print("\nDone! Menu bar icons generated successfully.")
+print("\nNote: Menu bar icons use SF Symbols as placeholders.")
+print("For app icon, run: swift scripts/resize-app-icon.swift")
