@@ -71,6 +71,18 @@ Voice → (FluidAudio Parakeet) → (MLX + Qwen 2.5) → (Kokoro TTS) → Voice/
 
 **Why `reset-perms`?** macOS TCC tracks permissions by bundle ID + CDHash. Every rebuild changes the CDHash, so old permission grants don't apply. `reset-perms` clears stale entries so the next grant applies to the current build.
 
+**Skip setup wizard (for testing):**
+```bash
+# Mark setup as complete to bypass the setup wizard
+defaults write com.ora.app "com.ora.setupComplete" -bool true
+
+# Reset hotkey to default (Option+Space) if it was changed
+defaults delete com.ora.app "com.ora.hotkeyConfiguration"
+
+# Then run the app
+./build.sh run
+```
+
 **Other commands:**
 - **Run tests:** `xcodebuild test -project Ora.xcodeproj -scheme Ora` or `Cmd+U` in Xcode.
 - **Restart app manually:** `killall Ora 2>/dev/null || true; open -n build/Build/Products/Release/Ora.app`.

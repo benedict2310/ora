@@ -1336,3 +1336,48 @@ If Carbon implementation fails:
 - [x] Merged to main: 54b0810
 - [x] Post-merge build verification passed
 - [x] Date completed: 2025-12-29
+
+---
+
+## 16. Overlay Dismiss Fix
+
+**Date:** 2025-12-29
+**Commit:** 1735f8d
+
+### Problem
+
+The overlay window could not be closed after appearing, forcing users to quit the app.
+
+### Solution
+
+Added dismiss functionality to `OverlayWindowController.swift`:
+
+1. **Escape key** - Press Escape to close the overlay (local event monitor)
+2. **Click outside** - Click anywhere outside the overlay to close it (global event monitor)
+
+### Implementation Details
+
+- Added `escapeMonitor` and `clickOutsideMonitor` properties
+- `addDismissMonitors()` called in `show()` to register monitors
+- `removeDismissMonitors()` called in `hide()` to clean up monitors
+- Monitors properly removed to prevent memory leaks
+
+### Testing Notes
+
+During testing, discovered that the hotkey wasn't working due to:
+1. Setup wizard not completed (`isSetupComplete = false`)
+2. Saved hotkey configuration was ⌥⇧Space instead of ⌥Space
+
+**Workaround for testing (added to CLAUDE.md):**
+```bash
+defaults write com.ora.app "com.ora.setupComplete" -bool true
+defaults delete com.ora.app "com.ora.hotkeyConfiguration"
+./build.sh run
+```
+
+### Status
+
+- [x] Escape key dismisses overlay
+- [x] Click outside dismisses overlay
+- [x] All 223 tests passing
+- [x] Committed to main: 1735f8d
