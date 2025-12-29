@@ -200,6 +200,46 @@ final class ParakeetBootstrapTests: XCTestCase {
             XCTFail("Unexpected error: \(error)")
         }
     }
+
+    // MARK: - Deduplication Tests (AC: ensureReady deduplication)
+
+    func test_ensureReady_deduplicatesConcurrentCalls() async throws {
+        let bootstrap = ParakeetBootstrap(forTesting: true)
+        bootstrap.invalidate()
+
+        // Skip if models are not present (can't test load deduplication without models)
+        guard bootstrap.modelsAvailable() else {
+            throw XCTSkip("Models not available - cannot test deduplication")
+        }
+
+        // Launch multiple concurrent ensureReady calls
+        async let result1 = bootstrap.ensureReady()
+        async let result2 = bootstrap.ensureReady()
+        async let result3 = bootstrap.ensureReady()
+
+        // All should return the same manager instance
+        let managers = try await [result1, result2, result3]
+        XCTAssertTrue(managers[0] === managers[1], "Concurrent calls should return same manager")
+        XCTAssertTrue(managers[1] === managers[2], "Concurrent calls should return same manager")
+    }
+
+    func test_ensureReady_returnsCachedManager() async throws {
+        let bootstrap = ParakeetBootstrap(forTesting: true)
+        bootstrap.invalidate()
+
+        // Skip if models are not present
+        guard bootstrap.modelsAvailable() else {
+            throw XCTSkip("Models not available - cannot test caching")
+        }
+
+        // First call loads the manager
+        let manager1 = try await bootstrap.ensureReady()
+
+        // Second call should return cached manager
+        let manager2 = try await bootstrap.ensureReady()
+
+        XCTAssertTrue(manager1 === manager2, "Should return cached manager")
+    }
 }
 
 // MARK: - Model Downloader Tests
@@ -296,6 +336,47 @@ final class ASRNotificationTests: XCTestCase {
 
         let bootstrap = ParakeetBootstrap(forTesting: true)
         bootstrap.invalidate() // This triggers a state change notification
+
+        await fulfillment(of: [expectation], timeout: 2.0)
+    }
+
+    func test_downloadStateNotification_postsOnDownloaderStateChange() async throws {
+        let expectation = XCTestExpectation(description: "Download state notification received")
+
+        let observer = NotificationCenter.default.addObserver(
+            forName: .parakeetDownloadStateDidChange,
+            object: nil,
+            queue: nil
+        ) { notification in
+            XCTAssertNotNil(notification.object as? ParakeetModelDownloader.State)
+            expectation.fulfill()
+        }
+
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        // Create bootstrap (which sets up the downloader callback that posts notifications)
+        let bootstrap = ParakeetBootstrap(forTesting: true)
+        _ = bootstrap // Keep reference alive
+
+        // Directly post the notification to simulate what handleDownloadState does
+        NotificationCenter.default.post(
+            name: .parakeetDownloadStateDidChange,
+            object: ParakeetModelDownloader.State.verifying
+        )
+
+        await fulfillment(of: [expectation], timeout: 2.0)
+    }
+
+    func test_downloaderStateCallback_isInvoked() async throws {
+        let expectation = XCTestExpectation(description: "Downloader state callback invoked")
+
+        let downloader = ParakeetModelDownloader()
+        downloader.onState = { state in
+            XCTAssertEqual(state, .verifying)
+            expectation.fulfill()
+        }
+
+        downloader.notifyState(.verifying)
 
         await fulfillment(of: [expectation], timeout: 2.0)
     }

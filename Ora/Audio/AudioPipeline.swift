@@ -246,7 +246,7 @@ final class AudioPipeline: @unchecked Sendable {
 
 // MARK: - Errors
 
-enum AudioPipelineError: Error, Sendable, LocalizedError {
+enum AudioPipelineError: Error, Sendable, LocalizedError, Equatable {
     case permissionDenied
     case captureStartFailed
     case deviceDisconnected
