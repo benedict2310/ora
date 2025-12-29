@@ -2277,3 +2277,36 @@ The following components already exist and will be reused:
 - [x] Tests passing (352 total, 43 new for S.03)
 - [x] Build succeeds
 - [x] Working tree clean
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2025-12-29T19:09:55Z
+**Commit reviewed:** 1ff73cd
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 9
+- Build status: Pass
+- Tests status: Pass (352 tests, 2 skipped)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [ ] None.
+
+#### P1 - Major (Should fix)
+- [ ] `Ora/ASR/StreamingManager.swift:291` - `onPartial` emits the raw ASR hypothesis instead of the diffed text, so duplicate/flickering partials can occur (violates AC-3).
+- [ ] `Ora/ASR/StreamingManager.swift:334` - Segment index is only logged; `onFinal` delivers an `ASRFinalSegment` without a segment index, so AC-7 is not met or verifiable.
+
+#### P2 - Minor (Can defer)
+- [ ] `Ora/ASR/StreamingManager.swift:263` - VAD gating skips only before first speech; after speech ends, silence continues to be processed, which may undermine the AC-12 CPU target during silence.
+
+### Future Considerations (Out of Scope)
+- None.
+
+### Approval Status
+- [ ] All P0 issues resolved
+- [ ] All P1 issues resolved
+- [ ] Ready for merge

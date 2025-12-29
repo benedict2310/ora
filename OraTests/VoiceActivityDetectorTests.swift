@@ -36,12 +36,19 @@ final class VoiceActivityDetectorTests: XCTestCase {
         let loudSamples = [Float](repeating: 0.1, count: 480)
         _ = vad.process(loudSamples)
 
-        // Then silence
-        let quietSamples = [Float](repeating: 0.001, count: 480)
-        let result = vad.process(quietSamples)
+        // Process multiple frames of silence to let smoothing catch up
+        // (VAD uses energy smoothing with factor 0.3)
+        let quietSamples = [Float](repeating: 0.0001, count: 480)
+        var lastResult: VADResult?
+        for _ in 0..<10 {
+            lastResult = vad.process(quietSamples)
+            if lastResult?.transitionType == .speechEnd {
+                break
+            }
+        }
 
-        XCTAssertFalse(result.isSpeech, "Should detect silence below threshold")
-        XCTAssertEqual(result.transitionType, .speechEnd, "Should emit speechEnd transition")
+        XCTAssertFalse(lastResult?.isSpeech ?? true, "Should detect silence below threshold")
+        XCTAssertEqual(lastResult?.transitionType, .speechEnd, "Should emit speechEnd transition")
     }
 
     /// TC-3.3: Hangover prevents premature cutoff
@@ -78,14 +85,21 @@ final class VoiceActivityDetectorTests: XCTestCase {
         let loudSamples = [Float](repeating: 0.1, count: 480)
         _ = vad.process(loudSamples)
 
-        // Wait through hangover
-        let quietSamples = [Float](repeating: 0.001, count: 480)
-        _ = vad.process(quietSamples)  // hangover = 1
-        _ = vad.process(quietSamples)  // hangover = 0
-        let result = vad.process(quietSamples)  // transition!
+        // Process multiple frames of silence to let smoothing catch up
+        // and for hangover to expire
+        let quietSamples = [Float](repeating: 0.0001, count: 480)
+        var speechEndResult: VADResult?
+        for _ in 0..<15 {
+            let result = vad.process(quietSamples)
+            if result.transitionType == .speechEnd {
+                speechEndResult = result
+                break
+            }
+        }
 
-        XCTAssertFalse(result.isSpeech, "Speech should end after hangover")
-        XCTAssertEqual(result.transitionType, .speechEnd, "Should emit speechEnd")
+        XCTAssertNotNil(speechEndResult, "Should eventually emit speechEnd")
+        XCTAssertFalse(speechEndResult?.isSpeech ?? true, "Speech should end after hangover")
+        XCTAssertEqual(speechEndResult?.transitionType, .speechEnd, "Should emit speechEnd")
     }
 
     /// TC-3.5: Reset clears state

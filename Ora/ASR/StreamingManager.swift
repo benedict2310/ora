@@ -12,26 +12,26 @@ import os
 // MARK: - Configuration
 
 /// Configuration for streaming behavior
-public struct StreamingConfiguration: Sendable {
+struct StreamingConfiguration: Sendable {
     /// Hop interval in seconds (how often to process)
-    public var hopInterval: TimeInterval
+    var hopInterval: TimeInterval
 
     /// Rolling window size in seconds
-    public var windowSize: TimeInterval
+    var windowSize: TimeInterval
 
     /// Minimum audio before first transcription attempt
-    public var minimumAudioLength: TimeInterval
+    var minimumAudioLength: TimeInterval
 
     /// Number of stable hops before auto-finalization (0 to disable)
-    public var stabilityThreshold: Int
+    var stabilityThreshold: Int
 
     /// Enable VAD-gated processing
-    public var enableVAD: Bool
+    var enableVAD: Bool
 
     /// VAD configuration
-    public var vadConfig: VADConfiguration
+    var vadConfig: VADConfiguration
 
-    public init(
+    init(
         hopInterval: TimeInterval = 0.4,
         windowSize: TimeInterval = 10.0,
         minimumAudioLength: TimeInterval = 0.5,
@@ -51,7 +51,7 @@ public struct StreamingConfiguration: Sendable {
 // MARK: - Streaming Error
 
 /// Errors that can occur during streaming
-public enum StreamingError: Error, Sendable {
+enum StreamingError: Error, Sendable {
     case alreadyStreaming
     case notStreaming
     case engineNotReady
@@ -96,24 +96,24 @@ public enum StreamingError: Error, Sendable {
 /// await manager.stop()  // Triggers finalization
 /// ```
 @MainActor
-public final class StreamingManager {
+final class StreamingManager {
 
-    // MARK: - Public Properties
+    // MARK: - Properties
 
     /// Current streaming state
-    public private(set) var isStreaming: Bool = false
+    private(set) var isStreaming: Bool = false
 
     /// Callback for partial transcription updates
-    public var onPartial: (@Sendable @MainActor (ASRPartial) -> Void)?
+    var onPartial: (@Sendable @MainActor (ASRPartial) -> Void)?
 
     /// Callback for finalized segments
-    public var onFinal: (@Sendable @MainActor (ASRFinalSegment) -> Void)?
+    var onFinal: (@Sendable @MainActor (ASRFinalSegment) -> Void)?
 
     /// Callback for errors during streaming
-    public var onError: (@Sendable @MainActor (StreamingError) -> Void)?
+    var onError: (@Sendable @MainActor (StreamingError) -> Void)?
 
     /// Callback for VAD state changes
-    public var onVADStateChange: (@Sendable @MainActor (Bool) -> Void)?
+    var onVADStateChange: (@Sendable @MainActor (Bool) -> Void)?
 
     // MARK: - Private Properties
 
@@ -144,7 +144,7 @@ public final class StreamingManager {
     ///   - configuration: Streaming configuration
     ///   - engine: ASR engine for transcription
     ///   - ringBuffer: Ring buffer for audio storage
-    public init(
+    init(
         configuration: StreamingConfiguration = StreamingConfiguration(),
         engine: ASREngine,
         ringBuffer: StreamingRingBuffer
@@ -156,10 +156,10 @@ public final class StreamingManager {
         self.differ = PartialDiffer()
     }
 
-    // MARK: - Public Methods
+    // MARK: - Methods
 
     /// Start streaming transcription
-    public func start() async throws {
+    func start() async throws {
         guard !isStreaming else {
             throw StreamingError.alreadyStreaming
         }
@@ -183,7 +183,7 @@ public final class StreamingManager {
     }
 
     /// Stop streaming and finalize any pending transcription
-    public func stop() async {
+    func stop() async {
         guard isStreaming else { return }
 
         isStreaming = false
@@ -201,7 +201,7 @@ public final class StreamingManager {
     }
 
     /// Force finalization of current segment (e.g., on user action)
-    public func forceFinalize() async {
+    func forceFinalize() async {
         await finalizeCurrentSegment()
     }
 
@@ -288,9 +288,10 @@ public final class StreamingManager {
             lastPartialText = partial.text
         }
 
-        // Emit partial if there's text
+        // Emit partial with diffed (stable) text
         if !diffResult.fullText.isEmpty {
-            onPartial?(partial)
+            let diffedPartial = ASRPartial(text: diffResult.fullText, words: partial.words)
+            onPartial?(diffedPartial)
         }
 
         // Check for stability-based finalization (if enabled)
@@ -326,13 +327,22 @@ public final class StreamingManager {
             // Fall back to last partial text
             finalResult = ASRFinalSegment(
                 text: trimmedText,
-                words: []
+                words: [],
+                segmentIndex: currentSegmentIndex,
+                timestamp: now
             )
             logger.warning("Finalization failed, using last partial: \(error.localizedDescription)")
         }
 
         if let segment = finalResult, !segment.text.isEmpty {
-            onFinal?(segment)
+            // Create indexed segment with proper metadata
+            let indexedSegment = ASRFinalSegment(
+                text: segment.text,
+                words: segment.words,
+                segmentIndex: currentSegmentIndex,
+                timestamp: now
+            )
+            onFinal?(indexedSegment)
             logger.info("Finalized segment \(self.currentSegmentIndex): \(segment.text)")
         }
 

@@ -105,6 +105,7 @@ final class StreamingManagerTests: XCTestCase {
     func test_finalCallbackOnForceFinalize() async throws {
         let expectation = expectation(description: "final")
         var receivedFinal: ASRFinalSegment?
+        let testStartTime = Date()
 
         manager.onFinal = { segment in
             receivedFinal = segment
@@ -129,6 +130,8 @@ final class StreamingManagerTests: XCTestCase {
 
         XCTAssertNotNil(receivedFinal)
         XCTAssertEqual(receivedFinal?.text, "Test transcription")
+        XCTAssertEqual(receivedFinal?.segmentIndex, 0, "First segment should have index 0")
+        XCTAssertGreaterThanOrEqual(receivedFinal?.timestamp ?? .distantPast, testStartTime, "Timestamp should be after test start")
     }
 
     /// TC-5.4: Start when already streaming throws

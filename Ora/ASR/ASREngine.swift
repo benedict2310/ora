@@ -28,6 +28,15 @@ struct ASRPartial: Sendable, Equatable {
 struct ASRFinalSegment: Sendable, Equatable {
     let text: String
     let words: [ASRWord]
+    let segmentIndex: Int
+    let timestamp: Date
+
+    init(text: String, words: [ASRWord], segmentIndex: Int = 0, timestamp: Date = Date()) {
+        self.text = text
+        self.words = words
+        self.segmentIndex = segmentIndex
+        self.timestamp = timestamp
+    }
 }
 
 // MARK: - Protocol

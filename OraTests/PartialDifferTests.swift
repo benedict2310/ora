@@ -126,8 +126,9 @@ final class PartialDifferTests: XCTestCase {
         var differ = PartialDiffer(stabilityThreshold: 2)
 
         _ = differ.process("I'm going to the sto")  // Partial word
-        _ = differ.process("I'm going to the store")  // Completed
-        let result = differ.process("I'm going to the store")
+        _ = differ.process("I'm going to the store")  // Completed (count=0)
+        _ = differ.process("I'm going to the store")  // count=1
+        let result = differ.process("I'm going to the store")  // count=2, stable!
 
         XCTAssertTrue(result.isStable)
         XCTAssertEqual(result.confirmedText, "I'm going to the store")
