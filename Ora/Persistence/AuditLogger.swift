@@ -59,6 +59,7 @@ actor AuditLogger {
     func recordFailure(_ entryID: UUID, error: String) {
         let entries = PersistenceManager.shared.recentAuditEntries(limit: 1000)
         if let entry = entries.first(where: { $0.id == entryID }) {
+            entry.category = AuditCategory.error.rawValue
             entry.setError(error)
             PersistenceManager.shared.updateAuditEntry(entry, result: [:], succeeded: false)
             self.logger.error("Tool failed: \(entry.toolName).\(entry.action) - \(error)")

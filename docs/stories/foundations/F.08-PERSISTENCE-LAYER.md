@@ -781,3 +781,37 @@ SwiftData handles lightweight migrations automatically. For complex changes:
 - [ ] All P0 issues resolved
 - [ ] All P1 issues resolved
 - [ ] Ready for merge
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2025-12-29T08:55:18Z
+**Commit reviewed:** 3b2ebe3
+**Iteration:** 2
+
+### Summary
+- Files reviewed: 7
+- Build status: Pass (`./build.sh`)
+- Tests status: Pass (247 tests, `xcodebuild test -project Ora.xcodeproj -scheme Ora`)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [ ] None
+
+#### P1 - Major (Should fix)
+- [x] `Ora/Persistence/AuditLogger.swift:59` - `recordFailure` updates the entry but never switches the category to `.error`, so tool failures remain `toolExecution` and won't appear in the error filter or show an ERROR badge in the audit log UI. **FIXED:** Now sets `entry.category = AuditCategory.error.rawValue`.
+- [x] `OraTests/PersistenceTests.swift:317` - `PersistenceManagerAPITests` uses `PersistenceManager.shared` (on-disk store) and calls `clearAuditLog`/`deleteSession`, which can wipe real app data during test runs; use `PersistenceManager.createForTesting()` with an in-memory store or inject a test container. **FIXED:** Refactored tests to use `PersistenceManager.createForTesting()` with in-memory store.
+
+#### P2 - Minor (Can defer)
+- [ ] None
+
+### Future Considerations (Out of Scope)
+- None
+
+### Approval Status
+- [ ] All P0 issues resolved
+- [ ] All P1 issues resolved
+- [ ] Ready for merge

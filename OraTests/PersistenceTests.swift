@@ -317,75 +317,73 @@ final class PersistenceTests: XCTestCase {
 @MainActor
 final class PersistenceManagerAPITests: XCTestCase {
 
+    // Use in-memory manager for isolated tests
+    private var manager: PersistenceManager!
+
+    override func setUp() async throws {
+        try await super.setUp()
+        manager = PersistenceManager.createForTesting()
+    }
+
+    override func tearDown() async throws {
+        manager = nil
+        try await super.tearDown()
+    }
+
     // MARK: - Session API Tests
 
     func test_persistenceManager_createSession_returnsNewSession() {
         // When
-        let session = PersistenceManager.shared.createSession()
+        let session = manager.createSession()
 
         // Then
         XCTAssertNotNil(session.id)
         XCTAssertFalse(session.isComplete)
-
-        // Cleanup
-        PersistenceManager.shared.deleteSession(session)
     }
 
     func test_persistenceManager_currentSession_returnsActiveOrNew() {
-        // Given - clear any existing incomplete sessions
-        let existing = PersistenceManager.shared.currentSession()
-        PersistenceManager.shared.completeSession(existing)
+        // Given - no sessions exist in clean test manager
 
         // When
-        let session = PersistenceManager.shared.currentSession()
+        let session = manager.currentSession()
 
         // Then
         XCTAssertFalse(session.isComplete)
-
-        // Cleanup
-        PersistenceManager.shared.deleteSession(session)
     }
 
     func test_persistenceManager_completeSession_marksSummary() {
         // Given
-        let session = PersistenceManager.shared.createSession()
+        let session = manager.createSession()
         session.addMessage(role: .user, content: "Hello, this is a test message")
 
         // When
-        PersistenceManager.shared.completeSession(session)
+        manager.completeSession(session)
 
         // Then
         XCTAssertTrue(session.isComplete)
         XCTAssertNotNil(session.summary)
         XCTAssertTrue(session.summary?.contains("Hello") ?? false)
-
-        // Cleanup
-        PersistenceManager.shared.deleteSession(session)
     }
 
     func test_persistenceManager_recentSessions_returnsCompletedOnly() {
         // Given
-        let session1 = PersistenceManager.shared.createSession()
-        let session2 = PersistenceManager.shared.createSession()
-        PersistenceManager.shared.completeSession(session1)
+        let session1 = manager.createSession()
+        let session2 = manager.createSession()
+        manager.completeSession(session1)
 
         // When
-        let recent = PersistenceManager.shared.recentSessions()
+        let recent = manager.recentSessions()
 
         // Then
         XCTAssertTrue(recent.contains { $0.id == session1.id })
         XCTAssertFalse(recent.contains { $0.id == session2.id })
-
-        // Cleanup
-        PersistenceManager.shared.deleteSession(session1)
-        PersistenceManager.shared.deleteSession(session2)
     }
 
     // MARK: - Audit Log API Tests
 
     func test_persistenceManager_recordToolExecution_createsEntry() {
         // When
-        let entry = PersistenceManager.shared.recordToolExecution(
+        let entry = manager.recordToolExecution(
             toolName: "testTool",
             action: "testAction",
             category: .toolExecution,
@@ -400,14 +398,11 @@ final class PersistenceManagerAPITests: XCTestCase {
         XCTAssertEqual(entry.action, "testAction")
         XCTAssertTrue(entry.userConfirmed)
         XCTAssertNotNil(entry.parameters)
-
-        // Cleanup
-        PersistenceManager.shared.clearAuditLog()
     }
 
     func test_persistenceManager_updateAuditEntry_setsResult() {
         // Given
-        let entry = PersistenceManager.shared.recordToolExecution(
+        let entry = manager.recordToolExecution(
             toolName: "updateTest",
             action: "test",
             category: .toolExecution,
@@ -418,7 +413,7 @@ final class PersistenceManagerAPITests: XCTestCase {
         )
 
         // When
-        PersistenceManager.shared.updateAuditEntry(
+        manager.updateAuditEntry(
             entry,
             result: ["success": true],
             succeeded: true
@@ -427,14 +422,11 @@ final class PersistenceManagerAPITests: XCTestCase {
         // Then
         XCTAssertTrue(entry.succeeded)
         XCTAssertNotNil(entry.result)
-
-        // Cleanup
-        PersistenceManager.shared.clearAuditLog()
     }
 
     func test_persistenceManager_recentAuditEntries_returnsEntries() {
         // Given
-        let entry = PersistenceManager.shared.recordToolExecution(
+        let entry = manager.recordToolExecution(
             toolName: "recentTest",
             action: "list",
             category: .toolExecution,
@@ -445,21 +437,18 @@ final class PersistenceManagerAPITests: XCTestCase {
         )
 
         // When
-        let entries = PersistenceManager.shared.recentAuditEntries(limit: 10)
+        let entries = manager.recentAuditEntries(limit: 10)
 
         // Then
         XCTAssertTrue(entries.contains { $0.id == entry.id })
-
-        // Cleanup
-        PersistenceManager.shared.clearAuditLog()
     }
 
     // MARK: - Settings API Tests
 
     func test_persistenceManager_settings_returnsSingleton() {
         // When
-        let settings1 = PersistenceManager.shared.settings
-        let settings2 = PersistenceManager.shared.settings
+        let settings1 = manager.settings
+        let settings2 = manager.settings
 
         // Then
         XCTAssertEqual(settings1.id, settings2.id)
@@ -467,19 +456,14 @@ final class PersistenceManagerAPITests: XCTestCase {
 
     func test_persistenceManager_updateSettings_persistsChanges() {
         // Given
-        let originalValue = PersistenceManager.shared.settings.voiceOutputEnabled
+        let originalValue = manager.settings.voiceOutputEnabled
 
         // When
-        PersistenceManager.shared.updateSettings { settings in
+        manager.updateSettings { settings in
             settings.voiceOutputEnabled = !originalValue
         }
 
         // Then
-        XCTAssertEqual(PersistenceManager.shared.settings.voiceOutputEnabled, !originalValue)
-
-        // Restore
-        PersistenceManager.shared.updateSettings { settings in
-            settings.voiceOutputEnabled = originalValue
-        }
+        XCTAssertEqual(manager.settings.voiceOutputEnabled, !originalValue)
     }
 }
