@@ -132,6 +132,32 @@ final class StatusBarControllerTests: XCTestCase {
         XCTAssertEqual(StatusBarController.symbolName(for: .setupRequired), "arrow.down.circle")
     }
 
+    // MARK: - Asset Name Tests
+
+    func test_assetName_idle_returnsMenubarIdle() {
+        XCTAssertEqual(StatusBarController.assetName(for: .idle), "menubar-idle")
+    }
+
+    func test_assetName_listening_returnsMenubarListening() {
+        XCTAssertEqual(StatusBarController.assetName(for: .listening), "menubar-listening")
+    }
+
+    func test_assetName_thinking_returnsMenubarThinking() {
+        XCTAssertEqual(StatusBarController.assetName(for: .thinking), "menubar-thinking")
+    }
+
+    func test_assetName_speaking_returnsMenubarSpeaking() {
+        XCTAssertEqual(StatusBarController.assetName(for: .speaking), "menubar-speaking")
+    }
+
+    func test_assetName_error_returnsMenubarError() {
+        XCTAssertEqual(StatusBarController.assetName(for: .error("any")), "menubar-error")
+    }
+
+    func test_assetName_setupRequired_returnsMenubarSetup() {
+        XCTAssertEqual(StatusBarController.assetName(for: .setupRequired), "menubar-setup")
+    }
+
     // MARK: - Menu Construction Tests
 
     func test_menuItemTitles_containsPreferencesAndQuit() {

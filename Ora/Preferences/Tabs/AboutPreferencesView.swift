@@ -22,9 +22,9 @@ struct AboutPreferencesView: View {
                 HStack {
                     Spacer()
                     VStack(spacing: 12) {
-                        Image(systemName: "waveform.circle.fill")
-                            .font(.system(size: 64))
-                            .foregroundStyle(.tint)
+                        Image(nsImage: NSApp.applicationIconImage)
+                            .resizable()
+                            .frame(width: 64, height: 64)
 
                         Text("Ora")
                             .font(.title)
