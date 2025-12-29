@@ -94,7 +94,6 @@ func generateAppIcon(size: Int) -> NSImage {
     // Draw a stylized "O" with waveform
     let center = CGFloat(size) / 2
     let outerRadius = CGFloat(size) * 0.35
-    let innerRadius = CGFloat(size) * 0.25
     let lineWidth = CGFloat(size) * 0.06
 
     NSColor.white.setStroke()
@@ -127,10 +126,36 @@ func generateAppIcon(size: Int) -> NSImage {
     return image
 }
 
-func savePNG(_ image: NSImage, to url: URL) throws {
-    guard let tiffData = image.tiffRepresentation,
-          let bitmapRep = NSBitmapImageRep(data: tiffData),
-          let pngData = bitmapRep.representation(using: .png, properties: [:]) else {
+func savePNG(_ image: NSImage, to url: URL, pixelSize: Int) throws {
+    // Create bitmap rep with explicit pixel dimensions
+    guard let bitmapRep = NSBitmapImageRep(
+        bitmapDataPlanes: nil,
+        pixelsWide: pixelSize,
+        pixelsHigh: pixelSize,
+        bitsPerSample: 8,
+        samplesPerPixel: 4,
+        hasAlpha: true,
+        isPlanar: false,
+        colorSpaceName: .deviceRGB,
+        bytesPerRow: 0,
+        bitsPerPixel: 0
+    ) else {
+        throw NSError(domain: "IconGenerator", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create bitmap"])
+    }
+    
+    // Set DPI to 72 for 1x images (standard)
+    bitmapRep.size = NSSize(width: pixelSize, height: pixelSize)
+    
+    // Draw the image into the bitmap
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmapRep)
+    image.draw(in: NSRect(x: 0, y: 0, width: pixelSize, height: pixelSize),
+               from: NSRect(origin: .zero, size: image.size),
+               operation: .copy,
+               fraction: 1.0)
+    NSGraphicsContext.restoreGraphicsState()
+    
+    guard let pngData = bitmapRep.representation(using: .png, properties: [:]) else {
         throw NSError(domain: "IconGenerator", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create PNG data"])
     }
     try pngData.write(to: url)
@@ -146,23 +171,23 @@ print("\nGenerating menu bar icons:")
 for state in menuBarStates {
     let imagesetPath = assetsPath.appendingPathComponent("MenuBarIcons/\(state.name).imageset")
 
-    // 1x (16x16 px - standard menu bar icon size)
-    if let image1x = generateMenuBarIcon(symbol: state.symbol, size: NSSize(width: 16, height: 16)) {
+    // 1x (18x18 px - standard menu bar icon size per Apple HIG)
+    if let image1x = generateMenuBarIcon(symbol: state.symbol, size: NSSize(width: 18, height: 18)) {
         let path1x = imagesetPath.appendingPathComponent("\(state.name).png")
         do {
-            try savePNG(image1x, to: path1x)
-            print("  Created: \(state.name).png")
+            try savePNG(image1x, to: path1x, pixelSize: 18)
+            print("  Created: \(state.name).png (18x18 px)")
         } catch {
             print("  Error saving \(state.name).png: \(error)")
         }
     }
 
-    // 2x (32x32 px)
-    if let image2x = generateMenuBarIcon(symbol: state.symbol, size: NSSize(width: 32, height: 32)) {
+    // 2x (36x36 px)
+    if let image2x = generateMenuBarIcon(symbol: state.symbol, size: NSSize(width: 36, height: 36)) {
         let path2x = imagesetPath.appendingPathComponent("\(state.name)@2x.png")
         do {
-            try savePNG(image2x, to: path2x)
-            print("  Created: \(state.name)@2x.png")
+            try savePNG(image2x, to: path2x, pixelSize: 36)
+            print("  Created: \(state.name)@2x.png (36x36 px)")
         } catch {
             print("  Error saving \(state.name)@2x.png: \(error)")
         }
@@ -176,7 +201,7 @@ for iconSize in appIconSizes {
     let image = generateAppIcon(size: iconSize.size)
     let path = appIconPath.appendingPathComponent("\(iconSize.name).png")
     do {
-        try savePNG(image, to: path)
+        try savePNG(image, to: path, pixelSize: iconSize.size)
         print("  Created: \(iconSize.name).png (\(iconSize.size)x\(iconSize.size) px)")
     } catch {
         print("  Error saving \(iconSize.name).png: \(error)")

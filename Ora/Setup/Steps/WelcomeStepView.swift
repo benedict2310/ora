@@ -17,9 +17,9 @@ struct WelcomeStepView: View {
     var body: some View {
         VStack(spacing: 24) {
             // App icon
-            Image(systemName: "waveform.circle.fill")
-                .font(.system(size: 80))
-                .foregroundStyle(.tint)
+            Image(nsImage: AppIcon.image)
+                .resizable()
+                .frame(width: 80, height: 80)
 
             // Welcome text
             Text("Welcome to Ora")

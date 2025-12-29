@@ -22,7 +22,7 @@ struct AboutPreferencesView: View {
                 HStack {
                     Spacer()
                     VStack(spacing: 12) {
-                        Image(nsImage: NSApp.applicationIconImage)
+                        Image(nsImage: AppIcon.image)
                             .resizable()
                             .frame(width: 64, height: 64)
 
