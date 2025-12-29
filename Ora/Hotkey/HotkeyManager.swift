@@ -2,11 +2,11 @@
 //  HotkeyManager.swift
 //  Ora
 //
-//  Global hotkey registration and event handling for Push-to-Talk
+//  Global hotkey registration using Carbon Event APIs for Push-to-Talk
 //
 
 import AppKit
-import Carbon.HIToolbox
+import Carbon
 import os
 
 // MARK: - Notifications
@@ -21,6 +21,10 @@ extension Notification.Name {
 
 // MARK: - Hotkey Manager
 
+/// Manages global hotkey registration using Carbon Event APIs.
+///
+/// Carbon Events are the only reliable way to register global hotkeys on macOS.
+/// NSEvent monitors are unreliable and don't fire consistently when the app is not focused.
 @MainActor
 final class HotkeyManager {
 
@@ -32,10 +36,28 @@ final class HotkeyManager {
 
     private let logger = Logger(subsystem: "com.ora.app", category: "HotkeyManager")
     private var configuration: HotkeyConfiguration
-    private var globalMonitor: Any?
-    private var localMonitor: Any?
+
+    /// Carbon event handler reference
+    private var eventHandler: EventHandlerRef?
+
+    /// Registered hotkey reference (for unregistration)
+    private var hotkeyRef: EventHotKeyRef?
+
+    /// Unique hotkey ID
+    private var hotkeyID: UInt32 = 1
+
+    /// Whether the hotkey is currently pressed (for PTT state)
     private var isHotkeyDown = false
+
+    /// Whether the manager is currently listening
     private var isEnabled = false
+
+    /// App signature for Carbon (4-char code)
+    private let appSignature: OSType = {
+        // "ORAP" = Ora PTT
+        let chars: [UInt8] = [0x4F, 0x52, 0x41, 0x50]  // O, R, A, P
+        return OSType(chars[0]) << 24 | OSType(chars[1]) << 16 | OSType(chars[2]) << 8 | OSType(chars[3])
+    }()
 
     /// Current hotkey configuration
     var currentHotkey: HotkeyConfiguration {
@@ -60,47 +82,20 @@ final class HotkeyManager {
 
     // MARK: - Public API
 
-    /// Start listening for hotkey events
-    /// - Note: Requires accessibility permission to work
+    /// Start listening for hotkey events using Carbon Event APIs
     func start() {
-        self.logger.warning("HotkeyManager.start() called")
         guard !self.isEnabled else {
-            self.logger.warning("Already enabled, returning")
             self.logger.debug("Hotkey manager already started")
             return
         }
 
-        // Check accessibility permission
-        guard AXIsProcessTrusted() else {
-            self.logger.warning("Accessibility NOT trusted!")
-            self.logger.error("Cannot start hotkey manager: Accessibility permission not granted")
-            return
-        }
-        self.logger.warning("Accessibility is trusted")
+        // Install Carbon event handler first
+        self.installEventHandler()
 
-        // Register global event monitor for events outside our app
-        self.globalMonitor = NSEvent.addGlobalMonitorForEvents(
-            matching: [.keyDown, .keyUp, .flagsChanged]
-        ) { [weak self] event in
-            Task { @MainActor in
-                self?.handleEvent(event)
-            }
-        }
-        self.logger.warning("Global monitor registered")
-
-        // Register local event monitor for events inside our app
-        self.localMonitor = NSEvent.addLocalMonitorForEvents(
-            matching: [.keyDown, .keyUp, .flagsChanged]
-        ) { [weak self] event in
-            Task { @MainActor in
-                self?.handleEvent(event)
-            }
-            return event
-        }
-        self.logger.warning("Local monitor registered")
+        // Register the configured hotkey
+        self.registerHotkey()
 
         self.isEnabled = true
-        self.logger.warning("Hotkey manager started, listening for \(self.configuration.displayString)")
         self.logger.info("Hotkey manager started, listening for \(self.configuration.displayString)")
     }
 
@@ -108,15 +103,11 @@ final class HotkeyManager {
     func stop() {
         guard self.isEnabled else { return }
 
-        if let monitor = self.globalMonitor {
-            NSEvent.removeMonitor(monitor)
-            self.globalMonitor = nil
-        }
+        // Unregister hotkey
+        self.unregisterHotkey()
 
-        if let monitor = self.localMonitor {
-            NSEvent.removeMonitor(monitor)
-            self.localMonitor = nil
-        }
+        // Remove event handler
+        self.removeEventHandler()
 
         // Reset state
         self.isHotkeyDown = false
@@ -180,82 +171,125 @@ final class HotkeyManager {
         return false
     }
 
+    // MARK: - Private: Carbon Event Handler
+
+    private func installEventHandler() {
+        // Define event types we want to handle
+        var eventTypes = [
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased))
+        ]
+
+        // Create callback - must be a C function pointer
+        let callback: EventHandlerUPP = { (_, theEvent, userData) -> OSStatus in
+            guard let userData = userData else {
+                return OSStatus(eventNotHandledErr)
+            }
+
+            // Get hotkey ID from event
+            var hotkeyID = EventHotKeyID()
+            let status = GetEventParameter(
+                theEvent,
+                EventParamName(kEventParamDirectObject),
+                EventParamType(typeEventHotKeyID),
+                nil,
+                MemoryLayout<EventHotKeyID>.size,
+                nil,
+                &hotkeyID
+            )
+
+            guard status == noErr else {
+                return status
+            }
+
+            // Get event kind to determine press vs release
+            let eventKind = GetEventKind(theEvent)
+
+            // Get manager reference
+            let manager = Unmanaged<HotkeyManager>.fromOpaque(userData).takeUnretainedValue()
+
+            // Dispatch to main actor
+            Task { @MainActor in
+                manager.handleHotkeyEvent(id: hotkeyID.id, isPressed: eventKind == UInt32(kEventHotKeyPressed))
+            }
+
+            return noErr
+        }
+
+        // Install handler
+        let selfPtr = Unmanaged.passUnretained(self).toOpaque()
+        let status = InstallEventHandler(
+            GetEventDispatcherTarget(),
+            callback,
+            eventTypes.count,
+            &eventTypes,
+            selfPtr,
+            &self.eventHandler
+        )
+
+        if status != noErr {
+            self.logger.error("Failed to install Carbon event handler: \(status)")
+        }
+    }
+
+    private func removeEventHandler() {
+        if let handler = self.eventHandler {
+            RemoveEventHandler(handler)
+            self.eventHandler = nil
+        }
+    }
+
+    private func registerHotkey() {
+        var eventHotkey: EventHotKeyRef?
+
+        let hotkeyIDStruct = EventHotKeyID(signature: self.appSignature, id: self.hotkeyID)
+
+        let status = RegisterEventHotKey(
+            UInt32(self.configuration.keyCode),
+            self.configuration.modifiers,
+            hotkeyIDStruct,
+            GetEventDispatcherTarget(),
+            0,
+            &eventHotkey
+        )
+
+        if status == noErr, let hotkey = eventHotkey {
+            self.hotkeyRef = hotkey
+            self.logger.debug("Registered hotkey with ID \(self.hotkeyID)")
+        } else {
+            self.logger.error("Failed to register hotkey: \(status)")
+        }
+    }
+
+    private func unregisterHotkey() {
+        if let hotkey = self.hotkeyRef {
+            UnregisterEventHotKey(hotkey)
+            self.hotkeyRef = nil
+            self.logger.debug("Unregistered hotkey")
+        }
+    }
+
     // MARK: - Private: Event Handling
 
-    private func handleEvent(_ event: NSEvent) {
-        switch event.type {
-        case .keyDown:
-            self.handleKeyDown(event)
-        case .keyUp:
-            self.handleKeyUp(event)
-        case .flagsChanged:
-            self.handleFlagsChanged(event)
-        default:
-            break
-        }
-    }
+    private func handleHotkeyEvent(id: UInt32, isPressed: Bool) {
+        // Verify this is our hotkey
+        guard id == self.hotkeyID else { return }
 
-    private func handleKeyDown(_ event: NSEvent) {
-        // Ignore repeated events
-        guard !event.isARepeat else { return }
+        if isPressed {
+            // Ignore if already pressed (debounce)
+            guard !self.isHotkeyDown else { return }
 
-        self.logger.warning("handleKeyDown keyCode=\(event.keyCode) modifiers=\(event.modifierFlags.carbonFlags) expected keyCode=\(self.configuration.keyCode) modifiers=\(self.configuration.modifiers)")
+            self.isHotkeyDown = true
+            self.logger.debug("Hotkey pressed")
+            NotificationCenter.default.post(name: .hotkeyDidPress, object: nil)
+        } else {
+            // Ignore if not pressed
+            guard self.isHotkeyDown else { return }
 
-        // Check if this is our hotkey
-        guard self.matchesHotkey(event) else {
-            return
-        }
-        self.logger.warning("Matches hotkey!")
-
-        // Ignore if already pressed
-        guard !self.isHotkeyDown else { return }
-
-        self.isHotkeyDown = true
-        self.logger.warning("Posting hotkeyDidPress notification")
-        self.logger.debug("Hotkey pressed")
-        NotificationCenter.default.post(name: .hotkeyDidPress, object: nil)
-    }
-
-    private func handleKeyUp(_ event: NSEvent) {
-        // Only handle if hotkey is currently pressed
-        guard self.isHotkeyDown else { return }
-
-        // Check if this is our key (ignore modifiers for key up)
-        guard event.keyCode == self.configuration.keyCode else { return }
-
-        self.isHotkeyDown = false
-        self.logger.debug("Hotkey released")
-        NotificationCenter.default.post(name: .hotkeyDidRelease, object: nil)
-    }
-
-    private func handleFlagsChanged(_ event: NSEvent) {
-        // Handle case where modifier is released before key
-        // If we're holding the hotkey and the required modifiers are no longer present,
-        // treat this as a release
-        guard self.isHotkeyDown else { return }
-
-        let modifiers = event.modifierFlags.carbonFlags
-        let requiredModifiers = self.configuration.modifiers
-
-        // If required modifiers are no longer held, treat as release
-        if (modifiers & requiredModifiers) != requiredModifiers {
             self.isHotkeyDown = false
-            self.logger.debug("Hotkey released (modifier released)")
+            self.logger.debug("Hotkey released")
             NotificationCenter.default.post(name: .hotkeyDidRelease, object: nil)
         }
-    }
-
-    private func matchesHotkey(_ event: NSEvent) -> Bool {
-        // Check key code matches
-        guard event.keyCode == self.configuration.keyCode else {
-            return false
-        }
-
-        // Check that required modifiers are present
-        let modifiers = event.modifierFlags.carbonFlags
-        let requiredModifiers = self.configuration.modifiers
-
-        return (modifiers & requiredModifiers) == requiredModifiers
     }
 }
 
