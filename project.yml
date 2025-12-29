@@ -6,6 +6,11 @@ options:
   xcodeVersion: "16.0"
   createIntermediateGroups: true
 
+packages:
+  FluidAudio:
+    url: https://github.com/FluidInference/FluidAudio
+    from: "0.8.0"
+
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -28,7 +33,9 @@ targets:
         PRODUCT_NAME: Ora
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
-    dependencies: []
+    dependencies:
+      - package: FluidAudio
+        product: FluidAudio
 
   OraTests:
     type: bundle.unit-test
