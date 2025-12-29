@@ -445,9 +445,44 @@ None
 
 ---
 
+### Review Iteration 3 - Icon Centering Fix
+**Date:** 2025-12-29
+**Issue:** App icon ring was off-center, positioned in top portion of canvas instead of centered
+
+#### Problems Identified
+1. **Transparent Background:** Source icon had fully transparent background (alpha=0.0), violating macOS guideline "No alpha for app icon"
+2. **Off-Center Ring:** Ring content center was at (511, 501) instead of image center (512, 512), making it 11 pixels too high
+3. **@2x Icons:** 1024x1024 icon (512x512@2x.png) was not displaying centered in About window
+
+#### Changes Made
+1. **Added Opaque Background:** Created white background on transparent icon using CoreGraphics
+2. **Centered Ring:** Shifted ring content down 11 pixels to match canvas center
+3. **Regenerated All Icons:** Used `sips` (macOS built-in tool) for reliable scaling and DPI settings
+4. **Verified DPI:** Confirmed all @2x icons have 144 DPI, 1x icons have 72 DPI
+5. **Cleared Icon Cache:** Removed macOS icon service caches, restarted Finder/Dock
+
+#### Final Icon Properties
+- All 10 PNG sizes: 16×16 to 1024×1024 pixels
+- Background: Solid white (opaque, no transparency)
+- Ring: Properly centered in all sizes
+- DPI: Correct for Retina display (@2x = 144 DPI)
+- Display: Now centered in About window, Dock, Finder, and system locations
+
+#### Status
+- [x] Icon centering fixed
+- [x] All sizes regenerated
+- [x] Tests passing (253 tests)
+- [x] Icon displays correctly in About window
+- [x] Icon displays correctly in Dock
+- [x] Icon displays correctly in Finder
+- [x] Ready for verification
+
+---
+
 ## Completion Status
 - [x] Implementation complete
-- [x] Code review passed (2 iterations)
+- [x] Code review passed (3 iterations)
 - [x] PR merged: https://github.com/benedict2310/ora/pull/10
 - [x] Merged to main: 62b3c4f
+- [x] Icon centering fixed: 2025-12-29
 - [x] Date completed: 2025-12-29
