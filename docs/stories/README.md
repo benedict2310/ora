@@ -18,7 +18,7 @@
 
 | Epic | Stories | Description | Status |
 |:-----|:--------|:------------|:-------|
-| [Foundations](foundations/) | F.00 - F.08 | App shell, permissions, model management, UI infrastructure | ✅ 6 implemented · 🟡 1 ready for code review · 🟡 1 in review · ⏳ 1 not started |
+| [Foundations](foundations/) | F.00 - F.08 | App shell, permissions, model management, UI infrastructure | ✅ 8 implemented · 🟡 1 in review |
 | [Parakeet Starter](parakeet-starter/) | S.01 - S.05 | ASR engine integration (FluidAudio Parakeet) | 📝 2 ready for implementation · 📝 2 draft · ⏳ 1 not started |
 | [ASR Integration](asr-integration/) | A.01 - A.03 | Connect Parakeet to Ora's pipeline | ⏳ 3 not started |
 | [LLM Integration](llm-integration/) | L.01 - L.04 | MLX Swift, Qwen 2.5, structured output | ⏳ 4 not started |
@@ -47,9 +47,9 @@ Build the app shell and infrastructure before any AI features.
 | 4 | F.03 | [Model Manager](foundations/F.03-MODEL-MANAGER.md) | 2d | ✅ | ✅ Implemented |
 | 5 | F.05 | [Global Hotkey](foundations/F.05-GLOBAL-HOTKEY.md) | 1d | ✅ | ✅ Implemented |
 | 6 | F.07 | [Overlay Window](foundations/F.07-OVERLAY-WINDOW.md) | 2d | ✅ | ✅ Implemented |
-| 7 | F.04 | [First-Run Setup](foundations/F.04-FIRST-RUN-SETUP.md) | 2-3d | ✅ | 🟡 Ready for Code Review |
+| 7 | F.04 | [First-Run Setup](foundations/F.04-FIRST-RUN-SETUP.md) | 2-3d | ✅ | ✅ Implemented |
 | 8 | F.06 | [Preferences Window](foundations/F.06-PREFERENCES-WINDOW.md) | 2d | ✅ | ✅ Implemented |
-| 9 | F.00 | [Design Assets](foundations/F.00-DESIGN-ASSETS.md) | 1d | | ⏳ Not Started |
+| 9 | F.00 | [Design Assets](foundations/F.00-DESIGN-ASSETS.md) | 1d | | ✅ Implemented |
 
 **Milestone:** App launches, shows menu bar, hotkey works, overlay appears.
 
