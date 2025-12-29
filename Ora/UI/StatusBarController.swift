@@ -98,7 +98,25 @@ final class StatusBarController {
 
     // MARK: - Internal (Testable)
 
-    /// Returns the SF Symbol name for a given state. Exposed for testing.
+    /// Returns the custom asset name for a given state.
+    static func assetName(for state: State) -> String {
+        switch state {
+        case .idle:
+            return "menubar-idle"
+        case .listening:
+            return "menubar-listening"
+        case .thinking:
+            return "menubar-thinking"
+        case .speaking:
+            return "menubar-speaking"
+        case .error:
+            return "menubar-error"
+        case .setupRequired:
+            return "menubar-setup"
+        }
+    }
+
+    /// Returns the SF Symbol name for a given state (fallback). Exposed for testing.
     static func symbolName(for state: State) -> String {
         switch state {
         case .idle:
@@ -173,6 +191,14 @@ final class StatusBarController {
     }
 
     private func iconForState(_ state: State) -> NSImage? {
+        // Prefer custom asset from asset catalog
+        let assetName = Self.assetName(for: state)
+        if let customImage = NSImage(named: assetName) {
+            customImage.isTemplate = true
+            return customImage
+        }
+
+        // Fall back to SF Symbol
         let symbolName = Self.symbolName(for: state)
         let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
         return NSImage(systemSymbolName: symbolName, accessibilityDescription: "Ora")?
