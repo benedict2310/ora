@@ -2019,3 +2019,36 @@ The implementation follows the story's recommended architecture:
 - [x] All P0 issues resolved
 - [x] All P1 issues resolved
 - [ ] Ready for merge (pending re-review)
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2025-12-29T15:52:13Z
+**Commit reviewed:** 1ec2497
+**Iteration:** 2
+
+### Summary
+- Files reviewed: 8
+- Build status: Pass
+- Tests status: Pass (301 tests)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- None.
+
+#### P1 - Major (Should fix)
+- [x] `Ora/ASR/ParakeetBootstrap.swift:211` - Download flow only calls `verifyModelsExist()`, and the SHA256 helpers in `ParakeetModelDownloader` are never invoked, so corrupted models can slip through despite the story requiring checksum verification. **RESOLVED:** Fixed in commit 5489f82 - `verifyModelsExist()` now computes SHA256 for non-CoreML files, logs hashes, and verifies against known checksums when available.
+
+#### P2 - Minor (Can defer)
+- [ ] `Ora/ASR/ParakeetModelDownloader.swift:188` - `notifyState()` posts `parakeetDownloadStateDidChange` directly while `ParakeetBootstrap` forwards the same state via `onState`, which doubles download notifications.
+
+### Future Considerations (Out of Scope)
+- None.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [ ] Ready for merge (pending final review)
