@@ -420,3 +420,25 @@ None
 - [x] All P1 issues resolved (none found)
 - [x] Tests passing (253 tests)
 - [x] Ready for merge
+
+---
+
+### Review Iteration 2
+**Date:** 2025-12-29
+**Commit reviewed:** d462794
+
+#### Issues Identified by User
+- [x] Menu bar icon too big → Fixed: Reduced from 18x18 to 16x16 pt
+- [x] About section icon not updated → Fixed: Using NSApp.applicationIconImage
+- [x] App icon DPI incorrect for @2x → Fixed: Set 144 DPI for Retina support
+
+#### Changes Made
+- `scripts/generate-icons.swift`: Reduced icon size, increased padding
+- `scripts/resize-app-icon.swift`: Fixed DPI for @2x icons
+- `Ora/Preferences/Tabs/AboutPreferencesView.swift`: Use app icon instead of SF Symbol
+- Regenerated all menu bar and app icons
+
+#### Status
+- [x] All issues resolved
+- [x] Tests passing (253 tests)
+- [x] Ready for merge
