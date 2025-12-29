@@ -70,8 +70,8 @@ Thumbs.db
 credentials.json
 secrets/
 
-# Models (large binary files - download separately)
-Models/
+# Models (large ML binary files - download separately)
+/Models/
 *.mlmodelc
 *.mlpackage
 

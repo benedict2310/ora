@@ -24,6 +24,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         self.logger.info("Ora launching...")
 
+        // Initialize persistence
+        _ = PersistenceManager.shared
+
         // Initialize status bar
         self.statusBarController = StatusBarController()
 
