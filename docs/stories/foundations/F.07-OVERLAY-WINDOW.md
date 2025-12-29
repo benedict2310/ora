@@ -1025,3 +1025,215 @@ Replace `HotkeyManager.swift` implementation:
 - Add Carbon Event handler with `InstallEventHandler()`
 - Use `RegisterEventHotKey()` to register hotkeys
 - Dispatch to `@MainActor` from Carbon callback
+
+---
+
+## 13. Implementation Plan: Carbon Event Hotkey Fix
+
+### Overview
+
+Replace the unreliable `NSEvent.addGlobalMonitorForEvents()` approach with Carbon Event APIs (`RegisterEventHotKey`), following the proven MacTalk implementation pattern.
+
+### Pre-Implementation Checklist
+
+- [ ] Review reference implementation: `docs/references/HOTKEY_OVERLAY_INVESTIGATION.md`
+- [ ] Ensure Carbon framework is available (it's part of macOS SDK)
+- [ ] Back up current `HotkeyManager.swift` for reference
+
+### Implementation Tasks
+
+#### Task 1: Rewrite HotkeyManager.swift
+
+**File:** `Ora/Hotkey/HotkeyManager.swift`
+
+**Changes Required:**
+
+1. **Remove NSEvent monitors:**
+   - Delete `globalMonitor` and `localMonitor` properties
+   - Delete `NSEvent.addGlobalMonitorForEvents()` calls
+   - Delete `NSEvent.addLocalMonitorForEvents()` calls
+   - Delete `handleEvent()`, `handleKeyDown()`, `handleKeyUp()`, `handleFlagsChanged()` methods
+
+2. **Add Carbon Event handler:**
+   ```swift
+   import Carbon
+
+   // New properties
+   private var hotkeys: [UInt32: (EventHotKeyRef, () -> Void)] = [:]
+   private var nextHotkeyID: UInt32 = 1
+   private var eventHandler: EventHandlerRef?
+   ```
+
+3. **Implement `registerEventHandler()` in init:**
+   ```swift
+   private func registerEventHandler() {
+       var eventType = EventTypeSpec(
+           eventClass: OSType(kEventClassKeyboard),
+           eventKind: UInt32(kEventHotKeyPressed)
+       )
+
+       let callback: EventHandlerUPP = { (nextHandler, theEvent, userData) -> OSStatus in
+           guard let userData = userData else { return OSStatus(eventNotHandledErr) }
+           let manager = Unmanaged<HotkeyManager>.fromOpaque(userData).takeUnretainedValue()
+
+           var hotkeyID = EventHotKeyID()
+           let status = GetEventParameter(
+               theEvent,
+               EventParamName(kEventParamDirectObject),
+               EventParamType(typeEventHotKeyID),
+               nil,
+               MemoryLayout<EventHotKeyID>.size,
+               nil,
+               &hotkeyID
+           )
+
+           guard status == noErr else { return status }
+           manager.handleHotkeyPressed(id: hotkeyID.id)
+           return noErr
+       }
+
+       let selfPtr = Unmanaged.passUnretained(self).toOpaque()
+       InstallEventHandler(
+           GetEventDispatcherTarget(),
+           callback,
+           1,
+           &eventType,
+           selfPtr,
+           &eventHandler
+       )
+   }
+   ```
+
+4. **Implement hotkey registration:**
+   ```swift
+   private func registerHotkey() -> UInt32? {
+       let hotkeyID = nextHotkeyID
+       nextHotkeyID += 1
+
+       var eventHotkey: EventHotKeyRef?
+       let signature = FourCharCode("ORAP")  // "ORA P" for Ora PTT
+
+       let status = RegisterEventHotKey(
+           UInt32(configuration.keyCode),
+           configuration.modifiers,
+           EventHotKeyID(signature: OSType(signature), id: hotkeyID),
+           GetEventDispatcherTarget(),
+           0,
+           &eventHotkey
+       )
+
+       guard status == noErr, let hotkey = eventHotkey else { return nil }
+       // Store hotkey reference for later unregistration
+       return hotkeyID
+   }
+   ```
+
+5. **Handle hotkey press (dispatch to MainActor):**
+   ```swift
+   private func handleHotkeyPressed(id: UInt32) {
+       Task { @MainActor in
+           NotificationCenter.default.post(name: .hotkeyDidPress, object: nil)
+       }
+   }
+   ```
+
+6. **Handle hotkey release:**
+   - Carbon `kEventHotKeyPressed` only fires on press, not release
+   - For push-to-talk, need to also register `kEventHotKeyReleased`:
+   ```swift
+   var eventTypes = [
+       EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
+       EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased))
+   ]
+   ```
+
+7. **Cleanup on stop/deinit:**
+   ```swift
+   func stop() {
+       // Unregister all hotkeys
+       for (_, (hotkeyRef, _)) in hotkeys {
+           UnregisterEventHotKey(hotkeyRef)
+       }
+       hotkeys.removeAll()
+
+       // Remove event handler
+       if let handler = eventHandler {
+           RemoveEventHandler(handler)
+           eventHandler = nil
+       }
+   }
+   ```
+
+#### Task 2: Update HotkeyConfiguration.swift
+
+**File:** `Ora/Hotkey/HotkeyConfiguration.swift`
+
+**Changes Required:**
+
+1. Ensure `modifiers` property uses Carbon modifier format (already does)
+2. Verify `keyCode` is `UInt32` compatible with `RegisterEventHotKey`
+
+#### Task 3: Update AppDelegate.swift
+
+**File:** `Ora/AppDelegate.swift`
+
+**Changes Required:**
+
+1. Remove accessibility check before starting hotkey manager (Carbon doesn't require it)
+2. Keep the notification observers for `.hotkeyDidPress` and `.hotkeyDidRelease`
+
+#### Task 4: Clean Up Debug Logging
+
+**Files to clean:**
+- `Ora/AppDelegate.swift` - Remove all `NSLog("[Ora]...")` and `print("DEBUG:...")` statements
+- `Ora/Hotkey/HotkeyManager.swift` - Remove all `self.logger.warning(...)` debug statements, keep only appropriate `.info` and `.error` levels
+- `Ora/Overlay/OverlayWindowController.swift` - Remove all `print("DEBUG:...")` statements
+
+**Logging to keep:**
+- `logger.info()` for significant state changes (app start, hotkey registered)
+- `logger.error()` for actual errors
+- `logger.debug()` for development debugging (disabled in release)
+
+#### Task 5: Update Tests
+
+**File:** `OraTests/HotkeyManagerTests.swift`
+
+**Changes Required:**
+
+1. Update tests to work with new Carbon-based implementation
+2. Note: Carbon hotkeys may be harder to unit test - consider integration tests
+3. May need to mock or skip certain tests that rely on actual hotkey registration
+
+#### Task 6: Verify Overlay Still Works
+
+After hotkey fix, verify:
+- [ ] Hotkey press shows overlay
+- [ ] Hotkey release triggers thinking mode
+- [ ] Overlay appears at correct position
+- [ ] Overlay has correct styling (Liquid Glass)
+- [ ] Auto-dismiss works after response
+
+### Testing Checklist
+
+1. **Manual Testing:**
+   - [ ] Press configured hotkey → overlay appears
+   - [ ] Release hotkey → mode changes to thinking
+   - [ ] Change hotkey in Preferences → new hotkey works
+   - [ ] Hotkey works when other apps are focused
+   - [ ] Hotkey doesn't conflict with system shortcuts
+
+2. **Automated Testing:**
+   - [ ] All existing tests pass (or are updated)
+   - [ ] New Carbon implementation doesn't break other functionality
+
+### Rollback Plan
+
+If Carbon implementation fails:
+1. Revert `HotkeyManager.swift` to NSEvent-based version
+2. Investigate alternative: `CGEventTap` (requires Input Monitoring permission)
+
+### References
+
+- Working implementation: `docs/references/HOTKEY_OVERLAY_INVESTIGATION.md`
+- Apple Carbon Event Manager (legacy but functional)
+- Key codes: `Carbon.HIToolbox` (`kVK_Space`, `kVK_ANSI_*`, etc.)
