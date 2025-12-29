@@ -47,7 +47,9 @@ let appIconSizes: [(name: String, size: Int)] = [
 // MARK: - Icon Generation
 
 func generateMenuBarIcon(symbol: String, size: CGSize, color: NSColor = .black) -> NSImage? {
-    let config = NSImage.SymbolConfiguration(pointSize: size.height * 0.7, weight: .regular)
+    // Use smaller symbol size for menu bar (60% of canvas with padding)
+    let symbolPointSize = size.height * 0.6
+    let config = NSImage.SymbolConfiguration(pointSize: symbolPointSize, weight: .medium)
     guard let symbolImage = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
         .withSymbolConfiguration(config) else {
         print("  Failed to load SF Symbol: \(symbol)")
@@ -144,8 +146,8 @@ print("\nGenerating menu bar icons:")
 for state in menuBarStates {
     let imagesetPath = assetsPath.appendingPathComponent("MenuBarIcons/\(state.name).imageset")
 
-    // 1x (18x18 px)
-    if let image1x = generateMenuBarIcon(symbol: state.symbol, size: NSSize(width: 18, height: 18)) {
+    // 1x (16x16 px - standard menu bar icon size)
+    if let image1x = generateMenuBarIcon(symbol: state.symbol, size: NSSize(width: 16, height: 16)) {
         let path1x = imagesetPath.appendingPathComponent("\(state.name).png")
         do {
             try savePNG(image1x, to: path1x)
@@ -155,8 +157,8 @@ for state in menuBarStates {
         }
     }
 
-    // 2x (36x36 px)
-    if let image2x = generateMenuBarIcon(symbol: state.symbol, size: NSSize(width: 36, height: 36)) {
+    // 2x (32x32 px)
+    if let image2x = generateMenuBarIcon(symbol: state.symbol, size: NSSize(width: 32, height: 32)) {
         let path2x = imagesetPath.appendingPathComponent("\(state.name)@2x.png")
         do {
             try savePNG(image2x, to: path2x)

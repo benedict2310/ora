@@ -47,7 +47,7 @@ func resizeImage(_ image: NSImage, to size: NSSize) -> NSImage {
     return newImage
 }
 
-func savePNG(_ image: NSImage, to url: URL, size: Int) throws {
+func savePNG(_ image: NSImage, to url: URL, size: Int, is2x: Bool) throws {
     // Create a bitmap representation at the exact pixel size
     guard let bitmapRep = NSBitmapImageRep(
         bitmapDataPlanes: nil,
@@ -64,7 +64,9 @@ func savePNG(_ image: NSImage, to url: URL, size: Int) throws {
         throw NSError(domain: "IconResizer", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create bitmap"])
     }
 
-    bitmapRep.size = NSSize(width: size, height: size)
+    // Set the point size (for @2x, point size is half the pixel size)
+    let pointSize = is2x ? size / 2 : size
+    bitmapRep.size = NSSize(width: pointSize, height: pointSize)
 
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmapRep)
@@ -108,8 +110,9 @@ print("")
 
 for iconSize in appIconSizes {
     let outputPath = appIconPath.appendingPathComponent("\(iconSize.name).png")
+    let is2x = iconSize.name.contains("@2x")
     do {
-        try savePNG(sourceImage, to: outputPath, size: iconSize.size)
+        try savePNG(sourceImage, to: outputPath, size: iconSize.size, is2x: is2x)
         print("Created: \(iconSize.name).png (\(iconSize.size)x\(iconSize.size) px)")
     } catch {
         print("Error creating \(iconSize.name).png: \(error)")
