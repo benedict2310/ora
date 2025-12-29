@@ -105,59 +105,76 @@ final class ParakeetBootstrap: @unchecked Sendable {
     /// - Returns: Initialized AsrManager
     /// - Throws: BootstrapError if models unavailable or loading fails
     func ensureReady() async throws -> AsrManager {
-        // Fast path: already ready
-        if let manager = currentManager() {
-            return manager
+        // Atomically check for existing manager or task, or create new task
+        enum LoadAction {
+            case returnManager(AsrManager)
+            case awaitExistingTask(Task<AsrManager, Error>)
+            case awaitNewTask(Task<AsrManager, Error>)
         }
 
-        // Check for existing load task
-        if let existingTask = stateLock.withLock({ $0.loadTask }) {
-            return try await existingTask.value
-        }
-
-        // Create new load task
-        let task = Task { [weak self] () throws -> AsrManager in
-            guard let self else {
-                throw BootstrapError.bootstrapDeallocated
+        let action: LoadAction = stateLock.withLock { state in
+            // Fast path: already ready
+            if let manager = state.manager {
+                return .returnManager(manager)
             }
 
-            // Verify models exist
-            try await self.ensureModelsAvailable()
+            // Check for existing load task
+            if let existingTask = state.loadTask {
+                return .awaitExistingTask(existingTask)
+            }
 
-            // Load and initialize
-            let manager = try await self.loadManager()
-            return manager
-        }
+            // Create new load task within the lock to prevent race
+            let task = Task { [weak self] () throws -> AsrManager in
+                guard let self else {
+                    throw BootstrapError.bootstrapDeallocated
+                }
 
-        // Store task for deduplication
-        stateLock.withLock { state in
+                // Verify models exist
+                try await self.ensureModelsAvailable()
+
+                // Load and initialize
+                let manager = try await self.loadManager()
+                return manager
+            }
+
+            // Store task for deduplication
             state.loadTask = task
+            return .awaitNewTask(task)
         }
 
-        do {
-            let manager = try await task.value
-            stateLock.withLock { state in
-                state.manager = manager
-                state.loadTask = nil
-            }
-            setEngineState(.ready)
-            logger.info("Parakeet engine ready")
+        switch action {
+        case .returnManager(let manager):
             return manager
-        } catch {
-            stateLock.withLock { state in
-                state.loadTask = nil
-            }
 
-            // Distinguish between "not downloaded" and actual failures
-            if let bootstrapError = error as? BootstrapError,
-               bootstrapError == .modelsNotAvailable {
-                setEngineState(.idle)
-            } else {
-                setEngineState(.failed(error.localizedDescription))
-            }
+        case .awaitExistingTask(let task):
+            return try await task.value
 
-            logger.error("Parakeet bootstrap failed: \(error.localizedDescription)")
-            throw error
+        case .awaitNewTask(let task):
+            do {
+                let manager = try await task.value
+                stateLock.withLock { state in
+                    state.manager = manager
+                    state.loadTask = nil
+                }
+                setEngineState(.ready)
+                logger.info("Parakeet engine ready")
+                return manager
+            } catch {
+                stateLock.withLock { state in
+                    state.loadTask = nil
+                }
+
+                // Distinguish between "not downloaded" and actual failures
+                if let bootstrapError = error as? BootstrapError,
+                   bootstrapError == .modelsNotAvailable {
+                    setEngineState(.idle)
+                } else {
+                    setEngineState(.failed(error.localizedDescription))
+                }
+
+                logger.error("Parakeet bootstrap failed: \(error.localizedDescription)")
+                throw error
+            }
         }
     }
 

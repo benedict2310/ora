@@ -230,6 +230,18 @@ final class ParakeetModelDownloaderTests: XCTestCase {
 
         let networkUnavailable = ParakeetModelDownloader.DownloadError.networkUnavailable
         XCTAssertTrue(networkUnavailable.localizedDescription.contains("Network"))
+
+        let checksumMismatch = ParakeetModelDownloader.DownloadError.checksumMismatch(
+            file: "test.bin",
+            expected: "abc123def456",
+            actual: "789xyz000111"
+        )
+        XCTAssertTrue(checksumMismatch.localizedDescription.contains("Checksum"))
+        XCTAssertTrue(checksumMismatch.localizedDescription.contains("test.bin"))
+
+        let corrupted = ParakeetModelDownloader.DownloadError.modelCorrupted(name: "encoder.mlmodelc")
+        XCTAssertTrue(corrupted.localizedDescription.contains("corrupted"))
+        XCTAssertTrue(corrupted.localizedDescription.contains("encoder.mlmodelc"))
     }
 
     func test_state_equatable() {

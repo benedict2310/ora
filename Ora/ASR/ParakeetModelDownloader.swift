@@ -7,6 +7,7 @@
 
 import Foundation
 import os
+import CryptoKit
 
 final class ParakeetModelDownloader: @unchecked Sendable {
 
@@ -42,6 +43,8 @@ final class ParakeetModelDownloader: @unchecked Sendable {
         case downloadFailed(path: String)
         case modelFileMissing(name: String)
         case networkUnavailable
+        case checksumMismatch(file: String, expected: String, actual: String)
+        case modelCorrupted(name: String)
 
         var errorDescription: String? {
             switch self {
@@ -57,6 +60,10 @@ final class ParakeetModelDownloader: @unchecked Sendable {
                 return "Required model file missing: \(name)"
             case .networkUnavailable:
                 return "Network connection unavailable."
+            case .checksumMismatch(let file, let expected, let actual):
+                return "Checksum mismatch for \(file): expected \(expected.prefix(8))..., got \(actual.prefix(8))..."
+            case .modelCorrupted(let name):
+                return "Model file appears corrupted: \(name)"
             }
         }
     }
@@ -92,18 +99,83 @@ final class ParakeetModelDownloader: @unchecked Sendable {
         }
     }
 
-    /// Verify that all required model files exist
-    /// - Throws: DownloadError.modelFileMissing if a required file is missing
+    /// Verify that all required model files exist and are valid
+    /// - Throws: DownloadError.modelFileMissing if a required file is missing,
+    ///           DownloadError.modelCorrupted if a file appears corrupted
     func verifyModelsExist() throws {
         let repoPath = Self.repoDirectory
         let requiredFiles = ModelIdentifier.parakeetTDT.requiredFiles
+        let fm = FileManager.default
 
         for file in requiredFiles {
             let path = repoPath.appendingPathComponent(file)
-            guard FileManager.default.fileExists(atPath: path.path) else {
+
+            // Check existence
+            guard fm.fileExists(atPath: path.path) else {
                 throw DownloadError.modelFileMissing(name: file)
             }
+
+            // Check file/directory is non-empty (basic corruption check)
+            if file.hasSuffix(".mlmodelc") {
+                // CoreML model packages are directories
+                var isDir: ObjCBool = false
+                guard fm.fileExists(atPath: path.path, isDirectory: &isDir),
+                      isDir.boolValue else {
+                    throw DownloadError.modelCorrupted(name: file)
+                }
+                // Check directory has contents
+                let contents = try? fm.contentsOfDirectory(atPath: path.path)
+                guard let contents, !contents.isEmpty else {
+                    throw DownloadError.modelCorrupted(name: file)
+                }
+            } else {
+                // Regular files - check non-zero size
+                let attrs = try? fm.attributesOfItem(atPath: path.path)
+                let size = attrs?[.size] as? Int64 ?? 0
+                guard size > 0 else {
+                    throw DownloadError.modelCorrupted(name: file)
+                }
+            }
         }
+
+        logger.debug("Model verification passed for \(requiredFiles.count) files")
+    }
+
+    /// Verify a file against an expected SHA256 checksum
+    /// - Parameters:
+    ///   - filePath: Path to the file to verify
+    ///   - expectedHash: Expected SHA256 hash (hex string, lowercase)
+    /// - Throws: DownloadError.checksumMismatch if hashes don't match
+    func verifyChecksum(at filePath: URL, expectedHash: String) throws {
+        let actualHash = try computeSHA256(at: filePath)
+        guard actualHash.lowercased() == expectedHash.lowercased() else {
+            throw DownloadError.checksumMismatch(
+                file: filePath.lastPathComponent,
+                expected: expectedHash,
+                actual: actualHash
+            )
+        }
+    }
+
+    /// Compute SHA256 hash of a file
+    /// - Parameter filePath: Path to the file
+    /// - Returns: Hex-encoded SHA256 hash string (lowercase)
+    func computeSHA256(at filePath: URL) throws -> String {
+        let handle = try FileHandle(forReadingFrom: filePath)
+        defer { try? handle.close() }
+
+        var hasher = SHA256()
+        let bufferSize = 1024 * 1024 // 1MB chunks
+
+        while autoreleasepool(invoking: {
+            let data = handle.readData(ofLength: bufferSize)
+            if data.isEmpty { return false }
+            hasher.update(data: data)
+            return true
+        }) {}
+
+        let digest = hasher.finalize()
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 
     /// Get the total size of downloaded models
