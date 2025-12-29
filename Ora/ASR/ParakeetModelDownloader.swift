@@ -99,9 +99,19 @@ final class ParakeetModelDownloader: @unchecked Sendable {
         }
     }
 
+    // MARK: - Known Checksums
+
+    /// Known SHA256 checksums for Parakeet v3 model files
+    /// Note: CoreML model packages (.mlmodelc) are directories, not single files,
+    /// so we only track checksums for regular files like vocabulary.txt
+    private static let knownChecksums: [String: String] = [:]
+    // Add known checksums here as they become available
+    // e.g., "vocabulary.txt": "abc123..."
+
     /// Verify that all required model files exist and are valid
     /// - Throws: DownloadError.modelFileMissing if a required file is missing,
-    ///           DownloadError.modelCorrupted if a file appears corrupted
+    ///           DownloadError.modelCorrupted if a file appears corrupted,
+    ///           DownloadError.checksumMismatch if checksum verification fails
     func verifyModelsExist() throws {
         let repoPath = Self.repoDirectory
         let requiredFiles = ModelIdentifier.parakeetTDT.requiredFiles
@@ -129,16 +139,45 @@ final class ParakeetModelDownloader: @unchecked Sendable {
                     throw DownloadError.modelCorrupted(name: file)
                 }
             } else {
-                // Regular files - check non-zero size
+                // Regular files - check non-zero size and compute SHA256
                 let attrs = try? fm.attributesOfItem(atPath: path.path)
                 let size = attrs?[.size] as? Int64 ?? 0
                 guard size > 0 else {
                     throw DownloadError.modelCorrupted(name: file)
                 }
+
+                // Compute and verify SHA256 for regular files
+                try verifyFileChecksum(at: path, fileName: file)
             }
         }
 
         logger.debug("Model verification passed for \(requiredFiles.count) files")
+    }
+
+    /// Verify checksum for a regular file
+    private func verifyFileChecksum(at path: URL, fileName: String) throws {
+        do {
+            let computedHash = try computeSHA256(at: path)
+            logger.debug("SHA256 for \(fileName): \(computedHash)")
+
+            // If we have a known checksum, verify it
+            if let expectedHash = Self.knownChecksums[fileName] {
+                guard computedHash.lowercased() == expectedHash.lowercased() else {
+                    throw DownloadError.checksumMismatch(
+                        file: fileName,
+                        expected: expectedHash,
+                        actual: computedHash
+                    )
+                }
+                logger.debug("Checksum verified for \(fileName)")
+            }
+        } catch let error as DownloadError {
+            throw error
+        } catch {
+            // File read error during checksum - treat as corruption
+            logger.warning("Failed to compute SHA256 for \(fileName): \(error.localizedDescription)")
+            throw DownloadError.modelCorrupted(name: fileName)
+        }
     }
 
     /// Verify a file against an expected SHA256 checksum
