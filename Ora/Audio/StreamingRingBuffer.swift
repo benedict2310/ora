@@ -131,7 +131,7 @@ final class StreamingRingBuffer: @unchecked Sendable {
         }
     }
 
-    /// Append samples from an unsafe buffer pointer (zero-copy from audio buffer)
+    /// Append samples from an unsafe buffer pointer
     /// - Parameter bufferPointer: Pointer to Float samples
     /// - Note: This method copies the samples synchronously before returning
     func append(from bufferPointer: UnsafeBufferPointer<Float>) {

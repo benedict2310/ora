@@ -53,6 +53,9 @@ final class AudioCapture: @unchecked Sendable {
     private let bufferSize: AVAudioFrameCount = 2048
     private let logger = Logger(subsystem: "com.ora.app", category: "AudioCapture")
 
+    /// Notification observer for device changes
+    private var deviceChangeObserver: NSObjectProtocol?
+
     /// Current capture state
     private(set) var state: State = .idle
 
@@ -134,6 +137,7 @@ final class AudioCapture: @unchecked Sendable {
     }
 
     deinit {
+        removeDeviceNotifications()
         stop()
     }
 }
@@ -145,7 +149,12 @@ extension AudioCapture {
     func setupDeviceNotifications(
         onDeviceChanged: @escaping @MainActor @Sendable () -> Void
     ) {
-        NotificationCenter.default.addObserver(
+        // Remove any existing observer
+        if let existing = deviceChangeObserver {
+            NotificationCenter.default.removeObserver(existing)
+        }
+
+        deviceChangeObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange,
             object: engine,
             queue: .main
@@ -153,6 +162,14 @@ extension AudioCapture {
             Task { @MainActor in
                 onDeviceChanged()
             }
+        }
+    }
+
+    /// Remove device change notifications
+    func removeDeviceNotifications() {
+        if let observer = deviceChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            deviceChangeObserver = nil
         }
     }
 }
