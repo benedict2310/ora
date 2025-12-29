@@ -101,12 +101,23 @@ final class ParakeetModelDownloader: @unchecked Sendable {
 
     // MARK: - Known Checksums
 
-    /// Known SHA256 checksums for Parakeet v3 model files
-    /// Note: CoreML model packages (.mlmodelc) are directories, not single files,
-    /// so we only track checksums for regular files like vocabulary.txt
+    /// Known SHA256 checksums for Parakeet v3 model files.
+    ///
+    /// **Current Status:** Checksums are verified when available. FluidAudio v0.8.1+ handles
+    /// internal verification during download. Once official SHA256 hashes are published for
+    /// the Parakeet CoreML model package, they should be added here.
+    ///
+    /// **Note:** CoreML model packages (.mlmodelc) are directories containing multiple files,
+    /// so we track checksums for individual regular files like vocabulary.txt where applicable.
+    ///
+    /// **Verification Flow:**
+    /// 1. File existence check ✓
+    /// 2. Non-empty file/directory validation ✓
+    /// 3. SHA256 computation and logging ✓
+    /// 4. SHA256 comparison (when known checksums available)
     private static let knownChecksums: [String: String] = [:]
-    // Add known checksums here as they become available
-    // e.g., "vocabulary.txt": "abc123..."
+    // TODO: Add checksums when published for Parakeet TDT v3 model files
+    // Example: "vocabulary.txt": "a1b2c3d4e5f6..."
 
     /// Verify that all required model files exist and are valid
     /// - Throws: DownloadError.modelFileMissing if a required file is missing,
@@ -224,14 +235,11 @@ final class ParakeetModelDownloader: @unchecked Sendable {
 
     // MARK: - State Management
 
-    /// Update state and notify observers
+    /// Update state and notify observers via callback only
+    /// Note: NotificationCenter posting is handled by ParakeetBootstrap to avoid duplicates
     func notifyState(_ state: State) {
         Task { @MainActor in
             self.onState?(state)
         }
-        NotificationCenter.default.post(
-            name: .parakeetDownloadStateDidChange,
-            object: state
-        )
     }
 }
