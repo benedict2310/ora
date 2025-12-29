@@ -1985,3 +1985,37 @@ The implementation follows the story's recommended architecture:
 - [x] Tests passing (301/301)
 - [x] Working tree clean
 - [x] Implementation matches story specification
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent  
+**Date:** 2025-12-29T15:44:41Z  
+**Commit reviewed:** 15de44a  
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 8
+- Build status: Pass
+- Tests status: Pass (301 tests)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- None.
+
+#### P1 - Major (Should fix)
+- [x] `Ora/ASR/ParakeetBootstrap.swift:113` - `ensureReady()` can create multiple load tasks because `loadTask` is checked and then set outside a single lock, so concurrent calls race and violate AC-6/AC-20 deduplication. **RESOLVED:** Fixed in commit 031c20c - now uses enum-based action pattern with atomic check-and-set within single lock.
+- [x] `Ora/ASR/ParakeetModelDownloader.swift:95` - `verifyModelsExist()` only checks for file presence; no SHA256 validation is performed, so corrupt model files can pass as valid despite the story's checksum requirement (AC-12/AC-27). **RESOLVED:** Fixed in commit 031c20c - now checks for corrupted files (empty directories, zero-size files) and added SHA256 computation with checksum verification methods.
+
+#### P2 - Minor (Can defer)
+- [ ] `Ora/ASR/ParakeetModelDownloader.swift:117` - `notifyState()` posts `parakeetDownloadStateDidChange` directly and `ParakeetBootstrap` forwards the same state via `onState`, producing duplicate download notifications.
+
+### Future Considerations (Out of Scope)
+- None.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [ ] Ready for merge (pending re-review)
