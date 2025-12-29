@@ -43,26 +43,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SetupCoordinator.shared.checkAndShowSetupIfNeeded()
 
         // If setup was already complete, start immediately
+        NSLog("[Ora] isSetupComplete = %@", SetupCoordinator.shared.isSetupComplete ? "true" : "false")
         if SetupCoordinator.shared.isSetupComplete {
             self.onSetupComplete()
+        } else {
+            NSLog("[Ora] Setup NOT complete, waiting for setup...")
         }
 
         self.logger.info("Ora ready")
     }
 
     private func onSetupComplete() {
+        NSLog("[Ora] onSetupComplete called")
         self.logger.info("Setup complete, initializing main functionality")
         self.startHotkeyManager()
     }
 
     private func startHotkeyManager() {
+        NSLog("[Ora] startHotkeyManager called")
         // Verify accessibility permission before starting
-        guard AXIsProcessTrusted() else {
+        let accessibilityGranted = AXIsProcessTrusted()
+        NSLog("[Ora] AXIsProcessTrusted = %@", accessibilityGranted ? "true" : "false")
+        guard accessibilityGranted else {
+            NSLog("[Ora] Accessibility NOT granted, hotkey disabled!")
             self.logger.warning("Accessibility not granted, hotkey disabled")
             return
         }
 
         // Start the hotkey manager
+        NSLog("[Ora] Calling HotkeyManager.shared.start()")
         HotkeyManager.shared.start()
 
         // Listen for hotkey events

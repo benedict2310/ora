@@ -996,8 +996,32 @@ The hotkey is stored in UserDefaults as JSON:
   - `keyCode`: 49 = Space (kVK_Space)
   - `modifiers`: 2048 = Option, 512 = Shift, 2560 = Option+Shift
 
-To change hotkey via command line:
-```bash
-# Option+Shift+Space (modifiers: 2048 + 512 = 2560)
-# Requires proper JSON encoding to data blob - use Preferences UI instead
-```
+### ROOT CAUSE IDENTIFIED (2025-12-29)
+
+**Problem:** Ora uses `NSEvent.addGlobalMonitorForEvents()` which is unreliable for global hotkeys.
+
+**Solution:** Use **Carbon Event APIs** (`RegisterEventHotKey`) like the working MacTalk implementation.
+
+#### Comparison
+
+| Aspect | Ora (broken) | MacTalk (working) |
+|--------|--------------|-------------------|
+| API | `NSEvent.addGlobalMonitorForEvents()` | `RegisterEventHotKey()` (Carbon) |
+| Reliability | Unreliable, requires accessibility | Reliable, system-level |
+| Can intercept | Monitor only, can't block events | True global hotkey registration |
+
+#### Reference Implementation
+
+See `/docs/references/HOTKEY_OVERLAY_INVESTIGATION.md` for complete working implementation:
+
+1. **HotkeyManager** - Uses Carbon `RegisterEventHotKey()` and `InstallEventHandler()`
+2. **HUDWindowController** - Floating overlay with `.borderless` style, `.floating` level
+3. **Key insight**: Carbon is legacy but **only reliable way** to register global hotkeys on macOS
+
+#### Fix Required
+
+Replace `HotkeyManager.swift` implementation:
+- Remove `NSEvent.addGlobalMonitorForEvents()`
+- Add Carbon Event handler with `InstallEventHandler()`
+- Use `RegisterEventHotKey()` to register hotkeys
+- Dispatch to `@MainActor` from Carbon callback
