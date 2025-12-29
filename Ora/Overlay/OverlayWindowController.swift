@@ -25,6 +25,9 @@ final class OverlayWindowController {
     private var autoDismissTask: Task<Void, Never>?
     private let autoDismissDelay: TimeInterval = 3.0
 
+    private var escapeMonitor: Any?
+    private var clickOutsideMonitor: Any?
+
     /// Current overlay mode
     var mode: OverlayMode {
         get { self.viewModel.mode }
@@ -73,6 +76,9 @@ final class OverlayWindowController {
             panel.animator().alphaValue = 1
         }
 
+        // Add dismiss monitors
+        self.addDismissMonitors()
+
         self.logger.debug("Overlay shown")
     }
 
@@ -82,6 +88,9 @@ final class OverlayWindowController {
 
         self.autoDismissTask?.cancel()
         self.autoDismissTask = nil
+
+        // Remove dismiss monitors
+        self.removeDismissMonitors()
 
         if animated {
             NSAnimationContext.runAnimationGroup { context in
@@ -160,6 +169,49 @@ final class OverlayWindowController {
         let y = screenFrame.maxY - panelSize.height - 100 // 100pt from top
 
         panel.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+
+    // MARK: - Dismiss Monitors
+
+    private func addDismissMonitors() {
+        // Escape key monitor (local - when our panel has focus)
+        self.escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53 { // Escape key
+                self?.hide()
+                return nil // Consume the event
+            }
+            return event
+        }
+
+        // Click outside monitor (global - clicks anywhere)
+        self.clickOutsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            guard let self = self, let panel = self.panel, panel.isVisible else { return }
+
+            // Check if click is outside our panel
+            let clickLocation = event.locationInWindow
+            let screenLocation = NSEvent.mouseLocation
+
+            // Convert panel frame to screen coordinates
+            let panelFrame = panel.frame
+
+            if !panelFrame.contains(screenLocation) {
+                Task { @MainActor in
+                    self.hide()
+                }
+            }
+        }
+    }
+
+    private func removeDismissMonitors() {
+        if let monitor = self.escapeMonitor {
+            NSEvent.removeMonitor(monitor)
+            self.escapeMonitor = nil
+        }
+
+        if let monitor = self.clickOutsideMonitor {
+            NSEvent.removeMonitor(monitor)
+            self.clickOutsideMonitor = nil
+        }
     }
 }
 
