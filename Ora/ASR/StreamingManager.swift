@@ -135,6 +135,7 @@ final class StreamingManager {
     private var lastSpeechTime: Date?
     private var consecutiveStableHops: Int = 0
     private var lastPartialText: String = ""
+    private var lastEmittedText: String = ""
     private var pendingSamples: [Float] = []
 
     // MARK: - Initialization
@@ -214,6 +215,7 @@ final class StreamingManager {
         lastSpeechTime = nil
         consecutiveStableHops = 0
         lastPartialText = ""
+        lastEmittedText = ""
         pendingSamples = []
     }
 
@@ -236,9 +238,9 @@ final class StreamingManager {
     private func processHop() async {
         guard isStreaming else { return }
 
-        // Read samples from ring buffer (rolling window)
+        // Read most recent samples from ring buffer (rolling window)
         let windowSamples = Int(configuration.windowSize * 16000)
-        let samples = ringBuffer.peek(count: windowSamples)
+        let samples = ringBuffer.peekLatest(count: windowSamples)
 
         guard samples.count >= Int(configuration.minimumAudioLength * 16000) else {
             return // Not enough audio yet
@@ -288,8 +290,9 @@ final class StreamingManager {
             lastPartialText = partial.text
         }
 
-        // Emit partial with diffed (stable) text
-        if !diffResult.fullText.isEmpty {
+        // Emit partial with diffed (stable) text - only if changed
+        if !diffResult.fullText.isEmpty && diffResult.fullText != lastEmittedText {
+            lastEmittedText = diffResult.fullText
             let diffedPartial = ASRPartial(text: diffResult.fullText, words: partial.words)
             onPartial?(diffedPartial)
         }
@@ -352,5 +355,6 @@ final class StreamingManager {
         lastSpeechTime = nil
         consecutiveStableHops = 0
         lastPartialText = ""
+        lastEmittedText = ""
     }
 }

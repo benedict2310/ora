@@ -2310,3 +2310,37 @@ The following components already exist and will be reused:
 - [ ] All P0 issues resolved
 - [ ] All P1 issues resolved
 - [ ] Ready for merge
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2025-12-29T20:10:48Z
+**Commit reviewed:** f592fd8
+**Iteration:** 2
+
+### Summary
+- Files reviewed: 9
+- Build status: Pass
+- Tests status: Fail (xcodebuild test timed out after 300s; partial run)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [ ] None.
+
+#### P1 - Major (Should fix)
+- [ ] `Ora/ASR/StreamingManager.swift:241` - `ringBuffer.peek(count:)` returns the oldest samples; when buffer capacity exceeds `windowSize` (e.g., 12s vs 10s), the newest audio is dropped, delaying partials and breaking AC-1/AC-4 rolling-window expectations.
+- [ ] `Ora/ASR/StreamingManager.swift:291` - `onPartial` fires every hop with `diffResult.fullText` even when unchanged, so duplicate partials can be emitted and consumers that append deltas will duplicate text (AC-3).
+
+#### P2 - Minor (Can defer)
+- [ ] `Ora/ASR/StreamingManager.swift:263` - VAD gating only skips before first speech; after speech ends it continues processing silence until finalize, which may miss the AC-12 “CPU <5% during silence” target.
+
+### Future Considerations (Out of Scope)
+- None.
+
+### Approval Status
+- [ ] All P0 issues resolved
+- [ ] All P1 issues resolved
+- [ ] Ready for merge

@@ -256,4 +256,34 @@ extension StreamingRingBuffer {
         let sampleCount = Int(seconds * 16000)
         return peek(count: sampleCount)
     }
+
+    /// Read the most recent samples without removing them
+    ///
+    /// Returns up to `count` samples starting from the newest sample.
+    /// This is the opposite of `peek(count:)` which returns oldest samples.
+    ///
+    /// - Parameter count: Maximum number of samples to return
+    /// - Returns: Array of the most recent samples (newest audio)
+    func peekLatest(count: Int) -> [Float] {
+        state.withLock { state in
+            let readCount = min(count, state.count)
+            guard readCount > 0 else { return [] }
+
+            var result = [Float]()
+            result.reserveCapacity(readCount)
+
+            // Calculate start position for the most recent samples
+            // head points to where next sample will be written
+            // So the most recent sample is at (head - 1) and we go back from there
+            let startIndex = (state.head - readCount + state.capacity) % state.capacity
+
+            var readIndex = startIndex
+            for _ in 0..<readCount {
+                result.append(state.buffer[readIndex])
+                readIndex = (readIndex + 1) % state.capacity
+            }
+
+            return result
+        }
+    }
 }
