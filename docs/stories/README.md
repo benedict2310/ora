@@ -18,7 +18,7 @@
 
 | Epic | Stories | Description | Status |
 |:-----|:--------|:------------|:-------|
-| [Foundations](foundations/) | F.00 - F.08 | App shell, permissions, model management, UI infrastructure | ✅ 8 implemented · 🟡 1 in review |
+| [Foundations](foundations/) | F.00 - F.08 | App shell, permissions, model management, UI infrastructure | ✅ 9 implemented |
 | [Parakeet Starter](parakeet-starter/) | S.01 - S.05 | ASR engine integration (FluidAudio Parakeet) | 📝 2 ready for implementation · 📝 2 draft · ⏳ 1 not started |
 | [ASR Integration](asr-integration/) | A.01 - A.03 | Connect Parakeet to Ora's pipeline | ⏳ 3 not started |
 | [LLM Integration](llm-integration/) | L.01 - L.04 | MLX Swift, Qwen 2.5, structured output | ⏳ 4 not started |
@@ -42,7 +42,7 @@ Build the app shell and infrastructure before any AI features.
 | Order | Story | Title | Effort | Critical Path | Status |
 |:-----:|:------|:------|:------:|:-------------:|:-------|
 | 1 | F.01 | [App Shell & Menu Bar](foundations/F.01-APP-SHELL-MENUBAR.md) | 1d | ✅ | ✅ Implemented |
-| 2 | F.08 | [Persistence Layer](foundations/F.08-PERSISTENCE-LAYER.md) | 1d | ✅ | 🟡 In Review |
+| 2 | F.08 | [Persistence Layer](foundations/F.08-PERSISTENCE-LAYER.md) | 1d | ✅ | ✅ Implemented |
 | 3 | F.02 | [Permissions Manager](foundations/F.02-PERMISSIONS-MANAGER.md) | 1d | ✅ | ✅ Implemented |
 | 4 | F.03 | [Model Manager](foundations/F.03-MODEL-MANAGER.md) | 2d | ✅ | ✅ Implemented |
 | 5 | F.05 | [Global Hotkey](foundations/F.05-GLOBAL-HOTKEY.md) | 1d | ✅ | ✅ Implemented |
