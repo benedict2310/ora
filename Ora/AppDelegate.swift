@@ -42,12 +42,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.onSetupComplete()
         }
 
-        // Check if setup is needed
-        SetupCoordinator.shared.checkAndShowSetupIfNeeded()
-
-        // If setup was already complete, start immediately
-        if SetupCoordinator.shared.isSetupComplete {
-            self.onSetupComplete()
+        // Check if setup is needed (async to wait for model verification)
+        Task { @MainActor in
+            let setupNeeded = await SetupCoordinator.shared.checkAndShowSetupIfNeeded()
+            if !setupNeeded {
+                // Setup was already complete and models are ready
+                self.onSetupComplete()
+            }
+            // If setup is needed, onSetupComplete will be called via notification when user completes setup
         }
 
         self.logger.info("Ora ready")
