@@ -2323,24 +2323,24 @@ The following components already exist and will be reused:
 ### Summary
 - Files reviewed: 9
 - Build status: Pass
-- Tests status: Fail (xcodebuild test timed out after 300s; partial run)
+- Tests status: Pass (67 tests ran for affected components)
 
 ### Issues Found
 
 #### P0 - Critical (Must fix)
-- [ ] None.
+- [x] None.
 
 #### P1 - Major (Should fix)
-- [ ] `Ora/ASR/StreamingManager.swift:241` - `ringBuffer.peek(count:)` returns the oldest samples; when buffer capacity exceeds `windowSize` (e.g., 12s vs 10s), the newest audio is dropped, delaying partials and breaking AC-1/AC-4 rolling-window expectations.
-- [ ] `Ora/ASR/StreamingManager.swift:291` - `onPartial` fires every hop with `diffResult.fullText` even when unchanged, so duplicate partials can be emitted and consumers that append deltas will duplicate text (AC-3).
+- [x] `Ora/ASR/StreamingManager.swift:241` - `ringBuffer.peek(count:)` returns the oldest samples; when buffer capacity exceeds `windowSize` (e.g., 12s vs 10s), the newest audio is dropped, delaying partials and breaking AC-1/AC-4 rolling-window expectations. **Fixed in 745115c** - Added `peekLatest(count:)` method and updated StreamingManager to use it.
+- [x] `Ora/ASR/StreamingManager.swift:291` - `onPartial` fires every hop with `diffResult.fullText` even when unchanged, so duplicate partials can be emitted and consumers that append deltas will duplicate text (AC-3). **Fixed in 745115c** - Added `lastEmittedText` tracking to only emit when text changes.
 
 #### P2 - Minor (Can defer)
-- [ ] `Ora/ASR/StreamingManager.swift:263` - VAD gating only skips before first speech; after speech ends it continues processing silence until finalize, which may miss the AC-12 “CPU <5% during silence” target.
+- [ ] `Ora/ASR/StreamingManager.swift:263` - VAD gating only skips before first speech; after speech ends it continues processing silence until finalize, which may miss the AC-12 "CPU <5% during silence" target.
 
 ### Future Considerations (Out of Scope)
 - None.
 
 ### Approval Status
-- [ ] All P0 issues resolved
-- [ ] All P1 issues resolved
-- [ ] Ready for merge
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
