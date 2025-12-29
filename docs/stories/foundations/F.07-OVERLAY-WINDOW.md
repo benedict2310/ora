@@ -1325,3 +1325,14 @@ If Carbon implementation fails:
 - [x] All P1 issues resolved (none found)
 - [x] Coverage target met (223 tests passing)
 - [x] Ready for merge
+
+---
+
+## 15. Carbon Hotkey Fix - Completion Status
+
+- [x] Implementation complete
+- [x] Code review passed (1 iteration)
+- [x] PR merged: https://github.com/benedict2310/ora/pull/8
+- [x] Merged to main: 54b0810
+- [x] Post-merge build verification passed
+- [x] Date completed: 2025-12-29
