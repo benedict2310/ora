@@ -275,7 +275,7 @@ enum ASRServiceError: LocalizedError {
 - None
 
 #### P1 - Major (Should fix)
-- [ ] `Ora/ASR/ASRService.swift:134` - The 10s rolling window drops earlier audio for long utterances, so the final event only reflects the last window and loses earlier speech; this breaks full-stream transcription for longer inputs and needs either chunked finalization or a way to keep the full transcript while bounding memory.
+- [x] `Ora/ASR/ASRService.swift:134` - The 10s rolling window drops earlier audio for long utterances, so the final event only reflects the last window and loses earlier speech; this breaks full-stream transcription for longer inputs and needs either chunked finalization or a way to keep the full transcript while bounding memory. **FIXED:** Added `committedText` to accumulate finalized transcription from chunks that roll out of the window. Excess audio is finalized before being dropped, and its text is preserved. Partial and final events now combine committed text with current window results.
 
 #### P2 - Minor (Can defer)
 - None
