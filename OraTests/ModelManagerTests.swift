@@ -27,30 +27,32 @@ final class ModelManagerTests: XCTestCase {
     }
 
     func test_modelIdentifier_storagePath() {
-        XCTAssertEqual(ModelIdentifier.parakeetTDT.storagePath, "asr/parakeet")
+        XCTAssertEqual(ModelIdentifier.parakeetTDT.storagePath, "asr/parakeet-tdt-0.6b-v3-coreml")
         XCTAssertEqual(ModelIdentifier.qwen7B.storagePath, "llm/qwen2.5-7b-instruct-4bit")
         XCTAssertEqual(ModelIdentifier.qwen3B.storagePath, "llm/qwen2.5-3b-instruct-4bit")
         XCTAssertEqual(ModelIdentifier.kokoro.storagePath, "tts/kokoro")
     }
 
     func test_modelIdentifier_requiredFiles() {
-        // ASR requires Core ML model files
-        XCTAssertTrue(ModelIdentifier.parakeetTDT.requiredFiles.contains("encoder.mlmodelc"))
-        XCTAssertTrue(ModelIdentifier.parakeetTDT.requiredFiles.contains("vocabulary.txt"))
+        // ASR requires Core ML model files (matching FluidAudio's capitalized names)
+        XCTAssertTrue(ModelIdentifier.parakeetTDT.requiredFiles.contains("Encoder.mlmodelc"))
+        XCTAssertTrue(ModelIdentifier.parakeetTDT.requiredFiles.contains("parakeet_vocab.json"))
 
-        // LLM requires config and tokenizer
+        // LLM requires config, tokenizer, and weights
         XCTAssertTrue(ModelIdentifier.qwen7B.requiredFiles.contains("config.json"))
         XCTAssertTrue(ModelIdentifier.qwen7B.requiredFiles.contains("tokenizer.json"))
+        XCTAssertTrue(ModelIdentifier.qwen7B.requiredFiles.contains("model.safetensors"))
 
-        // TTS requires config
+        // TTS requires config and weights
         XCTAssertTrue(ModelIdentifier.kokoro.requiredFiles.contains("config.json"))
+        XCTAssertTrue(ModelIdentifier.kokoro.requiredFiles.contains("model.safetensors"))
     }
 
     // MARK: - Model Paths Tests
 
     func test_modelPaths_path_containsStoragePath() {
         let asrPath = ModelPaths.path(for: .parakeetTDT)
-        XCTAssertTrue(asrPath.path.contains("Ora/Models/asr/parakeet"))
+        XCTAssertTrue(asrPath.path.contains("Ora/Models/asr/parakeet-tdt-0.6b-v3-coreml"))
 
         let llmPath = ModelPaths.path(for: .qwen7B)
         XCTAssertTrue(llmPath.path.contains("Ora/Models/llm/qwen2.5-7b-instruct-4bit"))

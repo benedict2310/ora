@@ -10,6 +10,12 @@ packages:
   FluidAudio:
     url: https://github.com/FluidInference/FluidAudio
     from: "0.8.0"
+  mlx-swift:
+    url: https://github.com/ml-explore/mlx-swift
+    from: "0.21.0"
+  swift-transformers:
+    url: https://github.com/huggingface/swift-transformers
+    from: "1.1.0"
 
 settings:
   base:
@@ -36,6 +42,14 @@ targets:
     dependencies:
       - package: FluidAudio
         product: FluidAudio
+      - package: mlx-swift
+        product: MLX
+      - package: mlx-swift
+        product: MLXRandom
+      - package: mlx-swift
+        product: MLXNN
+      - package: swift-transformers
+        product: Hub
 
   OraTests:
     type: bundle.unit-test

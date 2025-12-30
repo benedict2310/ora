@@ -75,7 +75,9 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
     /// Subdirectory within Models/
     var storagePath: String {
         switch self {
-        case .parakeetTDT: return "asr/parakeet"
+        // Note: FluidAudio creates its own directory name when downloading,
+        // so this must match what FluidAudio actually creates
+        case .parakeetTDT: return "asr/parakeet-tdt-0.6b-v3-coreml"
         case .qwen7B: return "llm/qwen2.5-7b-instruct-4bit"
         case .qwen3B: return "llm/qwen2.5-3b-instruct-4bit"
         case .kokoro: return "tts/kokoro"
@@ -86,11 +88,14 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
     var requiredFiles: [String] {
         switch self {
         case .parakeetTDT:
-            return ["encoder.mlmodelc", "joint.mlmodelc", "predictor.mlmodelc", "vocabulary.txt"]
+            // FluidAudio creates these CoreML models with capitalized names
+            return ["Encoder.mlmodelc", "Decoder.mlmodelc", "JointDecision.mlmodelc", "parakeet_vocab.json"]
         case .qwen7B, .qwen3B:
-            return ["config.json", "tokenizer.json"]
+            // Must include model weights to prevent treating partial downloads as complete
+            return ["config.json", "tokenizer.json", "model.safetensors"]
         case .kokoro:
-            return ["config.json"]
+            // Must include model weights to prevent treating partial downloads as complete
+            return ["config.json", "model.safetensors"]
         }
     }
 }
