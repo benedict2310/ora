@@ -732,3 +732,36 @@ Rather than duplicating the existing audio capture implementation from S.02, Aud
 - [ ] All P0 issues resolved
 - [ ] All P1 issues resolved
 - [ ] Ready for merge
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2025-12-30T09:07:32Z
+**Commit reviewed:** c9ee38a
+**Iteration:** 4
+
+### Summary
+- Files reviewed: 6
+- Build status: Pass
+- Tests status: Pass (440 tests, 2 skipped)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- None.
+
+#### P1 - Major (Should fix)
+- [ ] `Ora/Audio/AudioService.swift:200` - `stop()` finishes the `AsyncStream` immediately after `pipeline.stop()` flushes pending samples. `AudioPipeline.stop()` invokes `onAudioChunk` synchronously, but the closure schedules `handleAudioChunk` on the actor, so the final chunk runs after the stream is finished and is dropped. This can truncate trailing audio on PTT release. Consider yielding the final chunk synchronously before `framesContinuation.finish()`, or delaying finish until the actor has processed the flush.
+
+#### P2 - Minor (Can defer)
+- None.
+
+### Future Considerations (Out of Scope)
+- None.
+
+### Approval Status
+- [ ] All P0 issues resolved
+- [ ] All P1 issues resolved
+- [ ] Ready for merge

@@ -96,6 +96,9 @@ actor AudioService {
     /// Sample counter for frame timestamps
     private var sampleCounter: UInt64 = 0
 
+    /// Closure to capture samples during synchronous stop/flush (nonisolated for callback access)
+    nonisolated(unsafe) private var flushSampleCapture: (([Float]) -> Void)?
+
     /// Notification observers (nonisolated for init/deinit access)
     nonisolated(unsafe) private var hotkeyPressObserver: NSObjectProtocol?
     nonisolated(unsafe) private var hotkeyReleaseObserver: NSObjectProtocol?
@@ -170,7 +173,12 @@ actor AudioService {
         // Set up audio callback to yield frames
         audioPipeline.onAudioChunk = { [weak self] samples in
             guard let self = self else { return }
-            Task { await self.handleAudioChunk(samples) }
+            // During stop(), use synchronous capture to avoid race condition
+            if let capture = self.flushSampleCapture {
+                capture(samples)
+            } else {
+                Task { await self.handleAudioChunk(samples) }
+            }
         }
 
         // Start the pipeline
@@ -197,7 +205,22 @@ actor AudioService {
 
         state = .stopping
 
+        // Capture any samples flushed during stop synchronously to avoid race condition
+        // where Task-scheduled handleAudioChunk runs after stream is finished
+        var flushedSamples: [Float]?
+        flushSampleCapture = { samples in
+            flushedSamples = samples
+        }
+
         pipeline?.stop()
+
+        flushSampleCapture = nil
+
+        // Process any flushed samples directly before finishing the stream
+        if let samples = flushedSamples {
+            handleAudioChunk(samples)
+        }
+
         framesContinuation?.finish()
         framesContinuation = nil
         pipeline = nil
