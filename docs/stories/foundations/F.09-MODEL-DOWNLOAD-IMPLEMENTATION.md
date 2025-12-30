@@ -189,3 +189,38 @@ final class DefaultModelDownloader: ModelDownloader {
 - [x] All acceptance criteria verified (6/7 automated, 1 requires manual E2E)
 - [x] Tests passing (481 total, 19 new)
 - [x] Working tree clean
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2025-12-30T19:25:50Z
+**Commit reviewed:** 7c960cd
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 9
+- Build status: Pass
+- Tests status: Fail (timed out after 120s; partial tests executed)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- None
+
+#### P1 - Major (Should fix)
+- [ ] `Ora/Models/ModelDownloading.swift:86` - `exists`/`verify` only check `model.requiredFiles`, which currently omit large weight files (e.g., `model.safetensors`). If a download is interrupted after small config/tokenizer files complete, the model is treated as ready and subsequent downloads are skipped, breaking resumability and allowing corrupted/incomplete models.
+- [ ] `Ora/Models/Strategies/FluidAudioStrategy.swift:46` - ASR download delegates to `ParakeetBootstrap.downloadModels()` which verifies file presence at the model root. FluidAudio downloads into the repo subfolder (e.g., `parakeet-tdt-0.6b-v3-coreml`) with different filenames; verification can fail with “Required model file missing…”, causing ASR downloads to fail and never reach ready state.
+- [ ] `OraTests/HuggingFaceDownloaderTests.swift:36` - Tests only exercise `MockFileDownloader` and strategy wiring; there are no unit tests covering the real `HuggingFaceDownloader` resume/Range behavior or 200/206 handling (per story checklist). This leaves AC-2/AC-6 unverified.
+
+#### P2 - Minor (Can defer)
+- None
+
+### Future Considerations (Out of Scope)
+- None
+
+### Approval Status
+- [ ] All P0 issues resolved
+- [ ] All P1 issues resolved
+- [ ] Ready for merge

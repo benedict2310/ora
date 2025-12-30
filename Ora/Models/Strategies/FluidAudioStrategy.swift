@@ -22,6 +22,14 @@ struct FluidAudioStrategy: ModelDownloadStrategy, Sendable {
             throw ModelError.downloadFailed(model, "FluidAudioStrategy only supports ASR models")
         }
 
+        // Note: FluidAudio SDK manages its own download directory (ParakeetModelDownloader.repoDirectory)
+        // which is set to ModelPaths.path(for: .parakeetTDT). We verify the paths match to catch
+        // any configuration drift.
+        let expectedPath = ParakeetModelDownloader.repoDirectory
+        if directory != expectedPath {
+            self.logger.warning("Directory mismatch: expected \(expectedPath.path), got \(directory.path). Using expected path.")
+        }
+
         self.logger.info("Starting FluidAudio download for \(model.displayName)")
 
         // Emit initial progress
