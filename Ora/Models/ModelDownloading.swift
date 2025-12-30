@@ -2,10 +2,13 @@
 //  ModelDownloading.swift
 //  Ora
 //
-//  Protocol for model downloaders (enables testability)
+//  Protocol for model downloaders and download strategies
 //
 
 import Foundation
+import os
+
+// MARK: - ModelDownloader Protocol
 
 /// Protocol for downloading models (enables dependency injection for testing)
 protocol ModelDownloader: Sendable {
@@ -23,14 +26,45 @@ protocol ModelDownloader: Sendable {
     func exists(model: ModelIdentifier, at directory: URL) -> Bool
 }
 
-/// Default implementation that will integrate with actual download libraries
+// MARK: - ModelDownloadStrategy Protocol
+
+/// Strategy protocol for downloading specific model types
+protocol ModelDownloadStrategy: Sendable {
+    /// Download a model to the specified directory
+    func download(
+        model: ModelIdentifier,
+        to directory: URL,
+        progress: @escaping @Sendable (ModelDownloadProgress) -> Void
+    ) async throws
+}
+
+// MARK: - DefaultModelDownloader
+
+/// Default implementation that delegates to appropriate strategies based on model category
 final class DefaultModelDownloader: ModelDownloader, @unchecked Sendable {
 
     // MARK: - Singleton
 
     static let shared = DefaultModelDownloader()
 
-    private init() {}
+    // MARK: - Properties
+
+    private let logger = Logger(subsystem: "com.ora.app", category: "ModelDownloader")
+    private let asrStrategy: ModelDownloadStrategy
+    private let huggingFaceStrategy: ModelDownloadStrategy
+
+    // MARK: - Initialization
+
+    private init() {
+        self.asrStrategy = FluidAudioStrategy()
+        self.huggingFaceStrategy = HuggingFaceStrategy()
+    }
+
+    /// Create with custom strategies (for testing)
+    init(asrStrategy: ModelDownloadStrategy, huggingFaceStrategy: ModelDownloadStrategy) {
+        self.asrStrategy = asrStrategy
+        self.huggingFaceStrategy = huggingFaceStrategy
+    }
 
     // MARK: - ModelDownloader
 
@@ -42,14 +76,11 @@ final class DefaultModelDownloader: ModelDownloader, @unchecked Sendable {
         // Ensure directory exists
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
-        switch model.category {
-        case .asr:
-            try await self.downloadASRModel(model, to: directory, progress: progress)
-        case .llm:
-            try await self.downloadLLMModel(model, to: directory, progress: progress)
-        case .tts:
-            try await self.downloadTTSModel(model, to: directory, progress: progress)
-        }
+        self.logger.info("Starting download for \(model.displayName) using \(model.category.rawValue) strategy")
+
+        // Select strategy based on model category
+        let strategy = self.strategy(for: model.category)
+        try await strategy.download(model: model, to: directory, progress: progress)
     }
 
     func verify(model: ModelIdentifier, at directory: URL) async -> Bool {
@@ -61,15 +92,18 @@ final class DefaultModelDownloader: ModelDownloader, @unchecked Sendable {
             if file.hasSuffix(".mlmodelc") {
                 var isDir: ObjCBool = false
                 if !fm.fileExists(atPath: filePath.path, isDirectory: &isDir) || !isDir.boolValue {
+                    self.logger.warning("Verification failed: missing \(file)")
                     return false
                 }
             } else {
                 if !fm.fileExists(atPath: filePath.path) {
+                    self.logger.warning("Verification failed: missing \(file)")
                     return false
                 }
             }
         }
 
+        self.logger.debug("Verification passed for \(model.displayName)")
         return true
     }
 
@@ -95,57 +129,19 @@ final class DefaultModelDownloader: ModelDownloader, @unchecked Sendable {
         return true
     }
 
-    // MARK: - Private Download Implementations
+    // MARK: - Private
 
-    private func downloadASRModel(
-        _ model: ModelIdentifier,
-        to directory: URL,
-        progress: @escaping @Sendable (ModelDownloadProgress) -> Void
-    ) async throws {
-        // TODO: Integrate with FluidAudio SDK
-        // let models = try await AsrModels.downloadAndLoad(
-        //     to: directory,
-        //     configuration: .defaultConfiguration(),
-        //     version: .v3
-        // )
-
-        // For now, this is a placeholder that will be replaced when integrating FluidAudio
-        // The actual download will be handled by the FluidAudio SDK
-        throw ModelError.downloadFailed(model, "FluidAudio SDK integration not yet implemented")
-    }
-
-    private func downloadLLMModel(
-        _ model: ModelIdentifier,
-        to directory: URL,
-        progress: @escaping @Sendable (ModelDownloadProgress) -> Void
-    ) async throws {
-        // TODO: Integrate with MLX Swift's HuggingFace download utilities
-        // let hub = HuggingFaceHub()
-        // try await hub.download(repo: model.huggingFaceRepo, to: directory) { downloaded, total in
-        //     let modelProgress = ModelDownloadProgress(
-        //         identifier: model,
-        //         bytesDownloaded: downloaded,
-        //         totalBytes: total
-        //     )
-        //     progress(modelProgress)
-        // }
-
-        // Placeholder for MLX Swift integration
-        throw ModelError.downloadFailed(model, "MLX Swift HuggingFace integration not yet implemented")
-    }
-
-    private func downloadTTSModel(
-        _ model: ModelIdentifier,
-        to directory: URL,
-        progress: @escaping @Sendable (ModelDownloadProgress) -> Void
-    ) async throws {
-        // TODO: Integrate with Kokoro Swift MLX HuggingFace download
-        // Similar to LLM model download
-
-        // Placeholder for Kokoro integration
-        throw ModelError.downloadFailed(model, "Kokoro download integration not yet implemented")
+    private func strategy(for category: ModelCategory) -> ModelDownloadStrategy {
+        switch category {
+        case .asr:
+            return self.asrStrategy
+        case .llm, .tts:
+            return self.huggingFaceStrategy
+        }
     }
 }
+
+// MARK: - MockModelDownloader
 
 /// Mock downloader for testing
 /// Note: This uses @unchecked Sendable because it's only used in tests
@@ -213,6 +209,57 @@ final class MockModelDownloader: ModelDownloader, @unchecked Sendable {
         lock.withLock {
             _downloadedModels = []
             _existingModels = []
+        }
+    }
+}
+
+// MARK: - MockModelDownloadStrategy
+
+/// Mock strategy for testing individual strategy behavior
+final class MockModelDownloadStrategy: ModelDownloadStrategy, @unchecked Sendable {
+    private let lock = NSLock()
+    private var _shouldSucceed = true
+    private var _downloadDelay: TimeInterval = 0.1
+    private var _downloadedModels: [ModelIdentifier] = []
+
+    var shouldSucceed: Bool {
+        get { lock.withLock { _shouldSucceed } }
+        set { lock.withLock { _shouldSucceed = newValue } }
+    }
+
+    var downloadDelay: TimeInterval {
+        get { lock.withLock { _downloadDelay } }
+        set { lock.withLock { _downloadDelay = newValue } }
+    }
+
+    var downloadedModels: [ModelIdentifier] {
+        lock.withLock { _downloadedModels }
+    }
+
+    func download(
+        model: ModelIdentifier,
+        to directory: URL,
+        progress: @escaping @Sendable (ModelDownloadProgress) -> Void
+    ) async throws {
+        guard self.shouldSucceed else {
+            throw ModelError.downloadFailed(model, "Mock strategy failure")
+        }
+
+        // Simulate download progress
+        for i in 1...10 {
+            try await Task.sleep(for: .milliseconds(Int(self.downloadDelay * 100)))
+            let progressValue = Double(i) / 10.0
+            progress(ModelDownloadProgress(identifier: model, progress: progressValue))
+        }
+
+        lock.withLock {
+            _downloadedModels.append(model)
+        }
+    }
+
+    func reset() {
+        lock.withLock {
+            _downloadedModels = []
         }
     }
 }
