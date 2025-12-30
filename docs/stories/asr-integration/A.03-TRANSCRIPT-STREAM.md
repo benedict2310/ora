@@ -173,3 +173,7 @@ actor TranscriptCoordinator {
   - `startSession()` - starts audio & ASR, returns final transcript
   - `cancelSession()` - cancels current session
   - Streams partials to OverlayViewModel via `addUserMessage`
+
+### Step 3: Created Tests ✅
+- Created `OraTests/TranscriptCoordinatorTests.swift`
+- Tests for: shared instance, cancel behavior, session lifecycle
