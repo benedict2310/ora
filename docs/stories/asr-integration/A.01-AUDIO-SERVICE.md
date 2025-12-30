@@ -1,7 +1,7 @@
 # A.01 - Audio Service
 
 **Epic:** ASR Integration
-**Status:** Ready for Code Review
+**Status:** Complete
 **Priority:** P0 (Critical Path)
 **Estimated Effort:** 1-2 days
 **Dependencies:** F.05 (Global Hotkey), Parakeet S.02 (Audio Capture)
@@ -798,3 +798,17 @@ Rather than duplicating the existing audio capture implementation from S.02, Aud
 - [ ] All P0 issues resolved
 - [ ] All P1 issues resolved
 - [ ] Ready for merge
+
+---
+
+## Completion Status
+
+- [x] Implementation complete
+- [x] Code review passed (5 iterations)
+- [x] PR merged: https://github.com/benedict2310/ora/pull/17
+- [x] Merged to main: commit 6058974
+- [x] Date: 2025-12-30
+
+### Summary
+
+A.01 Audio Service fully implemented with all 6 acceptance criteria verified. The AudioService actor wraps the existing AudioPipeline from S.02 and provides an AsyncStream<AudioFrame> interface for modern Swift Concurrency patterns. Key fixes addressed race conditions in start/stop lifecycle and ensured proper handling of flushed audio samples during PTT release. Ready for integration with ASR Service (A.02).
