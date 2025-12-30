@@ -666,3 +666,36 @@ Rather than duplicating the existing audio capture implementation from S.02, Aud
 - [x] All P0 issues resolved
 - [x] All P1 issues resolved
 - [x] Ready for merge
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2025-12-30T08:48:08Z
+**Commit reviewed:** 750a670
+**Iteration:** 2
+
+### Summary
+- Files reviewed: 6
+- Build status: Pass
+- Tests status: Pass (438 tests, 2 skipped)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- None.
+
+#### P1 - Major (Should fix)
+- [ ] `Ora/Audio/AudioService.swift:93` - `start()` awaits the microphone permission check while `state` is still `.idle`; a hotkey release (or a second start) during that await can call `stop()` which no-ops, then `start()` resumes and begins recording after release. Consider setting a starting state before the await and re-checking state after it, or using a start token to cancel stale starts.
+
+#### P2 - Minor (Can defer)
+- [ ] `Ora/Audio/AudioService.swift:93` - `AsyncStream` uses default unbounded buffering; if ASR consumption stalls, frames can accumulate and grow memory despite the pipeline ring buffer. Consider `.bufferingNewest(_:)` or dropping frames.
+
+### Future Considerations (Out of Scope)
+- None.
+
+### Approval Status
+- [ ] All P0 issues resolved
+- [ ] All P1 issues resolved
+- [ ] Ready for merge

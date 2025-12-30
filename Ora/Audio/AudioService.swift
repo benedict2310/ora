@@ -133,15 +133,24 @@ actor AudioService {
             throw AudioServiceError.alreadyRecording
         }
 
+        // Set starting state BEFORE async permission check to prevent race conditions
+        // If stop() is called during the await, it will transition us to .idle
+        state = .starting
+        sampleCounter = 0
+
         // Check microphone permission
         let permStatus = await PermissionsManager.shared.check(.microphone)
+
+        // Re-check state after await - stop() may have been called during permission check
+        guard state == .starting else {
+            logger.info("Start cancelled during permission check (state: \(String(describing: self.state)))")
+            throw AudioServiceError.invalidState
+        }
+
         guard permStatus == .authorized else {
             state = .error(.microphoneNotAuthorized)
             throw AudioServiceError.microphoneNotAuthorized
         }
-
-        state = .starting
-        sampleCounter = 0
 
         // Create pipeline if needed
         let audioPipeline = pipeline ?? AudioPipeline()
