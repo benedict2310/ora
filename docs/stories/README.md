@@ -19,7 +19,7 @@
 | Epic | Stories | Description | Status |
 |:-----|:--------|:------------|:-------|
 | [Foundations](foundations/) | F.00 - F.08 | App shell, permissions, model management, UI infrastructure | ✅ 9 implemented |
-| [Parakeet Starter](parakeet-starter/) | S.01 - S.05 | ASR engine integration (FluidAudio Parakeet) | ✅ 2 implemented · 📝 1 ready for implementation · 📝 2 draft |
+| [Parakeet Starter](parakeet-starter/) | S.01 - S.05 | ASR engine integration (FluidAudio Parakeet) | ✅ 3 implemented · 📝 2 draft |
 | [ASR Integration](asr-integration/) | A.01 - A.03 | Connect Parakeet to Ora's pipeline | ⏳ 3 not started |
 | [LLM Integration](llm-integration/) | L.01 - L.04 | MLX Swift, Qwen 2.5, structured output | ⏳ 4 not started |
 | [TTS Integration](tts-integration/) | T.01 - T.03 | Kokoro MLX text-to-speech | ⏳ 3 not started |
@@ -63,7 +63,7 @@ Integrate FluidAudio Parakeet for speech-to-text.
 |:-----:|:------|:------|:------:|:-------------:|:-------|
 | 10 | S.01 | [Core Engine Integration](parakeet-starter/S.01-CORE-ENGINE-INTEGRATION.md) | 2d | ✅ | ✅ Implemented |
 | 11 | S.02 | [Audio Capture Pipeline](parakeet-starter/S.02-AUDIO-CAPTURE-PIPELINE.md) | 2d | ✅ | ✅ Implemented |
-| 12 | S.03 | [Real-Time Streaming](parakeet-starter/S.03-REALTIME-STREAMING-TRANSCRIPTION.md) | 2d | ✅ | 📝 Ready for Implementation |
+| 12 | S.03 | [Real-Time Streaming](parakeet-starter/S.03-REALTIME-STREAMING-TRANSCRIPTION.md) | 2d | ✅ | ✅ Implemented |
 | 13 | A.01 | [Audio Service](asr-integration/A.01-AUDIO-SERVICE.md) | 1d | ✅ | ⏳ Not Started |
 | 14 | A.02 | [ASR Service](asr-integration/A.02-ASR-SERVICE.md) | 1d | ✅ | ⏳ Not Started |
 | 15 | A.03 | [Transcript Stream](asr-integration/A.03-TRANSCRIPT-STREAM.md) | 1d | ✅ | ⏳ Not Started |
