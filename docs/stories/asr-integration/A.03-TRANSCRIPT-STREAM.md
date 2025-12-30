@@ -177,3 +177,7 @@ actor TranscriptCoordinator {
 ### Step 3: Created Tests ✅
 - Created `OraTests/TranscriptCoordinatorTests.swift`
 - Tests for: shared instance, cancel behavior, session lifecycle
+- All 4 tests passing
+
+### Step 4: Fixed Actor Isolation ✅
+- Added `await` to `ASRService.shared.transcribe()` call (actor-isolated method)

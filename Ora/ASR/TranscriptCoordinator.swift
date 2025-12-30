@@ -62,7 +62,7 @@ actor TranscriptCoordinator {
         let audioStream = try await AudioService.shared.start()
 
         // Start transcription
-        let asrStream = ASRService.shared.transcribe(frames: audioStream)
+        let asrStream = await ASRService.shared.transcribe(frames: audioStream)
 
         var lastText = ""
 
