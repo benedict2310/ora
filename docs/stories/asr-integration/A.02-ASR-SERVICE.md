@@ -221,3 +221,36 @@ enum ASRServiceError: LocalizedError {
 - [x] All acceptance criteria verified
 - [x] Tests passing (458 tests, 0 failures)
 - [x] Working tree clean
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2025-12-30T10:09:58Z
+**Commit reviewed:** ea9794e
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 3
+- Build status: Pass
+- Tests status: Fail (458 tests, 2 skipped, 1 failure; failing test: `OraTests/ASREngineTests.swift:82` - `ASREngineTests.test_ASRFinalSegment_isEquatable()`)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- None
+
+#### P1 - Major (Should fix)
+- [x] `Ora/ASR/ASRService.swift:123` - `accumulatedSamples` is never trimmed, so `engine.process` reprocesses the full history on every frame after the minimum threshold, causing unbounded memory growth and O(n^2) work for long streams; consider consuming/rolling the buffer or using a hop/window strategy. **FIXED:** Added `maxWindowSamples` (10s) and trimming logic to prevent unbounded growth.
+
+#### P2 - Minor (Can defer)
+- None
+
+### Future Considerations (Out of Scope)
+- None
+
+### Approval Status
+- [ ] All P0 issues resolved
+- [ ] All P1 issues resolved
+- [ ] Ready for merge

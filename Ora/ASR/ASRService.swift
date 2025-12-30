@@ -64,6 +64,10 @@ actor ASRService: @preconcurrency ASRServicing {
     /// Minimum samples before first transcription attempt (160ms at 16kHz)
     private let minimumSamples = 2560
 
+    /// Maximum window size in samples (10 seconds at 16kHz)
+    /// Audio older than this is dropped to prevent unbounded memory growth
+    private let maxWindowSamples = 160000
+
     // MARK: - Initialization
 
     private init() {}
@@ -126,6 +130,11 @@ actor ASRService: @preconcurrency ASRServicing {
         // Process frames as they arrive
         for await frame in frames {
             accumulatedSamples.append(contentsOf: frame.samples)
+
+            // Trim to rolling window to prevent unbounded memory growth
+            if accumulatedSamples.count > maxWindowSamples {
+                accumulatedSamples.removeFirst(accumulatedSamples.count - maxWindowSamples)
+            }
 
             // Process when we have enough audio
             if accumulatedSamples.count >= minimumSamples {
