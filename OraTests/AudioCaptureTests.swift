@@ -140,6 +140,50 @@ final class StreamingRingBufferTests: XCTestCase {
         XCTAssertEqual(samples.count, 8000)
     }
 
+    // MARK: - peekLatest Tests
+
+    func test_peekLatest_returns_newest_samples() {
+        let buffer = StreamingRingBuffer(capacity: 10)
+        buffer.append([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
+
+        // peek returns oldest (from tail)
+        let oldest = buffer.peek(count: 3)
+        XCTAssertEqual(oldest, [1.0, 2.0, 3.0], "peek should return oldest samples")
+
+        // peekLatest returns newest (most recent)
+        let newest = buffer.peekLatest(count: 3)
+        XCTAssertEqual(newest, [6.0, 7.0, 8.0], "peekLatest should return newest samples")
+    }
+
+    func test_peekLatest_with_wraparound() {
+        let buffer = StreamingRingBuffer(capacity: 5)
+
+        // Fill and overflow (1,2,3 get overwritten)
+        buffer.append([1.0, 2.0, 3.0, 4.0, 5.0])
+        buffer.append([6.0, 7.0, 8.0])
+
+        // Buffer now contains [4, 5, 6, 7, 8] with wraparound
+        let newest = buffer.peekLatest(count: 3)
+        XCTAssertEqual(newest, [6.0, 7.0, 8.0], "peekLatest should return newest after wraparound")
+    }
+
+    func test_peekLatest_more_than_available() {
+        let buffer = StreamingRingBuffer(capacity: 100)
+        buffer.append([1.0, 2.0, 3.0])
+
+        let result = buffer.peekLatest(count: 10)
+
+        XCTAssertEqual(result, [1.0, 2.0, 3.0], "Should return all available when requesting more")
+    }
+
+    func test_peekLatest_empty_buffer() {
+        let buffer = StreamingRingBuffer(capacity: 100)
+
+        let result = buffer.peekLatest(count: 5)
+
+        XCTAssertTrue(result.isEmpty, "Empty buffer should return empty array")
+    }
+
     // MARK: - Thread Safety Tests
 
     func test_concurrent_append_and_read() async {
