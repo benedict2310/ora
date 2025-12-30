@@ -197,3 +197,36 @@ actor TranscriptCoordinator {
 | AC-3 | ✅ | Final returned from `runSession()` → `startSession()` |
 | AC-4 | ✅ | `cancelSession()` cancels task + calls `AudioService.cancel()` |
 | AC-5 | N/A | UI indicator is OverlayView responsibility, not coordinator |
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2025-12-30T16:49:46Z
+**Commit reviewed:** 6158596
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 2
+- Build status: Pass
+- Tests status: Pass (462 tests, 2 skipped)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [ ] None
+
+#### P1 - Major (Should fix)
+- [x] `Ora/ASR/TranscriptCoordinator.swift:30` - ~~`startSession()` cancels the previous task but never stops the active `AudioService` session~~ **FIXED:** Added `await AudioService.shared.cancel()` before starting new session
+
+#### P2 - Minor (Can defer)
+- [ ] None
+
+### Future Considerations (Out of Scope)
+- None
+
+### Approval Status
+- [ ] All P0 issues resolved
+- [ ] All P1 issues resolved
+- [ ] Ready for merge

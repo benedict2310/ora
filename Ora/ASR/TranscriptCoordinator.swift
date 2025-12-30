@@ -27,8 +27,9 @@ actor TranscriptCoordinator {
     /// Start transcription session
     /// Returns the final transcript when complete
     func startSession() async throws -> String? {
-        // Cancel any existing session
+        // Cancel any existing session and stop audio to avoid alreadyRecording errors
         currentTask?.cancel()
+        await AudioService.shared.cancel()
 
         // Reset ASR state
         await ASRService.shared.reset()
