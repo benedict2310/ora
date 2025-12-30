@@ -107,8 +107,8 @@ struct HuggingFaceStrategy: ModelDownloadStrategy, Sendable {
             // Kokoro TTS MLX model
             return [
                 "config.json",
-                "model.safetensors",
-                "voices.json",
+                "kokoro-v1_0.safetensors",
+                // "voices.json" - removed as it doesn't exist in root
             ]
 
         case .parakeetTDT:

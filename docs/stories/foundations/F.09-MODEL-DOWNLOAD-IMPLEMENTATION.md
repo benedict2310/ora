@@ -237,3 +237,24 @@ final class DefaultModelDownloader: ModelDownloader {
 - [x] PR merged: https://github.com/benedict2310/ora/pull/20
 - [x] Merged to main: 3fd0df7
 - [x] Date: 2025-12-30
+
+---
+
+## Post-Merge Maintenance (2025-12-30)
+
+**Issues Identified:**
+1.  **416 Range Not Satisfiable Loop:** `HuggingFaceDownloader` would enter a retry loop if a small file (e.g., `config.json`) was already fully downloaded, as the server rejected the `Range` request for bytes past the end of the file.
+2.  **Kokoro Model 404:** The filename `model.safetensors` was incorrect for the `kokoro-82m` model; the correct filename is `kokoro-v1_0.safetensors`.
+3.  **Invalid File Request:** `voices.json` was requested but does not exist in the repo root.
+
+**Fixes Applied:**
+- Updated `HuggingFaceDownloader` to treat `HTTP 416` as success if existing bytes > 0 (assuming full file is present).
+- Updated `ModelIdentifier` and `HuggingFaceStrategy` to use `kokoro-v1_0.safetensors`.
+- Removed `voices.json` from the download list.
+- Added `MockURLProtocol` based tests for 416 handling in `HuggingFaceDownloaderTests`.
+- Added public privacy to logging for better debugging.
+
+**Verification:**
+- Added `test_download_handles_416_as_success` to `HuggingFaceDownloaderTests`.
+- Updated `test_requiredFiles_includesWeightFiles` to verify correct filename.
+

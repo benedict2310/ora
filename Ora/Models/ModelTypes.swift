@@ -95,7 +95,7 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
             return ["config.json", "tokenizer.json", "model.safetensors"]
         case .kokoro:
             // Must include model weights to prevent treating partial downloads as complete
-            return ["config.json", "model.safetensors"]
+            return ["config.json", "kokoro-v1_0.safetensors"]
         }
     }
 }
