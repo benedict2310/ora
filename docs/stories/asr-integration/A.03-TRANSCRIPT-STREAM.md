@@ -1,7 +1,7 @@
 # A.03 - Transcript Stream
 
 **Epic:** ASR Integration
-**Status:** Not Started
+**Status:** In Progress
 **Priority:** P0 (Critical Path)
 **Estimated Effort:** 1 day
 **Dependencies:** A.01 (Audio Service), A.02 (ASR Service), F.07 (Overlay)
@@ -137,3 +137,39 @@ actor TranscriptCoordinator {
 - [ ] Test end-to-end flow
 - [ ] Add cancellation handling
 - [ ] Test with various speech patterns
+
+---
+
+## Implementation Plan
+
+**Date Started:** 2025-12-30
+**Branch:** `feat/A.03-transcript-stream`
+
+### Files to Create
+- `Ora/ASR/TranscriptCoordinator.swift` - Coordinates audio→ASR→UI pipeline
+
+### Files to Modify
+- None required (uses existing APIs from A.01/A.02/F.07)
+
+### Tests to Add
+- `OraTests/TranscriptCoordinatorTests.swift` - Unit tests for coordinator
+
+### Implementation Notes
+- Uses existing `AudioService.shared.start()` returning `AsyncStream<AudioFrame>`
+- Uses existing `ASRService.shared.transcribe(frames:)` returning `AsyncThrowingStream<ASREvent, Error>`
+- Uses existing `OverlayWindowController.shared.model.addUserMessage(_:isPartial:)`
+- Story spec provides nearly complete implementation code
+
+---
+
+## Progress Log
+
+### Step 1: Created Branch ✅
+- Created `feat/A.03-transcript-stream` from main
+
+### Step 2: Created TranscriptCoordinator ✅
+- Created `Ora/ASR/TranscriptCoordinator.swift`
+- Actor-based coordinator with:
+  - `startSession()` - starts audio & ASR, returns final transcript
+  - `cancelSession()` - cancels current session
+  - Streams partials to OverlayViewModel via `addUserMessage`
