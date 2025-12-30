@@ -129,6 +129,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func onHotkeyRelease() {
         self.logger.debug("Hotkey released - end PTT")
+
+        // Don't override error state - if startup failed, keep showing the error
+        let currentMode = OverlayWindowController.shared.mode
+        if case .error = currentMode {
+            self.logger.debug("Skipping state transition - error state should persist")
+            return
+        }
+
         self.statusBarController?.setState(.thinking)
 
         // Update overlay mode to thinking

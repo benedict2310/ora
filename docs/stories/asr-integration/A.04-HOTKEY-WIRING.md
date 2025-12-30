@@ -157,3 +157,36 @@ private func onHotkeyRelease() {
 ## Completion Status
 
 (TBD after merge.)
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2025-12-30T20:24:08Z
+**Commit reviewed:** 27c45a2
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 3
+- Build status: Pass
+- Tests status: Pass (489 tests, 1 skipped)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [ ] None
+
+#### P1 - Major (Should fix)
+- [x] `Ora/AppDelegate.swift:132` - Hotkey release always forces `.thinking`, which can overwrite the `.error(...)` state set on start failures (e.g., missing models). This hides the error UI and violates AC-6; guard against overriding error state when startup fails or was cancelled.
+
+#### P2 - Minor (Can defer)
+- [ ] None
+
+### Future Considerations (Out of Scope)
+- None
+
+### Approval Status
+- [ ] All P0 issues resolved
+- [ ] All P1 issues resolved
+- [ ] Ready for merge
