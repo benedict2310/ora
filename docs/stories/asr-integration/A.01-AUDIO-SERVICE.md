@@ -699,3 +699,36 @@ Rather than duplicating the existing audio capture implementation from S.02, Aud
 - [ ] All P0 issues resolved
 - [ ] All P1 issues resolved
 - [ ] Ready for merge
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2025-12-30T09:01:08Z
+**Commit reviewed:** 696a021
+**Iteration:** 3
+
+### Summary
+- Files reviewed: 6
+- Build status: Pass
+- Tests status: Pass (440 tests, 2 skipped)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- None.
+
+#### P1 - Major (Should fix)
+- [ ] `Ora/Audio/AudioService.swift:160` - `AsyncStream` uses default unbounded buffering; if ASR consumption stalls, frames can accumulate and grow memory even though the pipeline ring buffer is bounded. Consider `.bufferingNewest(_:)` or dropping frames to honor AC-5.
+
+#### P2 - Minor (Can defer)
+- None.
+
+### Future Considerations (Out of Scope)
+- None.
+
+### Approval Status
+- [ ] All P0 issues resolved
+- [ ] All P1 issues resolved
+- [ ] Ready for merge

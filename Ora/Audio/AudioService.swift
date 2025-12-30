@@ -156,8 +156,10 @@ actor AudioService {
         let audioPipeline = pipeline ?? AudioPipeline()
         self.pipeline = audioPipeline
 
-        // Create the async stream
-        let stream = AsyncStream<AudioFrame> { continuation in
+        // Create the async stream with bounded buffering
+        // Use bufferingNewest to drop old frames if ASR consumption stalls
+        // 10 frames = 1 second of audio at 100ms per frame
+        let stream = AsyncStream<AudioFrame>(bufferingPolicy: .bufferingNewest(10)) { continuation in
             self.framesContinuation = continuation
 
             continuation.onTermination = { @Sendable _ in
