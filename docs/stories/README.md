@@ -20,7 +20,7 @@
 |:-----|:--------|:------------|:-------|
 | [Foundations](foundations/) | F.00 - F.08 | App shell, permissions, model management, UI infrastructure | ✅ 9 implemented |
 | [Parakeet Starter](parakeet-starter/) | S.01 - S.05 | ASR engine integration (FluidAudio Parakeet) | ✅ 3 implemented · 📝 2 draft |
-| [ASR Integration](asr-integration/) | A.01 - A.03 | Connect Parakeet to Ora's pipeline | ✅ 1 implemented · ⏳ 2 not started |
+| [ASR Integration](asr-integration/) | A.01 - A.03 | Connect Parakeet to Ora's pipeline | ✅ 3 implemented |
 | [LLM Integration](llm-integration/) | L.01 - L.04 | MLX Swift, Qwen 2.5, structured output | ⏳ 4 not started |
 | [TTS Integration](tts-integration/) | T.01 - T.03 | Kokoro MLX text-to-speech | ⏳ 3 not started |
 | [Tools](tools/) | X.01 - X.05 | Calendar, Reminders, Contacts, System tools | ⏳ 5 not started |
@@ -64,9 +64,9 @@ Integrate FluidAudio Parakeet for speech-to-text.
 | 10 | S.01 | [Core Engine Integration](parakeet-starter/S.01-CORE-ENGINE-INTEGRATION.md) | 2d | ✅ | ✅ Implemented |
 | 11 | S.02 | [Audio Capture Pipeline](parakeet-starter/S.02-AUDIO-CAPTURE-PIPELINE.md) | 2d | ✅ | ✅ Implemented |
 | 12 | S.03 | [Real-Time Streaming](parakeet-starter/S.03-REALTIME-STREAMING-TRANSCRIPTION.md) | 2d | ✅ | ✅ Implemented |
-| 13 | A.01 | [Audio Service](asr-integration/A.01-AUDIO-SERVICE.md) | 1d | ✅ | ✅ Implemented |
-| 14 | A.02 | [ASR Service](asr-integration/A.02-ASR-SERVICE.md) | 1d | ✅ | ⏳ Not Started |
-| 15 | A.03 | [Transcript Stream](asr-integration/A.03-TRANSCRIPT-STREAM.md) | 1d | ✅ | ⏳ Not Started |
+| 13 | A.01 | [Audio Service](asr-integration/A.01-AUDIO-SERVICE.md) | 1d | ✅ | ✅ Complete |
+| 14 | A.02 | [ASR Service](asr-integration/A.02-ASR-SERVICE.md) | 1d | ✅ | ✅ Complete |
+| 15 | A.03 | [Transcript Stream](asr-integration/A.03-TRANSCRIPT-STREAM.md) | 1d | ✅ | ✅ Complete |
 
 **Milestone:** PTT captures audio, transcription streams to overlay.
 
@@ -321,5 +321,6 @@ After Phase 6 (Orchestration):
 
 | Version | Date | Changes |
 |:--------|:-----|:--------|
+| 1.2 | 2025-12-30 | ASR Integration epic complete (A.01-A.03) |
 | 1.1 | 2025-12-29 | S.02 Audio Capture Pipeline implemented |
 | 1.0 | 2025-12-27 | Initial story index with all 32 stories |

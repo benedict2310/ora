@@ -17,11 +17,11 @@ This epic bridges the Parakeet starter stories with Ora's application architectu
 
 ## Story Index
 
-| Story | Title | Description | Dependencies |
-|-------|-------|-------------|--------------|
-| **A.01** | [Audio Service](A.01-AUDIO-SERVICE.md) | Wrap audio capture with PTT lifecycle | F.05, S.02 |
-| **A.02** | [ASR Service](A.02-ASR-SERVICE.md) | Wrap Parakeet engine with Ora protocols | S.01, S.03 |
-| **A.03** | [Transcript Stream](A.03-TRANSCRIPT-STREAM.md) | Connect ASR to UI and orchestrator | A.01, A.02, F.07 |
+| Story | Title | Description | Dependencies | Status |
+|-------|-------|-------------|--------------|--------|
+| **A.01** | [Audio Service](A.01-AUDIO-SERVICE.md) | Wrap audio capture with PTT lifecycle | F.05, S.02 | ✅ Complete |
+| **A.02** | [ASR Service](A.02-ASR-SERVICE.md) | Wrap Parakeet engine with Ora protocols | S.01, S.03 | ✅ Complete |
+| **A.03** | [Transcript Stream](A.03-TRANSCRIPT-STREAM.md) | Connect ASR to UI and orchestrator | A.01, A.02, F.07 | ✅ Complete |
 
 ## Dependency Graph
 
@@ -67,9 +67,13 @@ enum ASREvent: Sendable {
 
 ## Success Criteria
 
-- [ ] Audio capture starts on hotkey press
-- [ ] Audio capture stops on hotkey release
-- [ ] Partial transcripts stream to overlay UI
-- [ ] Final transcript sent to orchestrator on release
-- [ ] < 400ms latency for first partial
-- [ ] Clean cancellation on user interrupt
+- [x] Audio capture starts on hotkey press
+- [x] Audio capture stops on hotkey release
+- [x] Partial transcripts stream to overlay UI
+- [x] Final transcript sent to orchestrator on release
+- [ ] < 400ms latency for first partial (pending performance testing)
+- [x] Clean cancellation on user interrupt
+
+## Epic Status: ✅ Complete
+
+All 3 stories implemented and merged to main.
