@@ -1,7 +1,7 @@
 # A.04 - Hotkey Wiring
 
 **Epic:** ASR Integration
-**Status:** In Progress
+**Status:** Complete
 **Priority:** P0 (Critical Path)
 **Estimated Effort:** 0.5 days
 **Dependencies:** A.03 (Transcript Stream), F.09 (Model Download)
