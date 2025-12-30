@@ -126,14 +126,35 @@ actor ASRService: @preconcurrency ASRServicing {
 
         var accumulatedSamples: [Float] = []
         var lastPartialText = ""
+        // Committed text from chunks that have rolled out of the window
+        var committedText = ""
 
         // Process frames as they arrive
         for await frame in frames {
             accumulatedSamples.append(contentsOf: frame.samples)
 
-            // Trim to rolling window to prevent unbounded memory growth
+            // When exceeding the max window, finalize the portion being dropped
+            // and add it to committed text to preserve the full transcript
             if accumulatedSamples.count > maxWindowSamples {
-                accumulatedSamples.removeFirst(accumulatedSamples.count - maxWindowSamples)
+                let excessCount = accumulatedSamples.count - maxWindowSamples
+                let excessSamples = Array(accumulatedSamples.prefix(excessCount))
+
+                // Finalize the audio being dropped to preserve its transcription
+                if !excessSamples.isEmpty {
+                    let segment = try await engine.finalize(
+                        samples: excessSamples,
+                        language: "en"
+                    )
+                    if let segment = segment, !segment.text.isEmpty {
+                        if committedText.isEmpty {
+                            committedText = segment.text
+                        } else {
+                            committedText += " " + segment.text
+                        }
+                    }
+                }
+
+                accumulatedSamples.removeFirst(excessCount)
             }
 
             // Process when we have enough audio
@@ -143,22 +164,47 @@ actor ASRService: @preconcurrency ASRServicing {
                     language: "en"
                 )
 
-                if let partial = partial, partial.text != lastPartialText {
-                    lastPartialText = partial.text
-                    continuation.yield(.partial(text: partial.text, stability: 0.8))
+                if let partial = partial {
+                    // Combine committed text with current window partial
+                    let fullText: String
+                    if committedText.isEmpty {
+                        fullText = partial.text
+                    } else if partial.text.isEmpty {
+                        fullText = committedText
+                    } else {
+                        fullText = committedText + " " + partial.text
+                    }
+
+                    if fullText != lastPartialText {
+                        lastPartialText = fullText
+                        continuation.yield(.partial(text: fullText, stability: 0.8))
+                    }
                 }
             }
         }
 
-        // Finalize with remaining audio
-        if !accumulatedSamples.isEmpty {
-            let final = try await engine.finalize(
-                samples: accumulatedSamples,
-                language: "en"
-            )
+        // Finalize: Combine committed text with final transcription of remaining audio
+        if !accumulatedSamples.isEmpty || !committedText.isEmpty {
+            var finalText = committedText
 
-            if let final = final, !final.text.isEmpty {
-                continuation.yield(.final(text: final.text))
+            // Finalize remaining audio in the window
+            if !accumulatedSamples.isEmpty {
+                let final = try await engine.finalize(
+                    samples: accumulatedSamples,
+                    language: "en"
+                )
+
+                if let final = final, !final.text.isEmpty {
+                    if finalText.isEmpty {
+                        finalText = final.text
+                    } else {
+                        finalText += " " + final.text
+                    }
+                }
+            }
+
+            if !finalText.isEmpty {
+                continuation.yield(.final(text: finalText))
             }
         }
 

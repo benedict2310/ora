@@ -254,3 +254,36 @@ enum ASRServiceError: LocalizedError {
 - [ ] All P0 issues resolved
 - [ ] All P1 issues resolved
 - [ ] Ready for merge
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2025-12-30T10:15:13Z
+**Commit reviewed:** 0f9716c
+**Iteration:** 2
+
+### Summary
+- Files reviewed: 3
+- Build status: Pass
+- Tests status: Pass (458 tests, 2 skipped)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- None
+
+#### P1 - Major (Should fix)
+- [ ] `Ora/ASR/ASRService.swift:134` - The 10s rolling window drops earlier audio for long utterances, so the final event only reflects the last window and loses earlier speech; this breaks full-stream transcription for longer inputs and needs either chunked finalization or a way to keep the full transcript while bounding memory.
+
+#### P2 - Minor (Can defer)
+- None
+
+### Future Considerations (Out of Scope)
+- None
+
+### Approval Status
+- [ ] All P0 issues resolved
+- [ ] All P1 issues resolved
+- [ ] Ready for merge
