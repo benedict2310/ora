@@ -223,7 +223,8 @@ actor AudioService {
     // MARK: - Private: Audio Processing
 
     private func handleAudioChunk(_ samples: [Float]) {
-        guard state == .recording else { return }
+        // Allow processing during .stopping to capture final flushed samples
+        guard state == .recording || state == .stopping else { return }
 
         // Update sample counter
         sampleCounter += UInt64(samples.count)
