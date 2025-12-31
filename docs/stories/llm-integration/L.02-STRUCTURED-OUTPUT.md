@@ -375,6 +375,6 @@ enum StructuredGeneratorError: LocalizedError {
 ## Completion Status
 - [x] Implementation complete
 - [x] Code review passed (3 iterations)
-- [ ] PR merged: <URL>
-- [ ] Merged to main: <SHA>
-- [ ] Date: 2025-12-31
+- [x] PR merged: https://github.com/benedict2310/ora/pull/22
+- [x] Merged to main: 5d52bd31614c03169953c25d2e12de781ed9e743
+- [x] Date: 2025-12-31
