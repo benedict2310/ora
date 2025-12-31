@@ -1,7 +1,7 @@
 # L.04 - System Prompt
 
 **Epic:** LLM Integration
-**Status:** Not Started
+**Status:** Complete
 **Priority:** P0 (Critical Path)
 **Estimated Effort:** 1 day
 **Dependencies:** L.01 (LLM Runtime)
@@ -11,123 +11,126 @@
 
 ## 1. Objective
 
-Build dynamic system prompts with current date/time, timezone, available tools, and user preferences.
+Build dynamic system prompts with current date/time, timezone, available tools, and user preferences. The system prompt should be stored in an editable file for easy iteration without code changes.
 
 ---
 
 ## 2. Implementation
 
-**File:** `Ora/LLM/SystemPromptBuilder.swift`
+### Files Created
+
+**Template File:** `Ora/Resources/system-prompt.txt`
+- Editable text file bundled with the app
+- Uses `{{variable}}` syntax for placeholders
+- Can be modified without changing code
+
+**Builder:** `Ora/LLM/SystemPromptBuilder.swift`
+- Loads template from bundle
+- Resolves all variable placeholders
+- Provides fallback if template not found
+
+**Tests:** `OraTests/LLM/SystemPromptBuilderTests.swift`
+- 17 unit tests for loading and variable resolution
+
+### Supported Variables
+
+| Variable | Example Output |
+|:---------|:---------------|
+| `{{current_date}}` | Friday, December 27, 2025 |
+| `{{current_time}}` | 2:30 PM |
+| `{{timezone}}` | America/Los_Angeles |
+| `{{default_calendar}}` | Personal (or "Default" if nil) |
+| `{{tools}}` | Formatted list of available tools |
+
+### Usage
 
 ```swift
-//
-//  SystemPromptBuilder.swift
-//  Ora
-//
-//  Builds dynamic system prompts for LLM
-//
+// Build with current context
+let prompt = SystemPromptBuilder.build(
+    currentDate: Date(),
+    timezone: .current,
+    defaultCalendar: "Work",
+    tools: availableTools
+)
 
-import Foundation
+// Load raw template (for debugging)
+let template = SystemPromptBuilder.loadTemplate()
 
-/// Builds system prompts with dynamic context
-struct SystemPromptBuilder {
-    
-    /// Build complete system prompt
-    static func build(
-        currentDate: Date = Date(),
-        timezone: TimeZone = .current,
-        defaultCalendar: String? = nil,
-        tools: [ToolDefinition] = []
-    ) -> String {
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "EEEE, MMMM d, yyyy"
-        dateFormatter.timeZone = timezone
-        
-        let timeFormatter = DateFormatter()
-        timeFormatter.dateFormat = "h:mm a"
-        timeFormatter.timeZone = timezone
-        
-        let toolsJSON = encodeToolSchemas(tools)
-        
-        return """
-        You are Ora, a helpful voice assistant running locally on macOS. You help users manage their calendar, reminders, and contacts.
-        
-        CURRENT CONTEXT:
-        - Date: \(dateFormatter.string(from: currentDate))
-        - Time: \(timeFormatter.string(from: currentDate))
-        - Timezone: \(timezone.identifier)
-        - Default Calendar: \(defaultCalendar ?? "Default")
-        
-        CRITICAL OUTPUT RULES:
-        1. You MUST respond with valid JSON only. No markdown, no explanations outside JSON.
-        2. Every response must match one of these formats:
-        
-        For direct answers (no tool needed):
-        {"type": "response", "text": "Your spoken response here"}
-        
-        For tool calls (read-only actions):
-        {"type": "tool_call", "tool": "tool_name", "args": {...}}
-        
-        For proposals (mutations requiring confirmation):
-        {"type": "proposal", "summary": "What will happen", "tool": "tool_name", "args": {...}}
-        
-        3. All dates/times in tool arguments MUST be ISO 8601 format with timezone.
-           Example: "2025-12-27T14:30:00-08:00"
-        
-        4. If the user's request is ambiguous, ask for clarification using a response.
-        
-        5. Never execute mutations without first proposing them for confirmation.
-        
-        6. Keep responses concise - they will be spoken aloud.
-        
-        AVAILABLE TOOLS:
-        \(toolsJSON)
-        
-        Remember: JSON only. No prose outside the JSON structure.
-        """
-    }
-    
-    /// Encode tool schemas for prompt
-    private static func encodeToolSchemas(_ tools: [ToolDefinition]) -> String {
-        if tools.isEmpty {
-            return "No tools available."
-        }
-        
-        var lines: [String] = []
-        for tool in tools {
-            lines.append("- \(tool.name): \(tool.description)")
-            if !tool.parameters.isEmpty {
-                lines.append("  Parameters: \(tool.parameters.keys.joined(separator: ", "))")
-            }
-        }
-        return lines.joined(separator: "\n")
-    }
-}
-
-/// Tool definition for system prompt
-struct ToolDefinition: Sendable {
-    let name: String
-    let description: String
-    let parameters: [String: String]  // name -> type description
-    let requiresConfirmation: Bool
-}
+// Resolve variables manually
+let resolved = SystemPromptBuilder.resolveVariables(
+    in: template,
+    currentDate: date,
+    timezone: timezone,
+    defaultCalendar: calendar,
+    tools: tools
+)
 ```
 
 ---
 
 ## 3. Acceptance Criteria
 
-- [ ] **AC-1:** Current date/time included in prompt
-- [ ] **AC-2:** Timezone correctly formatted
-- [ ] **AC-3:** Tool schemas encoded in prompt
-- [ ] **AC-4:** JSON output rules clearly stated
-- [ ] **AC-5:** ISO 8601 date format documented
+- [x] **AC-1:** Current date/time included in prompt - ✅ `{{current_date}}` and `{{current_time}}` resolved
+- [x] **AC-2:** Timezone correctly formatted - ✅ `{{timezone}}` uses `TimeZone.identifier`
+- [x] **AC-3:** Tool schemas encoded in prompt - ✅ `{{tools}}` formatted with `encodeToolSchemas()`
+- [x] **AC-4:** JSON output rules clearly stated - ✅ Template includes CRITICAL OUTPUT RULES section
+- [x] **AC-5:** ISO 8601 date format documented - ✅ Template includes example format
 
 ---
 
 ## 4. Implementation Checklist
 
-- [ ] Create `SystemPromptBuilder.swift`
-- [ ] Create `ToolDefinition` struct
-- [ ] Test with various timezones
-- [ ] Verify prompt fits within token budget
+- [x] Create `SystemPromptBuilder.swift`
+- [x] Create `ToolDefinition` struct
+- [x] Create editable `system-prompt.txt` template
+- [x] Test with various timezones
+- [x] Verify prompt fits within token budget (~1200 chars base)
+- [x] Add 17 unit tests
+
+---
+
+## Implementation Plan
+
+### Files to Create
+- `Ora/Resources/system-prompt.txt` - Editable template file
+- `Ora/LLM/SystemPromptBuilder.swift` - Template loader and variable resolver
+- `OraTests/LLM/SystemPromptBuilderTests.swift` - Unit tests
+
+### Files to Modify
+- `project.yml` - Add Resources directory as bundled resources
+- `AGENTS.md` - Document system prompt location
+
+---
+
+## Implementation Summary
+
+**Date:** 2025-12-31
+**Branch:** main (direct commit)
+**Commit:** 958a1d8
+
+### Files Changed
+- `Ora/Resources/system-prompt.txt` - Created: Editable system prompt template
+- `Ora/LLM/SystemPromptBuilder.swift` - Created: Template loading and variable resolution
+- `OraTests/LLM/SystemPromptBuilderTests.swift` - Created: 17 unit tests
+- `project.yml` - Modified: Added Resources as bundled resources
+- `AGENTS.md` - Modified: Added Key Resources section
+
+### Key Implementation Details
+1. **File-based template:** System prompt stored in `Ora/Resources/system-prompt.txt`
+2. **Variable syntax:** Uses `{{variable_name}}` placeholders
+3. **Fallback template:** Built-in fallback if file loading fails
+4. **Tool encoding:** Formats tool definitions with name, description, parameters, and confirmation requirement
+5. **Swift 6 compliant:** No mutable static state, thread-safe
+
+### Test Coverage
+All 17 SystemPromptBuilder tests pass:
+- Template loading: 3 tests
+- Variable resolution: 7 tests
+- Build methods: 2 tests
+- Tool encoding: 3 tests
+- Fallback template: 2 tests
+
+### Ready for Review
+- [x] All acceptance criteria verified
+- [x] Tests passing (17/17)
+- [x] Build successful
