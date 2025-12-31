@@ -116,6 +116,15 @@ actor ASRService: @preconcurrency ASRServicing {
 
     // MARK: - Private
 
+    /// Ensure buffer has at least 1 second of audio (16000 samples) by padding with silence
+    private func ensureMinimumDuration(_ samples: [Float]) -> [Float] {
+        let minSamples = 16000
+        if samples.count < minSamples {
+            return samples + Array(repeating: Float(0), count: minSamples - samples.count)
+        }
+        return samples
+    }
+
     private func runTranscription(
         frames: AsyncStream<AudioFrame>,
         continuation: AsyncThrowingStream<ASREvent, Error>.Continuation
@@ -141,8 +150,9 @@ actor ASRService: @preconcurrency ASRServicing {
 
                 // Finalize the audio being dropped to preserve its transcription
                 if !excessSamples.isEmpty {
+                    let paddedSamples = ensureMinimumDuration(excessSamples)
                     let segment = try await engine.finalize(
-                        samples: excessSamples,
+                        samples: paddedSamples,
                         language: "en"
                     )
                     if let segment = segment, !segment.text.isEmpty {
@@ -159,8 +169,9 @@ actor ASRService: @preconcurrency ASRServicing {
 
             // Process when we have enough audio
             if accumulatedSamples.count >= minimumSamples {
+                let paddedSamples = ensureMinimumDuration(accumulatedSamples)
                 let partial = try await engine.process(
-                    samples: accumulatedSamples,
+                    samples: paddedSamples,
                     language: "en"
                 )
 
@@ -189,8 +200,9 @@ actor ASRService: @preconcurrency ASRServicing {
 
             // Finalize remaining audio in the window
             if !accumulatedSamples.isEmpty {
+                let paddedSamples = ensureMinimumDuration(accumulatedSamples)
                 let final = try await engine.finalize(
-                    samples: accumulatedSamples,
+                    samples: paddedSamples,
                     language: "en"
                 )
 

@@ -42,6 +42,19 @@ actor TranscriptCoordinator {
         return try await currentTask?.value
     }
 
+    /// Stop current session gracefully
+    ///
+    /// Stops audio capture, which triggers ASR finalization.
+    /// The running session task will complete and return the final transcript.
+    func stopSession() {
+        logger.debug("Stopping session")
+
+        // Stopping audio will close the stream, causing runSession() to exit its loop
+        Task {
+            await AudioService.shared.stop()
+        }
+    }
+
     /// Cancel current session
     func cancelSession() {
         currentTask?.cancel()

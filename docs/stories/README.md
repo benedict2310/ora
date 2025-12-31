@@ -18,7 +18,7 @@ Core application structure, UI, and state management.
 | F.06 | [Preferences Window](foundations/F.06-PREFERENCES-WINDOW.md) | ✅ Complete |
 | F.07 | [Overlay Window](foundations/F.07-OVERLAY-WINDOW.md) | ✅ Complete |
 | F.08 | [Persistence Layer](foundations/F.08-PERSISTENCE-LAYER.md) | ✅ Complete |
-| F.09 | [Model Download Implementation](foundations/F.09-MODEL-DOWNLOAD-IMPLEMENTATION.md) | 🚧 To Do |
+| F.09 | [Model Download Implementation](foundations/F.09-MODEL-DOWNLOAD-IMPLEMENTATION.md) | ✅ Complete |
 
 ### 🎙 ASR Integration (A)
 Speech-to-text pipeline using FluidAudio Parakeet.
@@ -28,7 +28,7 @@ Speech-to-text pipeline using FluidAudio Parakeet.
 | A.01 | [Audio Service](asr-integration/A.01-AUDIO-SERVICE.md) | ✅ Complete |
 | A.02 | [ASR Service](asr-integration/A.02-ASR-SERVICE.md) | ✅ Complete |
 | A.03 | [Transcript Stream](asr-integration/A.03-TRANSCRIPT-STREAM.md) | ✅ Complete |
-| A.04 | [Hotkey Wiring](asr-integration/A.04-HOTKEY-WIRING.md) | 🚧 To Do |
+| A.04 | [Hotkey Wiring](asr-integration/A.04-HOTKEY-WIRING.md) | ✅ Complete |
 
 ### 🧠 LLM Integration (L)
 Local inference using MLX Swift and Qwen 2.5.
@@ -39,6 +39,7 @@ Local inference using MLX Swift and Qwen 2.5.
 | L.02 | [Structured Output](llm-integration/L.02-STRUCTURED-OUTPUT.md) | 🚧 To Do |
 | L.03 | [Conversation Manager](llm-integration/L.03-CONVERSATION-MANAGER.md) | 🚧 To Do |
 | L.04 | [System Prompt](llm-integration/L.04-SYSTEM-PROMPT.md) | 🚧 To Do |
+| L.05 | [Additional LLM Models](llm-integration/L.05-ADDITIONAL-LLM-MODELS.md) | 🚧 To Do |
 
 ### 🗣 TTS Integration (T)
 Text-to-speech using Kokoro MLX.

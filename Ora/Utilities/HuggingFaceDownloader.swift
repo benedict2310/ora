@@ -98,7 +98,7 @@ final class HuggingFaceDownloader: NSObject, FileDownloader, @unchecked Sendable
         to destination: URL,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws {
-        self.logger.info("Starting download: \(url.lastPathComponent) -> \(destination.path)")
+        self.logger.info("Starting download: \(url.lastPathComponent, privacy: .public) -> \(destination.path, privacy: .public)")
 
         // Create parent directory if needed
         let parentDir = destination.deletingLastPathComponent()
@@ -117,12 +117,17 @@ final class HuggingFaceDownloader: NSObject, FileDownloader, @unchecked Sendable
         }
 
         // Perform download with data task for progress tracking
-        try await self.performDownload(
-            request: request,
-            destination: destination,
-            existingBytes: existingBytes,
-            progress: progress
-        )
+        do {
+            try await self.performDownload(
+                request: request,
+                destination: destination,
+                existingBytes: existingBytes,
+                progress: progress
+            )
+        } catch {
+            self.logger.error("Download failed for \(url.absoluteString, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            throw error
+        }
     }
 
     // MARK: - Private
@@ -150,6 +155,14 @@ final class HuggingFaceDownloader: NSObject, FileDownloader, @unchecked Sendable
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw DownloadError.httpError(statusCode: 0)
+        }
+
+        // Special handling for 416 (Range Not Satisfiable)
+        // This happens if we have the full file already and requested a range past the end
+        if httpResponse.statusCode == 416 && existingBytes > 0 {
+            self.logger.warning("Received 416 Range Not Satisfiable. Assuming file is complete at \(existingBytes) bytes.")
+            progress(1.0)
+            return
         }
 
         // Handle response codes
@@ -230,7 +243,7 @@ final class HuggingFaceDownloader: NSObject, FileDownloader, @unchecked Sendable
         // Final progress
         progress(1.0)
 
-        self.logger.info("Download complete: \(bytesWritten) bytes written to \(destination.lastPathComponent)")
+        self.logger.info("Download complete: \(bytesWritten) bytes written to \(destination.lastPathComponent, privacy: .public)")
     }
 
     private func prepareFileForWriting(at url: URL, isResuming: Bool) throws {

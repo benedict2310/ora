@@ -45,7 +45,7 @@ final class ModelManagerTests: XCTestCase {
 
         // TTS requires config and weights
         XCTAssertTrue(ModelIdentifier.kokoro.requiredFiles.contains("config.json"))
-        XCTAssertTrue(ModelIdentifier.kokoro.requiredFiles.contains("model.safetensors"))
+        XCTAssertTrue(ModelIdentifier.kokoro.requiredFiles.contains("kokoro-v1_0.safetensors"))
     }
 
     // MARK: - Model Paths Tests

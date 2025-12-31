@@ -65,16 +65,16 @@ final class OverlayWindowController {
         self.autoDismissTask?.cancel()
         self.autoDismissTask = nil
 
-        // Position and show
+        // Position the panel
         self.positionPanel()
+        
+        // Show the window - set alpha directly to ensure visibility
+        // Note: NSAnimationContext.runAnimationGroup was unreliable in Release builds
+        panel.alphaValue = 1
         panel.makeKeyAndOrderFront(nil)
-
-        // Animate in
-        panel.alphaValue = 0
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.15
-            panel.animator().alphaValue = 1
-        }
+        
+        // Ensure app is active to receive input (required for accessory apps)
+        NSApp.activate(ignoringOtherApps: true)
 
         // Add dismiss monitors
         self.addDismissMonitors()
@@ -136,9 +136,9 @@ final class OverlayWindowController {
         hostingView.setFrameSize(NSSize(width: 400, height: 300))
 
         // Create floating panel
-        let panel = NSPanel(
+        let panel = OverlayPanel(
             contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
-            styleMask: [.nonactivatingPanel, .borderless],
+            styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
@@ -152,7 +152,8 @@ final class OverlayWindowController {
         panel.isMovableByWindowBackground = true
 
         // Enable key events for keyboard navigation
-        panel.becomesKeyOnlyIfNeeded = true
+        // We want it to become key immediately when shown
+        panel.becomesKeyOnlyIfNeeded = false
 
         self.panel = panel
         self.logger.debug("Overlay panel created")
@@ -223,4 +224,12 @@ extension Notification.Name {
 
     /// Posted when a tool proposal is denied by the user
     static let proposalDenied = Notification.Name("proposalDenied")
+}
+
+// MARK: - Overlay Panel Subclass
+
+private class OverlayPanel: NSPanel {
+    override var canBecomeKey: Bool {
+        return true
+    }
 }

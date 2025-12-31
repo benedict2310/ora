@@ -237,7 +237,7 @@ actor ModelManager {
         } catch {
             _state.statuses[model] = .failed(error.localizedDescription)
             await self.postStateChange()
-            self.logger.error("Failed to download \(model.displayName): \(error.localizedDescription)")
+            self.logger.error("Failed to download \(model.displayName, privacy: .public): \(error.localizedDescription, privacy: .public)")
             throw error
         }
     }

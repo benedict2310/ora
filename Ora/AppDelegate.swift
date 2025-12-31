@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var setupObserver: NSObjectProtocol?
     private var hotkeyPressObserver: NSObjectProtocol?
     private var hotkeyReleaseObserver: NSObjectProtocol?
+    private var currentSessionTask: Task<Void, Never>?
 
     // MARK: - NSApplicationDelegate
 
@@ -57,6 +58,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func onSetupComplete() {
         self.logger.info("Setup complete, initializing main functionality")
+        
+        // Start preloading models in the background
+        Task {
+            do {
+                try await ASRService.shared.prepare()
+                self.logger.info("ASR service prepared")
+            } catch {
+                self.logger.error("Failed to prepare ASR service: \(error.localizedDescription)")
+            }
+        }
+        
         self.startHotkeyManager()
     }
 
@@ -91,14 +103,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Show overlay and set to listening mode
         OverlayWindowController.shared.mode = .listening
         OverlayWindowController.shared.show()
+
+        // Cancel any previous session task to prevent race conditions
+        self.currentSessionTask?.cancel()
+
+        // Start the transcription session
+        self.currentSessionTask = Task {
+            do {
+                let transcript = try await TranscriptCoordinator.shared.startSession()
+
+                // Session completed - log the result
+                if let transcript = transcript, !transcript.isEmpty {
+                    self.logger.info("Final transcript: \(transcript.prefix(100))...")
+                }
+
+                // Transition to completed state (no orchestration handoff yet)
+                self.statusBarController?.setState(.idle)
+                OverlayWindowController.shared.mode = .completed
+                OverlayWindowController.shared.scheduleAutoDismiss()
+
+            } catch {
+                // Check if this was just a cancellation (rapid press/release)
+                if Task.isCancelled {
+                    self.logger.debug("Session was cancelled")
+                    return
+                }
+
+                self.logger.error("Failed to start session: \(error.localizedDescription)")
+
+                // Show error in UI so user knows why it failed
+                self.statusBarController?.setState(.error(error.localizedDescription))
+                OverlayWindowController.shared.mode = .error(error.localizedDescription)
+            }
+        }
     }
 
     private func onHotkeyRelease() {
         self.logger.debug("Hotkey released - end PTT")
+
+        // Don't override error state - if startup failed, keep showing the error
+        let currentMode = OverlayWindowController.shared.mode
+        if case .error = currentMode {
+            self.logger.debug("Skipping state transition - error state should persist")
+            return
+        }
+
         self.statusBarController?.setState(.thinking)
 
         // Update overlay mode to thinking
         OverlayWindowController.shared.mode = .thinking
+
+        // Stop the session - this triggers ASR finalization
+        // The session task will complete in onHotkeyPress() and handle the result
+        Task {
+            await TranscriptCoordinator.shared.stopSession()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

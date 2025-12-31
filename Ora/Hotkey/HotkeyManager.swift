@@ -257,7 +257,7 @@ final class HotkeyManager {
             self.hotkeyRef = hotkey
             self.logger.debug("Registered hotkey with ID \(self.hotkeyID)")
         } else {
-            self.logger.error("Failed to register hotkey: \(status)")
+            self.logger.error("Failed to register hotkey: status=\(status)")
         }
     }
 

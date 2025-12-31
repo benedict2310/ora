@@ -299,6 +299,47 @@ final class HuggingFaceDownloaderTests: XCTestCase {
 
     // MARK: - Download Error Tests
 
+    func test_download_handles_416_as_success() async throws {
+        // Setup mock session
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MockURLProtocol.self]
+        let session = URLSession(configuration: config)
+
+        let downloader = HuggingFaceDownloader(urlSession: session)
+
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        // Ensure parent directory exists
+        try FileManager.default.createDirectory(at: tempDir.deletingLastPathComponent(), withIntermediateDirectories: true)
+        
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        // Create existing file with content to simulate "already downloaded"
+        // This triggers existingBytes > 0, which adds the Range header
+        try "existing content".write(to: tempDir, atomically: true, encoding: .utf8)
+
+        MockURLProtocol.requestHandler = { request in
+            // Verify Range header was sent
+            let range = request.value(forHTTPHeaderField: "Range")
+            XCTAssertNotNil(range, "Range header should be present")
+
+            // Return 416
+            let response = HTTPURLResponse(url: request.url!, statusCode: 416, httpVersion: nil, headerFields: nil)!
+            return (response, nil)
+        }
+
+        let progressCollector = DoubleCollector()
+        try await downloader.download(url: URL(string: "https://test.com/file")!, to: tempDir) { p in
+            progressCollector.append(p)
+        }
+
+        // Should succeed and report 1.0 progress
+        if let last = progressCollector.values.last {
+            XCTAssertEqual(last, 1.0, accuracy: 0.01)
+        } else {
+            XCTFail("No progress reported")
+        }
+    }
+
     func test_downloadError_descriptions() {
         let invalidURL = HuggingFaceDownloader.DownloadError.invalidURL("bad-url")
         XCTAssertTrue(invalidURL.localizedDescription.contains("Invalid URL"))
@@ -347,7 +388,7 @@ final class HuggingFaceDownloaderTests: XCTestCase {
         // to prevent treating partial downloads as complete
         XCTAssertTrue(ModelIdentifier.qwen7B.requiredFiles.contains("model.safetensors"))
         XCTAssertTrue(ModelIdentifier.qwen3B.requiredFiles.contains("model.safetensors"))
-        XCTAssertTrue(ModelIdentifier.kokoro.requiredFiles.contains("model.safetensors"))
+        XCTAssertTrue(ModelIdentifier.kokoro.requiredFiles.contains("kokoro-v1_0.safetensors"))
     }
 
     func test_requiredFiles_asrIncludesAllCoreMLModels() {
@@ -358,6 +399,33 @@ final class HuggingFaceDownloaderTests: XCTestCase {
         XCTAssertTrue(asrFiles.contains("JointDecision.mlmodelc"))
         XCTAssertTrue(asrFiles.contains("parakeet_vocab.json"))
     }
+}
+
+// MARK: - MockURLProtocol for testing 416 responses
+
+class MockURLProtocol: URLProtocol {
+    nonisolated(unsafe) static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data?))?
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let handler = MockURLProtocol.requestHandler else {
+            XCTFail("No handler set")
+            return
+        }
+        do {
+            let (response, data) = try handler(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            if let data = data {
+                client?.urlProtocol(self, didLoad: data)
+            }
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+    override func stopLoading() {}
 }
 
 // MARK: - Thread-Safe Test Helpers

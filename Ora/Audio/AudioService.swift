@@ -141,8 +141,12 @@ actor AudioService {
         state = .starting
         sampleCounter = 0
 
-        // Check microphone permission
-        let permStatus = await PermissionsManager.shared.check(.microphone)
+        // Check microphone permission - request if not determined
+        var permStatus = await PermissionsManager.shared.check(.microphone)
+        if permStatus == .notDetermined {
+            logger.info("Microphone permission not determined, requesting...")
+            permStatus = await PermissionsManager.shared.request(.microphone)
+        }
 
         // Re-check state after await - stop() may have been called during permission check
         guard state == .starting else {
@@ -151,6 +155,7 @@ actor AudioService {
         }
 
         guard permStatus == .authorized else {
+            logger.warning("Microphone permission denied: \(String(describing: permStatus))")
             state = .error(.microphoneNotAuthorized)
             throw AudioServiceError.microphoneNotAuthorized
         }
