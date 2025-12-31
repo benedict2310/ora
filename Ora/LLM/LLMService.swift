@@ -41,24 +41,22 @@ actor LLMService: LLMServicing {
     func prepare() async throws {
         guard !isReady else { return }
         
-        guard checkMemoryAvailable() else {
+        // Get model first to check requirements
+        let modelManager = ModelManager.shared
+        let modelState = await modelManager.state
+        let primaryLLM = modelState.primaryLLM
+        
+        guard await checkMemoryAvailable(for: primaryLLM) else {
             throw LLMServiceError.insufficientMemory
         }
         
         logger.info("Loading LLM model...")
-        
-        let modelManager = ModelManager.shared
-        let modelState = await modelManager.state
-        let primaryLLM = modelState.primaryLLM
         
         guard let modelPath = await modelManager.pathForModel(primaryLLM) else {
             throw LLMServiceError.modelNotFound
         }
         
         // Attempt to create configuration pointing to local directory
-        // If this init doesn't exist, we might have issues.
-        // But loadContainer(configuration:) is confirmed to exist.
-        // The error 'extra argument modelDirectory' confirmed loadContainer takes 1 arg.
         let configuration = ModelConfiguration(directory: modelPath)
         
         let container = try await LLMModelFactory.shared.loadContainer(
@@ -153,17 +151,29 @@ actor LLMService: LLMServicing {
             let inputTokens = tokenizer.encode(text: prompt)
             var count = 0
             
-            let _ = try? MLXLMCommon.generate(
+            // We use try without optional to propagate errors (AC Check)
+            // But generate is marked 'rethrows'.
+            // If MLX throws, it will be caught by perform rethrow and then by runGeneration catch.
+            
+            let _ = try MLXLMCommon.generate(
                 promptTokens: inputTokens,
                 parameters: parameters,
                 model: model,
                 tokenizer: tokenizer,
                 didGenerate: { tokens in
+                    // AC-9: Check cancellation
+                    if Task.isCancelled { return .stop }
+                    
                     if tokens.count > count {
                         let newTokens = Array(tokens[count...])
                         let text = tokenizer.decode(tokens: newTokens)
                         continuation.yield(.token(text))
                         count = tokens.count
+                        
+                        // AC-5: Check stop tokens
+                        if text.contains("<|im_end|>") || text.contains("<|endoftext|>") {
+                            return .stop
+                        }
                     }
                     return .more
                 }
@@ -192,12 +202,17 @@ actor LLMService: LLMServicing {
     
     // MARK: - Memory Management
     
-    private func checkMemoryAvailable() -> Bool {
+    private func checkMemoryAvailable(for model: ModelIdentifier) async -> Bool {
         let totalRAM = ProcessInfo.processInfo.physicalMemory
-        if totalRAM < 8_000_000_000 {
-            logger.warning("Total RAM is low (<8GB). Loading might fail.")
-            return true
+        
+        // AC-8: Prevent loading 7B if insufficient RAM
+        // Qwen 7B requires ~5GB. macOS ~3GB.
+        // We enforce 16GB minimum for 7B to ensure headroom.
+        if model == .qwen7B && totalRAM < 16_000_000_000 {
+            logger.error("Insufficient RAM for Qwen 7B. Required: 16GB+, Available Total: \(totalRAM / 1_000_000_000)GB")
+            return false
         }
+        
         return true
     }
     
