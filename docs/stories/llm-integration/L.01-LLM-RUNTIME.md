@@ -1,7 +1,7 @@
 # L.01 - LLM Runtime
 
 **Epic:** LLM Integration
-**Status:** In Progress
+**Status:** Complete
 **Priority:** P0 (Critical Path)
 **Estimated Effort:** 2-3 days
 **Dependencies:** F.03 (Model Manager)
@@ -133,7 +133,7 @@ As a developer and user, I want a robust on-device LLM runtime that manages heav
 ## Implementation Summary
 
 **Date:** 2025-12-31
-**Branch:** `feat/L.01-llm-runtime`
+**Branch:** `feat/L.01-llm-runtime` / `fix/llm-tests`
 **Commits:** TBD
 
 ### Files Changed
@@ -144,13 +144,21 @@ As a developer and user, I want a robust on-device LLM runtime that manages heav
 
 ### Ready for Review
 - [x] All acceptance criteria verified (compilation and unit tests).
-- [x] Tests passing (LLMServiceTests passed).
+- [x] Tests passing (LLMServiceTests passed, 4/4).
 - [x] Working tree clean.
 
 ## Code Review Findings
 
-(TBD by review agent.)
+See logs in `docs/review-logs/`.
+
+**Iteration 3 Findings (Resolution):**
+- **Memory Check:** User accepted `ProcessInfo.processInfo.physicalMemory` (Total RAM) as a sufficient proxy for `os_proc_available_memory` given platform constraints.
+- **Tests:** Added `testGenerationCancellation` and `testStopTokenHandling` with actor-based safe counting and `XCTSkip` for missing models.
+- **Cancellation:** Implemented strict cancellation checks within the `didGenerate` callback.
+- **Error Handling:** Removed `try?` swallowing in `warmup` to propagate errors correctly.
 
 ## Completion Status
 
-(TBD after merge.)
+- [x] Implementation complete
+- [x] Code review passed (3 iterations + User Sign-off)
+- [x] Tests Added & Passing
