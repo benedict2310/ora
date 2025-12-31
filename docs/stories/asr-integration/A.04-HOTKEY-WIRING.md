@@ -289,3 +289,29 @@ private func onHotkeyRelease() {
 - [x] All P0 issues resolved
 - [x] All P1 issues resolved
 - [ ] Ready for merge
+
+---
+
+## Code Review Findings (Final)
+
+**Reviewer:** Codex Subagent
+**Date:** 2025-12-31T08:58:00Z
+**Commit reviewed:** 0a3e26d
+**Iteration:** 5
+
+### Summary
+- Files reviewed: 7
+- Build status: Pass
+- Tests status: Pass
+
+### Improvements Implemented
+1. **Overlay Visibility Fix**: Replaced unreliable `NSAnimationContext.runAnimationGroup` with direct alpha assignment to ensure overlay appears on first hotkey press in Release builds.
+2. **Microphone Permission Fix**: Updated `AudioService` to explicitly request microphone permission if status is `.notDetermined`, preventing silent failure or confusing error messages.
+3. **ASR Model Preloading**: Updated `AppDelegate` to preload ASR models via `ASRService.shared.prepare()` on app startup to prevent "ASR engine is not ready" errors.
+4. **ASR Buffer Padding**: Updated `ASRService` to pad audio buffers < 1 second with silence to satisfy Parakeet engine requirements and prevent "invalid audio data" crashes for short utterances.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Verified manual E2E hotkey flow
+- [x] Merged to main
