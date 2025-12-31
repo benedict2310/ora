@@ -35,6 +35,11 @@ targets:
     platform: macOS
     sources:
       - path: Ora
+        excludes:
+          - "**/*.txt"
+      - path: Ora/Resources
+        type: resource
+        buildPhase: resources
     settings:
       base:
         INFOPLIST_FILE: Ora/Info.plist
