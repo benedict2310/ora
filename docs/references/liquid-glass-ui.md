@@ -1024,6 +1024,159 @@ func createTextPath(_ string: String, font: UIFont) -> Path {
 }
 ```
 
+### 3.10 macOS Overlay Conversation UI (Liquid Glass)
+
+**Goal:** Render the conversation as a floating overlay instead of a standard app window, with Liquid Glass providing the background layer.
+
+**Recommended Structure**
+1. **Overlay window**: Use `NSPanel` (or `NSWindow`) for a floating overlay.
+2. **Glass layer**: A single Liquid Glass container that sits behind the conversation content.
+3. **Content layer**: Text and controls above the glass (no glass on the content itself).
+
+**AppKit Window Settings (Overlay Behavior)**
+- Use `NSPanel` for overlay behavior and floating window affordances.
+- Use `NSWindow.Level` to keep the overlay above normal windows (e.g., `.floating`, `.statusBar`).
+- Use `NSWindow.collectionBehavior` to define behavior across Spaces/Stage Manager (`canJoinAllSpaces`, `moveToActiveSpace`).
+- Use `NSWindow.isOpaque = false`, `NSWindow.backgroundColor = .clear`, and `NSWindow.alphaValue` for transparent glass overlays.
+
+**AppKit Overlay Setup (Minimal Example)**
+```swift
+let panel = NSPanel(
+    contentRect: NSRect(x: 0, y: 0, width: 420, height: 240),
+    styleMask: [.nonactivatingPanel, .borderless],
+    backing: .buffered,
+    defer: false
+)
+panel.level = .floating
+panel.collectionBehavior = [.canJoinAllSpaces, .moveToActiveSpace]
+panel.isOpaque = false
+panel.backgroundColor = .clear
+panel.alphaValue = 1.0
+panel.isFloatingPanel = true
+panel.hidesOnDeactivate = false
+```
+
+**SwiftUI Glass Composition (Inside the Window)**
+```swift
+GlassEffectContainer {
+    ZStack(alignment: .bottomTrailing) {
+        // 1) Single glass background layer
+        RoundedRectangle(cornerRadius: .containerConcentric, style: .continuous)
+            .fill(Color.clear)
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: .containerConcentric))
+
+        // 2) Conversation content (no glass here)
+        VStack(alignment: .leading, spacing: 12) {
+            Text("User: ...")
+            Text("Assistant: ...")
+        }
+        .padding(20)
+    }
+    .frame(width: 420, height: 240)
+}
+```
+
+**Morphing Overlay States (Collapsed -> Expanded)**
+Use a `GlassEffectContainer` with `glassEffectID` to morph between compact and expanded overlays:
+```swift
+@Namespace private var glassNamespace
+@State private var expanded = false
+
+GlassEffectContainer(spacing: 24) {
+    Group {
+        if expanded {
+            RoundedRectangle(cornerRadius: .containerConcentric)
+                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: .containerConcentric))
+                .glassEffectID("overlay", in: glassNamespace)
+        } else {
+            Capsule()
+                .glassEffect(.regular, in: .capsule)
+                .glassEffectID("overlay", in: glassNamespace)
+        }
+    }
+    .animation(.bouncy, value: expanded)
+}
+```
+
+**Do / Don't**
+- **Do** keep a single glass layer behind the conversation to avoid glass-on-glass artifacts.
+- **Do** use `GlassEffectContainer` so the overlay can morph cleanly.
+- **Don't** apply glass to the text/content layer; use glass for the container only.
+
+### 3.11 Floating Bubble Overlay Pattern
+
+**Goal:** A non-standard UI made of floating glass bubbles, centered on screen, animating down from the top.
+
+**Overlay Window Setup (Bubble-Only UI)**
+```swift
+let panel = NSPanel(
+    contentRect: NSRect(x: 0, y: 0, width: 520, height: 300),
+    styleMask: [.nonactivatingPanel, .borderless],
+    backing: .buffered,
+    defer: false
+)
+panel.level = .floating
+panel.collectionBehavior = [.canJoinAllSpaces, .moveToActiveSpace]
+panel.isOpaque = false
+panel.backgroundColor = .clear
+panel.isFloatingPanel = true
+panel.hidesOnDeactivate = false
+```
+
+**SwiftUI Bubble Cluster**
+```swift
+struct BubbleOverlay: View {
+    @State private var show = false
+    @Namespace private var bubbleSpace
+
+    var body: some View {
+        ZStack {
+            if show {
+                GlassEffectContainer(spacing: 16) {
+                    VStack(spacing: 16) {
+                        bubble("New message")
+                        bubble("Calendar ready")
+                        bubble("Ask anything")
+                    }
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .onAppear {
+            withAnimation(.bouncy(duration: 0.45)) {
+                show = true
+            }
+        }
+    }
+
+    func bubble(_ text: String) -> some View {
+        Text(text)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+            .glassEffect(.regular, in: .capsule)
+    }
+}
+```
+
+**Notes**
+- Use `.borderless` + `.nonactivatingPanel` to avoid the standard app window chrome.
+- Use `.transition(.move(edge: .top).combined(with: .opacity))` for a drop-in effect.
+- Keep bubbles inside one `GlassEffectContainer` so they can visually blend and feel cohesive.
+
+**Sources**
+- https://developer.apple.com/documentation/appkit/nspanel
+- https://developer.apple.com/documentation/appkit/nswindow/level
+- https://developer.apple.com/documentation/appkit/nswindow/collectionbehavior
+- https://developer.apple.com/documentation/appkit/nswindow/isopaque
+- https://developer.apple.com/documentation/appkit/nswindow/backgroundcolor
+- https://developer.apple.com/documentation/appkit/nswindow/alphavalue
+- https://developer.apple.com/documentation/swiftui/view/glasseffect(_:in:)
+- https://developer.apple.com/documentation/swiftui/glasseffectcontainer
+- https://developer.apple.com/documentation/swiftui/view/glasseffectid(_:in:)
+- https://developer.apple.com/documentation/swiftui/view/glasseffectunion(id:namespace:)
+- https://developer.apple.com/documentation/swiftui/view/glasseffecttransition(_:)
+
 ---
 
 ## Part 4: Edge Cases Advanced Topics
