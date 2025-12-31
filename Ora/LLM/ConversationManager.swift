@@ -132,6 +132,10 @@ actor ConversationManager {
     // MARK: - Private
     
     /// Trim context using FIFO if over token budget (AC-3, AC-4)
+    ///
+    /// Trims oldest messages first. Will reduce down to 1 message if needed
+    /// to stay under budget. If still over budget (due to oversized single message),
+    /// logs a warning but preserves the message for context continuity.
     private func trimContextIfNeeded() {
         var totalTokens = estimateTokens(systemPrompt)
         
@@ -139,8 +143,8 @@ actor ConversationManager {
             totalTokens += estimateTokens(message.content)
         }
         
-        // Keep at least 2 messages for context continuity
-        let minMessages = 2
+        // Keep at least 1 message for minimal context
+        let minMessages = 1
         var trimCount = 0
         
         while totalTokens > maxContextTokens && messages.count > minMessages {
@@ -151,6 +155,11 @@ actor ConversationManager {
         
         if trimCount > 0 {
             logger.info("Trimmed \(trimCount) message(s) from context, remaining tokens: ~\(totalTokens)")
+        }
+        
+        // Warn if still over budget (can happen with oversized single message)
+        if totalTokens > maxContextTokens {
+            logger.warning("Context still over budget (~\(totalTokens) tokens > \(self.maxContextTokens) max) after trimming - oversized message")
         }
     }
     

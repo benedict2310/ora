@@ -81,9 +81,9 @@ final class ConversationManagerTests: XCTestCase {
         await manager.addUserMessage(longMessage)
         await manager.addAssistantMessage(longMessage)
         
-        // Should have trimmed to stay under limit (but keep at least 2 messages)
+        // Should have trimmed to stay under limit (keeps minimum of 1 message)
         let messageCount = await manager.messageCount()
-        XCTAssertEqual(messageCount, 2, "Should keep minimum of 2 messages")
+        XCTAssertEqual(messageCount, 1, "Should keep minimum of 1 message")
     }
     
     // MARK: - AC-4: FIFO Trimming Preserves System Prompt
@@ -120,29 +120,31 @@ final class ConversationManagerTests: XCTestCase {
         await manager.addUserMessage(String(repeating: "a", count: 100))
         
         // second: 100 chars = ~30 tokens, total = ~61 (over limit!)
-        // This should trigger trimming, but we keep min 2 messages
+        // This should trigger trimming, keeping min 1 message
         await manager.addAssistantMessage(String(repeating: "b", count: 100))
         
         // third: 100 chars = ~30 tokens
-        // After trim, we should have second + third (min 2), total still over
+        // After trim, we should have only the newest message
         await manager.addUserMessage(String(repeating: "c", count: 100))
         
         // fourth: 100 chars = ~30 tokens  
-        // Should trim older messages
+        // Should continue trimming older messages
         await manager.addAssistantMessage(String(repeating: "d", count: 100))
         
         let messages = await manager.getMessagesForLLM()
         
-        // Should have system + exactly 2 messages (the minimum)
-        XCTAssertEqual(messages.count, 3, "Should have system + 2 messages")
+        // Should have system + exactly 1 message (the minimum)
+        XCTAssertEqual(messages.count, 2, "Should have system + 1 message")
         
         // Verify system is first
         XCTAssertEqual(messages[0].role, .system)
         
-        // Verify oldest messages (aaaa, bbbb) were removed, keeping newer ones
+        // Verify older messages were removed, keeping newest one
         let contents = messages.map { $0.content }
         XCTAssertFalse(contents.contains(String(repeating: "a", count: 100)), "First message should be trimmed")
         XCTAssertFalse(contents.contains(String(repeating: "b", count: 100)), "Second message should be trimmed")
+        XCTAssertFalse(contents.contains(String(repeating: "c", count: 100)), "Third message should be trimmed")
+        XCTAssertTrue(contents.contains(String(repeating: "d", count: 100)), "Fourth (latest) message should be kept")
     }
     
     // MARK: - AC-5: Clear Resets State
