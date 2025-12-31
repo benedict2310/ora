@@ -83,6 +83,12 @@ struct JSONValidator: Sendable {
             }
             return .success(.proposal(summary: summary, tool: tool, args: convertToJSONValue(argsDict)))
             
+        case "error":
+            guard let message = json["message"] as? String else {
+                return .failure(.missingField("message"))
+            }
+            return .success(.error(message: message))
+            
         default:
             return .failure(.unknownType(type))
         }

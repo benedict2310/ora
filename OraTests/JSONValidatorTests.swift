@@ -58,6 +58,27 @@ final class JSONValidatorTests: XCTestCase {
         }
     }
     
+    func testParseError() {
+        let json = """
+        {
+            "type": "error",
+            "message": "Something went wrong"
+        }
+        """
+        
+        let result = JSONValidator.parse(json)
+        
+        if case .success(let output) = result {
+            if case .error(let message) = output {
+                XCTAssertEqual(message, "Something went wrong")
+            } else {
+                XCTFail("Expected .error")
+            }
+        } else {
+            XCTFail("Parse failed")
+        }
+    }
+    
     func testParseProposal() {
         let json = """
         {
