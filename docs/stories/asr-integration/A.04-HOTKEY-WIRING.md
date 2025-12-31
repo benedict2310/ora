@@ -256,3 +256,36 @@ private func onHotkeyRelease() {
 - [x] All P0 issues resolved
 - [x] All P1 issues resolved
 - [ ] Ready for merge
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2025-12-31T06:37:40Z
+**Commit reviewed:** 9b51916
+**Iteration:** 4
+
+### Summary
+- Files reviewed: 3
+- Build status: Pass
+- Tests status: Fail (491 tests, 1 failure, 1 skipped)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [ ] None
+
+#### P1 - Major (Should fix)
+- [ ] None
+
+#### P2 - Minor (Can defer)
+- [ ] None
+
+### Future Considerations (Out of Scope)
+- `OraTests/ASREngineTests.swift:83` - `ASREngineTests.test_ASRFinalSegment_isEquatable()` failed due to a non-equal timestamp in the test assertion; this matches the existing flaky failure noted in the story and is unrelated to the overlay changes.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [ ] Ready for merge
