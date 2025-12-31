@@ -26,6 +26,11 @@ Voice → (FluidAudio Parakeet) → (MLX + Qwen 2.5) → (Kokoro TTS) → Voice/
 - `Vendor/`: External inference engines (MLX, Parakeet, Kokoro TTS).
 - `project.yml`: XcodeGen configuration (generates `.xcodeproj`).
 
+### Key Resources
+| Resource | Location | Purpose |
+|:---------|:---------|:--------|
+| **System Prompt** | `Ora/Resources/system-prompt.txt` | LLM system prompt template with `{{variable}}` placeholders. Edit this file to change assistant behavior without modifying code. |
+
 ### Documentation Organization (MANDATORY)
 
 **Always maintain a clean project structure:**
