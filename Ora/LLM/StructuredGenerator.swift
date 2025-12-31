@@ -15,6 +15,13 @@ actor StructuredGenerator {
     
     private let logger = Logger(subsystem: "com.ora.app", category: "StructuredGenerator")
     private let maxRetries = 3
+    private let llm: LLMServicing
+    
+    // MARK: - Initialization
+    
+    init(llm: LLMServicing = LLMService.shared) {
+        self.llm = llm
+    }
     
     // MARK: - Public API
     
@@ -32,7 +39,7 @@ actor StructuredGenerator {
             
             // Collect full response
             var fullResponse = ""
-            for try await delta in await LLMService.shared.generate(messages: currentMessages) {
+            for try await delta in await llm.generate(messages: currentMessages, maxTokens: 800) {
                 if case .token(let text) = delta {
                     fullResponse += text
                 }

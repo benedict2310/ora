@@ -335,3 +335,37 @@ enum StructuredGeneratorError: LocalizedError {
 - [x] Test with various JSON formats
 - [x] Test retry logic with malformed responses
 - [x] Add logging for debugging
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2025-12-31T11:57:42Z
+**Commit reviewed:** 38546db
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 5
+- Build status: Pass
+- Tests status: Fail (501 tests, 2 failures, 1 skipped)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [ ] None
+
+#### P1 - Major (Should fix)
+- [x] `Ora/LLM/JSONValidator.swift:71` - `tool_call`/`proposal` accept non-object `args` by defaulting to empty, so malformed schema won't trigger retries and tool calls can run with missing arguments.
+- [x] `Ora/LLM/StructuredGenerator.swift:22` - Retry logic lacks tests (AC-3/AC-4); no coverage for malformed JSON retries or custom retry prompt handling.
+
+#### P2 - Minor (Can defer)
+- [ ] None
+
+### Future Considerations (Out of Scope)
+- None
+
+### Approval Status
+- [ ] All P0 issues resolved
+- [ ] All P1 issues resolved
+- [ ] Ready for merge

@@ -68,16 +68,20 @@ struct JSONValidator: Sendable {
             guard let tool = json["tool"] as? String else {
                 return .failure(.missingField("tool"))
             }
-            let args = (json["args"] as? [String: Any]) ?? [:]
-            return .success(.toolCall(tool: tool, args: convertToJSONValue(args)))
+            guard let argsDict = json["args"] as? [String: Any] else {
+                return .failure(.missingField("args")) // or .invalidJSON("args must be object")
+            }
+            return .success(.toolCall(tool: tool, args: convertToJSONValue(argsDict)))
             
         case "proposal":
             guard let summary = json["summary"] as? String,
                   let tool = json["tool"] as? String else {
                 return .failure(.missingField("summary or tool"))
             }
-            let args = (json["args"] as? [String: Any]) ?? [:]
-            return .success(.proposal(summary: summary, tool: tool, args: convertToJSONValue(args)))
+            guard let argsDict = json["args"] as? [String: Any] else {
+                return .failure(.missingField("args"))
+            }
+            return .success(.proposal(summary: summary, tool: tool, args: convertToJSONValue(argsDict)))
             
         default:
             return .failure(.unknownType(type))
