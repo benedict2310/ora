@@ -71,6 +71,9 @@ final class OverlayWindowController {
         // Prepare for animation
         panel.alphaValue = 0
         panel.makeKeyAndOrderFront(nil)
+        
+        // Ensure app is active to receive input
+        NSApp.activate(ignoringOtherApps: true)
 
         // Animate in
         NSAnimationContext.runAnimationGroup { context in

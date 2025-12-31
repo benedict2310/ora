@@ -13,6 +13,7 @@ When pressing the global hotkey, the overlay window was not appearing. This was 
 2.  **Corrected Animation Order**: Updated `show()` to set `alphaValue = 0` *before* calling `makeKeyAndOrderFront`.
 3.  **Subclassed NSPanel**: Created a private `OverlayPanel` subclass that overrides `canBecomeKeyWindow` to return `true`.
 4.  **Focus Settings**: Set `becomesKeyOnlyIfNeeded = false` to ensure the window becomes key immediately when shown.
+5.  **App Activation**: Added `NSApp.activate(ignoringOtherApps: true)` to `show()` to ensure the application (which runs in accessory mode) can properly present the window and receive input.
 
 ## Files Modified
 - `Ora/Overlay/OverlayWindowController.swift`
@@ -21,3 +22,4 @@ When pressing the global hotkey, the overlay window was not appearing. This was 
 - The overlay should now appear when the hotkey is pressed.
 - The window should animate in smoothly.
 - The window should be able to accept keyboard focus (e.g., for Escape key to close).
+- The application should activate (come to front) when the overlay is shown.
