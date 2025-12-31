@@ -58,6 +58,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func onSetupComplete() {
         self.logger.info("Setup complete, initializing main functionality")
+        
+        // Start preloading models in the background
+        Task {
+            do {
+                try await ASRService.shared.prepare()
+                self.logger.info("ASR service prepared")
+            } catch {
+                self.logger.error("Failed to prepare ASR service: \(error.localizedDescription)")
+            }
+        }
+        
         self.startHotkeyManager()
     }
 
