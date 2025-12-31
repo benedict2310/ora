@@ -80,7 +80,7 @@ actor LLMService: LLMServicing {
         
         let _ = try await container.perform { (model, tokenizer) -> Void in
             let tokens = tokenizer.encode(text: prompt)
-            let _ = try? MLXLMCommon.generate(
+            let _ = try MLXLMCommon.generate(
                 promptTokens: tokens,
                 parameters: generateParameters,
                 model: model,
@@ -98,7 +98,7 @@ actor LLMService: LLMServicing {
     /// Generate response tokens
     func generate(messages: [LLMMessage], maxTokens: Int = 800) async -> AsyncThrowingStream<LLMDelta, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     try await self.runGeneration(
                         messages: messages,
@@ -107,6 +107,12 @@ actor LLMService: LLMServicing {
                     )
                 } catch {
                     continuation.finish(throwing: error)
+                }
+            }
+            
+            continuation.onTermination = { @Sendable state in
+                if case .cancelled = state {
+                    task.cancel()
                 }
             }
         }
@@ -151,17 +157,13 @@ actor LLMService: LLMServicing {
             let inputTokens = tokenizer.encode(text: prompt)
             var count = 0
             
-            // We use try without optional to propagate errors (AC Check)
-            // But generate is marked 'rethrows'.
-            // If MLX throws, it will be caught by perform rethrow and then by runGeneration catch.
-            
+            // Propagate errors from MLX
             let _ = try MLXLMCommon.generate(
                 promptTokens: inputTokens,
                 parameters: parameters,
                 model: model,
                 tokenizer: tokenizer,
                 didGenerate: { tokens in
-                    // AC-9: Check cancellation
                     if Task.isCancelled { return .stop }
                     
                     if tokens.count > count {
@@ -170,7 +172,6 @@ actor LLMService: LLMServicing {
                         continuation.yield(.token(text))
                         count = tokens.count
                         
-                        // AC-5: Check stop tokens
                         if text.contains("<|im_end|>") || text.contains("<|endoftext|>") {
                             return .stop
                         }
