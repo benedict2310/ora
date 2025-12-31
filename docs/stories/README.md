@@ -35,10 +35,10 @@ Local inference using MLX Swift and Qwen 2.5.
 
 | ID | Title | Status |
 |:---|:------|:-------|
-| L.01 | [LLM Runtime](llm-integration/L.01-LLM-RUNTIME.md) | 🚧 To Do |
+| L.01 | [LLM Runtime](llm-integration/L.01-LLM-RUNTIME.md) | ✅ Complete |
 | L.02 | [Structured Output](llm-integration/L.02-STRUCTURED-OUTPUT.md) | 🚧 To Do |
-| L.03 | [Conversation Manager](llm-integration/L.03-CONVERSATION-MANAGER.md) | 🚧 To Do |
-| L.04 | [System Prompt](llm-integration/L.04-SYSTEM-PROMPT.md) | 🚧 To Do |
+| L.03 | [Conversation Manager](llm-integration/L.03-CONVERSATION-MANAGER.md) | ✅ Complete |
+| L.04 | [System Prompt](llm-integration/L.04-SYSTEM-PROMPT.md) | ✅ Complete |
 | L.05 | [Additional LLM Models](llm-integration/L.05-ADDITIONAL-LLM-MODELS.md) | 🚧 To Do |
 
 ### 🗣 TTS Integration (T)
