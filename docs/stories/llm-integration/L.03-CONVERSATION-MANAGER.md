@@ -1,7 +1,7 @@
 # L.03 - Conversation Manager
 
 **Epic:** LLM Integration
-**Status:** Not Started
+**Status:** In Progress
 **Priority:** P1 (Important)
 **Estimated Effort:** 1 day
 **Dependencies:** L.01 (LLM Runtime), F.08 (Persistence)
@@ -132,17 +132,64 @@ actor ConversationManager {
 
 ## 3. Acceptance Criteria
 
-- [ ] **AC-1:** System prompt included in LLM messages
-- [ ] **AC-2:** User/assistant/tool messages tracked
-- [ ] **AC-3:** Context trimmed when exceeding budget
-- [ ] **AC-4:** Oldest messages removed first
-- [ ] **AC-5:** Clear resets conversation state
+- [x] **AC-1:** System prompt included in LLM messages - ✅ Verified by `test_systemPromptIncludedAsFirstMessage`
+- [x] **AC-2:** User/assistant/tool messages tracked - ✅ Verified by `test_messagesCorrectlyTypedAndOrdered`
+- [x] **AC-3:** Context trimmed when exceeding budget - ✅ Verified by `test_contextTrimmedWhenExceedingLimit`
+- [x] **AC-4:** Oldest messages removed first - ✅ Verified by `test_oldestMessagesRemovedFirst`
+- [x] **AC-5:** Clear resets conversation state - ✅ Verified by `test_clearResetsConversationCompletely`
 
 ---
 
 ## 4. Implementation Checklist
 
-- [ ] Create `ConversationManager.swift`
-- [ ] Integrate with persistence (Session model)
-- [ ] Test context trimming
-- [ ] Test multi-turn conversations
+- [x] Create `ConversationManager.swift`
+- [ ] Integrate with persistence (Session model) - Future enhancement, not required for v1
+- [x] Test context trimming
+- [x] Test multi-turn conversations
+
+---
+
+## Implementation Plan
+
+### Files to Create
+- `Ora/LLM/ConversationManager.swift` - Actor-based conversation context management
+
+### Files to Modify
+- None required for v1 (standalone component)
+
+### Tests to Add
+- `OraTests/LLM/ConversationManagerTests.swift` - Unit tests for all acceptance criteria
+
+---
+
+## Implementation Summary
+
+**Date:** 2025-12-31
+**Branch:** `feat/L.03-conversation-manager`
+
+### Files Changed
+- `Ora/LLM/ConversationManager.swift` - Created: Actor-based conversation context manager with FIFO trimming
+- `OraTests/LLM/ConversationManagerTests.swift` - Created: 12 unit tests covering all acceptance criteria
+
+### Key Implementation Details
+1. **Actor-based thread safety:** Uses Swift `actor` for safe concurrent access
+2. **Token estimation:** Uses 0.3 tokens/char heuristic (conservative for Qwen)
+3. **FIFO trimming:** Removes oldest messages when over 6000 token budget
+4. **Minimum context:** Always keeps at least 2 messages for continuity
+5. **System prompt preservation:** System prompt is never trimmed
+6. **Test factory:** `makeTestInstance(maxContextTokens:)` for testing with custom limits
+
+### Test Coverage
+All 12 ConversationManager tests pass:
+- AC-1: `test_systemPromptIncludedAsFirstMessage`, `test_emptySystemPromptNotIncluded`
+- AC-2: `test_messagesCorrectlyTypedAndOrdered`
+- AC-3: `test_contextTrimmedWhenExceedingLimit`
+- AC-4: `test_oldestMessagesRemovedFirst`, `test_systemPromptPreservedDuringTrimming`
+- AC-5: `test_clearResetsConversationCompletely`
+- AC-6: `test_tokenEstimationUsesCorrectHeuristic`, `test_tokenEstimationIncludesAllContent`
+- Additional: `test_getConversationReturnsMessagesWithoutSystemPrompt`, `test_startConversationClearsPreviousMessages`, `test_multiTurnConversation`
+
+### Ready for Review
+- [x] All acceptance criteria verified
+- [x] Tests passing (12/12)
+- [x] Build successful
