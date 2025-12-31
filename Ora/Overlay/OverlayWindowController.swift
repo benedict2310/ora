@@ -65,21 +65,16 @@ final class OverlayWindowController {
         self.autoDismissTask?.cancel()
         self.autoDismissTask = nil
 
-        // Position and show
+        // Position the panel
         self.positionPanel()
         
-        // Prepare for animation
-        panel.alphaValue = 0
+        // Show the window - set alpha directly to ensure visibility
+        // Note: NSAnimationContext.runAnimationGroup was unreliable in Release builds
+        panel.alphaValue = 1
         panel.makeKeyAndOrderFront(nil)
         
-        // Ensure app is active to receive input
+        // Ensure app is active to receive input (required for accessory apps)
         NSApp.activate(ignoringOtherApps: true)
-
-        // Animate in
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.15
-            panel.animator().alphaValue = 1
-        }
 
         // Add dismiss monitors
         self.addDismissMonitors()
