@@ -1,0 +1,172 @@
+//
+//  ConversationManager.swift
+//  Ora
+//
+//  Manages conversation context, message history, and token budgets
+//
+
+import Foundation
+import os
+
+/// Manages conversation state and context for multi-turn LLM interactions
+///
+/// Thread-safe actor that maintains conversation history, system prompts,
+/// and automatic context window trimming using FIFO strategy.
+actor ConversationManager {
+    
+    // MARK: - Singleton
+    
+    static let shared = ConversationManager()
+    
+    // MARK: - Properties
+    
+    private let logger = Logger(subsystem: "com.ora.app", category: "ConversationManager")
+    
+    private var messages: [LLMMessage] = []
+    private var systemPrompt: String = ""
+    
+    /// Maximum tokens for context window (leaving room for response)
+    private let maxContextTokens: Int
+    
+    /// Approximate tokens per character for estimation
+    /// English text averages ~0.25-0.33 tokens per character
+    private let tokensPerChar: Double = 0.3
+    
+    // MARK: - Initialization
+    
+    private init(maxContextTokens: Int = 6000) {
+        self.maxContextTokens = maxContextTokens
+    }
+    
+    /// Create a test instance with custom token limit
+    /// - Parameter maxContextTokens: Maximum tokens allowed before trimming
+    static func makeTestInstance(maxContextTokens: Int) -> ConversationManager {
+        return ConversationManager(maxContextTokens: maxContextTokens)
+    }
+    
+    // MARK: - Public API
+    
+    /// Start a new conversation with a system prompt
+    /// - Parameter systemPrompt: The system prompt that defines assistant behavior
+    func startConversation(systemPrompt: String) {
+        self.systemPrompt = systemPrompt
+        self.messages = []
+        logger.debug("Started new conversation with system prompt (\(systemPrompt.count) chars)")
+    }
+    
+    /// Add a user message to the conversation
+    /// - Parameter content: The user's message content
+    func addUserMessage(_ content: String) {
+        messages.append(LLMMessage(role: .user, content: content))
+        trimContextIfNeeded()
+        logger.debug("Added user message (\(content.count) chars), total messages: \(self.messages.count)")
+    }
+    
+    /// Add an assistant message to the conversation
+    /// - Parameter content: The assistant's response content
+    func addAssistantMessage(_ content: String) {
+        messages.append(LLMMessage(role: .assistant, content: content))
+        trimContextIfNeeded()
+        logger.debug("Added assistant message (\(content.count) chars), total messages: \(self.messages.count)")
+    }
+    
+    /// Add a tool result to the conversation
+    /// - Parameter content: The tool execution result
+    func addToolResult(_ content: String) {
+        messages.append(LLMMessage(role: .tool, content: content))
+        trimContextIfNeeded()
+        logger.debug("Added tool result (\(content.count) chars), total messages: \(self.messages.count)")
+    }
+    
+    /// Get all messages formatted for LLM generation
+    /// - Returns: Array of messages with system prompt as first element
+    func getMessagesForLLM() -> [LLMMessage] {
+        var result: [LLMMessage] = []
+        
+        // System prompt is always first (AC-1)
+        if !systemPrompt.isEmpty {
+            result.append(LLMMessage(role: .system, content: systemPrompt))
+        }
+        
+        // Add conversation messages in order (AC-2)
+        result.append(contentsOf: messages)
+        
+        return result
+    }
+    
+    /// Get current conversation messages (without system prompt)
+    /// - Returns: Array of conversation messages
+    func getConversation() -> [LLMMessage] {
+        return messages
+    }
+    
+    /// Get the current system prompt
+    /// - Returns: The system prompt string
+    func getSystemPrompt() -> String {
+        return systemPrompt
+    }
+    
+    /// Get the current message count (excluding system prompt)
+    /// - Returns: Number of messages in conversation
+    func messageCount() -> Int {
+        return messages.count
+    }
+    
+    /// Estimate total tokens for current context
+    /// - Returns: Estimated token count including system prompt
+    func estimateTotalTokens() -> Int {
+        var total = estimateTokens(systemPrompt)
+        for message in messages {
+            total += estimateTokens(message.content)
+        }
+        return total
+    }
+    
+    /// Clear conversation state completely (AC-5)
+    func clear() {
+        messages = []
+        systemPrompt = ""
+        logger.debug("Conversation cleared")
+    }
+    
+    // MARK: - Private
+    
+    /// Trim context using FIFO if over token budget (AC-3, AC-4)
+    ///
+    /// Trims oldest messages first. Will reduce down to 1 message if needed
+    /// to stay under budget. If still over budget (due to oversized single message),
+    /// logs a warning but preserves the message for context continuity.
+    private func trimContextIfNeeded() {
+        var totalTokens = estimateTokens(systemPrompt)
+        
+        for message in messages {
+            totalTokens += estimateTokens(message.content)
+        }
+        
+        // Keep at least 1 message for minimal context
+        let minMessages = 1
+        var trimCount = 0
+        
+        while totalTokens > maxContextTokens && messages.count > minMessages {
+            let removed = messages.removeFirst()
+            totalTokens -= estimateTokens(removed.content)
+            trimCount += 1
+        }
+        
+        if trimCount > 0 {
+            logger.info("Trimmed \(trimCount) message(s) from context, remaining tokens: ~\(totalTokens)")
+        }
+        
+        // Warn if still over budget (can happen with oversized single message)
+        if totalTokens > maxContextTokens {
+            logger.warning("Context still over budget (~\(totalTokens) tokens > \(self.maxContextTokens) max) after trimming - oversized message")
+        }
+    }
+    
+    /// Estimate token count for text (AC-6)
+    /// - Parameter text: Text to estimate
+    /// - Returns: Estimated token count
+    private func estimateTokens(_ text: String) -> Int {
+        Int(Double(text.count) * tokensPerChar)
+    }
+}
