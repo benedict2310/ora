@@ -1,7 +1,7 @@
 # L.02 - Structured Output
 
 **Epic:** LLM Integration
-**Status:** Not Started
+**Status:** Completed
 **Priority:** P0 (Critical Path)
 **Estimated Effort:** 1-2 days
 **Dependencies:** L.01 (LLM Runtime)
@@ -256,7 +256,7 @@ actor StructuredGenerator {
             
             // Collect full response
             var fullResponse = ""
-            for try await delta in LLMService.shared.generate(messages: currentMessages) {
+            for try await delta in await LLMService.shared.generate(messages: currentMessages) {
                 if case .token(let text) = delta {
                     fullResponse += text
                 }
@@ -319,19 +319,19 @@ enum StructuredGeneratorError: LocalizedError {
 
 ## 3. Acceptance Criteria
 
-- [ ] **AC-1:** `JSONValidator.parse()` handles all output types
-- [ ] **AC-2:** Markdown code blocks stripped correctly
-- [ ] **AC-3:** Retry on malformed JSON (max 3 attempts)
-- [ ] **AC-4:** Retry prompt included in subsequent attempts
-- [ ] **AC-5:** Tool arguments parsed into JSONValue tree
+- [x] **AC-1:** `JSONValidator.parse()` handles all output types
+- [x] **AC-2:** Markdown code blocks stripped correctly
+- [x] **AC-3:** Retry on malformed JSON (max 3 attempts)
+- [x] **AC-4:** Retry prompt included in subsequent attempts
+- [x] **AC-5:** Tool arguments parsed into JSONValue tree
 
 ---
 
 ## 4. Implementation Checklist
 
-- [ ] Create `LLMOutput.swift`
-- [ ] Create `JSONValidator.swift`
-- [ ] Create `StructuredGenerator.swift`
-- [ ] Test with various JSON formats
-- [ ] Test retry logic with malformed responses
-- [ ] Add logging for debugging
+- [x] Create `LLMOutput.swift`
+- [x] Create `JSONValidator.swift`
+- [x] Create `StructuredGenerator.swift`
+- [x] Test with various JSON formats
+- [x] Test retry logic with malformed responses
+- [x] Add logging for debugging
