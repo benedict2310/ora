@@ -98,6 +98,38 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
             return ["config.json", "kokoro-v1_0.safetensors"]
         }
     }
+    
+    /// Expected file sizes for critical files (in bytes)
+    /// Used to verify downloads are complete and not truncated
+    /// Sizes are from HuggingFace API as of 2026-01-01
+    var expectedFileSizes: [String: Int64] {
+        switch self {
+        case .parakeetTDT:
+            // FluidAudio handles its own verification
+            return [:]
+        case .qwen7B:
+            return [
+                "model.safetensors": 4_284_346_255,  // ~4.0 GB
+                "tokenizer.json": 7_031_673,
+                "config.json": 787,
+            ]
+        case .qwen3B:
+            return [
+                "model.safetensors": 1_736_293_090,  // ~1.6 GB
+                "tokenizer.json": 7_031_673,
+                "config.json": 785,
+            ]
+        case .kokoro:
+            return [
+                "kokoro-v1_0.safetensors": 327_115_152,  // ~312 MB
+                "config.json": 2_351,
+            ]
+        }
+    }
+    
+    /// Minimum acceptable file size as percentage of expected (0.0 - 1.0)
+    /// Files smaller than this percentage are considered corrupted
+    static let minimumFileSizeThreshold: Double = 0.95
 }
 
 // MARK: - Model Status
