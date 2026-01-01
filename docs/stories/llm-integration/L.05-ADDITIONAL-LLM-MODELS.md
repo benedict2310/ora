@@ -535,3 +535,36 @@ The build fails due to Swift 6 strict concurrency errors in the FluidAudio depen
 - [x] All P0 issues resolved
 - [ ] All P1 issues resolved
 - [ ] Ready for merge
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-01-01T18:54:27Z
+**Commit reviewed:** bcc0ba7
+**Iteration:** 2
+
+### Summary
+- Files reviewed: 2
+- Build status: Fail (FluidAudio Swift 6 Sendable errors)
+- Tests status: Fail (0 tests; build failed)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [ ] None
+
+#### P1 - Major (Should fix)
+- [ ] `Ora/LLM/LLMService.swift:175` - `self.logger` and `formatMessagesLegacy` are accessed inside the `ModelContainer.perform` closure, which runs on another actor; this will violate Swift 6 actor isolation. Capture values before the `await` or mark the logger nonisolated.
+
+#### P2 - Minor (Can defer)
+- [ ] `Ora/LLM/LLMService.swift:166` - No automated tests cover the `applyChatTemplate` path, so the gibberish fix lacks regression coverage.
+
+### Future Considerations (Out of Scope)
+- `build/SourcePackages/checkouts/FluidAudio/Sources/FluidAudio/Shared/AudioConverter.swift` - Swift 6 Sendable errors prevent building; pre-existing dependency issue, not part of this change.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [ ] All P1 issues resolved
+- [ ] Ready for merge

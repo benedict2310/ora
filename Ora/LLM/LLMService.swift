@@ -154,6 +154,9 @@ actor LLMService: LLMServicing {
             ["role": msg.role.rawValue, "content": msg.content]
         }
         
+        // Pre-compute fallback prompt outside the closure to avoid actor isolation issues
+        let fallbackPrompt = formatMessagesLegacy(messages)
+        
         self.logger.debug("Generating with \(messages.count) messages")
         
         let parameters = GenerateParameters(
@@ -172,12 +175,9 @@ actor LLMService: LLMServicing {
             } catch {
                 // Fallback to manual encoding if chat template fails
                 // This shouldn't happen with Qwen models but provides safety
-                self.logger.warning("applyChatTemplate failed: \(error.localizedDescription), using fallback")
-                let prompt = self.formatMessagesLegacy(messages)
-                inputTokens = context.tokenizer.encode(text: prompt)
+                // Note: fallbackPrompt is pre-computed above to avoid actor isolation issues
+                inputTokens = context.tokenizer.encode(text: fallbackPrompt)
             }
-            
-            self.logger.debug("Input tokens: \(inputTokens.count)")
             
             var count = 0
             
