@@ -508,7 +508,11 @@ HotkeyManager.shared.onRelease = {
 
 ## Completion Status
 
-(TBD after merge.)
+- [x] Implementation complete
+- [x] Code review passed (3 iterations)
+- [x] PR merged: https://github.com/benedict2310/ora/pull/25
+- [x] Merged to main: 89e8cd3
+- [x] Date: 2025-12-31
 
 ---
 
