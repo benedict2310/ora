@@ -36,7 +36,7 @@ Local inference using MLX Swift and Qwen 2.5.
 | ID | Title | Status |
 |:---|:------|:-------|
 | L.01 | [LLM Runtime](llm-integration/L.01-LLM-RUNTIME.md) | ✅ Complete |
-| L.02 | [Structured Output](llm-integration/L.02-STRUCTURED-OUTPUT.md) | 🚧 To Do |
+| L.02 | [Structured Output](llm-integration/L.02-STRUCTURED-OUTPUT.md) | ✅ Complete |
 | L.03 | [Conversation Manager](llm-integration/L.03-CONVERSATION-MANAGER.md) | ✅ Complete |
 | L.04 | [System Prompt](llm-integration/L.04-SYSTEM-PROMPT.md) | ✅ Complete |
 | L.05 | [Additional LLM Models](llm-integration/L.05-ADDITIONAL-LLM-MODELS.md) | 🚧 To Do |
@@ -66,9 +66,108 @@ Connecting the loop: Audio → ASR → LLM → Tools → TTS.
 
 | ID | Title | Status |
 |:---|:------|:-------|
-| O.01 | [Assistant Controller](orchestration/O.01-ASSISTANT-CONTROLLER.md) | 🚧 To Do |
+| O.01 | [ASR-LLM Pipeline](orchestration/O.01-ASR-LLM-PIPELINE.md) | 🚧 To Do |
 | O.02 | [Agent Loop](orchestration/O.02-AGENT-LOOP.md) | 🚧 To Do |
-| O.03 | [Audit Logging](orchestration/O.03-AUDIT-LOGGING.md) | 🚧 To Do |
+| O.03 | [Conversation Orchestrator](orchestration/O.03-CONVERSATION-ORCHESTRATOR.md) | 🚧 To Do |
+| O.04 | [Confirmation Flow](orchestration/O.04-CONFIRMATION-FLOW.md) | 🚧 To Do |
+
+---
+
+## Dependency Graph
+
+```
+                           ┌─────────────────────────────────────┐
+                           │         FOUNDATIONS (F)              │
+                           │  F.00 → F.01 → F.02 → F.03 → F.04   │
+                           │         F.05, F.06, F.07, F.08, F.09 │
+                           └──────────────────┬──────────────────┘
+                                              │ ✅ All Complete
+                    ┌─────────────────────────┼─────────────────────────┐
+                    │                         │                         │
+                    ▼                         ▼                         ▼
+         ┌──────────────────┐      ┌──────────────────┐      ┌──────────────────┐
+         │   ASR (A)        │      │   LLM (L)        │      │   TTS (T)        │
+         │ A.01 → A.02 →    │      │ L.01 → L.02 →    │      │ T.01 → T.02 →    │
+         │ A.03 → A.04      │      │ L.03, L.04       │      │ T.03             │
+         │ ✅ All Complete  │      │ ✅ All Complete  │      │ 🚧 To Do         │
+         └────────┬─────────┘      └────────┬─────────┘      └────────┬─────────┘
+                  │                         │                         │
+                  │                         │                         │
+                  └────────────┬────────────┘                         │
+                               │                                      │
+                               ▼                                      │
+                  ┌────────────────────────┐                          │
+                  │  O.01 ASR-LLM Pipeline │ ◄── Next: Simple wiring  │
+                  │  🚧 To Do              │                          │
+                  └───────────┬────────────┘                          │
+                              │                                       │
+         ┌────────────────────┤                                       │
+         │                    │                                       │
+         ▼                    ▼                                       │
+┌─────────────────┐  ┌─────────────────┐                              │
+│  TOOLS (X)      │  │  O.02 Agent     │                              │
+│  X.01 → X.02 →  │  │  Loop           │                              │
+│  X.03 → X.04 →  │  │  🚧 To Do       │                              │
+│  X.05           │  └────────┬────────┘                              │
+│  🚧 To Do       │           │                                       │
+└────────┬────────┘           │                                       │
+         │                    │                                       │
+         └─────────┬──────────┘                                       │
+                   │                                                  │
+                   ▼                                                  │
+         ┌─────────────────────────────────────────────────┐          │
+         │  O.03 Conversation Orchestrator                 │◄─────────┘
+         │  (Full pipeline: ASR → LLM → Tools → TTS)       │
+         │  🚧 To Do                                       │
+         └────────────────────────┬────────────────────────┘
+                                  │
+                                  ▼
+                    ┌─────────────────────────┐
+                    │  O.04 Confirmation Flow │
+                    │  🚧 To Do               │
+                    └─────────────────────────┘
+```
+
+---
+
+## Implementation Order
+
+### ✅ Phase 1: Foundations (Complete)
+All foundation stories (F.00-F.09) are complete. This includes app shell, permissions, model management, hotkey, overlay, and persistence.
+
+### ✅ Phase 2: Core Services (Complete)
+- **ASR (A.01-A.04):** Audio capture, Parakeet ASR, transcription streaming, hotkey wiring
+- **LLM (L.01-L.04):** MLX runtime, structured output, conversation manager, system prompt
+
+### 🚧 Phase 3: Basic Pipeline (Current)
+| Priority | Story | Description |
+|:---------|:------|:------------|
+| **P0** | **O.01** | ASR-LLM Pipeline - Wire ASR to LLM for basic testing |
+
+### 🚧 Phase 4: Tools & Agent Loop
+| Priority | Story | Description |
+|:---------|:------|:------------|
+| P0 | X.01 | Tool Protocol - Foundation for all tools |
+| P1 | X.02-X.05 | Calendar, Reminders, Contacts, System tools |
+| P0 | O.02 | Agent Loop - Multi-step reasoning with tools |
+
+### 🚧 Phase 5: TTS Integration
+| Priority | Story | Description |
+|:---------|:------|:------------|
+| P1 | T.01 | TTS Service - Kokoro MLX integration |
+| P1 | T.02 | Audio Playback - Output audio pipeline |
+| P2 | T.03 | Sentence Chunker - Stream audio as sentences complete |
+
+### 🚧 Phase 6: Full Orchestration
+| Priority | Story | Description |
+|:---------|:------|:------------|
+| P0 | O.03 | Conversation Orchestrator - Full pipeline coordination |
+| P1 | O.04 | Confirmation Flow - Tool mutation confirmation UI |
+
+### 📋 Optional/Deferred
+| Priority | Story | Description |
+|:---------|:------|:------------|
+| P2 | L.05 | Additional LLM Models - More model options |
 
 ---
 
