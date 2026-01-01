@@ -502,3 +502,36 @@ The build fails due to Swift 6 strict concurrency errors in the FluidAudio depen
 
 (TBD after merge.)
 
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-01-01T18:46:42Z
+**Commit reviewed:** d67a1c3
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 2
+- Build status: Fail (FluidAudio Swift 6 Sendable errors)
+- Tests status: Fail (0 tests; build failed)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [ ] None
+
+#### P1 - Major (Should fix)
+- [ ] `Ora/LLM/LLMService.swift:88` - `MLXLMCommon.generate` expects `[Int]` for `promptTokens`, but this change passes `MLXArray(...)` in warmup; it will not compile once dependencies build. Use `[Int]` or the newer `LMInput` API instead.
+- [ ] `Ora/LLM/LLMService.swift:186` - Same `promptTokens` type mismatch in `runGeneration`.
+
+#### P2 - Minor (Can defer)
+- [ ] `Ora/LLM/LLMService.swift:142` - No automated tests cover the new `applyChatTemplate` path (existing tests still exercise legacy formatting), so the gibberish fix isn't protected from regression.
+
+### Future Considerations (Out of Scope)
+- `build/SourcePackages/checkouts/FluidAudio/Sources/FluidAudio/Shared/AudioConverter.swift` - Swift 6 Sendable errors prevent building; pre-existing dependency issue, not part of this change.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [ ] All P1 issues resolved
+- [ ] Ready for merge
