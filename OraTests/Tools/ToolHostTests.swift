@@ -95,6 +95,32 @@ final class ToolHostTests: XCTestCase {
             XCTFail("Unexpected error: \(error)")
         }
     }
+    
+    func test_auditLog_recorded() async throws {
+        // Clear previous logs
+        await AuditLogger.shared.clearAll()
+        
+        let tool = MockReadTool()
+        await ToolRegistry.shared.register(tool)
+        
+        _ = try await ToolHost.shared.execute(
+            toolName: "mock.read",
+            args: ["arg": .string("value")],
+            confirmed: false
+        )
+        
+        let entries = await AuditLogger.shared.fetchEntries(limit: 10)
+        XCTAssertEqual(entries.count, 1)
+        
+        let entry = try XCTUnwrap(entries.first)
+        XCTAssertEqual(entry.toolName, "mock.read")
+        XCTAssertEqual(entry.action, "read")
+        XCTAssertTrue(entry.success)
+        
+        // Verify parameters were stored
+        let params = try XCTUnwrap(entry.parameters)
+        XCTAssertEqual(params["arg"] as? String, "value")
+    }
 }
 
 // MARK: - Mock Validating Tool
