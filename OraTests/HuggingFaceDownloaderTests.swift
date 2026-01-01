@@ -350,6 +350,47 @@ final class HuggingFaceDownloaderTests: XCTestCase {
         let exists = downloader.exists(model: .qwen7B, at: tempDir)
         XCTAssertFalse(exists, "exists() should return false when model files are undersized")
     }
+    
+    // MARK: - Incomplete Download Tests
+    
+    func test_incompleteDownload_errorDescription() {
+        let error = HuggingFaceDownloader.DownloadError.incompleteDownload(expected: 1000, actual: 500)
+        XCTAssertTrue(error.localizedDescription.contains("incomplete"))
+        XCTAssertTrue(error.localizedDescription.contains("1000"))
+        XCTAssertTrue(error.localizedDescription.contains("500"))
+    }
+    
+    func test_verify_passesWithCorrectSizeFiles() async throws {
+        // Test that verify passes when files have the expected sizes
+        // Use parakeetTDT which has no expectedFileSizes (returns empty dict)
+        // so only checks file existence
+        let asrMock = MockModelDownloadStrategy()
+        let hfMock = MockModelDownloadStrategy()
+        let downloader = DefaultModelDownloader(asrStrategy: asrMock, huggingFaceStrategy: hfMock)
+
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        // Create directory with all required files for parakeetTDT
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        
+        for file in ModelIdentifier.parakeetTDT.requiredFiles {
+            if file.hasSuffix(".mlmodelc") {
+                // Create as directory
+                try FileManager.default.createDirectory(
+                    at: tempDir.appendingPathComponent(file),
+                    withIntermediateDirectories: true
+                )
+            } else {
+                // Create as file
+                try Data("test content".utf8).write(to: tempDir.appendingPathComponent(file))
+            }
+        }
+
+        // Should pass because parakeetTDT has no size requirements
+        let verified = await downloader.verify(model: .parakeetTDT, at: tempDir)
+        XCTAssertTrue(verified, "verify() should pass when all files exist and no size requirements")
+    }
 
     // MARK: - Download Error Tests
 

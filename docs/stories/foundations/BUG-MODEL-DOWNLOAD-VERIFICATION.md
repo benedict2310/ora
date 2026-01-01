@@ -300,3 +300,37 @@ Changed from 95% to 99% threshold because:
 - 5% of a 4GB model is 200MB - way too much tolerance
 - 1% of a 4GB model is 40MB - still generous but catches obvious truncation
 - The original bug had a 111MB file vs 4086MB expected (2.7%), which would fail both thresholds
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-01-01T20:44:30Z
+**Commit reviewed:** 0e7da77
+**Iteration:** 2
+
+### Summary
+- Files reviewed: 13
+- Build status: Pass
+- Tests status: Fail (timed out; test count unknown)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [ ] None
+
+#### P1 - Major (Should fix)
+- [ ] `Ora/LLM/LLMService.swift:42` - No load-time sanity check after model load; size-only verification can’t detect corrupted-but-correct-size models, so "corrupted models are detected before use" isn’t fully met.
+- [ ] `OraTests/HuggingFaceDownloaderTests.swift:225` - Verification tests only cover undersized rejection; there’s no coverage for `verify()` success with expected sizes or for incomplete-transfer failure (`DownloadError.incompleteDownload`), leaving required test cases unimplemented.
+
+#### P2 - Minor (Can defer)
+- [ ] None
+
+### Future Considerations (Out of Scope)
+- None
+
+### Approval Status
+- [x] All P0 issues resolved
+- [ ] All P1 issues resolved
+- [ ] Ready for merge
