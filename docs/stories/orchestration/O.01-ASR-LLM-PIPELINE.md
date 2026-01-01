@@ -509,3 +509,36 @@ HotkeyManager.shared.onRelease = {
 ## Completion Status
 
 (TBD after merge.)
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-01-01T09:17:56Z
+**Commit reviewed:** 14bdeab
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 12
+- Build status: Pass
+- Tests status: Pass (560 tests, 1 skipped)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- None.
+
+#### P1 - Major (Should fix)
+- [x] `Ora/Orchestration/SimplePipelineController.swift:270` - ASR/LLM error path transitions to `.error` but never stops audio capture; if an ASR failure occurs after `AudioService.shared.start()`, the mic can remain recording and the next session may hit `alreadyRecording` until the app restarts. **FIXED:** Added `AudioService.shared.cancel()` call in `handleError()`.
+
+#### P2 - Minor (Can defer)
+- None.
+
+### Future Considerations (Out of Scope)
+- None.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
