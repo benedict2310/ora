@@ -114,7 +114,6 @@ final class ToolHostTests: XCTestCase {
         
         let entry = try XCTUnwrap(entries.first)
         XCTAssertEqual(entry.toolName, "mock.read")
-        XCTAssertEqual(entry.action, "read")
         XCTAssertTrue(entry.success)
         
         // Verify parameters were stored

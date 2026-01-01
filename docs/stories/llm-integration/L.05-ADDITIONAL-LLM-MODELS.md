@@ -51,23 +51,38 @@ As a power user, I want to pick between local LLM models so I can balance speed,
 
 When asking "how is it going", the LLM returns gibberish instead of a coherent response.
 
-### Root Cause
+### Investigation History
 
-The current `LLMService.formatMessages()` manually builds ChatML strings:
-```swift
-formatted += "<|im_start|>system\n\(message.content)<|im_end|>\n"
+**Initial Hypothesis (INCORRECT):**
+The original hypothesis was that `LLMService.formatMessages()` manually builds ChatML strings and `tokenizer.encode(text:)` tokenizes `<|im_start|>` as regular text characters instead of special token IDs.
+
+**Investigation Results:**
+We wrote tests to verify tokenization and discovered:
+1. ✅ `applyChatTemplate()` correctly produces token 151644 for `<|im_start|>`
+2. ✅ Manual `encode()` also correctly produces token 151644 (the tokenizer regex handles special tokens)
+3. ❌ The model still produces gibberish despite correct tokenization
+
+**Actual Root Cause: CORRUPTED/INCOMPLETE MODEL FILE**
+
+The model file is severely truncated:
+- Expected size: **4086 MB** (from mlx-community/Qwen2.5-7B-Instruct-4bit)
+- Actual size: **111 MB** (only ~2.7% of expected)
+
+The download was incomplete, leaving a corrupted model file that produces random token outputs.
+
+```bash
+# Expected from HuggingFace
+model.safetensors: 4086MB
+
+# Actual on disk
+~/Library/Application Support/Ora/Models/llm/qwen2.5-7b-instruct-4bit/model.safetensors: 111MB
 ```
 
-Then calls `tokenizer.encode(text: prompt)` which tokenizes `<|im_start|>` as **regular text characters** (~10 subword tokens) instead of the **single special token ID 151644**.
+### Fix Required
 
-The model was trained to recognize token 151644 as the start-of-message marker. When it receives a sequence of character tokens that spell out `<|im_start|>`, it doesn't understand the prompt structure and generates gibberish.
-
-### Fix
-
-Use `tokenizer.applyChatTemplate(messages:)` which:
-1. Uses the model's built-in Jinja chat template from `tokenizer_config.json`
-2. Properly encodes special tokens as single token IDs
-3. Handles `add_generation_prompt` correctly
+1. **Re-download the model** - Delete and re-download with proper verification
+2. **Add download verification** - Compare file size against expected size in manifest
+3. **Add model sanity checks** - Run a quick inference probe at load time to detect corrupted models
 
 ## 6. Known Issues by Model Family
 
