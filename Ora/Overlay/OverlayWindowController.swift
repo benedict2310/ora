@@ -178,7 +178,8 @@ final class OverlayWindowController {
         // Escape key monitor (local - when our panel has focus)
         self.escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if event.keyCode == 53 { // Escape key
-                self?.hide()
+                // Cancel the pipeline session (which will hide the overlay)
+                SimplePipelineController.shared.cancel()
                 return nil // Consume the event
             }
             return event

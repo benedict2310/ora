@@ -8,6 +8,7 @@
 
 ## Table of Contents
 
+0. [Story Mapping](#story-mapping)
 1. [System Architecture Overview](#1-system-architecture-overview)
 2. [Agentic Loop Design](#2-agentic-loop-design)
 3. [Audio Pipeline](#3-audio-pipeline)
@@ -18,6 +19,48 @@
 8. [Security & Threat Model](#8-security--threat-model)
 9. [Benchmarks & Performance](#9-benchmarks--performance)
 10. [Model Selection Matrix](#10-model-selection-matrix)
+
+---
+
+## Story Mapping
+
+This section maps architecture components to their implementation stories. See [README.md](README.md) for full story index and status.
+
+| Architecture Component | Implementation Stories | Status |
+|:-----------------------|:-----------------------|:-------|
+| **Menubar UI + Hotkey** | F.01, F.05 | ✅ Complete |
+| **AudioPipeline** | A.01 (Audio Service) | ✅ Complete |
+| **ASRService** | A.02, A.03, A.04 | ✅ Complete |
+| **LLMRuntime** | L.01 (LLM Runtime) | ✅ Complete |
+| **Structured Output** | L.02 (Structured Output) | ✅ Complete |
+| **ConversationManager** | L.03 (Conversation Manager) | ✅ Complete |
+| **System Prompt** | L.04 (System Prompt) | ✅ Complete |
+| **Simple ASR→LLM Pipeline** | O.01 (ASR-LLM Pipeline) | 🚧 To Do |
+| **AgentLoop** | O.02 (Agent Loop) | 🚧 To Do |
+| **ConversationOrchestrator** | O.03 (Conversation Orchestrator) | 🚧 To Do |
+| **ConfirmationGate** | O.04 (Confirmation Flow) | 🚧 To Do |
+| **ToolHost + Tools** | X.01-X.05 | 🚧 To Do |
+| **TTSEngine** | T.01 (TTS Service) | 🚧 To Do |
+| **AudioPlayback** | T.02 (Audio Playback) | 🚧 To Do |
+
+### Implementation Order
+
+```
+Phase 1-2: ✅ Complete
+  F.* (Foundations) → A.* (ASR) → L.* (LLM)
+
+Phase 3: 🚧 Current
+  O.01 (ASR-LLM Pipeline) ← Simple wiring for testing
+
+Phase 4: Next
+  X.01 (Tool Protocol) → X.02-X.05 (Tools) → O.02 (Agent Loop)
+
+Phase 5: TTS
+  T.01 → T.02 → T.03
+
+Phase 6: Full Orchestration
+  O.03 (Full Orchestrator) → O.04 (Confirmation Flow)
+```
 
 ---
 
