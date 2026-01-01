@@ -1,10 +1,10 @@
-# O.01 - Agent Loop
+# O.02 - Agent Loop
 
 **Epic:** Orchestration
 **Status:** Not Started
 **Priority:** P0 (Critical Path)
 **Estimated Effort:** 2-3 days
-**Dependencies:** L.01 (LLM), L.02 (Structured Output), X.01 (Tool Protocol)
+**Dependencies:** L.01 (LLM), L.02 (Structured Output), X.01 (Tool Protocol), O.01 (ASR-LLM Pipeline)
 **Target:** macOS 26 (Tahoe)
 
 ---
@@ -12,6 +12,26 @@
 ## 1. Objective
 
 Implement the core agentic reasoning loop that processes user requests, calls tools, and generates responses.
+
+**Note:** O.01 uses a simplified conversational prompt for testing. This story reintroduces the full structured system prompt with JSON output format and tool definitions.
+
+---
+
+## 2. Prerequisites from O.01
+
+The SimplePipelineController currently uses a simple conversational prompt:
+```swift
+let systemPrompt = """
+You are Ora, a helpful voice assistant running locally on macOS.
+...
+Respond naturally and conversationally.
+"""
+```
+
+This story must:
+1. Replace the simple prompt with `SystemPromptBuilder.build(tools: ...)` 
+2. Parse structured JSON responses using `StructuredGenerator`
+3. Handle tool calls, proposals, and plain responses
 
 ---
 
@@ -217,21 +237,26 @@ actor AgentLoop {
 
 ## 4. Acceptance Criteria
 
-- [ ] **AC-1:** Processes user text through LLM
-- [ ] **AC-2:** Handles response/tool_call/proposal types
-- [ ] **AC-3:** Executes read-only tools automatically
-- [ ] **AC-4:** Returns proposals for mutations
-- [ ] **AC-5:** Respects step and tool call limits
-- [ ] **AC-6:** Adds tool results to conversation context
-- [ ] **AC-7:** Generates follow-up after tool execution
+- [ ] **AC-1:** Reintroduce `SystemPromptBuilder.build(tools:)` with tool definitions
+- [ ] **AC-2:** Processes user text through LLM with structured JSON output
+- [ ] **AC-3:** Parses response/tool_call/proposal types from JSON
+- [ ] **AC-4:** Executes read-only tools automatically
+- [ ] **AC-5:** Returns proposals for mutations (requiring confirmation)
+- [ ] **AC-6:** Respects step and tool call limits (6 steps, 3 tool calls max)
+- [ ] **AC-7:** Adds tool results to conversation context
+- [ ] **AC-8:** Generates follow-up response after tool execution
 
 ---
 
 ## 5. Implementation Checklist
 
-- [ ] Create `AgentLoop.swift`
-- [ ] Integrate with StructuredGenerator
-- [ ] Integrate with ToolHost
-- [ ] Integrate with ConversationManager
-- [ ] Test multi-step reasoning
-- [ ] Test budget limits
+- [ ] Create `AgentLoop.swift` actor
+- [ ] Update SimplePipelineController or create new orchestrator to use AgentLoop
+- [ ] Reintroduce `SystemPromptBuilder.build(tools:)` with registered tool schemas
+- [ ] Integrate with StructuredGenerator for JSON parsing
+- [ ] Integrate with ToolHost for tool execution
+- [ ] Integrate with ConversationManager for context
+- [ ] Handle the three response types: response, tool_call, proposal
+- [ ] Test multi-step reasoning (tool → result → follow-up)
+- [ ] Test budget limits (max steps, max tool calls)
+- [ ] Test error handling and graceful degradation
