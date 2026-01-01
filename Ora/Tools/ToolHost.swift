@@ -49,24 +49,35 @@ actor ToolHost {
             throw ToolHostError.validationFailed(toolName, error.localizedDescription)
         }
         
-        // Convert args to JSON data for sending across actor boundary (Data is Sendable)
-        let parametersData = try JSONEncoder().encode(args)
+        // Convert JSONValue args to raw [String: Any] for audit logging
+        // This must be done here to get proper values, not type-tagged JSON
+        let parameters = self.jsonValueToAnyDict(args)
         let action = tool.kind.rawValue
+        
+        // Serialize to JSON string (String is Sendable) for crossing actor boundary
+        let parametersJSON: String
+        if let data = try? JSONSerialization.data(withJSONObject: parameters),
+           let json = String(data: data, encoding: .utf8) {
+            parametersJSON = json
+        } else {
+            parametersJSON = "{}"
+        }
         
         // Record audit entry on MainActor
         let auditEntryID = await MainActor.run {
-            // Decode parameters back on MainActor
-            let parameters: [String: Any]
-            if let decoded = try? JSONSerialization.jsonObject(with: parametersData) as? [String: Any] {
-                parameters = decoded
+            // Decode parameters back from JSON string on MainActor
+            let params: [String: Any]
+            if let data = parametersJSON.data(using: .utf8),
+               let decoded = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                params = decoded
             } else {
-                parameters = [:]
+                params = [:]
             }
             
             let entry = AuditLogger.shared.recordToolCall(
                 tool: toolName,
                 action: action,
-                parameters: parameters,
+                parameters: params,
                 userConfirmed: confirmed,
                 sessionID: sessionID
             )
@@ -95,6 +106,29 @@ actor ToolHost {
             
             logger.error("Tool failed: \(toolName) - \(error.localizedDescription)")
             throw error
+        }
+    }
+    
+    // MARK: - Private
+    
+    /// Convert JSONValue dictionary to [String: Any] for serialization
+    private func jsonValueToAnyDict(_ dict: [String: JSONValue]) -> [String: Any] {
+        var result: [String: Any] = [:]
+        for (key, value) in dict {
+            result[key] = self.jsonValueToAny(value)
+        }
+        return result
+    }
+    
+    /// Convert a single JSONValue to Any
+    private func jsonValueToAny(_ value: JSONValue) -> Any {
+        switch value {
+        case .string(let s): return s
+        case .number(let n): return n
+        case .bool(let b): return b
+        case .null: return NSNull()
+        case .array(let arr): return arr.map { self.jsonValueToAny($0) }
+        case .object(let dict): return self.jsonValueToAnyDict(dict)
         }
     }
 }

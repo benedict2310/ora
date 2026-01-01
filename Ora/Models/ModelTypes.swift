@@ -129,7 +129,8 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
     
     /// Minimum acceptable file size as percentage of expected (0.0 - 1.0)
     /// Files smaller than this percentage are considered corrupted
-    static let minimumFileSizeThreshold: Double = 0.95
+    /// 99% threshold catches truncated downloads while allowing minor variations
+    static let minimumFileSizeThreshold: Double = 0.99
 }
 
 // MARK: - Model Status

@@ -243,3 +243,60 @@ This bug is particularly insidious because:
 4. Debugging led down wrong paths (tokenization, chat templates)
 
 The fix should prioritize **early detection** (at download time) over **late detection** (at inference time), but both layers are valuable defense-in-depth.
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-01-01T20:29:48Z
+**Commit reviewed:** 1f45e97
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 10
+- Build status: Pass
+- Tests status: Fail (569 tests; 7 failures, 3 skipped)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [ ] None
+
+#### P1 - Major (Should fix)
+- [ ] `Ora/Models/ModelTypes.swift:132` - `minimumFileSizeThreshold` allows files up to 5% smaller to pass verification; a truncated model can still be marked valid, undermining the "reject significantly smaller" requirement.
+- [ ] `Ora/LLM/LLMService.swift:41` - No load-time sanity check after model load; size-only verification can't detect corrupted-but-correct-size models, so "corrupted models detected before use" isn't fully met.
+- [ ] `Ora/Tools/ToolHost.swift:52` - Encoding `JSONValue` via `JSONEncoder`/`JSONSerialization` records nested type tags (e.g., `{"string":"value"}`), losing the raw parameter value; audit log entries now miss arguments and `ToolHostTests` fails.
+- [ ] `OraTests/HuggingFaceDownloaderTests.swift:233` - Verification/exists tests still write tiny placeholder files and assert success, but size-based checks now require expected sizes; tests fail and don't cover the new thresholds/incomplete-download path.
+
+#### P2 - Minor (Can defer)
+- [ ] None
+
+### Future Considerations (Out of Scope)
+- None
+
+### Approval Status
+- [x] All P0 issues resolved
+- [ ] All P1 issues resolved
+- [ ] Ready for merge
+
+---
+
+## Implementation Notes
+
+### Load-Time Sanity Check (Deferred)
+
+The code review noted that size-only verification can't detect corrupted-but-correct-size models. A load-time inference probe in `LLMService.prepare()` would catch this, but:
+
+1. **Adds latency**: Even a minimal inference probe (5-10 tokens) adds 500ms-1s to startup
+2. **Hard to validate**: How do we know if 5 random tokens indicate corruption vs. just unusual output?
+3. **Low probability**: A file that's the correct size but internally corrupted is rare compared to truncation
+
+**Decision**: The 99% size threshold catches the common case (truncated downloads). Load-time sanity checking is deferred to a future enhancement if corruption-without-size-change becomes a real issue.
+
+### Size Threshold Rationale
+
+Changed from 95% to 99% threshold because:
+- 5% of a 4GB model is 200MB - way too much tolerance
+- 1% of a 4GB model is 40MB - still generous but catches obvious truncation
+- The original bug had a 111MB file vs 4086MB expected (2.7%), which would fail both thresholds

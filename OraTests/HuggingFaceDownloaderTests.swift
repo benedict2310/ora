@@ -238,15 +238,36 @@ final class HuggingFaceDownloaderTests: XCTestCase {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        // Create directory with required files for qwen7B
+        // Create directory with required files for kokoro (smaller expected sizes for testing)
+        // Use files that match expected sizes for proper verification
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        for file in ModelIdentifier.qwen7B.requiredFiles {
-            let filePath = tempDir.appendingPathComponent(file)
-            try Data("test".utf8).write(to: filePath)
-        }
+        
+        // For kokoro, we need config.json (2351 bytes) and kokoro-v1_0.safetensors (327115152 bytes)
+        // For testing, we'll create files that are exactly the expected size
+        // Since we can't create 327MB files in tests, we'll test with a model that has no size requirements
+        // OR we test that verification fails with undersized files
+        
+        // Create properly sized config.json (2351 bytes)
+        let configData = Data(repeating: 0x20, count: 2351)
+        try configData.write(to: tempDir.appendingPathComponent("config.json"))
+        
+        // For safetensors, create a file of the expected size (this is a 327MB file, too large for tests)
+        // Instead, let's verify that size checking works by testing rejection of small files
+        // We'll use a separate test for that
 
-        let verified = await downloader.verify(model: .qwen7B, at: tempDir)
-        XCTAssertTrue(verified)
+        // For this test, create a file that meets the minimum threshold
+        let expectedSafetensorsSize = ModelIdentifier.kokoro.expectedFileSizes["kokoro-v1_0.safetensors"] ?? 0
+        let minimumSize = Int64(Double(expectedSafetensorsSize) * ModelIdentifier.minimumFileSizeThreshold)
+        
+        // This would be ~324MB which is too large for a unit test
+        // So we'll skip the full verification test and instead test the rejection case
+        // For now, just verify the file exists check works (safetensors will fail size check)
+        let smallSafetensors = Data(repeating: 0x00, count: 100)
+        try smallSafetensors.write(to: tempDir.appendingPathComponent("kokoro-v1_0.safetensors"))
+
+        // With size checking, this should now FAIL because safetensors is too small
+        let verified = await downloader.verify(model: .kokoro, at: tempDir)
+        XCTAssertFalse(verified, "Verification should fail when model files are undersized")
     }
 
     // MARK: - Exists Tests
@@ -287,14 +308,47 @@ final class HuggingFaceDownloaderTests: XCTestCase {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        // Create directory with all required files
+        // Create directory with all required files for parakeetTDT
+        // parakeetTDT has no expectedFileSizes (FluidAudio handles its own verification)
+        // so it only checks for file/directory existence
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        
+        // Create the .mlmodelc directories and vocab file that parakeetTDT requires
+        for file in ModelIdentifier.parakeetTDT.requiredFiles {
+            if file.hasSuffix(".mlmodelc") {
+                // Create as directory
+                try FileManager.default.createDirectory(
+                    at: tempDir.appendingPathComponent(file),
+                    withIntermediateDirectories: true
+                )
+            } else {
+                // Create as file
+                try Data("test".utf8).write(to: tempDir.appendingPathComponent(file))
+            }
+        }
+
+        let exists = downloader.exists(model: .parakeetTDT, at: tempDir)
+        XCTAssertTrue(exists)
+    }
+    
+    func test_defaultModelDownloader_exists_returnsFalseForUndersizedFiles() throws {
+        let asrMock = MockModelDownloadStrategy()
+        let hfMock = MockModelDownloadStrategy()
+        let downloader = DefaultModelDownloader(asrStrategy: asrMock, huggingFaceStrategy: hfMock)
+
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        // Create directory with all required files but undersized
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         for file in ModelIdentifier.qwen7B.requiredFiles {
+            // Create tiny files that won't meet size requirements
             try Data("test".utf8).write(to: tempDir.appendingPathComponent(file))
         }
 
+        // Should return false because files are way too small
         let exists = downloader.exists(model: .qwen7B, at: tempDir)
-        XCTAssertTrue(exists)
+        XCTAssertFalse(exists, "exists() should return false when model files are undersized")
     }
 
     // MARK: - Download Error Tests

@@ -198,6 +198,7 @@ These commands can cause data loss. **NEVER run them without the user explicitly
 - `git stash` / `git stash drop` / `git stash clear`
 - `git reset --hard`
 - `git clean -fd`
+- `rm -rf` on untracked files or directories (always ask or use `git clean -n` first)
 - `git checkout -- <file>` (discards changes)
 - `git branch -D` (force delete)
 - `git push --force` / `git push -f`
