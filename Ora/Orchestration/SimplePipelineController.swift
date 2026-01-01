@@ -62,8 +62,10 @@ final class SimplePipelineController: ObservableObject {
     
     /// Start listening (hotkey pressed)
     func startListening() {
-        guard state.canStartListening else {
-            self.logger.warning("Cannot start listening in state: \(self.state.description)")
+        // If already in an active session, cancel it instead of starting a new one
+        if !state.canStartListening {
+            self.logger.info("Hotkey pressed during active session - cancelling")
+            self.cancel()
             return
         }
         
