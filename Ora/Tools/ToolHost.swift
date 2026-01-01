@@ -49,26 +49,38 @@ actor ToolHost {
             throw ToolHostError.validationFailed(toolName, error.localizedDescription)
         }
         
-        let parameters = argsToDict(args)
+        // Convert args to JSON data for sending across actor boundary (Data is Sendable)
+        let parametersData = try JSONEncoder().encode(args)
+        let action = tool.kind.rawValue
         
-        // Record audit entry
-        let auditEntry = await MainActor.run {
-            AuditLogger.shared.recordToolCall(
+        // Record audit entry on MainActor
+        let auditEntryID = await MainActor.run {
+            // Decode parameters back on MainActor
+            let parameters: [String: Any]
+            if let decoded = try? JSONSerialization.jsonObject(with: parametersData) as? [String: Any] {
+                parameters = decoded
+            } else {
+                parameters = [:]
+            }
+            
+            let entry = AuditLogger.shared.recordToolCall(
                 tool: toolName,
-                action: tool.kind.rawValue,
+                action: action,
                 parameters: parameters,
                 userConfirmed: confirmed,
                 sessionID: sessionID
             )
+            return entry.id
         }
         
         // Execute
         do {
             let result = try await tool.execute(args: args)
             
-            // Update audit
+            // Update audit with success
+            let summary = result.humanSummary
             await MainActor.run {
-                AuditLogger.shared.recordSuccess(auditEntry.id, result: ["summary": result.humanSummary])
+                AuditLogger.shared.recordSuccess(auditEntryID, result: ["summary": summary])
             }
             
             logger.info("Tool executed: \(toolName)")
@@ -76,31 +88,13 @@ actor ToolHost {
             
         } catch {
             // Update audit with failure
+            let errorMessage = error.localizedDescription
             await MainActor.run {
-                AuditLogger.shared.recordFailure(auditEntry.id, error: error.localizedDescription)
+                AuditLogger.shared.recordFailure(auditEntryID, error: errorMessage)
             }
             
             logger.error("Tool failed: \(toolName) - \(error.localizedDescription)")
             throw error
-        }
-    }
-    
-    private func argsToDict(_ args: [String: JSONValue]) -> [String: Any] {
-        var result: [String: Any] = [:]
-        for (key, value) in args {
-            result[key] = jsonValueToAny(value)
-        }
-        return result
-    }
-    
-    private func jsonValueToAny(_ value: JSONValue) -> Any {
-        switch value {
-        case .string(let s): return s
-        case .number(let n): return n
-        case .bool(let b): return b
-        case .null: return NSNull()
-        case .array(let arr): return arr.map { jsonValueToAny($0) }
-        case .object(let dict): return dict.mapValues { jsonValueToAny($0) }
         }
     }
 }
