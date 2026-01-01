@@ -202,8 +202,16 @@ final class SimplePipelineController: ObservableObject {
             // Ensure LLM is ready
             try await LLMService.shared.prepare()
             
-            // Build system prompt (no tools for now)
-            let systemPrompt = SystemPromptBuilder.build(tools: [])
+            // Use a simple conversational prompt for O.01 (no tools, no JSON)
+            // This will be replaced with the full system prompt when tools are added in O.02
+            let systemPrompt = """
+            You are Ora, a helpful voice assistant running locally on macOS.
+            
+            Current date: \(Self.currentDateString())
+            Current time: \(Self.currentTimeString())
+            
+            Respond naturally and conversationally. Keep responses concise since they will be spoken aloud.
+            """
             
             // Start conversation
             await ConversationManager.shared.startConversation(systemPrompt: systemPrompt)
@@ -320,6 +328,20 @@ final class SimplePipelineController: ObservableObject {
         case .error(let message):
             StatusBarController.shared?.setState(.error(message))
         }
+    }
+    
+    // MARK: - Private - Date Formatting
+    
+    private static func currentDateString() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE, MMMM d, yyyy"
+        return formatter.string(from: Date())
+    }
+    
+    private static func currentTimeString() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        return formatter.string(from: Date())
     }
 }
 
