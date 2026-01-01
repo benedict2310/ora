@@ -271,6 +271,15 @@ final class SimplePipelineController: ObservableObject {
         let message = error.localizedDescription
         self.logger.error("Pipeline error: \(message)")
         
+        // Cancel any running session task
+        self.sessionTask?.cancel()
+        self.sessionTask = nil
+        
+        // Stop audio capture to prevent resource leak
+        Task {
+            await AudioService.shared.cancel()
+        }
+        
         self.transition(to: .error(message))
         OverlayWindowController.shared.mode = .error(message)
         
