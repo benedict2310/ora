@@ -85,7 +85,7 @@ actor LLMService: LLMServicing {
             ]
             let tokens = try context.tokenizer.applyChatTemplate(messages: warmupMessages)
             let _ = try MLXLMCommon.generate(
-                promptTokens: MLXArray(tokens),
+                promptTokens: tokens,  // [Int] as expected by generate
                 parameters: generateParameters,
                 model: context.model,
                 tokenizer: context.tokenizer,
@@ -183,7 +183,7 @@ actor LLMService: LLMServicing {
             
             // Propagate errors from MLX
             let _ = try MLXLMCommon.generate(
-                promptTokens: MLXArray(inputTokens),
+                promptTokens: inputTokens,  // [Int] as expected by generate
                 parameters: parameters,
                 model: context.model,
                 tokenizer: context.tokenizer,
