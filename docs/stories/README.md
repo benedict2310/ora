@@ -19,6 +19,7 @@ Core application structure, UI, and state management.
 | F.07 | [Overlay Window](foundations/F.07-OVERLAY-WINDOW.md) | ✅ Complete |
 | F.08 | [Persistence Layer](foundations/F.08-PERSISTENCE-LAYER.md) | ✅ Complete |
 | F.09 | [Model Download Implementation](foundations/F.09-MODEL-DOWNLOAD-IMPLEMENTATION.md) | ✅ Complete |
+| F.10 | [Liquid Glass Overlay Refresh](foundations/F.10-LIQUID-GLASS-OVERLAY-REFRESH.md) | 🚧 To Do |
 
 #### Bug Fixes
 
@@ -76,7 +77,7 @@ Connecting the loop: Audio → ASR → LLM → Tools → TTS.
 | O.02 | [Agent Loop](orchestration/O.02-AGENT-LOOP.md) | 🚧 To Do |
 | O.03 | [Conversation Orchestrator](orchestration/O.03-CONVERSATION-ORCHESTRATOR.md) | 🚧 To Do |
 | O.04 | [Confirmation Flow](orchestration/O.04-CONFIRMATION-FLOW.md) | 🚧 To Do |
-| O.05 | [Improved Hotkey Flow](orchestration/O.05-IMPROVED-HOTKEY-FLOW.md) | 🚧 To Do |
+| O.05 | [Improved Hotkey Flow](orchestration/O.05-IMPROVED-HOTKEY-FLOW.md) | ✅ Complete |
 
 ---
 

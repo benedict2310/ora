@@ -24,6 +24,11 @@ actor ToolRegistry {
     
     private init() {}
     
+    /// Create a test instance (not a singleton)
+    static func makeTestInstance() -> ToolRegistry {
+        return ToolRegistry()
+    }
+    
     // MARK: - Public API
     
     /// Register a tool
