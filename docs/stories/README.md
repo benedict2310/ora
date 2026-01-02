@@ -149,10 +149,18 @@ All foundation stories (F.00-F.09) are complete. This includes app shell, permis
 - **X.01:** Tool Protocol - Foundation for agentic tools
 
 ### 🚧 Phase 4: Tools & Agent Loop (Current)
+
+**Recommended next:** Start with **O.02 - Agent Loop**. This enables the LLM to parse tool calls, execute them via ToolHost, and continue reasoning until done. Once O.02 works, implement the actual tools (X.02-X.05).
+
 | Priority | Story | Description |
 |:---------|:------|:------------|
-| P1 | X.02-X.05 | Calendar, Reminders, Contacts, System tools |
-| P0 | O.02 | Agent Loop - Multi-step reasoning with tools |
+| **P0** | **O.02** | **Agent Loop** - Multi-step reasoning with tool calls ← **Start here** |
+| P1 | X.02 | Calendar Tools - Query, create, delete events |
+| P1 | X.03 | Reminders Tools - Create, list reminders |
+| P1 | X.04 | Contacts Tools - Search contacts |
+| P1 | X.05 | System Tools - Open apps, URLs |
+
+**Alternative:** If you want voice output first, skip to **T.01 - TTS Service**.
 
 ### 🚧 Phase 5: TTS Integration
 | Priority | Story | Description |
