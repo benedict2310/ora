@@ -70,6 +70,10 @@ As a power user or accessibility user, I want a clear, modern overlay that shows
 
 Use these samples as near drop-in references when building the Ora overlay UI.
 
+Full reference implementation (preferred to avoid drift):
+- agent-tools/GlassChatPreview/Sources/GlassChatPreview/GlassChatPreviewApp.swift
+- agent-tools/GlassChatPreview/README.md
+
 Voice input control morph (single shell + matched glass ID):
 
 ```swift

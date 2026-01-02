@@ -114,13 +114,7 @@ actor AgentLoop {
                 name: schema.name,
                 description: schema.description,
                 parameters: schema.parameters.mapValues { $0.descriptionString },
-                requiresConfirmation: schema.requiredParameters.contains { _ in
-                    // Check if tool requires confirmation by looking at naming convention
-                    // Tools with create/delete/update typically require confirmation
-                    schema.name.contains("create") || 
-                    schema.name.contains("delete") ||
-                    schema.name.contains("update")
-                }
+                requiresConfirmation: schema.requiresConfirmation
             )
         }
         

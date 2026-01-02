@@ -131,7 +131,8 @@ struct MockValidatingTool: Tool {
         name: "mock.validate",
         description: "A validating tool",
         parameters: [:],
-        requiredParameters: []
+        requiredParameters: [],
+        requiresConfirmation: false
     )
     
     enum ValidationError: Error {

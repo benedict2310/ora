@@ -54,7 +54,8 @@ struct AgentLoopMockReadTool: Tool {
             name: name,
             description: "Test read tool",
             parameters: [:],
-            requiredParameters: []
+            requiredParameters: [],
+            requiresConfirmation: false
         )
     }
     
@@ -77,7 +78,8 @@ struct AgentLoopMockMutateTool: Tool {
             name: name,
             description: "Test mutate tool",
             parameters: [:],
-            requiredParameters: []
+            requiredParameters: [],
+            requiresConfirmation: true
         )
     }
     

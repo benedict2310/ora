@@ -55,7 +55,8 @@ struct MockReadTool: Tool {
         name: "mock.read",
         description: "A read tool",
         parameters: [:],
-        requiredParameters: []
+        requiredParameters: [],
+        requiresConfirmation: false
     )
     
     func validate(args: [String: JSONValue]) throws {}
@@ -72,7 +73,8 @@ struct MockMutateTool: Tool {
         name: "mock.mutate",
         description: "A mutate tool",
         parameters: [:],
-        requiredParameters: []
+        requiredParameters: [],
+        requiresConfirmation: true
     )
     
     func validate(args: [String: JSONValue]) throws {}
