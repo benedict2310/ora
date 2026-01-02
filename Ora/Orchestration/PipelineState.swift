@@ -13,6 +13,7 @@ enum PipelineState: Equatable, Sendable {
     case listening
     case thinking
     case responding
+    case awaitingFollowUp
     case completed
     case error(String)
     
@@ -23,6 +24,7 @@ enum PipelineState: Equatable, Sendable {
         case .listening: return "Listening..."
         case .thinking: return "Thinking..."
         case .responding: return "Responding..."
+        case .awaitingFollowUp: return "Awaiting Follow-up"
         case .completed: return "Done"
         case .error(let msg): return "Error: \(msg)"
         }
@@ -31,7 +33,7 @@ enum PipelineState: Equatable, Sendable {
     /// Whether this state allows starting a new listening session
     var canStartListening: Bool {
         switch self {
-        case .idle, .completed, .error:
+        case .idle, .completed, .error, .awaitingFollowUp:
             return true
         case .listening, .thinking, .responding:
             return false
