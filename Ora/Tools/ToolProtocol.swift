@@ -33,6 +33,7 @@ struct ToolSchema: Sendable {
     let description: String
     let parameters: [String: ParameterSchema]
     let requiredParameters: [String]
+    let requiresConfirmation: Bool
 }
 
 struct ParameterSchema: Sendable {

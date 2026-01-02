@@ -26,6 +26,7 @@ The Foundations epic creates a working macOS menu bar application with:
 | **F.07** | [Overlay Window](F.07-OVERLAY-WINDOW.md) | Floating conversation UI that appears on activation | F.01, F.05 |
 | **F.08** | [Persistence Layer](F.08-PERSISTENCE-LAYER.md) | SwiftData setup for sessions and audit logs | F.01 |
 | **F.09** | [Model Download Implementation](F.09-MODEL-DOWNLOAD-IMPLEMENTATION.md) | HuggingFace download with verification | F.03 |
+| **F.10** | [Liquid Glass Overlay Refresh](F.10-LIQUID-GLASS-OVERLAY-REFRESH.md) | Upgrade the Ora overlay to the new liquid-glass chat UI with voice input morphing and state-driven bubble rendering. | F.07 |
 
 ## Bug Fixes
 
