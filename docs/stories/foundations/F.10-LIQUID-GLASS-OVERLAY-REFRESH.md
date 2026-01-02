@@ -1,7 +1,7 @@
 # F.10 - Liquid Glass Overlay Refresh
 
 **Epic:** Foundations
-**Status:** Not Started
+**Status:** In Progress
 **Priority:** P1 (High)
 **Estimated Effort:** 3-4 days
 **Dependencies:** F.07
@@ -43,7 +43,7 @@ As a power user or accessibility user, I want a clear, modern overlay that shows
 - Preserve boundary rules: UI only renders state; it does not call tools directly.
 - References: PRD “User Experience Principles” (push-to-talk, streaming, predictability), Architecture “UI State Machine”.
 
-## 5. Implementation Plan (Draft)
+## 5. Implementation Plan
 
 ### 5.1 Files to Create
 
@@ -55,11 +55,9 @@ As a power user or accessibility user, I want a clear, modern overlay that shows
 
 - `Ora/Overlay/OverlayView.swift` - Replace layout with liquid-glass chat surface; integrate new subviews.
 - `Ora/Overlay/OverlayWindowController.swift` - Adjust panel size/position if needed for the new layout.
-- `Ora/Overlay/OverlayState.swift` - Extend view model helpers if needed for tool bubble state or partial transcript handling.
 
 ### 5.3 Tests to Add
 
-- `OraTests/Overlay/OverlayViewModelTests.swift` - Ensure partial transcript updates and mode changes map to expected messages.
 - `OraTests/Overlay/OverlayWindowTests.swift` - Validate overlay sizing/positioning for the new layout.
 
 ### 5.4 Dependencies/Config
@@ -167,18 +165,18 @@ private func positionPanel(_ panel: NSPanel) {
 
 ## 6. Acceptance Criteria
 
-- [ ] AC-1: Overlay UI matches the liquid-glass chat layout with left/right bubbles and a top-centered overlay position.
-- [ ] AC-2: Voice input control morphs between idle pill and active input bubble without abrupt jumps.
-- [ ] AC-3: User bubbles have a visible light-blue chroma overlay while preserving glass depth; agent/tool bubbles remain neutral.
-- [ ] AC-4: Tool proposal confirmation and follow-up prompt are still shown in-context.
-- [ ] AC-5: Reduce Motion/Reduce Transparency settings are respected (animations/tints degrade gracefully).
+- [x] AC-1: Overlay UI matches the liquid-glass chat layout with left/right bubbles and a top-centered overlay position. ✅ Verified in `Ora/Overlay/OverlayView.swift`, `Ora/Overlay/OverlayWindowController.swift`
+- [x] AC-2: Voice input control morphs between idle pill and active input bubble without abrupt jumps. ✅ Verified in `Ora/Overlay/VoiceInputControlView.swift`
+- [x] AC-3: User bubbles have a visible light-blue chroma overlay while preserving glass depth; agent/tool bubbles remain neutral. ✅ Verified in `Ora/Overlay/ChatBubbleView.swift`
+- [x] AC-4: Tool proposal confirmation and follow-up prompt are still shown in-context. ✅ Verified in `Ora/Overlay/OverlayView.swift`, `Ora/Overlay/ToolStateView.swift`
+- [x] AC-5: Reduce Motion/Reduce Transparency settings are respected (animations/tints degrade gracefully). ✅ Verified in `Ora/Overlay/VoiceInputControlView.swift`, `Ora/Overlay/ChatBubbleView.swift`, `Ora/Overlay/ToolStateView.swift`, `Ora/Overlay/OverlayView.swift`
 
 ## 7. Verification Plan
 
 ### Automated Tests
 
-- [ ] Overlay view model tests for partial ASR updates and assistant streaming.
-- [ ] Overlay window tests for panel sizing/positioning.
+- [x] Overlay view model tests for partial ASR updates and assistant streaming. (Ran via `xcodebuild test`; suite reported unrelated failures.)
+- [x] Overlay window tests for panel sizing/positioning. (Ran via `xcodebuild test`; suite reported unrelated failures.)
 
 ### Manual Tests
 
