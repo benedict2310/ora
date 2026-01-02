@@ -48,6 +48,12 @@ struct OverlayView: View {
                 Divider()
                 ToolProposalView(proposal: proposal)
             }
+            
+            // Awaiting follow-up prompt
+            if case .awaitingFollowUp = self.viewModel.mode {
+                Divider()
+                FollowUpPromptView()
+            }
         }
         .frame(width: 400, height: 300)
         .background(
@@ -111,6 +117,7 @@ struct StatusIndicatorView: View {
         case .listening: return .blue
         case .thinking: return .orange
         case .responding, .executing: return .green
+        case .awaitingFollowUp: return .purple
         case .proposing: return .yellow
         case .error: return .red
         default: return .secondary
@@ -130,6 +137,7 @@ struct StatusIndicatorView: View {
         case .listening: return "Listening..."
         case .thinking: return "Thinking..."
         case .responding: return "Responding..."
+        case .awaitingFollowUp: return "Press Enter to reply"
         case .proposing: return "Confirm action"
         case .executing: return "Executing..."
         case .completed: return "Done"
@@ -143,6 +151,7 @@ struct StatusIndicatorView: View {
         case .listening: return "Listening for your voice"
         case .thinking: return "Processing your request"
         case .responding: return "Responding"
+        case .awaitingFollowUp: return "Waiting for your reply"
         case .proposing: return "Action requires confirmation"
         case .executing: return "Executing action"
         case .completed: return "Completed"
@@ -198,6 +207,25 @@ struct MessageBubbleView: View {
     private var accessibilityLabel: String {
         let roleLabel = self.message.role == .user ? "You said" : "Ora said"
         return "\(roleLabel): \(self.message.content)"
+    }
+}
+
+// MARK: - Follow-Up Prompt
+
+struct FollowUpPromptView: View {
+    var body: some View {
+        HStack {
+            Image(systemName: "mic.fill")
+                .foregroundColor(.purple)
+            Text("Press Enter to reply, Escape to close")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .frame(maxWidth: .infinity)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Press Enter to reply, or Escape to close the assistant")
     }
 }
 
