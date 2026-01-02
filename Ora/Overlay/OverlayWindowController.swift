@@ -22,11 +22,7 @@ final class OverlayWindowController {
     private var panel: NSPanel?
     private let viewModel = OverlayViewModel()
 
-    private var autoDismissTask: Task<Void, Never>?
-    private let autoDismissDelay: TimeInterval = 3.0
-
     private var escapeMonitor: Any?
-    private var clickOutsideMonitor: Any?
 
     /// Current overlay mode
     var mode: OverlayMode {
@@ -61,10 +57,6 @@ final class OverlayWindowController {
             return
         }
 
-        // Cancel any pending auto-dismiss
-        self.autoDismissTask?.cancel()
-        self.autoDismissTask = nil
-
         // Position the panel
         self.positionPanel()
         
@@ -86,9 +78,6 @@ final class OverlayWindowController {
     func hide(animated: Bool = true) {
         guard let panel = self.panel else { return }
 
-        self.autoDismissTask?.cancel()
-        self.autoDismissTask = nil
-
         // Remove dismiss monitors
         self.removeDismissMonitors()
 
@@ -108,22 +97,6 @@ final class OverlayWindowController {
         }
 
         self.logger.debug("Overlay hidden")
-    }
-
-    /// Schedule auto-dismiss after response completes
-    func scheduleAutoDismiss() {
-        self.autoDismissTask?.cancel()
-        self.autoDismissTask = Task {
-            try? await Task.sleep(for: .seconds(self.autoDismissDelay))
-            guard !Task.isCancelled else { return }
-            self.hide()
-        }
-    }
-
-    /// Cancel scheduled auto-dismiss
-    func cancelAutoDismiss() {
-        self.autoDismissTask?.cancel()
-        self.autoDismissTask = nil
     }
 
     // MARK: - Private
@@ -175,32 +148,40 @@ final class OverlayWindowController {
     // MARK: - Dismiss Monitors
 
     private func addDismissMonitors() {
-        // Escape key monitor (local - when our panel has focus)
+        // Local keyboard monitor (when our panel has focus)
         self.escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self else { return event }
+            
             if event.keyCode == 53 { // Escape key
                 // Cancel the pipeline session (which will hide the overlay)
                 SimplePipelineController.shared.cancel()
                 return nil // Consume the event
             }
-            return event
-        }
-
-        // Click outside monitor (global - clicks anywhere)
-        self.clickOutsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
-            guard let self = self, let panel = self.panel, panel.isVisible else { return }
-
-            // Check if click is outside our panel
-            let clickLocation = event.locationInWindow
-            let screenLocation = NSEvent.mouseLocation
-
-            // Convert panel frame to screen coordinates
-            let panelFrame = panel.frame
-
-            if !panelFrame.contains(screenLocation) {
-                Task { @MainActor in
-                    self.hide()
+            
+            if event.keyCode == 36 { // Enter key
+                // Check state and decide action
+                switch self.viewModel.mode {
+                case .listening:
+                    // Stop recording and submit
+                    SimplePipelineController.shared.submitTranscript()
+                    return nil
+                    
+                case .awaitingFollowUp:
+                    // Start follow-up recording
+                    SimplePipelineController.shared.startFollowUp()
+                    return nil
+                    
+                case .thinking, .responding:
+                    // Ignore Enter during processing
+                    return nil
+                    
+                default:
+                    // Let other cases pass through (e.g. confirming proposals)
+                    break
                 }
             }
+            
+            return event
         }
     }
 
@@ -208,11 +189,6 @@ final class OverlayWindowController {
         if let monitor = self.escapeMonitor {
             NSEvent.removeMonitor(monitor)
             self.escapeMonitor = nil
-        }
-
-        if let monitor = self.clickOutsideMonitor {
-            NSEvent.removeMonitor(monitor)
-            self.clickOutsideMonitor = nil
         }
     }
 }
