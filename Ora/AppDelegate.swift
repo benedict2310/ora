@@ -85,29 +85,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.onHotkeyPress()
         }
 
-        self.hotkeyReleaseObserver = NotificationCenter.default.addObserver(
-            forName: .hotkeyDidRelease,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.onHotkeyRelease()
-        }
-
         self.logger.info("Hotkey manager started with: \(HotkeyManager.shared.currentHotkey.displayString)")
     }
 
     private func onHotkeyPress() {
-        self.logger.debug("Hotkey pressed - start PTT")
+        self.logger.debug("Hotkey pressed - toggle listening")
         
         // Delegate to SimplePipelineController for full ASR → LLM flow
         SimplePipelineController.shared.startListening()
-    }
-
-    private func onHotkeyRelease() {
-        self.logger.debug("Hotkey released - end PTT")
-        
-        // Delegate to SimplePipelineController
-        SimplePipelineController.shared.stopListening()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -126,9 +111,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NotificationCenter.default.removeObserver(observer)
         }
         if let observer = self.hotkeyPressObserver {
-            NotificationCenter.default.removeObserver(observer)
-        }
-        if let observer = self.hotkeyReleaseObserver {
             NotificationCenter.default.removeObserver(observer)
         }
     }
