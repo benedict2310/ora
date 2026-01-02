@@ -1,7 +1,7 @@
 # T.01 - TTS Service
 
 **Epic:** TTS Integration
-**Status:** In Progress
+**Status:** Implemented
 **Priority:** P0 (Critical Path)
 **Estimated Effort:** 2 days
 **Dependencies:** F.03 (Model Manager)
@@ -192,4 +192,8 @@ As a user, I want Ora to speak its responses so that I can hear answers hands-fr
 
 ## Completion Status
 
-(TBD after merge.)
+- [x] Implementation complete
+- [x] Code review passed (2 iterations)
+- [x] PR merged: https://github.com/benedict2310/ora/pull/28
+- [x] Merged to main: 55fc19e
+- [x] Date: 2026-01-02
