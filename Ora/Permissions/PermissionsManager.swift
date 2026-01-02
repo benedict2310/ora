@@ -80,7 +80,6 @@ actor PermissionsManager {
     /// Request all required permissions
     func requestRequired() async -> Bool {
         _ = await request(.microphone)
-        _ = await request(.accessibility)
         return _state.requiredPermissionsGranted
     }
 

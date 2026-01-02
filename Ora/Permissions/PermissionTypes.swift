@@ -12,7 +12,6 @@ import Foundation
 
 enum PermissionType: String, CaseIterable, Sendable {
     case microphone
-    case accessibility
     case calendar
     case reminders
     case contacts
@@ -20,7 +19,6 @@ enum PermissionType: String, CaseIterable, Sendable {
     var displayName: String {
         switch self {
         case .microphone: return "Microphone"
-        case .accessibility: return "Accessibility"
         case .calendar: return "Calendar"
         case .reminders: return "Reminders"
         case .contacts: return "Contacts"
@@ -31,8 +29,6 @@ enum PermissionType: String, CaseIterable, Sendable {
         switch self {
         case .microphone:
             return "Required for voice input and speech recognition"
-        case .accessibility:
-            return "Required for global hotkey activation"
         case .calendar:
             return "Allows querying and creating calendar events"
         case .reminders:
@@ -44,7 +40,7 @@ enum PermissionType: String, CaseIterable, Sendable {
 
     var isRequired: Bool {
         switch self {
-        case .microphone, .accessibility:
+        case .microphone:
             return true
         case .calendar, .reminders, .contacts:
             return false
@@ -55,8 +51,6 @@ enum PermissionType: String, CaseIterable, Sendable {
         switch self {
         case .microphone:
             return "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
-        case .accessibility:
-            return "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
         case .calendar:
             return "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars"
         case .reminders:
@@ -98,7 +92,6 @@ protocol PermissionsClient: Sendable {
 
 struct PermissionsState: Equatable, Sendable {
     var microphone: PermissionStatus = .unknown
-    var accessibility: PermissionStatus = .unknown
     var calendar: PermissionStatus = .unknown
     var reminders: PermissionStatus = .unknown
     var contacts: PermissionStatus = .unknown
@@ -107,7 +100,6 @@ struct PermissionsState: Equatable, Sendable {
         get {
             switch type {
             case .microphone: return microphone
-            case .accessibility: return accessibility
             case .calendar: return calendar
             case .reminders: return reminders
             case .contacts: return contacts
@@ -116,7 +108,6 @@ struct PermissionsState: Equatable, Sendable {
         set {
             switch type {
             case .microphone: microphone = newValue
-            case .accessibility: accessibility = newValue
             case .calendar: calendar = newValue
             case .reminders: reminders = newValue
             case .contacts: contacts = newValue
@@ -125,7 +116,7 @@ struct PermissionsState: Equatable, Sendable {
     }
 
     var requiredPermissionsGranted: Bool {
-        microphone.isGranted && accessibility.isGranted
+        microphone.isGranted
     }
 
     var allPermissionsGranted: Bool {
@@ -141,8 +132,6 @@ struct LivePermissionsClient: PermissionsClient {
         switch type {
         case .microphone:
             return MicrophonePermission.checkStatus()
-        case .accessibility:
-            return AccessibilityPermission.checkStatus()
         case .calendar:
             return EventKitPermission.checkCalendarStatus()
         case .reminders:
@@ -156,12 +145,6 @@ struct LivePermissionsClient: PermissionsClient {
         switch type {
         case .microphone:
             return await MicrophonePermission.request()
-        case .accessibility:
-            let status = await MainActor.run { AccessibilityPermission.request() }
-            if status != .authorized {
-                await MainActor.run { AccessibilityPermission.openSettings() }
-            }
-            return status
         case .calendar:
             return await EventKitPermission.requestCalendar()
         case .reminders:
