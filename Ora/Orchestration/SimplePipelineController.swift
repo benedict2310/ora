@@ -49,9 +49,49 @@ final class SimplePipelineController: ObservableObject {
     /// Delay before auto-recovering from error (seconds)
     private let errorRecoveryDelay: TimeInterval = 3.0
     
+    /// Whether auto-listen is enabled
+    private var isAutoListenEnabled: Bool {
+        // Retrieve directly from settings model
+        // Note: In a real app we might inject dependencies, but for now this is fine
+        // since AppSettings is SwiftData based but we access the shared model differently
+        // or just use UserDefaults for simple settings if AppSettings isn't easily accessible here.
+        // Given AppSettings structure, we can't easily access the singleton instance here without context.
+        // For O.05, let's assume we can access it or use a simpler approach.
+        // Let's use UserDefaults for this setting directly for simplicity if AppSettings is hard to reach,
+        // BUT AppSettings is the source of truth.
+        // Let's fetch it from the model context if possible, or for now, since AppSettings is a Model,
+        // we might need a helper.
+        // Actually, let's look at how AppSettings is accessed elsewhere.
+        // It seems it's only defined, not used yet.
+        // Let's rely on `PersistenceManager.shared` if it exists, or just create a temporary solution.
+        // PersistenceManager exists.
+        
+        // For this implementation, I'll access the persistent store via PersistenceManager
+        return self.fetchAutoListenSetting()
+    }
+
     // MARK: - Initialization
     
     private init() {}
+    
+    private func fetchAutoListenSetting() -> Bool {
+        // Simplified fetch - in real app would use proper repo
+        // This is a placeholder until we wire up full SwiftData access here
+        // For now, let's just use a default or try to fetch
+        // We can't easily perform async fetch in computed property.
+        // Let's just default to false for now, or check UserDefaults if we were using it.
+        // Since AppSettings is SwiftData, we need a MainActor context.
+        // We are on MainActor.
+        
+        // Let's check PersistenceManager
+        guard let container = PersistenceManager.shared.container else { return false }
+        let context = container.mainContext
+        let descriptor = FetchDescriptor<AppSettings>()
+        if let settings = try? context.fetch(descriptor).first {
+            return settings.autoListenEnabled
+        }
+        return false
+    }
     
     /// Create a test instance (not a singleton)
     static func makeTestInstance() -> SimplePipelineController {
@@ -60,16 +100,16 @@ final class SimplePipelineController: ObservableObject {
     
     // MARK: - Public API
     
-    /// Start listening (hotkey pressed)
+    /// Start listening or toggle (hotkey pressed)
     func startListening() {
-        // If already in an active session, cancel it instead of starting a new one
-        if !state.canStartListening {
-            self.logger.info("Hotkey pressed during active session - cancelling")
+        // If overlay is visible and we are in a session, pressing hotkey should cancel
+        if OverlayWindowController.shared.isVisible {
+            self.logger.info("Hotkey pressed while overlay visible - cancelling")
             self.cancel()
             return
         }
         
-        // Cancel any pending auto-dismiss
+        // Cancel any pending auto-dismiss (legacy check)
         self.autoDismissTask?.cancel()
         self.autoDismissTask = nil
         
@@ -97,20 +137,45 @@ final class SimplePipelineController: ObservableObject {
         self.logger.info("Started listening")
     }
     
-    /// Stop listening and process (hotkey released)
-    func stopListening() {
+    /// Submit transcript manually (Enter key)
+    func submitTranscript() {
         guard self.state == .listening else {
-            self.logger.warning("Cannot stop listening in state: \(self.state.description)")
+            self.logger.warning("Cannot submit transcript in state: \(self.state.description)")
             return
         }
         
-        self.logger.debug("Stopping listening, triggering ASR finalization")
+        self.logger.debug("Submitting transcript")
         
         // Stop audio capture - this will cause the ASR stream to finalize
-        // The session task will continue to process the transcript
         Task {
             await AudioService.shared.stop()
         }
+    }
+    
+    /// Start follow-up recording (from awaiting follow-up)
+    func startFollowUp() {
+        guard self.state == .awaitingFollowUp else {
+            self.logger.warning("Cannot start follow-up in state: \(self.state.description)")
+            return
+        }
+        
+        self.logger.info("Starting follow-up")
+        
+        self.transition(to: .listening)
+        OverlayWindowController.shared.mode = .listening
+        
+        // Reset current transcript for new turn
+        self.currentTranscript = ""
+        
+        // Start listening again (keeping conversation history)
+        self.sessionTask = Task {
+            await self.runListeningSession()
+        }
+    }
+    
+    /// Stop listening (Legacy/Unused for tap-to-talk)
+    func stopListening() {
+        // No-op for tap-to-talk flow
     }
     
     /// Cancel current operation and return to idle
@@ -169,11 +234,11 @@ final class SimplePipelineController: ObservableObject {
                 return
             }
             
-            // AC-11: Empty transcript returns directly to idle without LLM call
+            // AC-13: Empty transcript returns to awaiting follow-up without LLM call
             if self.currentTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                self.logger.info("Empty transcript, returning to idle")
-                self.transition(to: .idle)
-                OverlayWindowController.shared.hide(animated: true)
+                self.logger.info("Empty transcript, transitioning to awaitingFollowUp")
+                self.transition(to: .awaitingFollowUp)
+                OverlayWindowController.shared.mode = .awaitingFollowUp
                 return
             }
             
@@ -261,17 +326,24 @@ final class SimplePipelineController: ObservableObject {
     private func handleCompletion() {
         self.logger.info("Response complete: \(self.currentResponse.prefix(50))...")
         
-        self.transition(to: .completed)
-        OverlayWindowController.shared.mode = .completed
+        // Transition to awaiting follow-up state (AC-14)
+        self.transition(to: .awaitingFollowUp)
+        OverlayWindowController.shared.mode = .awaitingFollowUp
         
-        // Schedule auto-dismiss
-        OverlayWindowController.shared.scheduleAutoDismiss()
-        
-        // Reset to idle after auto-dismiss delay
-        self.autoDismissTask = Task {
-            try? await Task.sleep(for: .seconds(self.autoDismissDelay))
-            guard !Task.isCancelled, self.state == .completed else { return }
-            self.transition(to: .idle)
+        // Handle Auto-Listen (AC-23)
+        if self.isAutoListenEnabled {
+            self.logger.info("Auto-listen enabled, scheduling follow-up")
+            Task {
+                // Short delay to let the user process the response
+                try? await Task.sleep(for: .milliseconds(500))
+                
+                // Ensure we are still in awaitingFollowUp state (user didn't cancel)
+                guard !Task.isCancelled, self.state == .awaitingFollowUp else { return }
+                
+                await MainActor.run {
+                    self.startFollowUp()
+                }
+            }
         }
     }
     
