@@ -31,6 +31,9 @@ final class AppSettings {
     /// Hotkey configuration (JSON)
     var hotkeyConfigData: Data?
 
+    /// Auto-listen after response
+    var autoListenEnabled: Bool = false
+
     // MARK: - Initialization
 
     init() {}
