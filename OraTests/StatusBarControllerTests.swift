@@ -165,8 +165,9 @@ final class StatusBarControllerTests: XCTestCase {
         let titles = controller.menuItemTitles
 
         XCTAssertTrue(titles.contains("Preferences..."), "Menu should contain Preferences...")
+        XCTAssertTrue(titles.contains("Auto-Listen After Response"), "Menu should contain Auto-Listen")
         XCTAssertTrue(titles.contains("Quit Ora"), "Menu should contain Quit Ora")
-        XCTAssertEqual(titles.count, 2, "Menu should have exactly 2 non-separator items")
+        XCTAssertEqual(titles.count, 3, "Menu should have exactly 3 non-separator items")
 
         controller.shutdown()
     }

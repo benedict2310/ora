@@ -68,6 +68,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         } else {
             self.defaultActionHandler = DefaultStatusBarActionHandler()
         }
+        super.init()
         self.setupStatusItem()
     }
 
@@ -241,22 +242,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     // MARK: - Private Helpers
     
     private var isAutoListenEnabled: Bool {
-        guard let container = PersistenceManager.shared.container else { return false }
-        let context = container.mainContext
-        let descriptor = FetchDescriptor<AppSettings>()
-        if let settings = try? context.fetch(descriptor).first {
-            return settings.autoListenEnabled
-        }
-        return false
+        return PersistenceManager.shared.settings.autoListenEnabled
     }
     
     private func setAutoListenEnabled(_ enabled: Bool) {
-        guard let container = PersistenceManager.shared.container else { return }
-        let context = container.mainContext
-        let descriptor = FetchDescriptor<AppSettings>()
-        if let settings = try? context.fetch(descriptor).first {
+        PersistenceManager.shared.updateSettings { settings in
             settings.autoListenEnabled = enabled
-            try? context.save()
         }
     }
 }
