@@ -76,6 +76,7 @@ Connecting the loop: Audio → ASR → LLM → Tools → TTS.
 | O.02 | [Agent Loop](orchestration/O.02-AGENT-LOOP.md) | 🚧 To Do |
 | O.03 | [Conversation Orchestrator](orchestration/O.03-CONVERSATION-ORCHESTRATOR.md) | 🚧 To Do |
 | O.04 | [Confirmation Flow](orchestration/O.04-CONFIRMATION-FLOW.md) | 🚧 To Do |
+| O.05 | [Improved Hotkey Flow](orchestration/O.05-IMPROVED-HOTKEY-FLOW.md) | 🚧 To Do |
 
 ---
 
