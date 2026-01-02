@@ -120,4 +120,37 @@ See the actual implementation in the source file for the complete code.
 
 ## Code Review Findings
 
-*To be populated by review subagent*
+**Reviewer:** Manual Review (after subagent timeout)
+**Date:** 2026-01-02T15:20:00Z
+**Commit reviewed:** cd71c0f
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 4 (AgentLoop.swift, ToolRegistry.swift, ToolProtocol.swift, AgentLoopTests.swift)
+- Build status: Pass
+- Tests status: Pass (19 tests including AgentLoop, ToolHost, ToolRegistry)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+
+*None*
+
+#### P1 - Major (Should fix)
+
+- [x] `AgentLoop.swift:109-121` - **FIXED** The `requiresConfirmation` logic was using name-based heuristics (`schema.name.contains("create")`) instead of the tool's actual `kind` property. This could cause mutation tools to execute without confirmation if they don't follow naming conventions. Fixed by adding `requiresConfirmation` to `ToolSchema` and deriving it from the `Tool.kind` property.
+
+#### P2 - Minor (Can defer)
+
+- [ ] `AgentLoop.swift:52` - The `maxTokensPerTurn` property is unused. Consider either implementing token counting or removing this property.
+
+### Future Considerations (Out of Scope)
+
+- Integration with SimplePipelineController is deferred to O.03 story
+- Pre-existing test failures in HuggingFaceDownloaderTests (network-dependent tests)
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
+
