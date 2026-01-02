@@ -206,7 +206,7 @@ private func positionPanel(_ panel: NSPanel) {
 
 **Date:** 2026-01-02
 **Branch:** `feat/f10-liquid-glass-overlay`
-**Commits:** 2
+**Commits:** 3
 
 ### Files Changed
 - `Ora/Overlay/ChatBubbleView.swift` - Added liquid-glass chat bubbles with chroma overlay and thinking/tool states.
@@ -220,7 +220,7 @@ private func positionPanel(_ panel: NSPanel) {
 ### Ready for Review
 - [x] All acceptance criteria verified
 - [ ] Tests passing (`xcodebuild test` failed: `AudioServiceTests.test_start_requires_microphone_permission`, `HuggingFaceDownloaderTests.test_huggingFaceStrategy_downloadsLLMModel`, `HuggingFaceDownloaderTests.test_huggingFaceStrategy_downloadsTTSModel`, `HuggingFaceDownloaderTests.test_huggingFaceStrategy_reportsCurrentFile`)
-- [ ] Working tree clean
+- [x] Working tree clean
 
 ## Code Review Findings
 
