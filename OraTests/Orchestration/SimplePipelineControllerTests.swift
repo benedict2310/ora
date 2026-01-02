@@ -42,6 +42,18 @@ final class SimplePipelineControllerTests: XCTestCase {
         XCTAssertEqual(controller.state, .idle)
     }
     
+    func test_submitTranscript_fromIdle_isIgnored() {
+        let controller = SimplePipelineController.makeTestInstance()
+        controller.submitTranscript()
+        XCTAssertEqual(controller.state, .idle)
+    }
+    
+    func test_startFollowUp_fromIdle_isIgnored() {
+        let controller = SimplePipelineController.makeTestInstance()
+        controller.startFollowUp()
+        XCTAssertEqual(controller.state, .idle)
+    }
+    
     // MARK: - State Guards Tests
     
     func test_startListening_whenNotIdle_isIgnored() async throws {

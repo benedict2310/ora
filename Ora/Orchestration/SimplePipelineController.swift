@@ -11,6 +11,7 @@ import Foundation
 import AppKit
 import os
 import Combine
+import SwiftData
 
 /// Coordinates ASR → LLM pipeline (no tools, no TTS)
 ///
@@ -75,22 +76,7 @@ final class SimplePipelineController: ObservableObject {
     private init() {}
     
     private func fetchAutoListenSetting() -> Bool {
-        // Simplified fetch - in real app would use proper repo
-        // This is a placeholder until we wire up full SwiftData access here
-        // For now, let's just use a default or try to fetch
-        // We can't easily perform async fetch in computed property.
-        // Let's just default to false for now, or check UserDefaults if we were using it.
-        // Since AppSettings is SwiftData, we need a MainActor context.
-        // We are on MainActor.
-        
-        // Let's check PersistenceManager
-        guard let container = PersistenceManager.shared.container else { return false }
-        let context = container.mainContext
-        let descriptor = FetchDescriptor<AppSettings>()
-        if let settings = try? context.fetch(descriptor).first {
-            return settings.autoListenEnabled
-        }
-        return false
+        return PersistenceManager.shared.settings.autoListenEnabled
     }
     
     /// Create a test instance (not a singleton)
@@ -131,6 +117,8 @@ final class SimplePipelineController: ObservableObject {
         
         // Start the session task
         self.sessionTask = Task {
+            // Initialize conversation for new session
+            await self.initializeConversation()
             await self.runListeningSession()
         }
         
@@ -195,6 +183,24 @@ final class SimplePipelineController: ObservableObject {
         
         self.transition(to: .idle)
         OverlayWindowController.shared.hide(animated: true)
+    }
+    
+    // MARK: - Private - Conversation Management
+    
+    private func initializeConversation() async {
+        // Use a simple conversational prompt for O.01 (no tools, no JSON)
+        // This will be replaced with the full system prompt when tools are added in O.02
+        let systemPrompt = """
+        You are Ora, a helpful voice assistant running locally on macOS.
+        
+        Current date: \(Self.currentDateString())
+        Current time: \(Self.currentTimeString())
+        
+        Respond naturally and conversationally. Keep responses concise since they will be spoken aloud.
+        """
+        
+        // Start conversation (clears history)
+        await ConversationManager.shared.startConversation(systemPrompt: systemPrompt)
     }
     
     // MARK: - Private - Session Management
@@ -267,19 +273,7 @@ final class SimplePipelineController: ObservableObject {
             // Ensure LLM is ready
             try await LLMService.shared.prepare()
             
-            // Use a simple conversational prompt for O.01 (no tools, no JSON)
-            // This will be replaced with the full system prompt when tools are added in O.02
-            let systemPrompt = """
-            You are Ora, a helpful voice assistant running locally on macOS.
-            
-            Current date: \(Self.currentDateString())
-            Current time: \(Self.currentTimeString())
-            
-            Respond naturally and conversationally. Keep responses concise since they will be spoken aloud.
-            """
-            
-            // Start conversation
-            await ConversationManager.shared.startConversation(systemPrompt: systemPrompt)
+            // Add user message to conversation (context is preserved across turns)
             await ConversationManager.shared.addUserMessage(self.currentTranscript)
             
             let messages = await ConversationManager.shared.getMessagesForLLM()
@@ -395,7 +389,7 @@ final class SimplePipelineController: ObservableObject {
             StatusBarController.shared?.setState(.idle)
         case .listening:
             StatusBarController.shared?.setState(.listening)
-        case .thinking, .responding:
+        case .thinking, .responding, .awaitingFollowUp:
             StatusBarController.shared?.setState(.thinking)
         case .error(let message):
             StatusBarController.shared?.setState(.error(message))
