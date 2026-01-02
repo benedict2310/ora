@@ -7,6 +7,7 @@
 
 import AppKit
 import os
+import SwiftData
 
 // MARK: - Action Handler Protocol
 
@@ -32,7 +33,7 @@ final class DefaultStatusBarActionHandler: StatusBarActionHandler {
 // MARK: - StatusBarController
 
 @MainActor
-final class StatusBarController {
+final class StatusBarController: NSObject, NSMenuDelegate {
 
     // MARK: - Types
 
@@ -164,8 +165,15 @@ final class StatusBarController {
 
         // Create menu
         let menu = NSMenu()
+        menu.delegate = self
 
         menu.addItem(NSMenuItem(title: "Preferences...", action: #selector(self.preferencesClicked), keyEquivalent: ","))
+        menu.addItem(NSMenuItem.separator())
+        
+        let autoListenItem = NSMenuItem(title: "Auto-Listen After Response", action: #selector(self.autoListenClicked), keyEquivalent: "")
+        autoListenItem.state = self.isAutoListenEnabled ? .on : .off
+        menu.addItem(autoListenItem)
+        
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit Ora", action: #selector(self.quitClicked), keyEquivalent: "q"))
 
@@ -210,9 +218,45 @@ final class StatusBarController {
     @objc private func preferencesClicked() {
         self.showPreferences()
     }
+    
+    @objc private func autoListenClicked(_ sender: NSMenuItem) {
+        let newState = !self.isAutoListenEnabled
+        self.setAutoListenEnabled(newState)
+        sender.state = newState ? .on : .off
+    }
 
     @objc private func quitClicked() {
         self.logger.info("Quit requested by user")
         self.actionHandler?.handleQuit()
+    }
+    
+    // MARK: - Menu Delegate
+    
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        if let item = menu.items.first(where: { $0.title == "Auto-Listen After Response" }) {
+            item.state = self.isAutoListenEnabled ? .on : .off
+        }
+    }
+    
+    // MARK: - Private Helpers
+    
+    private var isAutoListenEnabled: Bool {
+        guard let container = PersistenceManager.shared.container else { return false }
+        let context = container.mainContext
+        let descriptor = FetchDescriptor<AppSettings>()
+        if let settings = try? context.fetch(descriptor).first {
+            return settings.autoListenEnabled
+        }
+        return false
+    }
+    
+    private func setAutoListenEnabled(_ enabled: Bool) {
+        guard let container = PersistenceManager.shared.container else { return }
+        let context = container.mainContext
+        let descriptor = FetchDescriptor<AppSettings>()
+        if let settings = try? context.fetch(descriptor).first {
+            settings.autoListenEnabled = enabled
+            try? context.save()
+        }
     }
 }
