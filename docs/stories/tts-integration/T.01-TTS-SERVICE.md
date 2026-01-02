@@ -150,7 +150,45 @@ As a user, I want Ora to speak its responses so that I can hear answers hands-fr
 
 ## Code Review Findings
 
-(TBD by review agent.)
+**Reviewer:** Codex Subagent
+**Date:** 2026-01-02T22:24:11Z
+**Commit reviewed:** 0c77730 (Iteration 2)
+**Iterations:** 2
+
+### Summary
+- Files reviewed: 5 (4 new source files + 1 story doc update)
+- Build status: Pass
+- Tests status: Pass (11/11 TTS tests pass; 4 pre-existing test failures in unrelated files)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+
+*None identified*
+
+#### P1 - Major (Should fix)
+
+- [x] `TTSService.swift:143-158` - **Fallback synthesizer lifecycle issue**: ✅ Fixed in commit 0c77730. Added `FallbackSynthesizerHolder` class that maintains strong references to synthesizer/delegate and waits for `didFinish` callback before completing.
+
+- [x] `TTSService.swift:65-75` - **currentTask not assigned in speak()**: ✅ Fixed in commit 0c77730. Now creates `synthesisTask` and calls `setCurrentTask()` to store it for cancellation support.
+
+#### P2 - Minor (Deferred)
+
+- [x] `TTSService.swift:35` - **Test init visibility**: ✅ Added documentation comment explaining internal visibility for testing.
+
+- [ ] `TTSService.swift:173` - **@unchecked Sendable on delegate**: Refactored to use `@MainActor` on `FallbackSynthesizerDelegate` class instead of `@unchecked Sendable`.
+
+- [ ] `AudioChunk.swift:15` - **Consider negative sampleRate validation**: Edge case, already handles zero. Deferred.
+
+### Future Considerations (Out of Scope)
+
+- `ASREngineTests.swift:83` - Pre-existing test failure (timestamp comparison issue), not part of this PR
+- `HuggingFaceDownloaderTests` - Pre-existing test failures (file cleanup issues), not part of this PR
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
 
 ## Completion Status
 
