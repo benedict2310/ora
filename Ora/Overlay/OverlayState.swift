@@ -15,6 +15,7 @@ enum OverlayMode: Equatable, Sendable {
     case listening
     case thinking
     case responding
+    case awaitingFollowUp
     case proposing(ToolProposal)
     case executing
     case completed
