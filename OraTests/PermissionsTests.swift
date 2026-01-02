@@ -57,7 +57,6 @@ final class PermissionTypeTests: XCTestCase {
 
     func test_displayName_returnsCorrectValues() {
         XCTAssertEqual(PermissionType.microphone.displayName, "Microphone")
-        XCTAssertEqual(PermissionType.accessibility.displayName, "Accessibility")
         XCTAssertEqual(PermissionType.calendar.displayName, "Calendar")
         XCTAssertEqual(PermissionType.reminders.displayName, "Reminders")
         XCTAssertEqual(PermissionType.contacts.displayName, "Contacts")
@@ -73,9 +72,8 @@ final class PermissionTypeTests: XCTestCase {
 
     // MARK: - Required Tests
 
-    func test_isRequired_microphoneAndAccessibility() {
+    func test_isRequired_microphone() {
         XCTAssertTrue(PermissionType.microphone.isRequired)
-        XCTAssertTrue(PermissionType.accessibility.isRequired)
     }
 
     func test_isRequired_optionalPermissions() {
@@ -96,8 +94,8 @@ final class PermissionTypeTests: XCTestCase {
 
     // MARK: - CaseIterable Tests
 
-    func test_allCases_containsFivePermissions() {
-        XCTAssertEqual(PermissionType.allCases.count, 5)
+    func test_allCases_containsFourPermissions() {
+        XCTAssertEqual(PermissionType.allCases.count, 4)
     }
 }
 
@@ -131,7 +129,6 @@ final class PermissionsStateTests: XCTestCase {
     func test_initialState_allUnknown() {
         let state = PermissionsState()
         XCTAssertEqual(state.microphone, .unknown)
-        XCTAssertEqual(state.accessibility, .unknown)
         XCTAssertEqual(state.calendar, .unknown)
         XCTAssertEqual(state.reminders, .unknown)
         XCTAssertEqual(state.contacts, .unknown)
@@ -152,13 +149,11 @@ final class PermissionsStateTests: XCTestCase {
     func test_subscript_set() {
         var state = PermissionsState()
         state[.microphone] = .authorized
-        state[.accessibility] = .denied
         state[.calendar] = .notDetermined
         state[.reminders] = .restricted
         state[.contacts] = .authorized
 
         XCTAssertEqual(state.microphone, .authorized)
-        XCTAssertEqual(state.accessibility, .denied)
         XCTAssertEqual(state.calendar, .notDetermined)
         XCTAssertEqual(state.reminders, .restricted)
         XCTAssertEqual(state.contacts, .authorized)
@@ -166,10 +161,9 @@ final class PermissionsStateTests: XCTestCase {
 
     // MARK: - Required Permissions Tests
 
-    func test_requiredPermissionsGranted_bothAuthorized() {
+    func test_requiredPermissionsGranted_microphoneAuthorized() {
         var state = PermissionsState()
         state.microphone = .authorized
-        state.accessibility = .authorized
         state.calendar = .denied
         state.reminders = .denied
         state.contacts = .denied
@@ -180,23 +174,6 @@ final class PermissionsStateTests: XCTestCase {
     func test_requiredPermissionsGranted_microphoneDenied() {
         var state = PermissionsState()
         state.microphone = .denied
-        state.accessibility = .authorized
-
-        XCTAssertFalse(state.requiredPermissionsGranted)
-    }
-
-    func test_requiredPermissionsGranted_accessibilityDenied() {
-        var state = PermissionsState()
-        state.microphone = .authorized
-        state.accessibility = .denied
-
-        XCTAssertFalse(state.requiredPermissionsGranted)
-    }
-
-    func test_requiredPermissionsGranted_bothDenied() {
-        var state = PermissionsState()
-        state.microphone = .denied
-        state.accessibility = .denied
 
         XCTAssertFalse(state.requiredPermissionsGranted)
     }
@@ -206,7 +183,6 @@ final class PermissionsStateTests: XCTestCase {
     func test_allPermissionsGranted_allAuthorized() {
         var state = PermissionsState()
         state.microphone = .authorized
-        state.accessibility = .authorized
         state.calendar = .authorized
         state.reminders = .authorized
         state.contacts = .authorized
@@ -217,7 +193,6 @@ final class PermissionsStateTests: XCTestCase {
     func test_allPermissionsGranted_oneDenied() {
         var state = PermissionsState()
         state.microphone = .authorized
-        state.accessibility = .authorized
         state.calendar = .authorized
         state.reminders = .denied
         state.contacts = .authorized
@@ -228,7 +203,6 @@ final class PermissionsStateTests: XCTestCase {
     func test_allPermissionsGranted_oneNotDetermined() {
         var state = PermissionsState()
         state.microphone = .authorized
-        state.accessibility = .authorized
         state.calendar = .notDetermined
         state.reminders = .authorized
         state.contacts = .authorized
@@ -241,11 +215,11 @@ final class PermissionsStateTests: XCTestCase {
     func test_equatable_sameStates() {
         var state1 = PermissionsState()
         state1.microphone = .authorized
-        state1.accessibility = .denied
+        state1.calendar = .denied
 
         var state2 = PermissionsState()
         state2.microphone = .authorized
-        state2.accessibility = .denied
+        state2.calendar = .denied
 
         XCTAssertEqual(state1, state2)
     }
@@ -354,7 +328,6 @@ final class PermissionsManagerMockedTests: XCTestCase {
     func test_refreshAll_checksAllPermissions() async {
         mockClient.statuses = [
             .microphone: .authorized,
-            .accessibility: .authorized,
             .calendar: .denied,
             .reminders: .notDetermined,
             .contacts: .restricted
@@ -366,7 +339,6 @@ final class PermissionsManagerMockedTests: XCTestCase {
 
         let state = await manager.state
         XCTAssertEqual(state.microphone, .authorized)
-        XCTAssertEqual(state.accessibility, .authorized)
         XCTAssertEqual(state.calendar, .denied)
         XCTAssertEqual(state.reminders, .notDetermined)
         XCTAssertEqual(state.contacts, .restricted)
@@ -404,30 +376,18 @@ final class PermissionsManagerMockedTests: XCTestCase {
 
     // MARK: - Request Required Tests
 
-    func test_requestRequired_requestsMicAndAccessibility() async {
+    func test_requestRequired_requestsMicrophone() async {
         mockClient.requestResults[.microphone] = .authorized
-        mockClient.requestResults[.accessibility] = .authorized
 
         let result = await manager.requestRequired()
 
         XCTAssertTrue(result)
         XCTAssertTrue(mockClient.requestedPermissions.contains(.microphone))
-        XCTAssertTrue(mockClient.requestedPermissions.contains(.accessibility))
-        XCTAssertEqual(mockClient.requestedPermissions.count, 2)
+        XCTAssertEqual(mockClient.requestedPermissions.count, 1)
     }
 
     func test_requestRequired_returnsFalseIfMicDenied() async {
         mockClient.requestResults[.microphone] = .denied
-        mockClient.requestResults[.accessibility] = .authorized
-
-        let result = await manager.requestRequired()
-
-        XCTAssertFalse(result)
-    }
-
-    func test_requestRequired_returnsFalseIfAccessibilityDenied() async {
-        mockClient.requestResults[.microphone] = .authorized
-        mockClient.requestResults[.accessibility] = .denied
 
         let result = await manager.requestRequired()
 
@@ -447,7 +407,6 @@ final class PermissionsManagerMockedTests: XCTestCase {
         XCTAssertTrue(mockClient.requestedPermissions.contains(.reminders))
         XCTAssertTrue(mockClient.requestedPermissions.contains(.contacts))
         XCTAssertFalse(mockClient.requestedPermissions.contains(.microphone))
-        XCTAssertFalse(mockClient.requestedPermissions.contains(.accessibility))
     }
 
     // MARK: - Open Settings Tests
@@ -556,18 +515,6 @@ final class PermissionHelperTests: XCTestCase {
         }
 
         let requestResult = await MicrophonePermission.request()
-        XCTAssertEqual(requestResult, status)
-    }
-
-    /// Tests AccessibilityPermission.request() early return when already determined
-    @MainActor
-    func test_accessibilityRequest_earlyReturn() async {
-        let status = AccessibilityPermission.checkStatus()
-        guard status != .notDetermined else {
-            return
-        }
-
-        let requestResult = AccessibilityPermission.request()
         XCTAssertEqual(requestResult, status)
     }
 

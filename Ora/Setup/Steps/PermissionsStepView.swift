@@ -32,12 +32,6 @@ struct PermissionsStepView: View {
                     onRequest: { await self.coordinator.requestPermission(.microphone) }
                 )
 
-                PermissionRow(
-                    type: .accessibility,
-                    status: self.permissionsState.accessibility,
-                    onRequest: { await self.coordinator.requestPermission(.accessibility) }
-                )
-
                 Divider()
 
                 // Optional permissions
@@ -70,7 +64,7 @@ struct PermissionsStepView: View {
             Spacer()
 
             if !self.permissionsState.requiredPermissionsGranted {
-                Label("Microphone and Accessibility permissions are required to continue.", systemImage: "exclamationmark.triangle")
+                Label("Microphone permission is required to continue.", systemImage: "exclamationmark.triangle")
                     .font(.caption)
                     .foregroundColor(.orange)
             }
