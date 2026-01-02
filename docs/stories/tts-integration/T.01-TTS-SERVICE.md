@@ -6,218 +6,129 @@
 **Estimated Effort:** 2 days
 **Dependencies:** F.03 (Model Manager)
 **Target:** macOS 26 (Tahoe)
+**Design Reference:** [kokoro-swift-mlx](https://github.com/mattmireles/kokoro-swift-mlx)
 
 ---
 
 ## 1. Objective
 
-Create a `TTSService` actor that wraps Kokoro MLX for local text-to-speech with streaming audio output.
+Enable Ora to speak responses aloud by wrapping Kokoro MLX for local text-to-speech synthesis. This provides the voice output stage of the pipeline (ASR → LLM → **TTS**), giving users audible feedback without any cloud dependencies.
+
+## 2. User Story
+
+As a user, I want Ora to speak its responses so that I can hear answers hands-free and continue my workflow without looking at the screen.
+
+## 3. Scope
+
+### In Scope
+
+- `TTSService` actor wrapping Kokoro MLX for audio generation
+- `TTSServicing` protocol for testability and future TTS backends
+- `AudioChunk` type for streaming PCM audio output
+- Model loading via `ModelManager.pathForModel(.kokoro)`
+- Graceful fallback to `AVSpeechSynthesizer` when Kokoro fails
+- Cancellation support via `stop()` method
+- Logging for TTS lifecycle events
+
+### Out of Scope
+
+- Audio playback/queueing (T.02 - Audio Playback)
+- Sentence chunking for early playback (T.03 - Sentence Chunker)
+- Voice selection UI (future enhancement)
+- Multiple voice profiles (future enhancement)
+
+## 4. Architecture Alignment
+
+- **Component Boundary:** TTS is isolated from LLM and UI; receives plain text, emits audio chunks
+- **Concurrency Model:** `TTSService` is an actor; synthesis runs on background thread; audio chunks are `Sendable`
+- **Pipeline Integration:** TTSService → AudioPlayback (T.02) → speakers
+- **Fallback Path:** Kokoro failure → AVSpeechSynthesizer (plays directly, not via AudioChunk)
+- **PRD Reference:** Section 5 (TTS targets ~500ms to first audio for short responses)
+- **Architecture Reference:** Section 1 Component Diagram - TTSEngine actor
+
+## 5. Implementation Plan (Draft)
+
+### 5.1 Files to Create
+
+- `Ora/TTS/TTSService.swift` - Main TTS actor with Kokoro integration and AVSpeech fallback
+- `Ora/TTS/AudioChunk.swift` - Audio data structure for streaming output
+- `Ora/TTS/TTSServicing.swift` - Protocol for TTS service abstraction
+
+### 5.2 Files to Modify
+
+- `project.yml` - Add kokoro-swift-mlx package dependency
+
+### 5.3 Tests to Add
+
+- `OraTests/TTSServiceTests.swift` - Unit tests for TTS service
+  - Test `speak()` returns AsyncThrowingStream
+  - Test `stop()` cancels current synthesis
+  - Test fallback triggers on Kokoro failure
+  - Test AudioChunk properties (samples, sampleRate, duration)
+
+### 5.4 Dependencies/Config
+
+- Add Swift Package: `kokoro-swift-mlx` from `https://github.com/mattmireles/kokoro-swift-mlx`
+- Kokoro model must be downloaded via ModelManager (handled by F.03/F.09)
+
+## 6. Acceptance Criteria
+
+- [ ] AC-1: `TTSService` loads Kokoro model from `ModelManager.pathForModel(.kokoro)`
+- [ ] AC-2: `speak(_:)` returns an AsyncThrowingStream of AudioChunk
+- [ ] AC-3: Audio chunks stream incrementally as Kokoro generates them
+- [ ] AC-4: Fallback to `AVSpeechSynthesizer` when Kokoro initialization or synthesis fails
+- [ ] AC-5: `stop()` cancels current synthesis and clears state
+- [ ] AC-6: `AudioChunk.sampleRate` is 24000 Hz (Kokoro default)
+- [ ] AC-7: `AudioChunk.duration` computed property returns correct duration
+- [ ] AC-8: Service is thread-safe (actor isolation)
+
+## 7. Verification Plan
+
+### Automated Tests
+
+- [ ] `test_speakReturnsAsyncStream` - Verify speak() returns a stream
+- [ ] `test_stopCancelsSynthesis` - Verify stop() cancels in-flight work
+- [ ] `test_fallbackOnKokoroFailure` - Verify AVSpeech fallback activates
+- [ ] `test_audioChunkDuration` - Verify duration calculation is correct
+- [ ] `test_sampleRateIs24kHz` - Verify sample rate matches Kokoro output
+
+### Manual Tests
+
+- [ ] Build and run app with Kokoro model downloaded
+- [ ] Trigger TTS via pipeline and verify audio plays
+- [ ] Remove Kokoro model and verify fallback works
+- [ ] Stop TTS mid-synthesis and verify clean cancellation
+
+## 8. Performance / Reliability Considerations
+
+- **Time-to-first-audio target:** ~500ms for short responses (measured from text submission)
+- **Memory:** Kokoro model (~500MB) should be loaded once and reused
+- **Cancellation:** Must not leak tasks or audio buffers on stop()
+- **Error recovery:** Kokoro failures should not crash; fallback must engage
+
+## 9. Risks & Mitigations
+
+- **Risk:** kokoro-swift-mlx package may have API differences from expectation
+  - **Mitigation:** Review package API during implementation; adapt wrapper accordingly
+- **Risk:** Kokoro model loading may be slow
+  - **Mitigation:** Load model asynchronously in `prepare()` before first use
+- **Risk:** AVSpeechSynthesizer fallback doesn't provide raw audio chunks
+  - **Mitigation:** Fallback plays directly; emit empty chunk to signal playback started
+
+## 10. Open Questions
+
+- None currently - kokoro-swift-mlx API will be verified during implementation
 
 ---
 
-## 2. Implementation
+## Implementation Summary
 
-**File:** `Ora/TTS/TTSService.swift`
+(TBD after implementation.)
 
-```swift
-//
-//  TTSService.swift
-//  Ora
-//
-//  Kokoro TTS wrapper with fallback
-//
+## Code Review Findings
 
-import Foundation
-import AVFoundation
-import os
+(TBD by review agent.)
 
-/// Audio chunk for playback
-struct AudioChunk: Sendable {
-    let samples: [Float]
-    let sampleRate: Int
-    
-    var duration: TimeInterval {
-        Double(samples.count) / Double(sampleRate)
-    }
-}
+## Completion Status
 
-/// TTS service protocol
-protocol TTSServicing: Sendable {
-    func speak(_ text: String) -> AsyncThrowingStream<AudioChunk, Error>
-    func stop() async
-}
-
-/// Kokoro-based TTS service with AVSpeech fallback
-actor TTSService: TTSServicing {
-    
-    // MARK: - Singleton
-    
-    static let shared = TTSService()
-    
-    // MARK: - Properties
-    
-    private let logger = Logger(subsystem: "com.ora.app", category: "TTSService")
-    
-    private var kokoroEngine: KokoroEngine?
-    private var isKokoroReady = false
-    private var isSpeaking = false
-    private var currentTask: Task<Void, Never>?
-    
-    // Fallback
-    private let synthesizer = AVSpeechSynthesizer()
-    
-    // MARK: - Initialization
-    
-    private init() {}
-    
-    // MARK: - Public API
-    
-    /// Prepare TTS engine
-    func prepare() async throws {
-        guard !isKokoroReady else { return }
-        
-        logger.info("Preparing TTS engine...")
-        
-        // Get model path
-        let modelManager = await ModelManager.shared
-        guard let modelPath = await modelManager.pathForModel(.kokoro) else {
-            logger.warning("Kokoro model not found, using fallback")
-            return
-        }
-        
-        do {
-            kokoroEngine = try await KokoroEngine(modelPath: modelPath)
-            isKokoroReady = true
-            logger.info("Kokoro TTS ready")
-        } catch {
-            logger.error("Failed to load Kokoro: \(error.localizedDescription)")
-            // Will use fallback
-        }
-    }
-    
-    /// Generate speech from text
-    func speak(_ text: String) -> AsyncThrowingStream<AudioChunk, Error> {
-        AsyncThrowingStream { continuation in
-            let task = Task {
-                await self.runSynthesis(text: text, continuation: continuation)
-            }
-            self.currentTask = task
-            
-            continuation.onTermination = { _ in
-                task.cancel()
-            }
-        }
-    }
-    
-    /// Stop current speech
-    func stop() async {
-        currentTask?.cancel()
-        currentTask = nil
-        isSpeaking = false
-        synthesizer.stopSpeaking(at: .immediate)
-        logger.debug("TTS stopped")
-    }
-    
-    // MARK: - Private
-    
-    private func runSynthesis(
-        text: String,
-        continuation: AsyncThrowingStream<AudioChunk, Error>.Continuation
-    ) async {
-        isSpeaking = true
-        defer { isSpeaking = false }
-        
-        if isKokoroReady, let engine = kokoroEngine {
-            await runKokoroSynthesis(text: text, engine: engine, continuation: continuation)
-        } else {
-            await runFallbackSynthesis(text: text, continuation: continuation)
-        }
-    }
-    
-    private func runKokoroSynthesis(
-        text: String,
-        engine: KokoroEngine,
-        continuation: AsyncThrowingStream<AudioChunk, Error>.Continuation
-    ) async {
-        do {
-            for try await samples in engine.synthesize(text: text) {
-                try Task.checkCancellation()
-                
-                let chunk = AudioChunk(samples: samples, sampleRate: 24000)
-                continuation.yield(chunk)
-            }
-            continuation.finish()
-        } catch is CancellationError {
-            continuation.finish()
-        } catch {
-            logger.error("Kokoro synthesis failed: \(error.localizedDescription)")
-            // Fall back to system TTS
-            await runFallbackSynthesis(text: text, continuation: continuation)
-        }
-    }
-    
-    private func runFallbackSynthesis(
-        text: String,
-        continuation: AsyncThrowingStream<AudioChunk, Error>.Continuation
-    ) async {
-        logger.info("Using AVSpeechSynthesizer fallback")
-        
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-        
-        // Note: AVSpeechSynthesizer doesn't provide raw audio easily
-        // For fallback, we just play directly
-        synthesizer.speak(utterance)
-        
-        // Yield empty chunk to signal playback started
-        continuation.yield(AudioChunk(samples: [], sampleRate: 24000))
-        
-        // Wait for completion
-        while synthesizer.isSpeaking {
-            try? await Task.sleep(for: .milliseconds(100))
-            if Task.isCancelled { break }
-        }
-        
-        continuation.finish()
-    }
-}
-
-// MARK: - Kokoro Engine (Placeholder)
-
-/// Placeholder for Kokoro Swift MLX integration
-actor KokoroEngine {
-    init(modelPath: URL) async throws {
-        // TODO: Initialize kokoro-swift-mlx
-    }
-    
-    func synthesize(text: String) -> AsyncThrowingStream<[Float], Error> {
-        // TODO: Implement with kokoro-swift-mlx
-        AsyncThrowingStream { continuation in
-            continuation.finish()
-        }
-    }
-}
-```
-
----
-
-## 3. Acceptance Criteria
-
-- [ ] **AC-1:** Kokoro model loads from ModelManager path
-- [ ] **AC-2:** `speak()` returns `AsyncThrowingStream<AudioChunk, Error>`
-- [ ] **AC-3:** Audio chunks stream as generated
-- [ ] **AC-4:** Fallback to AVSpeechSynthesizer on failure
-- [ ] **AC-5:** `stop()` cancels current synthesis
-- [ ] **AC-6:** Sample rate is 24kHz (Kokoro default)
-
----
-
-## 4. Implementation Checklist
-
-- [ ] Add kokoro-swift-mlx dependency
-- [ ] Create `TTSService.swift`
-- [ ] Implement `KokoroEngine` wrapper
-- [ ] Test streaming synthesis
-- [ ] Test fallback behavior
-- [ ] Measure time-to-first-audio
+(TBD after merge.)
