@@ -66,6 +66,101 @@ As a power user or accessibility user, I want a clear, modern overlay that shows
 
 - No new dependencies expected.
 
+### 5.5 Code Samples (From GlassChatPreview)
+
+Use these samples as near drop-in references when building the Ora overlay UI.
+
+Voice input control morph (single shell + matched glass ID):
+
+```swift
+private var voiceInputControl: some View {
+    let isIdle = inputMode == .idle
+    return voiceInputShell(isIdle: isIdle) {
+        if isIdle {
+            listeningContent
+        } else {
+            inputContent
+        }
+    }
+    .frame(maxWidth: .infinity, minHeight: 56, alignment: .center)
+    .padding(.bottom, 8)
+    .animation(.bouncy(duration: 0.35), value: inputMode)
+    .onTapGesture {
+        guard isIdle else { return }
+        withAnimation(.bouncy(duration: 0.35)) {
+            startRecording()
+        }
+    }
+}
+
+private func voiceInputShell(
+    isIdle: Bool,
+    @ViewBuilder content: () -> some View
+) -> some View {
+    let cornerRadius = isIdle ? 999.0 : 20.0
+    return HStack(spacing: 10) {
+        content()
+    }
+    .foregroundStyle(Color.white.opacity(0.95))
+    .padding(.horizontal, isIdle ? 14 : 16)
+    .padding(.vertical, isIdle ? 9 : 12)
+    .frame(maxWidth: isIdle ? nil : 420, alignment: .center)
+    .glassEffect(
+        .regular.tint(.black.opacity(0.9)),
+        in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+    )
+    .shadow(color: Color.black.opacity(0.35), radius: 14, x: 0, y: 8)
+    .glassEffectID("voiceInput", in: inputGlassNamespace)
+    .glassEffectTransition(.matchedGeometry)
+}
+```
+
+User bubble tint + chroma overlay (keep glass depth but force visible hue):
+
+```swift
+private func glassStyle(for role: BubbleRole) -> Glass {
+    switch role {
+    case .user:
+        return .regular.tint(Color(red: 0.12, green: 0.55, blue: 0.95).opacity(0.7))
+    case .agent:
+        return .regular.tint(.white.opacity(0.08))
+    case .tool:
+        return .regular.tint(.white.opacity(0.12))
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func userChromaOverlay(enabled: Bool, shape: AnyShape) -> some View {
+        if enabled {
+            self
+                .overlay(
+                    shape.fill(Color(red: 0.32, green: 0.65, blue: 0.98).opacity(0.22))
+                )
+                .overlay(
+                    shape.stroke(Color(red: 0.48, green: 0.78, blue: 1.0).opacity(0.35), lineWidth: 0.6)
+                )
+        } else {
+            self
+        }
+    }
+}
+```
+
+Overlay panel position (top-center with 10pt margin):
+
+```swift
+private func positionPanel(_ panel: NSPanel) {
+    guard let screenFrame = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame else {
+        panel.center()
+        return
+    }
+    let targetX = screenFrame.midX - panel.frame.width / 2
+    let targetY = screenFrame.maxY - panel.frame.height - 10
+    panel.setFrameOrigin(NSPoint(x: targetX, y: targetY))
+}
+```
+
 ## 6. Acceptance Criteria
 
 - [ ] AC-1: Overlay UI matches the liquid-glass chat layout with left/right bubbles and a top-centered overlay position.
