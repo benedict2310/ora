@@ -25,6 +25,13 @@ The Foundations epic creates a working macOS menu bar application with:
 | **F.06** | [Preferences Window](F.06-PREFERENCES-WINDOW.md) | Settings UI for hotkey, models, and preferences | F.01, F.02, F.03 |
 | **F.07** | [Overlay Window](F.07-OVERLAY-WINDOW.md) | Floating conversation UI that appears on activation | F.01, F.05 |
 | **F.08** | [Persistence Layer](F.08-PERSISTENCE-LAYER.md) | SwiftData setup for sessions and audit logs | F.01 |
+| **F.09** | [Model Download Implementation](F.09-MODEL-DOWNLOAD-IMPLEMENTATION.md) | HuggingFace download with verification | F.03 |
+
+## Bug Fixes
+
+| ID | Title | Description | Status |
+|:---|:------|:------------|:-------|
+| **BUG.01** | [Model Download Verification](BUG.01-MODEL-DOWNLOAD-VERIFICATION.md) | File size verification to prevent corrupted/truncated model downloads | ✅ Fixed |
 
 ## Dependency Graph
 

@@ -20,6 +20,12 @@ Core application structure, UI, and state management.
 | F.08 | [Persistence Layer](foundations/F.08-PERSISTENCE-LAYER.md) | ✅ Complete |
 | F.09 | [Model Download Implementation](foundations/F.09-MODEL-DOWNLOAD-IMPLEMENTATION.md) | ✅ Complete |
 
+#### Bug Fixes
+
+| ID | Title | Status |
+|:---|:------|:-------|
+| BUG.01 | [Model Download Verification](foundations/BUG.01-MODEL-DOWNLOAD-VERIFICATION.md) | ✅ Fixed |
+
 ### 🎙 ASR Integration (A)
 Speech-to-text pipeline using FluidAudio Parakeet.
 
