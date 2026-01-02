@@ -332,5 +332,5 @@ Changed from 95% to 99% threshold because:
 
 ### Approval Status
 - [x] All P0 issues resolved
-- [ ] All P1 issues resolved
-- [ ] Ready for merge
+- [x] All P1 issues resolved (1 deferred with documentation, 1 fixed)
+- [x] Ready for merge
