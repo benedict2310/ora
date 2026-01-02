@@ -204,11 +204,54 @@ private func positionPanel(_ panel: NSPanel) {
 
 ## Implementation Summary
 
-(TBD after implementation.)
+**Date:** 2026-01-02
+**Branch:** `feat/f10-liquid-glass-overlay`
+**Commits:** 2
+
+### Files Changed
+- `Ora/Overlay/ChatBubbleView.swift` - Added liquid-glass chat bubbles with chroma overlay and thinking/tool states.
+- `Ora/Overlay/OverlayView.swift` - Replaced overlay layout with liquid-glass chat surface and voice input control.
+- `Ora/Overlay/OverlayWindowController.swift` - Updated panel sizing and top-center placement.
+- `Ora/Overlay/ToolStateView.swift` - Added proposal/executing state blocks for tool flows.
+- `Ora/Overlay/VoiceInputControlView.swift` - Added morphing voice input control with accessibility fallbacks.
+- `OraTests/Overlay/OverlayWindowTests.swift` - Added size/position coverage for the refreshed overlay.
+- `docs/stories/foundations/F.10-LIQUID-GLASS-OVERLAY-REFRESH.md` - Updated plan, ACs, verification, and review findings.
+
+### Ready for Review
+- [x] All acceptance criteria verified
+- [ ] Tests passing (`xcodebuild test` failed: `AudioServiceTests.test_start_requires_microphone_permission`, `HuggingFaceDownloaderTests.test_huggingFaceStrategy_downloadsLLMModel`, `HuggingFaceDownloaderTests.test_huggingFaceStrategy_downloadsTTSModel`, `HuggingFaceDownloaderTests.test_huggingFaceStrategy_reportsCurrentFile`)
+- [ ] Working tree clean
 
 ## Code Review Findings
 
-(TBD by review agent.)
+**Reviewer:** Codex Subagent
+**Date:** 2026-01-02T18:31:42Z
+**Commit reviewed:** 7da323c
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 7
+- Build status: Pass
+- Tests status: Fail (timed out before completion)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- None.
+
+#### P1 - Major (Should fix)
+- None.
+
+#### P2 - Minor (Can defer)
+- None.
+
+### Future Considerations (Out of Scope)
+- None.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [ ] Ready for merge
 
 ## Completion Status
 
