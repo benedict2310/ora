@@ -61,7 +61,7 @@ Agentic tools for system integration.
 
 | ID | Title | Status |
 |:---|:------|:-------|
-| X.01 | [Tool Protocol](tools/X.01-TOOL-PROTOCOL.md) | 🚧 To Do |
+| X.01 | [Tool Protocol](tools/X.01-TOOL-PROTOCOL.md) | ✅ Complete |
 | X.02 | [Calendar Tools](tools/X.02-CALENDAR-TOOLS.md) | 🚧 To Do |
 | X.03 | [Reminders Tools](tools/X.03-REMINDERS-TOOLS.md) | 🚧 To Do |
 | X.04 | [Contacts Tools](tools/X.04-CONTACTS-TOOLS.md) | 🚧 To Do |
@@ -72,7 +72,7 @@ Connecting the loop: Audio → ASR → LLM → Tools → TTS.
 
 | ID | Title | Status |
 |:---|:------|:-------|
-| O.01 | [ASR-LLM Pipeline](orchestration/O.01-ASR-LLM-PIPELINE.md) | 🚧 To Do |
+| O.01 | [ASR-LLM Pipeline](orchestration/O.01-ASR-LLM-PIPELINE.md) | ✅ Complete |
 | O.02 | [Agent Loop](orchestration/O.02-AGENT-LOOP.md) | 🚧 To Do |
 | O.03 | [Conversation Orchestrator](orchestration/O.03-CONVERSATION-ORCHESTRATOR.md) | 🚧 To Do |
 | O.04 | [Confirmation Flow](orchestration/O.04-CONFIRMATION-FLOW.md) | 🚧 To Do |
@@ -103,8 +103,8 @@ Connecting the loop: Audio → ASR → LLM → Tools → TTS.
                                │                                      │
                                ▼                                      │
                   ┌────────────────────────┐                          │
-                  │  O.01 ASR-LLM Pipeline │ ◄── Next: Simple wiring  │
-                  │  🚧 To Do              │                          │
+                  │  O.01 ASR-LLM Pipeline │                          │
+                  │  ✅ Complete           │                          │
                   └───────────┬────────────┘                          │
                               │                                       │
          ┌────────────────────┤                                       │
@@ -112,10 +112,9 @@ Connecting the loop: Audio → ASR → LLM → Tools → TTS.
          ▼                    ▼                                       │
 ┌─────────────────┐  ┌─────────────────┐                              │
 │  TOOLS (X)      │  │  O.02 Agent     │                              │
-│  X.01 → X.02 →  │  │  Loop           │                              │
-│  X.03 → X.04 →  │  │  🚧 To Do       │                              │
-│  X.05           │  └────────┬────────┘                              │
-│  🚧 To Do       │           │                                       │
+│  X.01 ✅        │  │  Loop           │                              │
+│  X.02-X.05      │  │  🚧 To Do       │                              │
+│  🚧 To Do       │  └────────┬────────┘                              │
 └────────┬────────┘           │                                       │
          │                    │                                       │
          └─────────┬──────────┘                                       │
@@ -145,15 +144,13 @@ All foundation stories (F.00-F.09) are complete. This includes app shell, permis
 - **ASR (A.01-A.04):** Audio capture, Parakeet ASR, transcription streaming, hotkey wiring
 - **LLM (L.01-L.04):** MLX runtime, structured output, conversation manager, system prompt
 
-### 🚧 Phase 3: Basic Pipeline (Current)
-| Priority | Story | Description |
-|:---------|:------|:------------|
-| **P0** | **O.01** | ASR-LLM Pipeline - Wire ASR to LLM for basic testing |
+### ✅ Phase 3: Basic Pipeline (Complete)
+- **O.01:** ASR-LLM Pipeline - Voice input wired to LLM response
+- **X.01:** Tool Protocol - Foundation for agentic tools
 
-### 🚧 Phase 4: Tools & Agent Loop
+### 🚧 Phase 4: Tools & Agent Loop (Current)
 | Priority | Story | Description |
 |:---------|:------|:------------|
-| P0 | X.01 | Tool Protocol - Foundation for all tools |
 | P1 | X.02-X.05 | Calendar, Reminders, Contacts, System tools |
 | P0 | O.02 | Agent Loop - Multi-step reasoning with tools |
 
