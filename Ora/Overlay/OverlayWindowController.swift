@@ -21,6 +21,7 @@ final class OverlayWindowController {
     private let logger = Logger(subsystem: "com.ora.app", category: "OverlayWindow")
     private var panel: NSPanel?
     private let viewModel = OverlayViewModel()
+    private var currentSessionID: UUID = UUID()
 
     private var escapeMonitor: Any?
 
@@ -57,11 +58,15 @@ final class OverlayWindowController {
             return
         }
 
+        // Invalidate any pending hide operations
+        self.currentSessionID = UUID()
+
         // Position the panel
         self.positionPanel()
         
         // Show the window - set alpha directly to ensure visibility
         // Note: NSAnimationContext.runAnimationGroup was unreliable in Release builds
+        // Reset alpha to 1 in case it was animating to 0
         panel.alphaValue = 1
         panel.makeKeyAndOrderFront(nil)
         
@@ -80,6 +85,8 @@ final class OverlayWindowController {
 
         // Remove dismiss monitors
         self.removeDismissMonitors()
+        
+        let hideSessionID = self.currentSessionID
 
         if animated {
             NSAnimationContext.runAnimationGroup { context in
@@ -87,11 +94,15 @@ final class OverlayWindowController {
                 panel.animator().alphaValue = 0
             } completionHandler: {
                 Task { @MainActor [weak self] in
+                    // Only hide if we haven't started a new show session
+                    guard let self = self, self.currentSessionID == hideSessionID else { return }
                     panel.orderOut(nil)
-                    self?.viewModel.reset()
+                    self.viewModel.reset()
                 }
             }
         } else {
+            // Only hide if we haven't started a new show session
+            guard self.currentSessionID == hideSessionID else { return }
             panel.orderOut(nil)
             self.viewModel.reset()
         }
