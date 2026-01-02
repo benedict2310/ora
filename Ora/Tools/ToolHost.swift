@@ -49,26 +49,49 @@ actor ToolHost {
             throw ToolHostError.validationFailed(toolName, error.localizedDescription)
         }
         
-        let parameters = argsToDict(args)
+        // Convert JSONValue args to raw [String: Any] for audit logging
+        // This must be done here to get proper values, not type-tagged JSON
+        let parameters = self.jsonValueToAnyDict(args)
+        let action = tool.kind.rawValue
         
-        // Record audit entry
-        let auditEntry = await MainActor.run {
-            AuditLogger.shared.recordToolCall(
+        // Serialize to JSON string (String is Sendable) for crossing actor boundary
+        let parametersJSON: String
+        if let data = try? JSONSerialization.data(withJSONObject: parameters),
+           let json = String(data: data, encoding: .utf8) {
+            parametersJSON = json
+        } else {
+            parametersJSON = "{}"
+        }
+        
+        // Record audit entry on MainActor
+        let auditEntryID = await MainActor.run {
+            // Decode parameters back from JSON string on MainActor
+            let params: [String: Any]
+            if let data = parametersJSON.data(using: .utf8),
+               let decoded = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                params = decoded
+            } else {
+                params = [:]
+            }
+            
+            let entry = AuditLogger.shared.recordToolCall(
                 tool: toolName,
-                action: tool.kind.rawValue,
-                parameters: parameters,
+                action: action,
+                parameters: params,
                 userConfirmed: confirmed,
                 sessionID: sessionID
             )
+            return entry.id
         }
         
         // Execute
         do {
             let result = try await tool.execute(args: args)
             
-            // Update audit
+            // Update audit with success
+            let summary = result.humanSummary
             await MainActor.run {
-                AuditLogger.shared.recordSuccess(auditEntry.id, result: ["summary": result.humanSummary])
+                AuditLogger.shared.recordSuccess(auditEntryID, result: ["summary": summary])
             }
             
             logger.info("Tool executed: \(toolName)")
@@ -76,8 +99,9 @@ actor ToolHost {
             
         } catch {
             // Update audit with failure
+            let errorMessage = error.localizedDescription
             await MainActor.run {
-                AuditLogger.shared.recordFailure(auditEntry.id, error: error.localizedDescription)
+                AuditLogger.shared.recordFailure(auditEntryID, error: errorMessage)
             }
             
             logger.error("Tool failed: \(toolName) - \(error.localizedDescription)")
@@ -85,22 +109,26 @@ actor ToolHost {
         }
     }
     
-    private func argsToDict(_ args: [String: JSONValue]) -> [String: Any] {
+    // MARK: - Private
+    
+    /// Convert JSONValue dictionary to [String: Any] for serialization
+    private func jsonValueToAnyDict(_ dict: [String: JSONValue]) -> [String: Any] {
         var result: [String: Any] = [:]
-        for (key, value) in args {
-            result[key] = jsonValueToAny(value)
+        for (key, value) in dict {
+            result[key] = self.jsonValueToAny(value)
         }
         return result
     }
     
+    /// Convert a single JSONValue to Any
     private func jsonValueToAny(_ value: JSONValue) -> Any {
         switch value {
         case .string(let s): return s
         case .number(let n): return n
         case .bool(let b): return b
         case .null: return NSNull()
-        case .array(let arr): return arr.map { jsonValueToAny($0) }
-        case .object(let dict): return dict.mapValues { jsonValueToAny($0) }
+        case .array(let arr): return arr.map { self.jsonValueToAny($0) }
+        case .object(let dict): return self.jsonValueToAnyDict(dict)
         }
     }
 }

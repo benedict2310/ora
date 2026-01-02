@@ -9,7 +9,7 @@ options:
 packages:
   FluidAudio:
     url: https://github.com/FluidInference/FluidAudio
-    from: "0.8.0"
+    exactVersion: "0.8.2"
   mlx-swift:
     url: https://github.com/ml-explore/mlx-swift
     from: "0.21.0"

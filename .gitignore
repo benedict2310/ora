@@ -96,3 +96,6 @@ test-results/
 .claude/
 .codex/
 docs/review-logs
+
+# Local agent tools (never commit)
+agent-tools/

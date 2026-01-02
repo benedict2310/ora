@@ -34,6 +34,7 @@ final class HuggingFaceDownloader: NSObject, FileDownloader, @unchecked Sendable
         case noData
         case cancelled
         case resumeNotSupported
+        case incompleteDownload(expected: Int64, actual: Int64)
 
         var errorDescription: String? {
             switch self {
@@ -49,6 +50,8 @@ final class HuggingFaceDownloader: NSObject, FileDownloader, @unchecked Sendable
                 return "Download cancelled"
             case .resumeNotSupported:
                 return "Server does not support resume"
+            case .incompleteDownload(let expected, let actual):
+                return "Download incomplete: expected \(expected) bytes, received \(actual) bytes"
             }
         }
     }
@@ -238,6 +241,15 @@ final class HuggingFaceDownloader: NSObject, FileDownloader, @unchecked Sendable
         if !buffer.isEmpty {
             try fileHandle.write(contentsOf: buffer)
             bytesWritten += Int64(buffer.count)
+        }
+
+        // Verify download was complete
+        // If we expected a specific number of bytes (Content-Length header), verify we got them all
+        if totalBytes > 0 && bytesWritten < totalBytes {
+            self.logger.error("Download incomplete: expected \(totalBytes) bytes, got \(bytesWritten) bytes")
+            // Clean up the partial file
+            try? FileManager.default.removeItem(at: destination)
+            throw DownloadError.incompleteDownload(expected: totalBytes, actual: bytesWritten)
         }
 
         // Final progress

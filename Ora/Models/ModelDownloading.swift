@@ -85,9 +85,11 @@ final class DefaultModelDownloader: ModelDownloader, @unchecked Sendable {
 
     func verify(model: ModelIdentifier, at directory: URL) async -> Bool {
         let fm = FileManager.default
+        let expectedSizes = model.expectedFileSizes
 
         for file in model.requiredFiles {
             let filePath = directory.appendingPathComponent(file)
+            
             // For .mlmodelc directories, check if it's a directory
             if file.hasSuffix(".mlmodelc") {
                 var isDir: ObjCBool = false
@@ -96,9 +98,37 @@ final class DefaultModelDownloader: ModelDownloader, @unchecked Sendable {
                     return false
                 }
             } else {
+                // Check file exists
                 if !fm.fileExists(atPath: filePath.path) {
                     self.logger.warning("Verification failed: missing \(file)")
                     return false
+                }
+                
+                // Check file size if we have an expected size
+                if let expectedSize = expectedSizes[file] {
+                    do {
+                        let attrs = try fm.attributesOfItem(atPath: filePath.path)
+                        let actualSize = attrs[.size] as? Int64 ?? 0
+                        
+                        // Reject files that are significantly smaller than expected
+                        let minimumSize = Int64(Double(expectedSize) * ModelIdentifier.minimumFileSizeThreshold)
+                        if actualSize < minimumSize {
+                            self.logger.error("Verification failed: \(file) is too small. Expected: \(expectedSize) bytes, Actual: \(actualSize) bytes (minimum: \(minimumSize))")
+                            return false
+                        }
+                        
+                        // Also reject files significantly larger (may indicate corruption or wrong file)
+                        let maximumSize = Int64(Double(expectedSize) * 1.05)  // 5% tolerance
+                        if actualSize > maximumSize {
+                            self.logger.warning("Verification warning: \(file) is larger than expected. Expected: \(expectedSize) bytes, Actual: \(actualSize) bytes")
+                            // Don't fail on larger files, just warn (model may have been updated)
+                        }
+                        
+                        self.logger.debug("Verified \(file): \(actualSize) bytes (expected: \(expectedSize))")
+                    } catch {
+                        self.logger.error("Verification failed: cannot read attributes for \(file): \(error.localizedDescription)")
+                        return false
+                    }
                 }
             }
         }
@@ -111,6 +141,8 @@ final class DefaultModelDownloader: ModelDownloader, @unchecked Sendable {
         let fm = FileManager.default
         guard fm.fileExists(atPath: directory.path) else { return false }
 
+        let expectedSizes = model.expectedFileSizes
+        
         // Check ALL required files to ensure model is complete
         for file in model.requiredFiles {
             let path = directory.appendingPathComponent(file)
@@ -122,6 +154,21 @@ final class DefaultModelDownloader: ModelDownloader, @unchecked Sendable {
             } else {
                 if !fm.fileExists(atPath: path.path) {
                     return false
+                }
+                
+                // Check file size if we have an expected size
+                if let expectedSize = expectedSizes[file] {
+                    do {
+                        let attrs = try fm.attributesOfItem(atPath: path.path)
+                        let actualSize = attrs[.size] as? Int64 ?? 0
+                        let minimumSize = Int64(Double(expectedSize) * ModelIdentifier.minimumFileSizeThreshold)
+                        if actualSize < minimumSize {
+                            // File is too small - treat as not existing (corrupted)
+                            return false
+                        }
+                    } catch {
+                        return false
+                    }
                 }
             }
         }

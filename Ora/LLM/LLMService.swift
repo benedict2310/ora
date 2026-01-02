@@ -10,6 +10,7 @@ import MLX
 import MLXLLM
 import MLXLMCommon
 import MLXRandom
+import Tokenizers
 import os
 
 /// MLX-based LLM service
@@ -75,16 +76,19 @@ actor LLMService: LLMServicing {
         
         logger.info("Warming up LLM...")
         
-        let prompt = "Hello"
         let generateParameters = GenerateParameters(maxTokens: 2, temperature: 0.0)
         
-        let _ = try await container.perform { (model, tokenizer) -> Void in
-            let tokens = tokenizer.encode(text: prompt)
+        let _ = try await container.perform { context in
+            // Use a simple warmup message with proper chat template
+            let warmupMessages: [[String: any Sendable]] = [
+                ["role": "user", "content": "Hello"]
+            ]
+            let tokens = try context.tokenizer.applyChatTemplate(messages: warmupMessages)
             let _ = try MLXLMCommon.generate(
-                promptTokens: tokens,
+                promptTokens: tokens,  // [Int] as expected by generate
                 parameters: generateParameters,
-                model: model,
-                tokenizer: tokenizer,
+                model: context.model,
+                tokenizer: context.tokenizer,
                 didGenerate: { _ in
                     return .stop
                 }
@@ -144,8 +148,16 @@ actor LLMService: LLMServicing {
             throw LLMServiceError.notReady
         }
         
-        let prompt = formatMessages(messages)
-        logger.debug("Generating with prompt length: \(prompt.count)")
+        // Convert LLMMessage to the format expected by applyChatTemplate
+        // The tokenizer expects [[String: any Sendable]] with "role" and "content" keys
+        let chatMessages: [[String: any Sendable]] = messages.map { msg in
+            ["role": msg.role.rawValue, "content": msg.content]
+        }
+        
+        // Pre-compute fallback prompt outside the closure to avoid actor isolation issues
+        let fallbackPrompt = formatMessagesLegacy(messages)
+        
+        self.logger.debug("Generating with \(messages.count) messages")
         
         let parameters = GenerateParameters(
             maxTokens: maxTokens,
@@ -153,25 +165,38 @@ actor LLMService: LLMServicing {
             topP: topP
         )
         
-        try await container.perform { (model, tokenizer) -> Void in
-            let inputTokens = tokenizer.encode(text: prompt)
+        // Use the new perform API with ModelContext
+        try await container.perform { context in
+            // Use applyChatTemplate to properly encode special tokens
+            // This ensures <|im_start|> becomes token 151644 (not multiple text tokens)
+            let inputTokens: [Int]
+            do {
+                inputTokens = try context.tokenizer.applyChatTemplate(messages: chatMessages)
+            } catch {
+                // Fallback to manual encoding if chat template fails
+                // This shouldn't happen with Qwen models but provides safety
+                // Note: fallbackPrompt is pre-computed above to avoid actor isolation issues
+                inputTokens = context.tokenizer.encode(text: fallbackPrompt)
+            }
+            
             var count = 0
             
             // Propagate errors from MLX
             let _ = try MLXLMCommon.generate(
-                promptTokens: inputTokens,
+                promptTokens: inputTokens,  // [Int] as expected by generate
                 parameters: parameters,
-                model: model,
-                tokenizer: tokenizer,
+                model: context.model,
+                tokenizer: context.tokenizer,
                 didGenerate: { tokens in
                     if Task.isCancelled { return .stop }
                     
                     if tokens.count > count {
                         let newTokens = Array(tokens[count...])
-                        let text = tokenizer.decode(tokens: newTokens)
+                        let text = context.tokenizer.decode(tokens: newTokens)
                         continuation.yield(.token(text))
                         count = tokens.count
                         
+                        // Stop on end-of-turn tokens
                         if text.contains("<|im_end|>") || text.contains("<|endoftext|>") {
                             return .stop
                         }
@@ -187,7 +212,9 @@ actor LLMService: LLMServicing {
         self.logger.debug("Generation complete")
     }
     
-    internal func formatMessages(_ messages: [LLMMessage]) -> String {
+    /// Legacy message formatting - only used as fallback if applyChatTemplate fails
+    /// This manually creates ChatML format but may not properly encode special tokens
+    private func formatMessagesLegacy(_ messages: [LLMMessage]) -> String {
         var formatted = ""
         for message in messages {
             switch message.role {
@@ -199,6 +226,11 @@ actor LLMService: LLMServicing {
         }
         formatted += "<|im_start|>assistant\n"
         return formatted
+    }
+    
+    /// Format messages for testing - exposed for unit tests
+    internal func formatMessages(_ messages: [LLMMessage]) -> String {
+        return formatMessagesLegacy(messages)
     }
     
     // MARK: - Memory Management

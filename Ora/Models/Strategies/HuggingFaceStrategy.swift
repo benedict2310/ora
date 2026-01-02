@@ -76,9 +76,19 @@ struct HuggingFaceStrategy: ModelDownloadStrategy, Sendable {
             downloadedBytes += fileEstimatedSize
         }
 
+        // Verify download integrity by checking file sizes
+        self.logger.info("Verifying download for \(model.displayName)...")
+        let verificationPassed = await self.verifyDownload(model: model, at: directory)
+        if !verificationPassed {
+            self.logger.error("Download verification failed for \(model.displayName)")
+            // Clean up partial/corrupted download
+            try? FileManager.default.removeItem(at: directory)
+            throw ModelError.downloadFailed(model, "Download verification failed - files may be corrupted or incomplete")
+        }
+
         // Emit completion
         progress(ModelDownloadProgress(identifier: model, progress: 1.0))
-        self.logger.info("HuggingFace download complete for \(model.displayName)")
+        self.logger.info("HuggingFace download complete and verified for \(model.displayName)")
     }
 
     // MARK: - Private
@@ -128,5 +138,43 @@ struct HuggingFaceStrategy: ModelDownloadStrategy, Sendable {
             let configCount = max(1, totalFiles - 1)
             return Int64(Double(model.estimatedSizeBytes) * 0.05 / Double(configCount))
         }
+    }
+    
+    /// Verify downloaded files match expected sizes
+    private func verifyDownload(model: ModelIdentifier, at directory: URL) async -> Bool {
+        let fm = FileManager.default
+        let expectedSizes = model.expectedFileSizes
+        
+        for file in model.requiredFiles {
+            let filePath = directory.appendingPathComponent(file)
+            
+            // Check file exists
+            guard fm.fileExists(atPath: filePath.path) else {
+                self.logger.error("Verification failed: missing required file \(file)")
+                return false
+            }
+            
+            // Check file size if we have an expected size
+            if let expectedSize = expectedSizes[file] {
+                do {
+                    let attrs = try fm.attributesOfItem(atPath: filePath.path)
+                    let actualSize = attrs[.size] as? Int64 ?? 0
+                    
+                    // Reject files significantly smaller than expected
+                    let minimumSize = Int64(Double(expectedSize) * ModelIdentifier.minimumFileSizeThreshold)
+                    if actualSize < minimumSize {
+                        self.logger.error("Verification failed: \(file) is too small. Expected: \(expectedSize) bytes, Actual: \(actualSize) bytes")
+                        return false
+                    }
+                    
+                    self.logger.debug("Verified \(file): \(actualSize) bytes (expected: \(expectedSize))")
+                } catch {
+                    self.logger.error("Verification failed: cannot read file attributes for \(file): \(error.localizedDescription)")
+                    return false
+                }
+            }
+        }
+        
+        return true
     }
 }
