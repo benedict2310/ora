@@ -24,6 +24,9 @@ public actor TTSService: TTSServicing {
     private var isKokoroReady = false
     private var isSpeaking = false
     private var currentTask: Task<Void, Never>?
+    
+    /// Keep fallback synthesizer alive during playback
+    private var fallbackSynthesizerHolder: FallbackSynthesizerHolder?
 
     /// Sample rate for Kokoro TTS output
     public static let kokoroSampleRate = 24000
@@ -33,6 +36,7 @@ public actor TTSService: TTSServicing {
     private init() {}
 
     /// Create with custom Kokoro engine (for testing)
+    /// - Note: This initializer is internal for testing via @testable import
     init(kokoroEngine: KokoroEngine?) {
         self.kokoroEngine = kokoroEngine
         self.isKokoroReady = kokoroEngine != nil
@@ -69,12 +73,19 @@ public actor TTSService: TTSServicing {
     /// - Returns: Async stream of audio chunks
     nonisolated public func speak(_ text: String) -> AsyncThrowingStream<AudioChunk, Error> {
         AsyncThrowingStream { continuation in
-            let task = Task {
-                await self.runSynthesis(text: text, continuation: continuation)
+            Task {
+                // Store reference to this task for cancellation support
+                let synthesisTask = Task {
+                    await self.runSynthesis(text: text, continuation: continuation)
+                }
+                await self.setCurrentTask(synthesisTask)
+                await synthesisTask.value
             }
 
             continuation.onTermination = { @Sendable _ in
-                task.cancel()
+                Task {
+                    await self.stop()
+                }
             }
         }
     }
@@ -84,6 +95,11 @@ public actor TTSService: TTSServicing {
         self.currentTask?.cancel()
         self.currentTask = nil
         self.isSpeaking = false
+        
+        // Stop any fallback synthesizer
+        await self.fallbackSynthesizerHolder?.stop()
+        self.fallbackSynthesizerHolder = nil
+        
         self.logger.debug("TTS stopped")
     }
 
@@ -98,13 +114,20 @@ public actor TTSService: TTSServicing {
     }
 
     // MARK: - Private
+    
+    private func setCurrentTask(_ task: Task<Void, Never>?) {
+        self.currentTask = task as? Task<Void, Never>
+    }
 
     private func runSynthesis(
         text: String,
         continuation: AsyncThrowingStream<AudioChunk, Error>.Continuation
     ) async {
         self.isSpeaking = true
-        defer { self.isSpeaking = false }
+        defer { 
+            self.isSpeaking = false
+            self.currentTask = nil
+        }
 
         // Capture current state for synthesis decision
         let useKokoro = self.isKokoroReady
@@ -148,53 +171,109 @@ public actor TTSService: TTSServicing {
     ) async {
         self.logger.info("Using AVSpeechSynthesizer fallback")
 
-        // Perform fallback synthesis on main actor for AVFoundation compatibility
-        await MainActor.run {
-            let synthesizer = AVSpeechSynthesizer()
-            let delegate = FallbackSynthesizerDelegate()
-            synthesizer.delegate = delegate
+        // Create holder that manages synthesizer lifecycle
+        let holder = FallbackSynthesizerHolder()
+        self.fallbackSynthesizerHolder = holder
 
-            let utterance = AVSpeechUtterance(string: text)
-            utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
-            utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+        // Start synthesis on main actor
+        await holder.speak(text: text)
 
-            // AVSpeechSynthesizer plays directly, doesn't provide raw audio easily
-            // Yield empty chunk to signal playback has started
-            continuation.yield(AudioChunk.empty(sampleRate: Self.kokoroSampleRate))
+        // Yield empty chunk to signal playback has started
+        continuation.yield(AudioChunk.empty(sampleRate: Self.kokoroSampleRate))
 
-            synthesizer.speak(utterance)
-
-            // Store delegate to keep it alive
-            delegate.synthesizer = synthesizer
+        // Wait for completion or cancellation
+        await withTaskCancellationHandler {
+            await holder.waitForCompletion()
+        } onCancel: {
+            Task { @MainActor in
+                holder.stop()
+            }
         }
 
-        // Wait a short time for short utterances, then finish
-        // The actual audio plays independently via AVSpeechSynthesizer
-        try? await Task.sleep(for: .milliseconds(100))
+        self.fallbackSynthesizerHolder = nil
         continuation.finish()
+    }
+}
+
+// MARK: - Fallback Synthesizer Holder
+
+/// Holds AVSpeechSynthesizer and delegate to prevent premature deallocation
+/// Must be accessed from MainActor for AVFoundation compatibility
+@MainActor
+private final class FallbackSynthesizerHolder: Sendable {
+    private var synthesizer: AVSpeechSynthesizer?
+    private var delegate: FallbackSynthesizerDelegate?
+    private var completionContinuation: CheckedContinuation<Void, Never>?
+
+    nonisolated init() {}
+
+    func speak(text: String) {
+        let synthesizer = AVSpeechSynthesizer()
+        let delegate = FallbackSynthesizerDelegate { [weak self] in
+            self?.handleCompletion()
+        }
+        
+        synthesizer.delegate = delegate
+        self.synthesizer = synthesizer
+        self.delegate = delegate
+
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+
+        synthesizer.speak(utterance)
+    }
+
+    func waitForCompletion() async {
+        // If already finished, return immediately
+        guard self.synthesizer?.isSpeaking == true else { return }
+        
+        await withCheckedContinuation { continuation in
+            self.completionContinuation = continuation
+        }
+    }
+
+    func stop() {
+        self.synthesizer?.stopSpeaking(at: .immediate)
+        self.handleCompletion()
+    }
+
+    private func handleCompletion() {
+        self.completionContinuation?.resume()
+        self.completionContinuation = nil
+        self.synthesizer = nil
+        self.delegate = nil
     }
 }
 
 // MARK: - Fallback Synthesizer Delegate
 
-/// Delegate for AVSpeechSynthesizer completion tracking
-private final class FallbackSynthesizerDelegate: NSObject, AVSpeechSynthesizerDelegate, @unchecked Sendable {
-    // Keep synthesizer alive while speaking
-    // Note: This is safe because we only access from MainActor context
-    var synthesizer: AVSpeechSynthesizer?
+/// Delegate for AVSpeechSynthesizer completion callbacks
+@MainActor
+private final class FallbackSynthesizerDelegate: NSObject, AVSpeechSynthesizerDelegate {
+    private let onCompletion: @MainActor () -> Void
 
-    func speechSynthesizer(
+    nonisolated init(onCompletion: @escaping @MainActor () -> Void) {
+        self.onCompletion = onCompletion
+        super.init()
+    }
+
+    nonisolated func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer,
         didFinish utterance: AVSpeechUtterance
     ) {
-        self.synthesizer = nil
+        Task { @MainActor in
+            self.onCompletion()
+        }
     }
 
-    func speechSynthesizer(
+    nonisolated func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer,
         didCancel utterance: AVSpeechUtterance
     ) {
-        self.synthesizer = nil
+        Task { @MainActor in
+            self.onCompletion()
+        }
     }
 }
 
