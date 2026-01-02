@@ -32,6 +32,11 @@ final class PipelineStateTests: XCTestCase {
         XCTAssertEqual(state.description, "Responding...")
     }
     
+    func test_awaitingFollowUp_description() {
+        let state = PipelineState.awaitingFollowUp
+        XCTAssertEqual(state.description, "Awaiting Follow-up")
+    }
+    
     func test_completed_description() {
         let state = PipelineState.completed
         XCTAssertEqual(state.description, "Done")
@@ -50,6 +55,10 @@ final class PipelineStateTests: XCTestCase {
     
     func test_canStartListening_fromCompleted_isTrue() {
         XCTAssertTrue(PipelineState.completed.canStartListening)
+    }
+    
+    func test_canStartListening_fromAwaitingFollowUp_isTrue() {
+        XCTAssertTrue(PipelineState.awaitingFollowUp.canStartListening)
     }
     
     func test_canStartListening_fromError_isTrue() {
