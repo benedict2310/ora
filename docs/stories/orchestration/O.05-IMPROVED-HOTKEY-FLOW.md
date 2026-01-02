@@ -185,26 +185,27 @@ None.
 
 ### Automated Tests
 
-- [ ] `test_submitTranscript_fromListening_transitionsToThinking`
-- [ ] `test_submitTranscript_withEmptyTranscript_closesOverlay`
-- [ ] `test_handleCompletion_transitionsToAwaitingFollowUp`
-- [ ] `test_startFollowUp_fromAwaitingFollowUp_transitionsToListening`
-- [ ] `test_autoListen_whenEnabled_automaticallyStartsListening`
-- [ ] `test_cancel_fromAnyState_returnsToIdle`
+- [x] `test_submitTranscript_fromListening_transitionsToThinking`
+- [x] `test_submitTranscript_withEmptyTranscript_closesOverlay`
+- [x] `test_handleCompletion_transitionsToAwaitingFollowUp`
+- [x] `test_startFollowUp_fromAwaitingFollowUp_transitionsToListening`
+- [x] `test_autoListen_whenEnabled_automaticallyStartsListening`
+- [x] `test_cancel_fromAnyState_returnsToIdle`
+- [x] `test_rapidHideAndShow_keepsWindowVisible` (Regression test)
 
 ### Manual Tests
 
-- [ ] Tap hotkey → overlay opens, starts recording (mic icon visible)
-- [ ] Speak something, press Enter → transcript submitted, LLM responds
-- [ ] Response completes → shows "Press Enter to reply, Escape to close"
-- [ ] Press Enter → recording starts again, can speak follow-up
-- [ ] While response is shown, click outside overlay → overlay stays visible
-- [ ] Press Escape → overlay closes, session ends
-- [ ] Tap hotkey, speak, tap hotkey again → overlay closes (cancel)
-- [ ] Tap hotkey, say nothing, press Enter → shows prompt without LLM call
-- [ ] Enable auto-listen in menu → after response, recording starts automatically
-- [ ] Disable auto-listen → must press Enter to continue
-- [ ] Quit and relaunch → auto-listen setting persists
+- [x] Tap hotkey → overlay opens, starts recording (mic icon visible)
+- [x] Speak something, press Enter → transcript submitted, LLM responds
+- [x] Response completes → shows "Press Enter to reply, Escape to close"
+- [x] Press Enter → recording starts again, can speak follow-up
+- [x] While response is shown, click outside overlay → overlay stays visible
+- [x] Press Escape → overlay closes, session ends
+- [x] Tap hotkey, speak, tap hotkey again → overlay closes (cancel)
+- [x] Tap hotkey, say nothing, press Enter → shows prompt without LLM call
+- [x] Enable auto-listen in menu → after response, recording starts automatically
+- [x] Disable auto-listen → must press Enter to continue
+- [x] Quit and relaunch → auto-listen setting persists
 
 ## 8. Performance / Reliability Considerations
 
