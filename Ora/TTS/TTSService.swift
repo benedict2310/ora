@@ -2,7 +2,7 @@
 //  TTSService.swift
 //  Ora
 //
-//  Kokoro TTS wrapper with AVSpeechSynthesizer fallback
+//  Kokoro TTS service with AVSpeechSynthesizer fallback
 //
 
 import AVFoundation
@@ -277,43 +277,3 @@ private final class FallbackSynthesizerDelegate: NSObject, AVSpeechSynthesizerDe
     }
 }
 
-// MARK: - Kokoro Engine
-
-/// Wrapper for Kokoro MLX TTS engine
-/// Currently a placeholder - will be implemented when kokoro-swift-mlx is available as a package
-public actor KokoroEngine {
-    private let modelPath: URL
-
-    /// Initialize the Kokoro engine with a model path
-    /// - Parameter modelPath: Path to the Kokoro model directory
-    public init(modelPath: URL) async throws {
-        self.modelPath = modelPath
-
-        // Verify model files exist
-        let configPath = modelPath.appendingPathComponent("config.json")
-        let weightsPath = modelPath.appendingPathComponent("kokoro-v1_0.safetensors")
-
-        guard FileManager.default.fileExists(atPath: configPath.path),
-              FileManager.default.fileExists(atPath: weightsPath.path)
-        else {
-            throw TTSError.modelNotFound
-        }
-
-        // TODO: Initialize actual Kokoro model when kokoro-swift-mlx is available
-        // For now, this validates the model exists but synthesis will fail
-        // triggering the AVSpeechSynthesizer fallback
-    }
-
-    /// Synthesize speech from text
-    /// - Parameter text: Text to synthesize
-    /// - Returns: Async stream of Float32 audio samples
-    public func synthesize(text: String) -> AsyncThrowingStream<[Float], Error> {
-        AsyncThrowingStream { continuation in
-            // TODO: Implement actual Kokoro synthesis when kokoro-swift-mlx is available
-            // For now, immediately finish to trigger fallback
-            continuation.finish(throwing: TTSError.synthesisFailed(
-                "Kokoro engine not yet integrated - using fallback"
-            ))
-        }
-    }
-}
