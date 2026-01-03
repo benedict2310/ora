@@ -1,7 +1,7 @@
 # O.06 - Agent Loop Integration
 
 **Epic:** Orchestration
-**Status:** Not Started
+**Status:** Complete
 **Priority:** P0 (Critical Path)
 **Estimated Effort:** 1-2 days
 **Dependencies:** O.02, O.03, X.02, L.04, F.07
@@ -203,4 +203,8 @@ The O.03 story added TTS to `SimplePipelineController.handleCompletion()`. When 
 
 ## Completion Status
 
-(TBD after merge.)
+- [x] Implementation complete
+- [x] Code review passed (1 iteration)
+- [x] PR merged: https://github.com/benedict2310/ora/pull/34
+- [x] Merged to main: b3ea4bc576ae2d0df87514806cc7021968b62955
+- [x] Date: 2026-01-03
