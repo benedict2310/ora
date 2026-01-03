@@ -359,4 +359,116 @@ final class AgentLoopTests: XCTestCase {
         // Then: Should return the follow-up text
         XCTAssertEqual(followUp, "Follow-up response")
     }
+    
+    // MARK: - Session Tests
+    
+    func test_startSession_setsSessionActive() async throws {
+        // Given: A new agent loop
+        let isActiveBefore = await agentLoop.isSessionActive()
+        XCTAssertFalse(isActiveBefore, "Session should not be active before start")
+        
+        // When: Start a session
+        await agentLoop.startSession()
+        
+        // Then: Session should be active
+        let isActiveAfter = await agentLoop.isSessionActive()
+        XCTAssertTrue(isActiveAfter, "Session should be active after start")
+    }
+    
+    func test_endSession_clearsSessionActive() async throws {
+        // Given: An active session
+        await agentLoop.startSession()
+        let isActiveBefore = await agentLoop.isSessionActive()
+        XCTAssertTrue(isActiveBefore)
+        
+        // When: End the session
+        await agentLoop.endSession()
+        
+        // Then: Session should not be active
+        let isActiveAfter = await agentLoop.isSessionActive()
+        XCTAssertFalse(isActiveAfter, "Session should not be active after end")
+    }
+    
+    func test_process_preservesSessionOnFollowUp() async throws {
+        // Given: Two responses for multiple turns
+        await mockLLM.setResponses([
+            """
+            {"type": "response", "text": "First response"}
+            """,
+            """
+            {"type": "response", "text": "Second response"}
+            """
+        ])
+        
+        // First turn starts session
+        let result1 = try await agentLoop.process(userText: "First message")
+        if case .response(let text) = result1 {
+            XCTAssertEqual(text, "First response")
+        } else {
+            XCTFail("Expected response")
+        }
+        
+        // Get message count after first turn
+        let messagesAfterFirst = await conversationManager.getConversation()
+        
+        // Second turn should NOT reset conversation (session is active)
+        let result2 = try await agentLoop.process(userText: "Second message")
+        if case .response(let text) = result2 {
+            XCTAssertEqual(text, "Second response")
+        } else {
+            XCTFail("Expected response")
+        }
+        
+        // Verify conversation has both turns
+        let messagesAfterSecond = await conversationManager.getConversation()
+        XCTAssertGreaterThan(messagesAfterSecond.count, messagesAfterFirst.count, 
+            "Second turn should add messages, not reset")
+        XCTAssertTrue(messagesAfterSecond.contains { $0.content == "First message" }, 
+            "First message should still be in conversation")
+        XCTAssertTrue(messagesAfterSecond.contains { $0.content == "Second message" }, 
+            "Second message should be in conversation")
+    }
+    
+    func test_proposal_storesPendingProposal() async throws {
+        // Given: LLM returns a proposal
+        await mockLLM.setResponses([
+            """
+            {"type": "proposal", "summary": "Create event", "tool": "calendar.create", "args": {"title": "Test"}}
+            """
+        ])
+        
+        // When: Process returns proposal
+        let result = try await agentLoop.process(userText: "Create event")
+        
+        guard case .proposal = result else {
+            XCTFail("Expected proposal result")
+            return
+        }
+        
+        // Then: Pending proposal should be stored
+        let pendingProposal = await agentLoop.getPendingProposal()
+        XCTAssertNotNil(pendingProposal, "Pending proposal should be stored")
+        XCTAssertEqual(pendingProposal?.tool, "calendar.create")
+        XCTAssertEqual(pendingProposal?.summary, "Create event")
+    }
+    
+    func test_clearPendingProposal_removesPending() async throws {
+        // Given: A stored pending proposal
+        await mockLLM.setResponses([
+            """
+            {"type": "proposal", "summary": "Create event", "tool": "calendar.create", "args": {}}
+            """
+        ])
+        _ = try await agentLoop.process(userText: "Create event")
+        
+        let proposalBefore = await agentLoop.getPendingProposal()
+        XCTAssertNotNil(proposalBefore)
+        
+        // When: Clear pending proposal
+        await agentLoop.clearPendingProposal()
+        
+        // Then: No pending proposal
+        let proposalAfter = await agentLoop.getPendingProposal()
+        XCTAssertNil(proposalAfter, "Pending proposal should be cleared")
+    }
 }

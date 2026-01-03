@@ -2,9 +2,7 @@
 //  SimplePipelineController.swift
 //  Ora
 //
-//  Simple ASR → LLM pipeline coordinator for initial voice-to-text-response flow.
-//  This is a simplified first step that enables testing the core pipeline
-//  without TTS or tool execution.
+//  ASR → AgentLoop → TTS pipeline coordinator with tool execution support.
 //
 
 import Foundation
@@ -13,18 +11,28 @@ import os
 import Combine
 import SwiftData
 
-/// Coordinates ASR → LLM pipeline (no tools, no TTS)
+/// Coordinates ASR → AgentLoop → TTS pipeline with tool proposals and execution
 ///
 /// ## State Machine
 /// ```
-/// idle ──(hotkey press)──► listening ──(hotkey release)──► thinking
-///   ▲                          │                              │
-///   │                       (cancel)                          ▼
-///   │                          │                          responding
-///   │                          ▼                              │
-///   └─────────────────────── idle ◄───────────────────── completed
-///                              ▲                              │
-///                              └─────────(auto-dismiss)───────┘
+/// idle ──(hotkey press)──► listening ──(submit)──► thinking
+///   ▲                          │                       │
+///   │                       (cancel)                   ▼
+///   │                          │              ┌─── responding ───┐
+///   │                          ▼              │                  │
+///   └─────────────────────── idle ◄───────────┤   speaking       │
+///                              ▲              │       ▼          │
+///                              │              └─► awaitingFollowUp
+///                              │                       │
+///                              │              ┌───────────────────┐
+///                              │              │    proposing      │
+///                              │              │   (confirm/deny)  │
+///                              │              └───────────────────┘
+///                              │                       │
+///                              │              ┌─── executing ────┐
+///                              │              │       ▼          │
+///                              └──────────────┤   speaking       │
+///                                             └─► awaitingFollowUp
 /// ```
 @MainActor
 final class SimplePipelineController: ObservableObject {
@@ -44,45 +52,68 @@ final class SimplePipelineController: ObservableObject {
     private var sessionTask: Task<Void, Never>?
     private var autoDismissTask: Task<Void, Never>?
     private var ttsTask: Task<Void, Never>?
+    private var confirmationTask: Task<Void, Never>?
     
-    /// Delay before auto-dismissing after completion (seconds)
-    private let autoDismissDelay: TimeInterval = 5.0
+    /// The agent loop for processing requests
+    private let agentLoop: AgentLoop
+    
+    /// Observers for proposal confirmation/denial
+    /// Using nonisolated(unsafe) since these are only accessed from MainActor
+    /// and this is a singleton that lives for the app's lifetime
+    nonisolated(unsafe) private var proposalConfirmObserver: NSObjectProtocol?
+    nonisolated(unsafe) private var proposalDenyObserver: NSObjectProtocol?
     
     /// Delay before auto-recovering from error (seconds)
     private let errorRecoveryDelay: TimeInterval = 3.0
     
     /// Whether auto-listen is enabled
     private var isAutoListenEnabled: Bool {
-        // Retrieve directly from settings model
-        // Note: In a real app we might inject dependencies, but for now this is fine
-        // since AppSettings is SwiftData based but we access the shared model differently
-        // or just use UserDefaults for simple settings if AppSettings isn't easily accessible here.
-        // Given AppSettings structure, we can't easily access the singleton instance here without context.
-        // For O.05, let's assume we can access it or use a simpler approach.
-        // Let's use UserDefaults for this setting directly for simplicity if AppSettings is hard to reach,
-        // BUT AppSettings is the source of truth.
-        // Let's fetch it from the model context if possible, or for now, since AppSettings is a Model,
-        // we might need a helper.
-        // Actually, let's look at how AppSettings is accessed elsewhere.
-        // It seems it's only defined, not used yet.
-        // Let's rely on `PersistenceManager.shared` if it exists, or just create a temporary solution.
-        // PersistenceManager exists.
-        
-        // For this implementation, I'll access the persistent store via PersistenceManager
         return self.fetchAutoListenSetting()
     }
 
     // MARK: - Initialization
     
-    private init() {}
+    private init(agentLoop: AgentLoop = AgentLoop()) {
+        self.agentLoop = agentLoop
+        self.setupProposalObservers()
+    }
     
     private func fetchAutoListenSetting() -> Bool {
         return PersistenceManager.shared.settings.autoListenEnabled
     }
     
-    /// Create a test instance (not a singleton)
-    static func makeTestInstance() -> SimplePipelineController {
-        return SimplePipelineController()
+    /// Create a test instance with injectable agent loop
+    static func makeTestInstance(agentLoop: AgentLoop? = nil) -> SimplePipelineController {
+        return SimplePipelineController(agentLoop: agentLoop ?? AgentLoop())
+    }
+    
+    // MARK: - Proposal Observers
+    
+    private func setupProposalObservers() {
+        self.proposalConfirmObserver = NotificationCenter.default.addObserver(
+            forName: .proposalConfirmed,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleProposalConfirmed()
+        }
+        
+        self.proposalDenyObserver = NotificationCenter.default.addObserver(
+            forName: .proposalDenied,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleProposalDenied()
+        }
+    }
+    
+    deinit {
+        if let observer = proposalConfirmObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = proposalDenyObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
     
     // MARK: - Public API
@@ -118,8 +149,8 @@ final class SimplePipelineController: ObservableObject {
         
         // Start the session task
         self.sessionTask = Task {
-            // Initialize conversation for new session
-            await self.initializeConversation()
+            // Initialize agent session (with tool definitions)
+            await self.agentLoop.startSession()
             await self.runListeningSession()
         }
         
@@ -156,7 +187,7 @@ final class SimplePipelineController: ObservableObject {
         // Reset current transcript for new turn
         self.currentTranscript = ""
         
-        // Start listening again (keeping conversation history)
+        // Start listening again (keeping conversation history via agent loop session)
         self.sessionTask = Task {
             await self.runListeningSession()
         }
@@ -178,34 +209,20 @@ final class SimplePipelineController: ObservableObject {
         self.autoDismissTask = nil
         self.ttsTask?.cancel()
         self.ttsTask = nil
+        self.confirmationTask?.cancel()
+        self.confirmationTask = nil
 
         // Stop audio capture and TTS playback
         Task {
             await TTSService.shared.stop()
             await AudioPlaybackService.shared.stop()
             await AudioService.shared.cancel()
+            await self.agentLoop.endSession()
+            await self.agentLoop.clearPendingProposal()
         }
 
         self.transition(to: .idle)
         OverlayWindowController.shared.hide(animated: true)
-    }
-    
-    // MARK: - Private - Conversation Management
-    
-    private func initializeConversation() async {
-        // Use a simple conversational prompt for O.01 (no tools, no JSON)
-        // This will be replaced with the full system prompt when tools are added in O.02
-        let systemPrompt = """
-        You are Ora, a helpful voice assistant running locally on macOS.
-        
-        Current date: \(Self.currentDateString())
-        Current time: \(Self.currentTimeString())
-        
-        Respond naturally and conversationally. Keep responses concise since they will be spoken aloud.
-        """
-        
-        // Start conversation (clears history)
-        await ConversationManager.shared.startConversation(systemPrompt: systemPrompt)
     }
     
     // MARK: - Private - Session Management
@@ -245,7 +262,7 @@ final class SimplePipelineController: ObservableObject {
                 return
             }
             
-            // AC-13: Empty transcript returns to awaiting follow-up without LLM call
+            // Empty transcript returns to awaiting follow-up without agent processing
             if self.currentTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 self.logger.info("Empty transcript, transitioning to awaitingFollowUp")
                 self.transition(to: .awaitingFollowUp)
@@ -253,7 +270,7 @@ final class SimplePipelineController: ObservableObject {
                 return
             }
             
-            // Process the transcript with LLM
+            // Process the transcript with AgentLoop
             await self.processTranscript()
             
         } catch {
@@ -266,7 +283,7 @@ final class SimplePipelineController: ObservableObject {
         }
     }
     
-    // MARK: - Private - LLM Processing
+    // MARK: - Private - Agent Processing
     
     private func processTranscript() async {
         self.logger.info("Processing transcript: \(self.currentTranscript.prefix(50))...")
@@ -278,41 +295,24 @@ final class SimplePipelineController: ObservableObject {
             // Ensure LLM is ready
             try await LLMService.shared.prepare()
             
-            // Add user message to conversation (context is preserved across turns)
-            await ConversationManager.shared.addUserMessage(self.currentTranscript)
-            
-            let messages = await ConversationManager.shared.getMessagesForLLM()
-            
-            self.transition(to: .responding)
-            OverlayWindowController.shared.mode = .responding
-            
-            // Stream LLM response
-            var fullResponse = ""
-            for try await delta in await LLMService.shared.generate(messages: messages, maxTokens: 500) {
-                guard !Task.isCancelled else {
-                    self.logger.debug("Session cancelled during LLM generation")
-                    return
-                }
-                
-                if case .token(let text) = delta {
-                    fullResponse += text
-                    self.currentResponse = fullResponse
-                    OverlayWindowController.shared.model.addAssistantMessage(fullResponse, isPartial: true)
-                }
-            }
+            // Process through agent loop (session preserves conversation context)
+            let result = try await self.agentLoop.process(userText: self.currentTranscript)
             
             guard !Task.isCancelled else {
-                self.logger.debug("Session cancelled after LLM generation")
+                self.logger.debug("Session cancelled after agent processing")
                 return
             }
             
-            // Finalize the assistant message
-            OverlayWindowController.shared.model.addAssistantMessage(fullResponse, isPartial: false)
-            
-            // Add to conversation history
-            await ConversationManager.shared.addAssistantMessage(fullResponse)
-            
-            self.handleCompletion()
+            switch result {
+            case .response(let text):
+                self.handleAgentResponse(text)
+                
+            case .proposal(let summary, let tool, _):
+                self.handleAgentProposal(summary: summary, tool: tool)
+                
+            case .error(let message):
+                self.handleAgentError(message)
+            }
             
         } catch {
             guard !Task.isCancelled else { return }
@@ -320,19 +320,123 @@ final class SimplePipelineController: ObservableObject {
         }
     }
     
-    // MARK: - Private - Completion & TTS
-
-    private func handleCompletion() {
-        self.logger.info("Response complete, starting TTS: \(self.currentResponse.prefix(50))...")
-
-        // Start TTS playback
-        self.speakResponse(self.currentResponse)
+    private func handleAgentResponse(_ text: String) {
+        self.logger.info("Agent response: \(text.prefix(50))...")
+        
+        self.currentResponse = text
+        
+        self.transition(to: .responding)
+        OverlayWindowController.shared.mode = .responding
+        
+        // Add assistant message to overlay
+        OverlayWindowController.shared.model.addAssistantMessage(text, isPartial: false)
+        
+        // Speak the response (AC-9)
+        self.speakResponse(text)
     }
-
+    
+    private func handleAgentProposal(summary: String, tool: String) {
+        self.logger.info("Agent proposal: \(summary) (tool: \(tool))")
+        
+        // Show proposal in overlay for user confirmation (AC-4)
+        let proposal = ToolProposal(toolName: tool, summary: summary, details: nil)
+        OverlayWindowController.shared.model.showProposal(proposal)
+        
+        // State is now proposing - wait for user confirmation/denial via notifications
+        // No TTS until after confirmation (per TTS Integration Notes)
+    }
+    
+    private func handleAgentError(_ message: String) {
+        self.logger.warning("Agent error: \(message)")
+        
+        self.currentResponse = message
+        
+        // Show error in overlay (no TTS for errors)
+        self.transition(to: .error(message))
+        OverlayWindowController.shared.mode = .error(message)
+        
+        // Auto-recover after delay
+        self.autoDismissTask = Task {
+            try? await Task.sleep(for: .seconds(self.errorRecoveryDelay))
+            guard !Task.isCancelled else { return }
+            self.transition(to: .awaitingFollowUp)
+            OverlayWindowController.shared.mode = .awaitingFollowUp
+        }
+    }
+    
+    // MARK: - Private - Proposal Handling
+    
+    private func handleProposalConfirmed() {
+        self.logger.info("Proposal confirmed by user")
+        
+        // Transition to executing state
+        self.transition(to: .executing)
+        OverlayWindowController.shared.mode = .executing
+        
+        self.confirmationTask = Task {
+            await self.executeConfirmedProposal()
+        }
+    }
+    
+    private func handleProposalDenied() {
+        self.logger.info("Proposal denied by user")
+        
+        // Clear the pending proposal
+        Task {
+            await self.agentLoop.clearPendingProposal()
+        }
+        
+        // Return to awaiting follow-up without executing (AC-6)
+        self.transition(to: .awaitingFollowUp)
+        OverlayWindowController.shared.mode = .awaitingFollowUp
+    }
+    
+    private func executeConfirmedProposal() async {
+        // Get pending proposal from agent loop
+        guard let proposal = await self.agentLoop.getPendingProposal() else {
+            self.logger.error("No pending proposal to execute")
+            self.transition(to: .awaitingFollowUp)
+            OverlayWindowController.shared.mode = .awaitingFollowUp
+            return
+        }
+        
+        do {
+            // Execute the tool via ToolHost (AC-5)
+            _ = try await self.agentLoop.executeConfirmedTool(
+                tool: proposal.tool,
+                args: proposal.args
+            )
+            
+            guard !Task.isCancelled else { return }
+            
+            // Generate follow-up response
+            self.transition(to: .responding)
+            OverlayWindowController.shared.mode = .responding
+            
+            let followUpText = try await self.agentLoop.generateFollowUp()
+            
+            guard !Task.isCancelled else { return }
+            
+            self.currentResponse = followUpText
+            
+            // Add follow-up message to overlay
+            OverlayWindowController.shared.model.addAssistantMessage(followUpText, isPartial: false)
+            
+            // Speak the follow-up response (AC-10)
+            self.speakResponse(followUpText)
+            
+        } catch {
+            guard !Task.isCancelled else { return }
+            
+            self.logger.error("Tool execution failed: \(error.localizedDescription)")
+            self.handleAgentError("I couldn't complete that action: \(error.localizedDescription)")
+        }
+    }
+    
+    // MARK: - Private - TTS
+    
     private func speakResponse(_ text: String) {
         self.transition(to: .speaking)
-        // Keep overlay in responding mode during speech (shows the text)
-        // OverlayWindowController.shared.mode = .responding  // Already set
 
         self.ttsTask = Task {
             do {
@@ -421,35 +525,18 @@ final class SimplePipelineController: ObservableObject {
     }
     
     private func updateStatusBar(for state: PipelineState) {
-        // Access StatusBarController from AppDelegate since it's not a singleton
-        // For now, post a notification that AppDelegate can observe
-        // Or we can make StatusBarController accessible
         switch state {
         case .idle, .completed:
             StatusBarController.shared?.setState(.idle)
         case .listening:
             StatusBarController.shared?.setState(.listening)
-        case .thinking, .responding, .awaitingFollowUp:
+        case .thinking, .responding, .awaitingFollowUp, .executing:
             StatusBarController.shared?.setState(.thinking)
         case .speaking:
             StatusBarController.shared?.setState(.speaking)
         case .error(let message):
             StatusBarController.shared?.setState(.error(message))
         }
-    }
-    
-    // MARK: - Private - Date Formatting
-    
-    private static func currentDateString() -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE, MMMM d, yyyy"
-        return formatter.string(from: Date())
-    }
-    
-    private static func currentTimeString() -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
-        return formatter.string(from: Date())
     }
 }
 

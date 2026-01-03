@@ -59,6 +59,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func onSetupComplete() {
         self.logger.info("Setup complete, initializing main functionality")
 
+        // Register default tools (calendar, etc.) for the agent loop
+        Task {
+            await ToolRegistry.shared.registerDefaultToolsIfNeeded()
+            self.logger.info("Default tools registered")
+        }
+
         // Start preloading models in the background
         Task {
             do {

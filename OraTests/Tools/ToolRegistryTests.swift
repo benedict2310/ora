@@ -44,6 +44,41 @@ final class ToolRegistryTests: XCTestCase {
         XCTAssertEqual(schemas.count, 1)
         XCTAssertEqual(schemas.first?.name, "mock.read")
     }
+    
+    func test_registerDefaultToolsIfNeeded_registersOnFirstCall() async {
+        // Ensure registry is empty
+        await ToolRegistry.shared.clear()
+        
+        let registered = await ToolRegistry.shared.registerDefaultToolsIfNeeded()
+        XCTAssertTrue(registered, "Should return true on first call")
+        
+        let tools = await ToolRegistry.shared.allTools()
+        XCTAssertGreaterThan(tools.count, 0, "Should have registered tools")
+        
+        // Cleanup
+        await ToolRegistry.shared.clear()
+    }
+    
+    func test_registerDefaultToolsIfNeeded_isIdempotent() async {
+        // Ensure registry is empty
+        await ToolRegistry.shared.clear()
+        
+        // First call registers tools
+        let firstCall = await ToolRegistry.shared.registerDefaultToolsIfNeeded()
+        XCTAssertTrue(firstCall, "First call should return true")
+        
+        let countAfterFirst = await ToolRegistry.shared.allTools().count
+        
+        // Second call should not register again
+        let secondCall = await ToolRegistry.shared.registerDefaultToolsIfNeeded()
+        XCTAssertFalse(secondCall, "Second call should return false (already registered)")
+        
+        let countAfterSecond = await ToolRegistry.shared.allTools().count
+        XCTAssertEqual(countAfterFirst, countAfterSecond, "Tool count should not change")
+        
+        // Cleanup
+        await ToolRegistry.shared.clear()
+    }
 }
 
 // MARK: - Mock Tools

@@ -30,6 +30,7 @@ As a power user, I want Ora to use the latest Qwen 3 model so that I get better 
 - Update model size estimates and download progress
 - Remove Qwen 2.5 model identifiers from the codebase
 - Migrate existing users: detect Qwen 2.5 on disk and prompt to re-download Qwen 3
+- Update ./agent-tools/TestSuite with Qwen 3, so the tests run on the latest models too
 
 ### Out of Scope
 

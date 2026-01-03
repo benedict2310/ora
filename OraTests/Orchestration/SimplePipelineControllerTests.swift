@@ -129,4 +129,26 @@ final class SimplePipelineControllerTests: XCTestCase {
         let second = SimplePipelineController.makeTestInstance()
         XCTAssertFalse(first === second)
     }
+    
+    // MARK: - Executing State Tests
+    
+    func test_executingState_description() {
+        let state = PipelineState.executing
+        XCTAssertEqual(state.description, "Executing...")
+    }
+    
+    func test_executingState_cannotStartListening() {
+        let state = PipelineState.executing
+        XCTAssertFalse(state.canStartListening)
+    }
+    
+    // MARK: - Agent Loop Integration Tests (with makeTestInstance)
+    
+    func test_makeTestInstance_acceptsCustomAgentLoop() async {
+        // This tests that we can inject a custom AgentLoop for testing
+        let customAgentLoop = AgentLoop()
+        let controller = SimplePipelineController.makeTestInstance(agentLoop: customAgentLoop)
+        
+        XCTAssertEqual(controller.state, .idle)
+    }
 }
