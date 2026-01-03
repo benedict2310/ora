@@ -247,8 +247,26 @@ public actor AudioPlaybackService {
     }
 
     /// Wait for all scheduled buffers to complete
+    /// Includes a timeout to prevent indefinite waiting in edge cases
     private func waitForPlaybackComplete() async {
+        // Maximum wait time based on buffered duration + safety margin
+        let maxWaitTime = bufferedDuration + 1.0  // buffered + 1 second margin
+        let startTime = Date()
+        
         while bufferedDuration > 0 && isPlaying {
+            // Check timeout
+            if Date().timeIntervalSince(startTime) > maxWaitTime {
+                logger.debug("Playback wait timeout - clearing remaining buffer")
+                bufferedDuration = 0
+                break
+            }
+            
+            // Also check if playerNode actually stopped (e.g., audio hardware issue)
+            if let node = playerNode, !node.isPlaying {
+                bufferedDuration = 0
+                break
+            }
+            
             try? await Task.sleep(for: .milliseconds(50))
         }
     }
