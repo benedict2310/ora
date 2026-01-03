@@ -107,6 +107,7 @@ final class HuggingFaceDownloaderTests: XCTestCase {
     func test_huggingFaceStrategy_downloadsLLMModel() async throws {
         let mock = MockFileDownloader()
         mock.downloadDelay = 0.01
+        mock.fileSizeOverrides = ModelIdentifier.qwen7B.expectedFileSizes
 
         let strategy = HuggingFaceStrategy(downloader: mock)
 
@@ -125,6 +126,7 @@ final class HuggingFaceDownloaderTests: XCTestCase {
     func test_huggingFaceStrategy_downloadsTTSModel() async throws {
         let mock = MockFileDownloader()
         mock.downloadDelay = 0.01
+        mock.fileSizeOverrides = ModelIdentifier.kokoro.expectedFileSizes
 
         let strategy = HuggingFaceStrategy(downloader: mock)
 
@@ -143,6 +145,7 @@ final class HuggingFaceDownloaderTests: XCTestCase {
     func test_huggingFaceStrategy_reportsCurrentFile() async throws {
         let mock = MockFileDownloader()
         mock.downloadDelay = 0.01
+        mock.fileSizeOverrides = ModelIdentifier.qwen7B.expectedFileSizes
 
         let strategy = HuggingFaceStrategy(downloader: mock)
 

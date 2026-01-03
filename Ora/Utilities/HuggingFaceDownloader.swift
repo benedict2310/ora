@@ -322,6 +322,7 @@ final class MockFileDownloader: FileDownloader, @unchecked Sendable {
     private var _shouldSucceed = true
     private var _downloadDelay: TimeInterval = 0.1
     private var _downloadedFiles: [URL] = []
+    private var _fileSizeOverrides: [String: Int64] = [:]
 
     var shouldSucceed: Bool {
         get { lock.withLock { _shouldSucceed } }
@@ -335,6 +336,11 @@ final class MockFileDownloader: FileDownloader, @unchecked Sendable {
 
     var downloadedFiles: [URL] {
         lock.withLock { _downloadedFiles }
+    }
+
+    var fileSizeOverrides: [String: Int64] {
+        get { lock.withLock { _fileSizeOverrides } }
+        set { lock.withLock { _fileSizeOverrides = newValue } }
     }
 
     func download(
@@ -355,7 +361,8 @@ final class MockFileDownloader: FileDownloader, @unchecked Sendable {
         // Create the file
         let parentDir = destination.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true)
-        try Data("mock content".utf8).write(to: destination)
+        let sizeOverride = lock.withLock { _fileSizeOverrides[destination.lastPathComponent] }
+        try self.writeMockFile(to: destination, sizeOverride: sizeOverride)
 
         lock.withLock {
             _downloadedFiles.append(destination)
@@ -365,6 +372,22 @@ final class MockFileDownloader: FileDownloader, @unchecked Sendable {
     func reset() {
         lock.withLock {
             _downloadedFiles = []
+        }
+    }
+
+    private func writeMockFile(to destination: URL, sizeOverride: Int64?) throws {
+        if let sizeOverride = sizeOverride {
+            if FileManager.default.fileExists(atPath: destination.path) {
+                try FileManager.default.removeItem(at: destination)
+            }
+            guard FileManager.default.createFile(atPath: destination.path, contents: nil) else {
+                throw HuggingFaceDownloader.DownloadError.fileSystemError("Cannot create file: \(destination.path)")
+            }
+            let fileHandle = try FileHandle(forWritingTo: destination)
+            try fileHandle.truncate(atOffset: UInt64(max(0, sizeOverride)))
+            try fileHandle.close()
+        } else {
+            try Data("mock content".utf8).write(to: destination)
         }
     }
 }
