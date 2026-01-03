@@ -1,7 +1,7 @@
 # T.02 - Audio Playback
 
 **Epic:** TTS Integration
-**Status:** Not Started
+**Status:** In Progress
 **Priority:** P0 (Critical Path)
 **Estimated Effort:** 1 day
 **Dependencies:** T.01 (TTS Service)
@@ -11,191 +11,103 @@
 
 ## 1. Objective
 
-Create an `AudioPlaybackService` that manages streaming audio playback with buffering and clean interruption.
+Create an `AudioPlaybackService` that manages streaming audio playback with buffering and clean interruption. This service receives `AudioChunk`s from `TTSService` and plays them through the system audio output using `AVAudioEngine`.
 
 ---
 
-## 2. Implementation
+## 2. User Story
 
-**File:** `Ora/TTS/AudioPlaybackService.swift`
-
-```swift
-//
-//  AudioPlaybackService.swift
-//  Ora
-//
-//  Manages audio playback queue
-//
-
-import Foundation
-import AVFoundation
-import os
-
-/// Audio playback service
-actor AudioPlaybackService {
-    
-    // MARK: - Singleton
-    
-    static let shared = AudioPlaybackService()
-    
-    // MARK: - Properties
-    
-    private let logger = Logger(subsystem: "com.ora.app", category: "AudioPlayback")
-    
-    private var engine: AVAudioEngine?
-    private var playerNode: AVAudioPlayerNode?
-    private var isPlaying = false
-    
-    // Buffer management
-    private let targetBufferDuration: TimeInterval = 0.8  // 800ms jitter buffer
-    private var bufferedDuration: TimeInterval = 0
-    
-    // MARK: - Initialization
-    
-    private init() {}
-    
-    // MARK: - Public API
-    
-    /// Start playback engine
-    func prepare() throws {
-        guard engine == nil else { return }
-        
-        let engine = AVAudioEngine()
-        let playerNode = AVAudioPlayerNode()
-        
-        engine.attach(playerNode)
-        
-        // Connect with output format
-        let format = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: 24000,
-            channels: 1,
-            interleaved: false
-        )!
-        
-        engine.connect(playerNode, to: engine.mainMixerNode, format: format)
-        
-        try engine.start()
-        
-        self.engine = engine
-        self.playerNode = playerNode
-        
-        logger.info("Audio playback engine ready")
-    }
-    
-    /// Play audio chunks as they arrive
-    func play(chunks: AsyncThrowingStream<AudioChunk, Error>) async throws {
-        guard let playerNode = playerNode else {
-            throw AudioPlaybackError.notPrepared
-        }
-        
-        isPlaying = true
-        bufferedDuration = 0
-        
-        playerNode.play()
-        
-        do {
-            for try await chunk in chunks {
-                try Task.checkCancellation()
-                
-                guard !chunk.samples.isEmpty else { continue }
-                
-                // Convert to buffer
-                guard let buffer = createBuffer(from: chunk) else { continue }
-                
-                // Schedule for playback
-                playerNode.scheduleBuffer(buffer) {
-                    Task { await self.onBufferComplete(duration: chunk.duration) }
-                }
-                
-                bufferedDuration += chunk.duration
-                
-                // Throttle if buffer is getting too large
-                while bufferedDuration > targetBufferDuration * 2 {
-                    try await Task.sleep(for: .milliseconds(100))
-                }
-            }
-            
-            // Wait for playback to complete
-            await waitForPlaybackComplete()
-            
-        } catch is CancellationError {
-            logger.debug("Playback cancelled")
-        }
-        
-        isPlaying = false
-    }
-    
-    /// Stop playback immediately
-    func stop() {
-        playerNode?.stop()
-        bufferedDuration = 0
-        isPlaying = false
-        logger.debug("Playback stopped")
-    }
-    
-    // MARK: - Private
-    
-    private func createBuffer(from chunk: AudioChunk) -> AVAudioPCMBuffer? {
-        guard let format = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: Double(chunk.sampleRate),
-            channels: 1,
-            interleaved: false
-        ) else { return nil }
-        
-        let frameCount = AVAudioFrameCount(chunk.samples.count)
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else {
-            return nil
-        }
-        
-        buffer.frameLength = frameCount
-        
-        chunk.samples.withUnsafeBufferPointer { source in
-            guard let dest = buffer.floatChannelData?[0] else { return }
-            memcpy(dest, source.baseAddress!, chunk.samples.count * MemoryLayout<Float>.stride)
-        }
-        
-        return buffer
-    }
-    
-    private func onBufferComplete(duration: TimeInterval) {
-        bufferedDuration -= duration
-    }
-    
-    private func waitForPlaybackComplete() async {
-        while bufferedDuration > 0 && isPlaying {
-            try? await Task.sleep(for: .milliseconds(50))
-        }
-    }
-}
-
-// MARK: - Errors
-
-enum AudioPlaybackError: LocalizedError {
-    case notPrepared
-    
-    var errorDescription: String? {
-        "Audio playback not prepared. Call prepare() first."
-    }
-}
-```
+As a user, I want Ora's spoken responses to play smoothly through my speakers without stuttering or delays, and I want to be able to interrupt playback at any time.
 
 ---
 
-## 3. Acceptance Criteria
+## 3. Scope
+
+### In Scope
+
+- `AudioPlaybackService` actor wrapping `AVAudioEngine` for playback
+- Streaming playback of `AudioChunk` data via `AVAudioPlayerNode`
+- Jitter buffer (~800ms) to prevent audio underruns
+- Immediate stop with queue clearing
+- Proper waiting for playback completion before returning
+- Actor isolation for thread safety
+
+### Out of Scope
+
+- Sentence chunking for early playback (T.03)
+- Volume controls (future enhancement)
+- Audio device selection (future enhancement)
+- Ducking other audio sources (future enhancement)
+
+---
+
+## 4. Architecture Alignment
+
+- **Component Boundary:** AudioPlaybackService is isolated from TTSService; receives AudioChunks, plays audio
+- **Concurrency Model:** `AudioPlaybackService` is an actor; playback runs on audio render thread
+- **Pipeline Integration:** TTSService → AudioPlaybackService → speakers
+- **PRD Reference:** Section 5 (TTS targets ~500ms to first audio for short responses)
+- **Architecture Reference:** Section 1 Component Diagram - TTSEngine outputs to audio playback
+
+---
+
+## 5. Implementation Plan (Draft)
+
+### 5.1 Files to Create
+
+- `Ora/TTS/AudioPlaybackService.swift` - Main audio playback actor with AVAudioEngine
+
+### 5.2 Files to Modify
+
+- None
+
+### 5.3 Tests to Add
+
+- `OraTests/AudioPlaybackServiceTests.swift` - Unit tests for playback service
+  - Test `prepare()` initializes engine
+  - Test `play()` streams audio chunks
+  - Test `stop()` clears queue immediately
+  - Test playback completion waiting
+
+---
+
+## 6. Acceptance Criteria
 
 - [ ] **AC-1:** AVAudioEngine configured for playback
 - [ ] **AC-2:** Chunks scheduled as they arrive
 - [ ] **AC-3:** Jitter buffer prevents underruns
 - [ ] **AC-4:** `stop()` clears queue immediately
 - [ ] **AC-5:** Waits for completion before returning
+- [ ] **AC-6:** Service is thread-safe (actor isolation)
+- [ ] **AC-7:** Handles empty chunks gracefully (marker chunks from fallback)
+- [ ] **AC-8:** Error handling for unprepared state
 
 ---
 
-## 4. Implementation Checklist
+## 7. Verification Plan
+
+### Automated Tests
+
+- [ ] `test_prepareInitializesEngine` - Verify prepare() sets up AVAudioEngine
+- [ ] `test_playStreamsChunks` - Verify chunks are scheduled for playback
+- [ ] `test_stopClearsQueue` - Verify stop() clears pending audio
+- [ ] `test_playEmptyChunksSkipped` - Verify empty marker chunks are handled
+- [ ] `test_playThrowsWhenNotPrepared` - Verify proper error for unprepared state
+- [ ] `test_isPreparedReturnsCorrectState` - Verify state tracking
+
+### Manual Tests
+
+- [ ] Build and run app with Kokoro model downloaded
+- [ ] Trigger TTS and verify audio plays smoothly
+- [ ] Stop TTS mid-playback and verify clean stop
+- [ ] Start multiple TTS requests and verify no audio artifacts
+
+---
+
+## 8. Implementation Checklist
 
 - [ ] Create `AudioPlaybackService.swift`
+- [ ] Create `AudioPlaybackServiceTests.swift`
 - [ ] Test streaming playback
 - [ ] Test interruption handling
-- [ ] Measure buffer levels
+- [ ] Build and run tests
