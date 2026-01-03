@@ -12,280 +12,228 @@ import SwiftUI
 struct OverlayView: View {
     @EnvironmentObject var viewModel: OverlayViewModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    @Namespace private var inputGlassNamespace
+
+    private let panelWidth: CGFloat = 560
+    private let panelHeight: CGFloat = 380
+    private let contentMaxWidth: CGFloat = 520
+    private let scrollAnchorID = "overlayScrollAnchor"
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Status indicator
-            StatusIndicatorView(mode: self.viewModel.mode, reduceMotion: self.reduceMotion)
-                .padding(.top, 16)
-                .padding(.bottom, 12)
+        GlassEffectContainer(spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
+                VoiceInputControlView(
+                    state: self.voiceInputState,
+                    reduceMotion: self.reduceMotion,
+                    reduceTransparency: self.reduceTransparency,
+                    namespace: self.inputGlassNamespace
+                )
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(self.voiceInputAccessibilityLabel)
 
-            Divider()
-
-            // Messages
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        ForEach(self.viewModel.messages) { message in
-                            MessageBubbleView(message: message)
-                                .id(message.id)
-                        }
-                    }
-                    .padding()
-                }
-                .onChange(of: self.viewModel.messages.count) { _, _ in
-                    // Scroll to bottom
-                    if let lastMessage = self.viewModel.messages.last {
-                        withAnimation {
-                            proxy.scrollTo(lastMessage.id, anchor: .bottom)
-                        }
-                    }
-                }
+                self.chatScrollView
             }
-
-            // Tool proposal (if any)
-            if case .proposing(let proposal) = self.viewModel.mode {
-                Divider()
-                ToolProposalView(proposal: proposal)
-            }
-            
-            // Awaiting follow-up prompt
-            if case .awaitingFollowUp = self.viewModel.mode {
-                Divider()
-                FollowUpPromptView()
-            }
+            .frame(maxWidth: self.contentMaxWidth, maxHeight: .infinity, alignment: .top)
         }
-        .frame(width: 400, height: 300)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(.ultraThinMaterial)
-                .shadow(radius: 10)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
-        )
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
+        .padding(20)
+        .frame(width: self.panelWidth, height: self.panelHeight)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Ora Assistant")
     }
-}
 
-// MARK: - Status Indicator
+    private var chatScrollView: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    ForEach(self.visibleMessages) { message in
+                        ChatBubbleView(
+                            text: message.content,
+                            role: message.role == .user ? .user : .assistant,
+                            state: nil,
+                            isPartial: message.isPartial,
+                            reduceTransparency: self.reduceTransparency,
+                            reduceMotion: self.reduceMotion
+                        )
+                        .id(message.id)
+                    }
 
-struct StatusIndicatorView: View {
-    let mode: OverlayMode
-    let reduceMotion: Bool
+                    if self.shouldShowThinkingBubble {
+                        ChatBubbleView(
+                            text: nil,
+                            role: .assistant,
+                            state: .thinking,
+                            isPartial: false,
+                            reduceTransparency: self.reduceTransparency,
+                            reduceMotion: self.reduceMotion
+                        )
+                    }
 
-    @State private var isPulsing = false
+                    if self.shouldShowExecutingBubble {
+                        ToolStateView(
+                            mode: .executing(label: "Executing action"),
+                            reduceTransparency: self.reduceTransparency,
+                            reduceMotion: self.reduceMotion
+                        )
+                    }
 
-    var body: some View {
-        HStack(spacing: 8) {
-            // Animated indicator
-            Circle()
-                .fill(self.indicatorColor)
-                .frame(width: 8, height: 8)
-                .scaleEffect(self.isPulsing && !self.reduceMotion ? 1.2 : 1.0)
-                .animation(
-                    self.shouldPulse && !self.reduceMotion
-                        ? .easeInOut(duration: 0.5).repeatForever(autoreverses: true)
-                        : .default,
-                    value: self.isPulsing
-                )
+                    if case .proposing(let proposal) = self.viewModel.mode {
+                        ToolStateView(
+                            mode: .proposal(proposal),
+                            reduceTransparency: self.reduceTransparency,
+                            reduceMotion: self.reduceMotion
+                        )
+                    }
 
-            Text(self.statusText)
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(self.accessibilityStatusText)
-        .accessibilityAddTraits(.updatesFrequently)
-        .onChange(of: self.mode) { _, _ in
-            self.updatePulseState()
-        }
-        .onAppear {
-            self.updatePulseState()
-        }
-    }
+                    if case .awaitingFollowUp = self.viewModel.mode {
+                        FollowUpPromptView(reduceTransparency: self.reduceTransparency)
+                    }
 
-    private func updatePulseState() {
-        self.isPulsing = self.shouldPulse
-    }
+                    if case .error(let message) = self.viewModel.mode {
+                        ChatBubbleView(
+                            text: message,
+                            role: .tool,
+                            state: .tool("Error"),
+                            isPartial: false,
+                            reduceTransparency: self.reduceTransparency,
+                            reduceMotion: self.reduceMotion
+                        )
+                    }
 
-    private var indicatorColor: Color {
-        switch self.mode {
-        case .listening: return .blue
-        case .thinking: return .orange
-        case .responding, .executing: return .green
-        case .awaitingFollowUp: return .purple
-        case .proposing: return .yellow
-        case .error: return .red
-        default: return .secondary
-        }
-    }
-
-    private var shouldPulse: Bool {
-        switch self.mode {
-        case .listening, .thinking, .executing: return true
-        default: return false
-        }
-    }
-
-    private var statusText: String {
-        switch self.mode {
-        case .hidden: return ""
-        case .listening: return "Listening..."
-        case .thinking: return "Thinking..."
-        case .responding: return "Responding..."
-        case .awaitingFollowUp: return "Press Enter to reply"
-        case .proposing: return "Confirm action"
-        case .executing: return "Executing..."
-        case .completed: return "Done"
-        case .error(let message): return "Error: \(message)"
-        }
-    }
-
-    private var accessibilityStatusText: String {
-        switch self.mode {
-        case .hidden: return "Hidden"
-        case .listening: return "Listening for your voice"
-        case .thinking: return "Processing your request"
-        case .responding: return "Responding"
-        case .awaitingFollowUp: return "Waiting for your reply"
-        case .proposing: return "Action requires confirmation"
-        case .executing: return "Executing action"
-        case .completed: return "Completed"
-        case .error(let message): return "Error: \(message)"
-        }
-    }
-}
-
-// MARK: - Message Bubble
-
-struct MessageBubbleView: View {
-    let message: OverlayMessage
-
-    var body: some View {
-        HStack {
-            if self.message.role == .assistant {
-                Spacer(minLength: 40)
-            }
-
-            VStack(alignment: self.message.role == .user ? .leading : .trailing, spacing: 4) {
-                Text(self.message.content)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(self.bubbleColor)
-                    .foregroundColor(self.textColor)
-                    .cornerRadius(16)
-                    .opacity(self.message.isPartial ? 0.8 : 1.0)
-
-                if self.message.isPartial {
-                    Text("Listening...")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                    Color.clear
+                        .frame(height: 1)
+                        .id(self.scrollAnchorID)
                 }
+                .padding(.horizontal, 4)
+                .padding(.bottom, 4)
             }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(self.accessibilityLabel)
-            .accessibilityHint(self.message.isPartial ? "Partial transcription, still listening" : "")
-
-            if self.message.role == .user {
-                Spacer(minLength: 40)
+            .scrollIndicators(.hidden)
+            .onChange(of: self.viewModel.messages.count) { _, _ in
+                self.scrollToBottom(proxy)
+            }
+            .onChange(of: self.viewModel.mode) { _, _ in
+                self.scrollToBottom(proxy)
             }
         }
     }
 
-    private var bubbleColor: Color {
-        self.message.role == .user ? Color.accentColor : Color(nsColor: .controlBackgroundColor)
+    private var visibleMessages: [OverlayMessage] {
+        self.viewModel.messages.filter { message in
+            if case .listening = self.viewModel.mode,
+               message.role == .user,
+               message.isPartial {
+                return false
+            }
+            return true
+        }
     }
 
-    private var textColor: Color {
-        self.message.role == .user ? .white : .primary
+    private var voiceInputState: VoiceInputControlView.State {
+        switch self.viewModel.mode {
+        case .listening:
+            return .active(transcript: self.currentPartialTranscript)
+        case .awaitingFollowUp:
+            return .idle(label: "Press Enter to reply")
+        case .thinking:
+            return .idle(label: "Thinking")
+        case .responding:
+            return .idle(label: "Responding")
+        case .executing:
+            return .idle(label: "Executing")
+        case .proposing:
+            return .idle(label: "Confirm action")
+        case .completed:
+            return .idle(label: "Done")
+        case .error:
+            return .idle(label: "Error")
+        case .hidden:
+            return .idle(label: "Listening")
+        }
     }
 
-    private var accessibilityLabel: String {
-        let roleLabel = self.message.role == .user ? "You said" : "Ora said"
-        return "\(roleLabel): \(self.message.content)"
+    private var currentPartialTranscript: String? {
+        self.viewModel.messages.last { message in
+            message.role == .user && message.isPartial
+        }?.content
+    }
+
+    private var shouldShowThinkingBubble: Bool {
+        if case .thinking = self.viewModel.mode {
+            return true
+        }
+        return false
+    }
+
+    private var shouldShowExecutingBubble: Bool {
+        if case .executing = self.viewModel.mode {
+            return true
+        }
+        return false
+    }
+
+    private var voiceInputAccessibilityLabel: String {
+        switch self.voiceInputState {
+        case .idle(let label):
+            return label
+        case .active:
+            return "Listening for your voice"
+        }
+    }
+
+    private func scrollToBottom(_ proxy: ScrollViewProxy) {
+        let action = {
+            proxy.scrollTo(self.scrollAnchorID, anchor: .bottom)
+        }
+
+        if self.reduceMotion {
+            action()
+        } else {
+            withAnimation(.easeOut(duration: 0.2)) {
+                action()
+            }
+        }
     }
 }
 
 // MARK: - Follow-Up Prompt
 
 struct FollowUpPromptView: View {
+    let reduceTransparency: Bool
+
+    private let maxBubbleWidth: CGFloat = 360
+    private let bubbleInset: CGFloat = 24
+
     var body: some View {
         HStack {
-            Image(systemName: "mic.fill")
-                .foregroundColor(.purple)
-            Text("Press Enter to reply, Escape to close")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+            Spacer(minLength: self.bubbleInset)
+            self.content
+                .frame(maxWidth: self.maxBubbleWidth, alignment: .trailing)
         }
-        .padding()
-        .frame(maxWidth: .infinity)
-        .background(Color(nsColor: .controlBackgroundColor))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Press Enter to reply, or Escape to close the assistant")
     }
-}
 
-// MARK: - Tool Proposal
-
-struct ToolProposalView: View {
-    let proposal: ToolProposal
-
-    @FocusState private var confirmButtonFocused: Bool
-    @FocusState private var cancelButtonFocused: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundColor(.yellow)
-                    .accessibilityHidden(true)
-                Text("Confirm Action")
-                    .font(.headline)
-            }
-
-            Text(self.proposal.summary)
-                .font(.body)
-
-            if let details = self.proposal.details {
-                Text(details)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            HStack {
-                Button("Cancel") {
-                    NotificationCenter.default.post(name: .proposalDenied, object: nil)
-                }
-                .keyboardShortcut(.escape, modifiers: [])
-                .focused(self.$cancelButtonFocused)
-                .accessibilityLabel("Cancel action")
-                .accessibilityHint("Cancels the proposed action")
-
-                Spacer()
-
-                Button("Confirm") {
-                    NotificationCenter.default.post(name: .proposalConfirmed, object: nil)
-                }
-                .keyboardShortcut(.return, modifiers: [])
-                .buttonStyle(.borderedProminent)
-                .focused(self.$confirmButtonFocused)
-                .accessibilityLabel("Confirm action")
-                .accessibilityHint("Confirms and executes the proposed action")
-            }
+    @ViewBuilder
+    private var content: some View {
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+        let base = HStack(spacing: 8) {
+            Image(systemName: "mic.fill")
+                .foregroundColor(.cyan)
+            Text("Press Enter to reply, Escape to close")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
-        .padding()
-        .background(Color(nsColor: .controlBackgroundColor))
-        .cornerRadius(8)
-        .padding()
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Action confirmation for \(self.proposal.toolName)")
-        .onAppear {
-            // Focus confirm button by default for keyboard navigation
-            self.confirmButtonFocused = true
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+
+        if self.reduceTransparency {
+            base
+                .background(shape.fill(Color(nsColor: .controlBackgroundColor).opacity(0.94)))
+                .overlay(shape.stroke(Color.white.opacity(0.08), lineWidth: 0.6))
+        } else {
+            base
+                .glassEffect(.regular.tint(.white.opacity(0.08)), in: shape)
         }
     }
 }

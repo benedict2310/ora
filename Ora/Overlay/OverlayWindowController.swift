@@ -22,6 +22,7 @@ final class OverlayWindowController {
     private var panel: NSPanel?
     private let viewModel = OverlayViewModel()
     private var currentSessionID: UUID = UUID()
+    private let panelSize = NSSize(width: 560, height: 380)
 
     private var escapeMonitor: Any?
 
@@ -117,11 +118,11 @@ final class OverlayWindowController {
             .environmentObject(self.viewModel)
 
         let hostingView = NSHostingView(rootView: contentView)
-        hostingView.setFrameSize(NSSize(width: 400, height: 300))
+        hostingView.setFrameSize(self.panelSize)
 
         // Create floating panel
         let panel = OverlayPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+            contentRect: NSRect(origin: .zero, size: self.panelSize),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -151,7 +152,7 @@ final class OverlayWindowController {
         let panelSize = panel.frame.size
 
         let x = screenFrame.midX - (panelSize.width / 2)
-        let y = screenFrame.maxY - panelSize.height - 100 // 100pt from top
+        let y = screenFrame.maxY - panelSize.height - 10 // 10pt from top
 
         panel.setFrameOrigin(NSPoint(x: x, y: y))
     }
