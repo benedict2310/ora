@@ -69,6 +69,7 @@ targets:
         product: MLXLMCommon
       - package: kokoro-ios
         product: KokoroSwift
+        embed: true
 
   OraTests:
     type: bundle.unit-test

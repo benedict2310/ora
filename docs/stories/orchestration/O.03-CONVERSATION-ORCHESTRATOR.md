@@ -1,740 +1,508 @@
-# O.02 - Conversation Orchestrator
+# O.03 - Conversation Orchestrator
 
 **Epic:** Orchestration
 **Status:** Not Started
 **Priority:** P0 (Critical Path)
-**Estimated Effort:** 2-3 days
-**Dependencies:** O.01 (Agent Loop), A.03 (Transcript Stream), T.02 (Audio Playback)
+**Estimated Effort:** 1-2 days
+**Dependencies:** O.02 (Agent Loop), T.01 (TTS Service), T.02 (Audio Playback)
 **Target:** macOS 26 (Tahoe)
 
 ---
 
 ## 1. Objective
 
-Implement the central orchestrator that coordinates the entire voice assistant pipeline:
+Extend the pipeline controller to coordinate the complete voice assistant flow including TTS:
 - Hotkey → Audio capture → ASR transcription
 - Transcription → Agent loop reasoning
-- Agent response → TTS playback → UI updates
+- **Agent response → TTS playback → UI updates** ← This is the gap
 
-This is the "main loop" that ties all components together.
-
----
-
-## 2. Architecture
-
-### State Machine
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         ConversationOrchestrator                             │
-│                            (@MainActor)                                      │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│   ┌─────┐   hotkey     ┌───────────┐   release   ┌──────────┐               │
-│   │ idle│ ───press───► │ listening │ ──────────► │ thinking │               │
-│   └──┬──┘              └─────┬─────┘             └────┬─────┘               │
-│      │                       │                        │                      │
-│      │                       │ cancel                 │                      │
-│      │◄──────────────────────┘                        │                      │
-│      │                                                ▼                      │
-│      │                                   ┌────────────────────────┐         │
-│      │                                   │   AgentLoop processes  │         │
-│      │                                   └────────────┬───────────┘         │
-│      │                                                │                      │
-│      │                    ┌───────────────────────────┼───────────┐         │
-│      │                    ▼                           ▼           ▼         │
-│      │            ┌───────────┐             ┌───────────┐  ┌─────────┐     │
-│      │            │ proposing │             │responding │  │  error  │     │
-│      │            └─────┬─────┘             └─────┬─────┘  └────┬────┘     │
-│      │                  │                         │              │          │
-│      │         confirm  │  deny                   │              │          │
-│      │       ┌──────────┼──────┐                  │              │          │
-│      │       ▼          ▼      │                  │              │          │
-│      │   ┌────────┐  ┌──────┐  │                  │              │          │
-│      │   │executing│  │denied│──┼──────────────►──┴──────────────┘          │
-│      │   └────┬───┘  └──────┘  │                  │                         │
-│      │        │                 │                  ▼                         │
-│      │        ▼                 │            ┌──────────┐                   │
-│      │   ┌────────┐             │            │ speaking │                   │
-│      │   │follow-up│            │            └────┬─────┘                   │
-│      │   └────┬───┘             │                 │                         │
-│      │        │                 │                 ▼                         │
-│      │        ▼                 │            ┌──────────┐                   │
-│      │    speaking ─────────────┴─────────►  │completed │ ─► auto-dismiss   │
-│      │                                       └────┬─────┘                   │
-│      │                                            │                         │
-│      │◄───────────────────────────────────────────┘                         │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Component Diagram
-
-```
-┌───────────────────────────────────────────────────────────────────┐
-│                   ConversationOrchestrator                         │
-│                        (@MainActor)                                │
-├───────────────────────────────────────────────────────────────────┤
-│                                                                    │
-│   Inputs:                      Outputs:                           │
-│   ├─ HotkeyManager            ├─ OverlayWindowController          │
-│   ├─ AudioService             ├─ StatusBarController              │
-│   └─ ASRService               └─ TTSService                       │
-│                                                                    │
-│   Processing:                                                      │
-│   └─ AgentLoop                                                    │
-│                                                                    │
-└───────────────────────────────────────────────────────────────────┘
-```
+This story bridges the existing `SimplePipelineController` with TTS output.
 
 ---
 
-## 3. Implementation
+## 2. Current State Analysis
 
-### 3.1 Orchestrator State
+### What Exists
 
-**File:** `Ora/Orchestration/OrchestratorState.swift`
+| Component | File | Status |
+|-----------|------|--------|
+| SimplePipelineController | `Ora/Orchestration/SimplePipelineController.swift` | Working, no TTS |
+| PipelineState | `Ora/Orchestration/PipelineState.swift` | Has `awaitingFollowUp` |
+| TTSService | `Ora/TTS/TTSService.swift` | Working (Kokoro + AVSpeech fallback) |
+| AudioPlaybackService | `Ora/TTS/AudioPlaybackService.swift` | Working |
+| OverlayMode | `Ora/Overlay/OverlayState.swift` | Has all needed states |
+| ToolProposal | `Ora/Overlay/OverlayState.swift` | Already defined |
+| AgentLoop | `Ora/Orchestration/AgentLoop.swift` | Working |
+
+### Current Flow (SimplePipelineController)
+
+```
+Hotkey tap → listening → ASR → thinking → LLM → responding → awaitingFollowUp
+                                                      ↓
+                                          UI shows text (no audio!)
+```
+
+### Target Flow (After O.03)
+
+```
+Hotkey tap → listening → ASR → thinking → LLM → responding → speaking → awaitingFollowUp
+                                                      ↓            ↓
+                                          UI shows text    TTS plays audio
+```
+
+### Design Decision: Extend vs Replace
+
+**Recommendation: Extend `SimplePipelineController`** rather than create a new `ConversationOrchestrator`.
+
+Rationale:
+- SimplePipelineController already handles hotkey, ASR, LLM, overlay, tap-to-talk flow
+- Only missing piece is calling TTSService after LLM response
+- Creating a parallel orchestrator risks code duplication and divergence
+- Simpler to add TTS to existing working code
+
+---
+
+## 3. Existing API Reference
+
+### TTSService (actor)
 
 ```swift
-//
-//  OrchestratorState.swift
-//  Ora
-//
-//  State definitions for the conversation orchestrator
-//
+// Location: Ora/TTS/TTSService.swift
 
-import Foundation
+public actor TTSService {
+    public static let shared = TTSService()
 
-/// Current state of the orchestrator
-enum OrchestratorState: Equatable, Sendable {
+    /// Prepare TTS engine (call at startup)
+    public func prepare() async throws
+
+    /// Generate speech - returns stream of AudioChunks
+    nonisolated public func speak(_ text: String) -> AsyncThrowingStream<AudioChunk, Error>
+
+    /// Stop current speech
+    public func stop() async
+
+    /// Check if speaking
+    public var speaking: Bool
+
+    /// Check if Kokoro is ready (vs fallback)
+    public var kokoroAvailable: Bool
+}
+```
+
+### AudioPlaybackService (actor)
+
+```swift
+// Location: Ora/TTS/AudioPlaybackService.swift
+
+public actor AudioPlaybackService {
+    public static let shared = AudioPlaybackService()
+
+    /// Prepare audio engine (call at startup)
+    public func prepare() throws
+
+    /// Play audio chunks from TTS stream
+    public func play(chunks: AsyncThrowingStream<AudioChunk, Error>) async throws
+
+    /// Stop playback immediately
+    public func stop()
+
+    /// Check if prepared
+    public var isPrepared: Bool
+
+    /// Check if playing
+    public var playing: Bool
+}
+```
+
+### OverlayMode (existing)
+
+```swift
+// Location: Ora/Overlay/OverlayState.swift
+
+enum OverlayMode: Equatable, Sendable {
+    case hidden
+    case listening
+    case thinking
+    case responding       // ← Use for both text streaming AND speaking
+    case awaitingFollowUp
+    case proposing(ToolProposal)
+    case executing
+    case completed
+    case error(String)
+}
+```
+
+### PipelineState (existing)
+
+```swift
+// Location: Ora/Orchestration/PipelineState.swift
+
+enum PipelineState: Equatable, Sendable {
     case idle
     case listening
     case thinking
-    case proposing(ToolProposal)
-    case executing
     case responding
-    case speaking
+    case awaitingFollowUp  // ← Current terminal state
     case completed
     case error(String)
-    
-    /// Human-readable description
+}
+```
+
+---
+
+## 4. Implementation
+
+### 4.1 Add Speaking State to PipelineState
+
+**File:** `Ora/Orchestration/PipelineState.swift`
+
+```swift
+enum PipelineState: Equatable, Sendable {
+    case idle
+    case listening
+    case thinking
+    case responding
+    case speaking          // ← ADD: TTS playback in progress
+    case awaitingFollowUp
+    case completed
+    case error(String)
+
     var description: String {
         switch self {
-        case .idle: return "Ready"
-        case .listening: return "Listening..."
-        case .thinking: return "Thinking..."
-        case .proposing: return "Confirm action"
-        case .executing: return "Executing..."
-        case .responding: return "Responding..."
+        // ... existing cases ...
         case .speaking: return "Speaking..."
-        case .completed: return "Done"
-        case .error(let msg): return "Error: \(msg)"
         }
     }
-}
 
-/// Tool proposal from agent loop
-struct ToolProposal: Equatable, Sendable {
-    let id: UUID
-    let toolName: String
-    let summary: String
-    let args: [String: JSONValue]
-    let timeout: TimeInterval
-    let timestamp: Date
-    
-    init(toolName: String, summary: String, args: [String: JSONValue], timeout: TimeInterval = 60) {
-        self.id = UUID()
-        self.toolName = toolName
-        self.summary = summary
-        self.args = args
-        self.timeout = timeout
-        self.timestamp = Date()
-    }
-}
-
-/// Events emitted by the orchestrator
-enum OrchestratorEvent: Sendable {
-    case stateChanged(OrchestratorState)
-    case transcriptPartial(String)
-    case transcriptFinal(String)
-    case responseToken(String)
-    case responseFinal(String)
-    case toolProposed(ToolProposal)
-    case toolExecuted(String, result: String)
-    case error(String)
-}
-```
-
-### 3.2 Conversation Orchestrator
-
-**File:** `Ora/Orchestration/ConversationOrchestrator.swift`
-
-```swift
-//
-//  ConversationOrchestrator.swift
-//  Ora
-//
-//  Central coordinator for the voice assistant pipeline
-//
-
-import Foundation
-import os
-import Combine
-
-/// Coordinates all components for a conversation turn
-@MainActor
-final class ConversationOrchestrator: ObservableObject {
-    
-    // MARK: - Singleton
-    
-    static let shared = ConversationOrchestrator()
-    
-    // MARK: - Properties
-    
-    private let logger = Logger(subsystem: "com.ora.app", category: "Orchestrator")
-    
-    @Published private(set) var state: OrchestratorState = .idle
-    @Published private(set) var currentTranscript: String = ""
-    @Published private(set) var currentResponse: String = ""
-    
-    private let agentLoop = AgentLoop()
-    private var currentSessionID: UUID?
-    private var asrTask: Task<Void, Never>?
-    private var processingTask: Task<Void, Never>?
-    private var ttsTask: Task<Void, Never>?
-    private var confirmationTimeoutTask: Task<Void, Never>?
-    
-    private var pendingProposal: ToolProposal?
-    
-    /// Event stream for external observers
-    private let eventSubject = PassthroughSubject<OrchestratorEvent, Never>()
-    var events: AnyPublisher<OrchestratorEvent, Never> {
-        eventSubject.eraseToAnyPublisher()
-    }
-    
-    // MARK: - Initialization
-    
-    private init() {
-        setupNotifications()
-    }
-    
-    // MARK: - Public API
-    
-    /// Start listening (hotkey pressed)
-    func startListening() {
-        guard state == .idle || state == .completed else {
-            logger.warning("Cannot start listening in state: \(self.state.description)")
-            return
-        }
-        
-        currentSessionID = UUID()
-        currentTranscript = ""
-        currentResponse = ""
-        
-        transition(to: .listening)
-        
-        // Show overlay
-        OverlayWindowController.shared.mode = .listening
-        OverlayWindowController.shared.show()
-        
-        // Start audio capture and ASR
-        startASR()
-        
-        logger.info("Started listening, session: \(self.currentSessionID?.uuidString ?? "nil")")
-    }
-    
-    /// Stop listening and process (hotkey released)
-    func stopListening() {
-        guard state == .listening else {
-            logger.warning("Cannot stop listening in state: \(self.state.description)")
-            return
-        }
-        
-        // Stop ASR
-        asrTask?.cancel()
-        asrTask = nil
-        
-        // Process the transcript
-        if !currentTranscript.isEmpty {
-            transition(to: .thinking)
-            OverlayWindowController.shared.mode = .thinking
-            processTranscript()
-        } else {
-            // Nothing said, go back to idle
-            transition(to: .idle)
-            OverlayWindowController.shared.hide()
-        }
-    }
-    
-    /// Cancel current operation
-    func cancel() {
-        logger.info("Cancelling current operation")
-        
-        asrTask?.cancel()
-        processingTask?.cancel()
-        ttsTask?.cancel()
-        confirmationTimeoutTask?.cancel()
-        
-        asrTask = nil
-        processingTask = nil
-        ttsTask = nil
-        confirmationTimeoutTask = nil
-        
-        pendingProposal = nil
-        
-        // Stop any playing audio
-        Task {
-            await TTSService.shared.stop()
-            await AudioService.shared.stop()
-        }
-        
-        transition(to: .idle)
-        OverlayWindowController.shared.hide(animated: true)
-    }
-    
-    /// Confirm a pending tool proposal
-    func confirmProposal() {
-        guard case .proposing(let proposal) = state,
-              pendingProposal?.id == proposal.id else {
-            logger.warning("No pending proposal to confirm")
-            return
-        }
-        
-        logger.info("Proposal confirmed: \(proposal.toolName)")
-        
-        confirmationTimeoutTask?.cancel()
-        confirmationTimeoutTask = nil
-        
-        executeProposal(proposal)
-    }
-    
-    /// Deny a pending tool proposal
-    func denyProposal() {
-        guard case .proposing = state else {
-            logger.warning("No pending proposal to deny")
-            return
-        }
-        
-        logger.info("Proposal denied")
-        
-        confirmationTimeoutTask?.cancel()
-        confirmationTimeoutTask = nil
-        pendingProposal = nil
-        
-        // Generate a polite acknowledgment
-        let response = "Okay, I won't do that."
-        currentResponse = response
-        eventSubject.send(.responseFinal(response))
-        
-        speak(response)
-    }
-    
-    // MARK: - Private - ASR
-    
-    private func startASR() {
-        asrTask = Task {
-            do {
-                try await AudioService.shared.start()
-                
-                let asrStream = await ASRService.shared.transcribe(
-                    frames: AudioService.shared.frames
-                )
-                
-                for try await event in asrStream {
-                    guard !Task.isCancelled else { break }
-                    
-                    switch event {
-                    case .partial(let text, _):
-                        currentTranscript = text
-                        eventSubject.send(.transcriptPartial(text))
-                        OverlayWindowController.shared.model.addUserMessage(text, isPartial: true)
-                        
-                    case .final(let text):
-                        currentTranscript = text
-                        eventSubject.send(.transcriptFinal(text))
-                        OverlayWindowController.shared.model.addUserMessage(text, isPartial: false)
-                        
-                    case .endOfSpeech:
-                        // Auto-stop on end of speech detection (optional)
-                        break
-                    }
-                }
-            } catch {
-                logger.error("ASR error: \(error.localizedDescription)")
-                handleError(error)
-            }
-            
-            await AudioService.shared.stop()
-        }
-    }
-    
-    // MARK: - Private - Processing
-    
-    private func processTranscript() {
-        processingTask = Task {
-            do {
-                let result = try await agentLoop.process(
-                    userText: currentTranscript,
-                    sessionID: currentSessionID
-                )
-                
-                guard !Task.isCancelled else { return }
-                
-                switch result {
-                case .response(let text):
-                    handleResponse(text)
-                    
-                case .proposal(let summary, let tool, let args):
-                    handleProposal(summary: summary, tool: tool, args: args)
-                    
-                case .error(let message):
-                    handleError(OrchestratorError.agentError(message))
-                }
-                
-            } catch {
-                handleError(error)
-            }
-        }
-    }
-    
-    private func handleResponse(_ text: String) {
-        logger.info("Got response: \(text.prefix(50))...")
-        
-        transition(to: .responding)
-        OverlayWindowController.shared.mode = .responding
-        
-        currentResponse = text
-        eventSubject.send(.responseFinal(text))
-        
-        OverlayWindowController.shared.model.addAssistantMessage(text, isPartial: false)
-        
-        speak(text)
-    }
-    
-    private func handleProposal(summary: String, tool: String, args: [String: JSONValue]) {
-        logger.info("Got proposal: \(tool) - \(summary)")
-        
-        let proposal = ToolProposal(toolName: tool, summary: summary, args: args)
-        pendingProposal = proposal
-        
-        transition(to: .proposing(proposal))
-        OverlayWindowController.shared.mode = .proposing(
-            ToolProposal(toolName: tool, summary: summary, args: args)
-        )
-        
-        eventSubject.send(.toolProposed(proposal))
-        
-        // Start timeout
-        startConfirmationTimeout(proposal)
-    }
-    
-    private func startConfirmationTimeout(_ proposal: ToolProposal) {
-        confirmationTimeoutTask = Task {
-            try? await Task.sleep(for: .seconds(proposal.timeout))
-            
-            guard !Task.isCancelled,
-                  case .proposing(let current) = state,
-                  current.id == proposal.id else {
-                return
-            }
-            
-            logger.info("Proposal timed out: \(proposal.toolName)")
-            
-            pendingProposal = nil
-            let response = "The request timed out. Let me know if you'd like to try again."
-            currentResponse = response
-            
-            transition(to: .responding)
-            speak(response)
-        }
-    }
-    
-    private func executeProposal(_ proposal: ToolProposal) {
-        transition(to: .executing)
-        OverlayWindowController.shared.mode = .executing
-        
-        processingTask = Task {
-            do {
-                // Execute the confirmed tool
-                let result = try await agentLoop.executeConfirmedTool(
-                    tool: proposal.toolName,
-                    args: proposal.args
-                )
-                
-                guard !Task.isCancelled else { return }
-                
-                eventSubject.send(.toolExecuted(proposal.toolName, result: result.humanSummary))
-                
-                // Generate follow-up response
-                let followUp = try await agentLoop.generateFollowUp()
-                
-                pendingProposal = nil
-                handleResponse(followUp)
-                
-            } catch {
-                pendingProposal = nil
-                handleError(error)
-            }
-        }
-    }
-    
-    // MARK: - Private - TTS
-    
-    private func speak(_ text: String) {
-        transition(to: .speaking)
-        OverlayWindowController.shared.mode = .responding
-        
-        ttsTask = Task {
-            do {
-                let audioStream = await TTSService.shared.speak(text)
-                
-                for try await chunk in audioStream {
-                    guard !Task.isCancelled else { break }
-                    await AudioPlayback.shared.enqueue(chunk)
-                }
-                
-                // Wait for playback to finish
-                await AudioPlayback.shared.waitForCompletion()
-                
-                guard !Task.isCancelled else { return }
-                
-                handleCompletion()
-                
-            } catch {
-                logger.error("TTS error: \(error.localizedDescription)")
-                // Still complete even if TTS fails - text is shown
-                handleCompletion()
-            }
-        }
-    }
-    
-    // MARK: - Private - Completion
-    
-    private func handleCompletion() {
-        transition(to: .completed)
-        OverlayWindowController.shared.mode = .completed
-        
-        // Schedule auto-dismiss
-        OverlayWindowController.shared.scheduleAutoDismiss()
-        
-        // After auto-dismiss delay, reset to idle
-        Task {
-            try? await Task.sleep(for: .seconds(3.5))
-            guard !Task.isCancelled, state == .completed else { return }
-            transition(to: .idle)
-        }
-    }
-    
-    // MARK: - Private - Error Handling
-    
-    private func handleError(_ error: Error) {
-        logger.error("Orchestrator error: \(error.localizedDescription)")
-        
-        let message = error.localizedDescription
-        transition(to: .error(message))
-        OverlayWindowController.shared.mode = .error(message)
-        
-        eventSubject.send(.error(message))
-        
-        // Auto-recover after delay
-        Task {
-            try? await Task.sleep(for: .seconds(3))
-            guard !Task.isCancelled else { return }
-            transition(to: .idle)
-            OverlayWindowController.shared.hide()
-        }
-    }
-    
-    // MARK: - Private - State Management
-    
-    private func transition(to newState: OrchestratorState) {
-        let oldState = state
-        state = newState
-        
-        logger.debug("State: \(oldState.description) → \(newState.description)")
-        eventSubject.send(.stateChanged(newState))
-        
-        // Update status bar
-        switch newState {
-        case .idle:
-            StatusBarController.shared?.setState(.idle)
-        case .listening:
-            StatusBarController.shared?.setState(.listening)
-        case .thinking, .proposing, .executing, .responding:
-            StatusBarController.shared?.setState(.thinking)
-        case .speaking:
-            StatusBarController.shared?.setState(.speaking)
-        case .completed:
-            StatusBarController.shared?.setState(.idle)
-        case .error:
-            StatusBarController.shared?.setState(.error)
-        }
-    }
-    
-    // MARK: - Private - Notifications
-    
-    private func setupNotifications() {
-        NotificationCenter.default.addObserver(
-            forName: .proposalConfirmed,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.confirmProposal()
-        }
-        
-        NotificationCenter.default.addObserver(
-            forName: .proposalDenied,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.denyProposal()
-        }
-    }
-}
-
-// MARK: - Errors
-
-enum OrchestratorError: LocalizedError {
-    case agentError(String)
-    case timeout
-    case cancelled
-    
-    var errorDescription: String? {
+    var canStartListening: Bool {
         switch self {
-        case .agentError(let message): return message
-        case .timeout: return "Request timed out"
-        case .cancelled: return "Request cancelled"
+        case .idle, .completed, .error, .awaitingFollowUp:
+            return true
+        case .listening, .thinking, .responding, .speaking:
+            return false
         }
     }
 }
 ```
 
-### 3.3 Integration with Hotkey
+### 4.2 Add TTS to SimplePipelineController
 
-**Update:** `Ora/AppDelegate.swift`
+**File:** `Ora/Orchestration/SimplePipelineController.swift`
 
+Add TTS task property:
 ```swift
-// In hotkey handler setup:
+private var ttsTask: Task<Void, Never>?
+```
 
-private func setupHotkey() {
-    HotkeyManager.shared.onPress = { [weak self] in
-        Task { @MainActor in
-            ConversationOrchestrator.shared.startListening()
+Add TTS preparation at startup (in `startListening` or app init):
+```swift
+// Prepare TTS engine if not ready
+Task {
+    do {
+        try await AudioPlaybackService.shared.prepare()
+    } catch {
+        logger.warning("Failed to prepare audio playback: \(error)")
+    }
+}
+```
+
+Replace `handleCompletion()` with TTS-enabled version:
+```swift
+private func handleCompletion() {
+    self.logger.info("Response complete, starting TTS: \(self.currentResponse.prefix(50))...")
+
+    // Start TTS playback
+    self.speakResponse(self.currentResponse)
+}
+
+private func speakResponse(_ text: String) {
+    self.transition(to: .speaking)
+    // Keep overlay in responding mode during speech
+    // OverlayWindowController.shared.mode = .responding  // Already set
+
+    self.ttsTask = Task {
+        do {
+            // Get audio stream from TTS
+            let audioStream = TTSService.shared.speak(text)
+
+            // Play through AudioPlaybackService
+            try await AudioPlaybackService.shared.play(chunks: audioStream)
+
+            guard !Task.isCancelled else { return }
+
+            // TTS complete, transition to awaiting follow-up
+            self.finishSpeaking()
+
+        } catch {
+            guard !Task.isCancelled else { return }
+
+            self.logger.error("TTS playback failed: \(error.localizedDescription)")
+            // Still complete - user saw the text
+            self.finishSpeaking()
         }
     }
-    
-    HotkeyManager.shared.onRelease = { [weak self] in
-        Task { @MainActor in
-            ConversationOrchestrator.shared.stopListening()
+}
+
+private func finishSpeaking() {
+    self.logger.info("TTS complete")
+
+    // Transition to awaiting follow-up state
+    self.transition(to: .awaitingFollowUp)
+    OverlayWindowController.shared.mode = .awaitingFollowUp
+
+    // Handle Auto-Listen if enabled
+    if self.isAutoListenEnabled {
+        self.logger.info("Auto-listen enabled, scheduling follow-up")
+        Task {
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled, self.state == .awaitingFollowUp else { return }
+            await MainActor.run {
+                self.startFollowUp()
+            }
         }
+    }
+}
+```
+
+Update `cancel()` to stop TTS:
+```swift
+func cancel() {
+    // ... existing cancellation code ...
+
+    // Cancel TTS
+    self.ttsTask?.cancel()
+    self.ttsTask = nil
+
+    // Stop TTS playback
+    Task {
+        await TTSService.shared.stop()
+        await AudioPlaybackService.shared.stop()
+        await AudioService.shared.cancel()
+    }
+
+    // ... rest of cancel ...
+}
+```
+
+Update status bar mapping for `.speaking`:
+```swift
+private func updateStatusBar(for state: PipelineState) {
+    switch state {
+    case .idle, .completed:
+        StatusBarController.shared?.setState(.idle)
+    case .listening:
+        StatusBarController.shared?.setState(.listening)
+    case .thinking, .responding:
+        StatusBarController.shared?.setState(.thinking)
+    case .speaking:
+        StatusBarController.shared?.setState(.speaking)
+    case .awaitingFollowUp:
+        StatusBarController.shared?.setState(.thinking)
+    case .error(let message):
+        StatusBarController.shared?.setState(.error(message))
+    }
+}
+```
+
+### 4.3 Prepare TTS at App Startup
+
+**File:** `Ora/AppDelegate.swift`
+
+In `applicationDidFinishLaunching` or similar:
+```swift
+// Prepare TTS engine for faster first response
+Task {
+    do {
+        try await TTSService.shared.prepare()
+        try await AudioPlaybackService.shared.prepare()
+    } catch {
+        Logger(subsystem: "com.ora.app", category: "AppDelegate")
+            .warning("TTS preparation failed: \(error)")
     }
 }
 ```
 
 ---
 
-## 4. Directory Structure
+## 5. State Flow Diagram
 
 ```
-Ora/
-└── Orchestration/
-    ├── OrchestratorState.swift
-    ├── ConversationOrchestrator.swift
-    └── AgentLoop.swift  (from O.01)
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      SimplePipelineController                            │
+│                          (with TTS)                                      │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌──────┐  hotkey   ┌───────────┐  ASR done  ┌──────────┐               │
+│  │ idle │ ────────► │ listening │ ─────────► │ thinking │               │
+│  └──┬───┘           └─────┬─────┘            └────┬─────┘               │
+│     │                     │                       │                      │
+│     │                   cancel                    │                      │
+│     │◄────────────────────┘                       │                      │
+│     │                                             │                      │
+│     │                                             ▼                      │
+│     │                                      ┌────────────┐                │
+│     │                                      │ responding │ LLM streaming  │
+│     │                                      └─────┬──────┘                │
+│     │                                            │                       │
+│     │                                            ▼                       │
+│     │                                      ┌────────────┐                │
+│     │                                      │  speaking  │ TTS playback   │
+│     │                                      └─────┬──────┘                │
+│     │                                            │                       │
+│     │     ┌──────────────────────────────────────┘                       │
+│     │     │                                                              │
+│     │     ▼                                                              │
+│     │  ┌─────────────────┐                                               │
+│     │  │ awaitingFollowUp│◄───────┐                                     │
+│     │  └────────┬────────┘        │                                      │
+│     │           │                 │                                      │
+│     │    follow-up tap       auto-listen                                │
+│     │           │                 │                                      │
+│     │           ▼                 │                                      │
+│     │      ┌───────────┐          │                                      │
+│     │      │ listening │──────────┘                                      │
+│     │      └───────────┘                                                 │
+│     │                                                                    │
+│     │◄───────────── cancel / dismiss ────────────────────────────────────│
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 5. Acceptance Criteria
+## 6. Acceptance Criteria
+
+### TTS Integration
+
+- [ ] **AC-1:** LLM response triggers TTS playback
+- [ ] **AC-2:** Audio plays through system speakers
+- [ ] **AC-3:** Fallback to AVSpeechSynthesizer if Kokoro unavailable
+- [ ] **AC-4:** State transitions to `.speaking` during playback
+- [ ] **AC-5:** State transitions to `.awaitingFollowUp` after playback completes
 
 ### Pipeline Flow
 
-- [ ] **AC-1:** Hotkey press starts audio capture and ASR
-- [ ] **AC-2:** Partial transcripts stream to overlay UI
-- [ ] **AC-3:** Hotkey release triggers agent processing
-- [ ] **AC-4:** Agent response streams to UI
-- [ ] **AC-5:** TTS plays response audio
-- [ ] **AC-6:** Overlay auto-dismisses after completion
-
-### State Management
-
-- [ ] **AC-7:** State transitions correctly through all phases
-- [ ] **AC-8:** State published for UI binding
-- [ ] **AC-9:** Events emitted for external observers
-- [ ] **AC-10:** Status bar updates with state
+- [ ] **AC-6:** Full flow works: hotkey → ASR → LLM → TTS → audio output
+- [ ] **AC-7:** Overlay shows response text during TTS playback
+- [ ] **AC-8:** Status bar shows speaking indicator during playback
 
 ### Cancellation
 
-- [ ] **AC-11:** User can cancel at any point
-- [ ] **AC-12:** Cancellation stops all active tasks
-- [ ] **AC-13:** Cancellation cleans up state properly
+- [ ] **AC-9:** Cancel stops TTS playback immediately
+- [ ] **AC-10:** Pressing hotkey during speaking cancels and starts new session
+- [ ] **AC-11:** TTS errors don't block completion (graceful degradation)
 
 ### Error Handling
 
-- [ ] **AC-14:** Errors display in overlay
-- [ ] **AC-15:** Auto-recovery after error display
-- [ ] **AC-16:** Errors logged for debugging
+- [ ] **AC-12:** TTS failure logs error but completes normally
+- [ ] **AC-13:** Audio engine failure falls back gracefully
+- [ ] **AC-14:** No crash on rapid cancel/restart
+
+### Performance
+
+- [ ] **AC-15:** TTS starts within 500ms of LLM completion (after warmup)
+- [ ] **AC-16:** No audio glitches during normal playback
 
 ---
 
-## 6. Test Cases
+## 7. Test Cases
 
 ```swift
-// ConversationOrchestratorTests.swift
+// SimplePipelineControllerTTSTests.swift
 
 import XCTest
 @testable import Ora
 
 @MainActor
-final class ConversationOrchestratorTests: XCTestCase {
-    
-    // TC-1: Initial state is idle
-    func test_initialState_isIdle() {
-        let orchestrator = ConversationOrchestrator.shared
-        XCTAssertEqual(orchestrator.state, .idle)
+final class SimplePipelineControllerTTSTests: XCTestCase {
+
+    var controller: SimplePipelineController!
+
+    override func setUp() async throws {
+        controller = SimplePipelineController.makeTestInstance()
     }
-    
-    // TC-2: Start listening transitions state
-    func test_startListening_transitionsToListening() async {
-        let orchestrator = ConversationOrchestrator.shared
-        orchestrator.startListening()
-        XCTAssertEqual(orchestrator.state, .listening)
-        orchestrator.cancel()
+
+    // TC-1: Speaking state exists
+    func test_speakingState_exists() {
+        XCTAssertEqual(PipelineState.speaking.description, "Speaking...")
     }
-    
-    // TC-3: Cancel returns to idle
-    func test_cancel_returnsToIdle() async {
-        let orchestrator = ConversationOrchestrator.shared
-        orchestrator.startListening()
-        orchestrator.cancel()
-        XCTAssertEqual(orchestrator.state, .idle)
+
+    // TC-2: Speaking state cannot start listening
+    func test_speakingState_cannotStartListening() {
+        XCTAssertFalse(PipelineState.speaking.canStartListening)
     }
-    
-    // TC-4: Cannot start listening when not idle
-    func test_startListening_whenNotIdle_doesNotTransition() async {
-        let orchestrator = ConversationOrchestrator.shared
-        orchestrator.startListening()
-        let state = orchestrator.state
-        orchestrator.startListening() // Try again
-        XCTAssertEqual(orchestrator.state, state) // Should not change
-        orchestrator.cancel()
+
+    // TC-3: Cancel during speaking stops TTS
+    func test_cancel_duringSpeaking_stopsTTS() async {
+        // This would require mocking TTSService
+        // Verify that cancel() calls TTSService.shared.stop()
+    }
+
+    // TC-4: TTS error completes gracefully
+    func test_ttsError_completesGracefully() async {
+        // Simulate TTS error and verify state transitions to awaitingFollowUp
+    }
+}
+
+// AudioPlaybackServiceTests.swift additions
+@MainActor
+final class AudioPlaybackIntegrationTests: XCTestCase {
+
+    // TC-5: Playback service can be prepared
+    func test_prepare_succeeds() async throws {
+        let service = AudioPlaybackService.shared
+        try await service.prepare()
+        XCTAssertTrue(service.isPrepared)
     }
 }
 ```
 
 ---
 
-## 7. Implementation Checklist
+## 8. Implementation Checklist
 
-- [ ] Create `OrchestratorState.swift`
-- [ ] Create `ConversationOrchestrator.swift`
-- [ ] Integrate with HotkeyManager
-- [ ] Integrate with AudioService
-- [ ] Integrate with ASRService
-- [ ] Integrate with AgentLoop
-- [ ] Integrate with TTSService
-- [ ] Integrate with OverlayWindowController
-- [ ] Integrate with StatusBarController
-- [ ] Test full pipeline flow
-- [ ] Test cancellation handling
-- [ ] Test error recovery
+### Phase 1: State Updates
+- [ ] Add `.speaking` case to `PipelineState`
+- [ ] Update `canStartListening` for speaking state
+- [ ] Update status bar mapping for speaking state
+
+### Phase 2: TTS Integration
+- [ ] Add `ttsTask` property to SimplePipelineController
+- [ ] Implement `speakResponse(_:)` method
+- [ ] Implement `finishSpeaking()` method
+- [ ] Update `handleCompletion()` to call TTS
+
+### Phase 3: Lifecycle
+- [ ] Update `cancel()` to stop TTS
+- [ ] Add TTS preparation to app startup
+- [ ] Ensure AudioPlaybackService prepared before use
+
+### Phase 4: Testing
+- [ ] Manual test: full flow with audio output
+- [ ] Manual test: cancel during speaking
+- [ ] Manual test: multiple rapid sessions
+- [ ] Add unit tests for new states
+
+### Phase 5: Cleanup
+- [ ] Update story status in README
+- [ ] Remove any dead code
+
+---
+
+## 9. Notes
+
+### Kokoro vs AVSpeech Fallback
+
+TTSService automatically falls back to AVSpeechSynthesizer if Kokoro model isn't available. The integration code doesn't need to handle this - it's transparent.
+
+### Audio Session Management
+
+AudioPlaybackService manages the AVAudioEngine. It should be prepared once at startup and reused. The service handles buffer management and jitter prevention internally.
+
+### Streaming TTS (Future - T.03)
+
+This story uses complete-response TTS. T.03 (Sentence Chunker) will add streaming TTS where audio starts playing before the full LLM response is complete. The current implementation is compatible with this future enhancement.
+
+### Multi-turn Conversations
+
+The existing `awaitingFollowUp` state and auto-listen feature work unchanged. TTS simply inserts a `.speaking` phase between `.responding` and `.awaitingFollowUp`.
