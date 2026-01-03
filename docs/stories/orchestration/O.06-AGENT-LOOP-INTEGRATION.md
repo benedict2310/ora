@@ -170,7 +170,36 @@ The O.03 story added TTS to `SimplePipelineController.handleCompletion()`. When 
 
 ## Code Review Findings
 
-(TBD by review agent.)
+**Reviewer:** Codex Subagent
+**Date:** 2026-01-03T20:35:00Z
+**Commit reviewed:** 20fc4f2
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 9
+- Build status: Pass
+- Tests status: Pass (36 tests in relevant suites; 1 pre-existing failure in HuggingFaceDownloaderTests unrelated to this PR)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+(none)
+
+#### P1 - Major (Should fix)
+(none)
+
+#### P2 - Minor (Can defer)
+- [ ] `SimplePipelineController.swift:338-347` - `handleAgentProposal()` doesn't transition `PipelineState` to reflect the proposing state. While the overlay correctly shows `.proposing(proposal)` via `model.showProposal()`, the `PipelineState` remains at `.thinking`. This creates a mismatch between the internal state machine and the overlay mode. Consider adding a `.proposing` case to `PipelineState` in a follow-up for consistency.
+
+- [ ] `SimplePipelineControllerTests.swift` - The story claims "SimplePipelineController proposal confirm/deny tests pass" but the tests only verify `.executing` state and AgentLoop injection. There are no unit tests that verify `handleProposalConfirmed()` and `handleProposalDenied()` notification handlers work correctly. The proposal flow is tested in `AgentLoopTests`, but the SimplePipelineController notification handling has no direct test coverage. Consider adding tests in a follow-up.
+
+### Future Considerations (Out of Scope)
+- `HuggingFaceDownloaderTests.test_huggingFaceStrategy_downloadsTTSModel` - Pre-existing test failure related to temp file cleanup, not part of this PR.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
 
 ## Completion Status
 
