@@ -536,3 +536,50 @@ The existing `awaitingFollowUp` state and auto-listen feature work unchanged. TT
 - [x] Unit tests added for new state
 - [x] 654 tests passing (0 failures)
 - [ ] Manual testing pending
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-01-03T18:36:47Z
+**Commit reviewed:** af4a5ef
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 5
+- Build status: Pass
+- Tests status: Pass (654 tests, 1 skipped, 0 failures)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+*None*
+
+#### P1 - Major (Should fix)
+*None*
+
+#### P2 - Minor (Can defer)
+*None*
+
+### Review Notes
+
+The implementation is clean and correct:
+
+1. **State Machine**: `.speaking` state properly added to `PipelineState` with correct `canStartListening` behavior
+2. **TTS Integration**: `speakResponse()` correctly streams audio via `TTSService` → `AudioPlaybackService`
+3. **Error Handling**: TTS errors are caught and logged, but completion proceeds gracefully
+4. **Cancellation**: `cancel()` properly stops all tasks and services (TTSService, AudioPlaybackService, AudioService)
+5. **Actor Isolation**: Correct use of `await` for actor-isolated services
+6. **MainActor**: Task created in `@MainActor` context inherits isolation correctly
+7. **Startup Preparation**: TTS and AudioPlayback services are prepared in parallel during app startup
+8. **Tests**: Unit tests added for the new `.speaking` state
+
+### Future Considerations (Out of Scope)
+- Integration tests for TTS flow (TC-3, TC-4 in story) are marked as manual tests
+- The story mentions T.03 (Sentence Chunker) for streaming TTS as future work
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
