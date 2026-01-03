@@ -73,14 +73,14 @@ As a user, I want Ora's spoken responses to play smoothly through my speakers wi
 
 ## 6. Acceptance Criteria
 
-- [ ] **AC-1:** AVAudioEngine configured for playback
-- [ ] **AC-2:** Chunks scheduled as they arrive
-- [ ] **AC-3:** Jitter buffer prevents underruns
-- [ ] **AC-4:** `stop()` clears queue immediately
-- [ ] **AC-5:** Waits for completion before returning
-- [ ] **AC-6:** Service is thread-safe (actor isolation)
-- [ ] **AC-7:** Handles empty chunks gracefully (marker chunks from fallback)
-- [ ] **AC-8:** Error handling for unprepared state
+- [x] **AC-1:** AVAudioEngine configured for playback - ✅ `prepare()` sets up engine with 24kHz mono format
+- [x] **AC-2:** Chunks scheduled as they arrive - ✅ `play()` iterates stream and schedules buffers via `playerNode.scheduleBuffer()`
+- [x] **AC-3:** Jitter buffer prevents underruns - ✅ 800ms target buffer with throttling when > 1.6s buffered
+- [x] **AC-4:** `stop()` clears queue immediately - ✅ `playerNode.stop()` clears scheduled buffers
+- [x] **AC-5:** Waits for completion before returning - ✅ `waitForPlaybackComplete()` polls until buffer drained
+- [x] **AC-6:** Service is thread-safe (actor isolation) - ✅ `AudioPlaybackService` is an actor
+- [x] **AC-7:** Handles empty chunks gracefully (marker chunks from fallback) - ✅ `guard !chunk.isEmpty else { continue }`
+- [x] **AC-8:** Error handling for unprepared state - ✅ Throws `AudioPlaybackError.notPrepared`
 
 ---
 
@@ -88,12 +88,16 @@ As a user, I want Ora's spoken responses to play smoothly through my speakers wi
 
 ### Automated Tests
 
-- [ ] `test_prepareInitializesEngine` - Verify prepare() sets up AVAudioEngine
-- [ ] `test_playStreamsChunks` - Verify chunks are scheduled for playback
-- [ ] `test_stopClearsQueue` - Verify stop() clears pending audio
-- [ ] `test_playEmptyChunksSkipped` - Verify empty marker chunks are handled
-- [ ] `test_playThrowsWhenNotPrepared` - Verify proper error for unprepared state
-- [ ] `test_isPreparedReturnsCorrectState` - Verify state tracking
+- [x] `test_prepareInitializesEngine` - Verify prepare() sets up AVAudioEngine
+- [x] `test_prepareIsIdempotent` - Verify multiple prepare() calls succeed
+- [x] `test_isPrepared_falseInitially` - Verify initial state is unprepared
+- [x] `test_playStreamsChunks` - Verify chunks are scheduled for playback
+- [x] `test_stopClearsQueue` - Verify stop() clears pending audio
+- [x] `test_playEmptyChunksSkipped` - Verify empty marker chunks are handled
+- [x] `test_playThrowsWhenNotPrepared` - Verify proper error for unprepared state
+- [x] `test_shutdownCleansUp` - Verify shutdown() releases resources
+- [x] `test_audioPlaybackError_descriptions` - Verify error descriptions
+- [x] `test_playingState_duringPlayback` - Verify state tracking during playback
 
 ### Manual Tests
 
@@ -106,8 +110,35 @@ As a user, I want Ora's spoken responses to play smoothly through my speakers wi
 
 ## 8. Implementation Checklist
 
-- [ ] Create `AudioPlaybackService.swift`
-- [ ] Create `AudioPlaybackServiceTests.swift`
-- [ ] Test streaming playback
-- [ ] Test interruption handling
-- [ ] Build and run tests
+- [x] Create `AudioPlaybackService.swift`
+- [x] Create `AudioPlaybackServiceTests.swift`
+- [x] Test streaming playback
+- [x] Test interruption handling
+- [x] Build and run tests
+
+---
+
+## Implementation Summary
+
+**Date:** 2026-01-03
+**Branch:** `feat/t.02-audio-playback`
+**Commits:** 1
+
+### Files Created
+- `Ora/TTS/AudioPlaybackService.swift` - Audio playback actor with:
+  - AVAudioEngine + AVAudioPlayerNode configuration
+  - Streaming playback from AsyncThrowingStream<AudioChunk, Error>
+  - 800ms jitter buffer with throttling
+  - Immediate stop() with queue clearing
+  - Proper shutdown() for engine cleanup
+- `OraTests/AudioPlaybackServiceTests.swift` - 10 unit tests covering:
+  - Engine preparation and idempotency
+  - Streaming playback
+  - Stop/shutdown behavior
+  - Error handling
+  - State tracking
+
+### Ready for Review
+- [x] All acceptance criteria verified
+- [x] Tests implemented (10 tests)
+- [x] Build succeeded
