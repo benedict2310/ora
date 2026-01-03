@@ -79,6 +79,17 @@ Connecting the loop: Audio → ASR → LLM → Tools → TTS.
 | O.04 | [Confirmation Flow](orchestration/O.04-CONFIRMATION-FLOW.md) | 🚧 To Do |
 | O.05 | [Improved Hotkey Flow](orchestration/O.05-IMPROVED-HOTKEY-FLOW.md) | ✅ Complete |
 
+### 📚 Skills (S)
+Optional orchestration playbooks that layer on top of native tools.
+
+| ID | Title | Status |
+|:---|:------|:-------|
+| S.01 | [Skills Runtime](skills/S.01-SKILLS-RUNTIME.md) | 🚧 To Do |
+| S.02 | [Skills Evaluation](skills/S.02-SKILLS-EVALUATION.md) | 🚧 To Do |
+| S.03 | [Skill Scripts](skills/S.03-SKILL-SCRIPTS.md) | 📋 Future |
+| S.04 | [Skills Marketplace](skills/S.04-SKILLS-MARKETPLACE.md) | 📋 Future |
+| S.05 | [Embedding Retrieval](skills/S.05-EMBEDDING-RETRIEVAL.md) | 📋 Future |
+
 ---
 
 ## Dependency Graph
@@ -133,6 +144,20 @@ Connecting the loop: Audio → ASR → LLM → Tools → TTS.
                     │  O.04 Confirmation Flow │
                     │  🚧 To Do               │
                     └─────────────────────────┘
+
+         ┌─────────────────────────────────────────────────┐
+         │                  SKILLS (S)                     │
+         │  S.01 Skills Runtime ◄── O.02 Agent Loop        │
+         │       │                                         │
+         │       ▼                                         │
+         │  S.02 Skills Evaluation                         │
+         │       │                                         │
+         │       ▼ (Future)                                │
+         │  S.03 Skill Scripts                             │
+         │       │                                         │
+         │       ▼                                         │
+         │  S.04 Marketplace → S.05 Embedding Retrieval    │
+         └─────────────────────────────────────────────────┘
 ```
 
 ---
@@ -177,10 +202,19 @@ All foundation stories (F.00-F.09) are complete. This includes app shell, permis
 | P0 | O.03 | Conversation Orchestrator - Full pipeline coordination |
 | P1 | O.04 | Confirmation Flow - Tool mutation confirmation UI |
 
+### 🚧 Phase 7: Skills (Optional)
+| Priority | Story | Description |
+|:---------|:------|:------------|
+| P1 | S.01 | Skills Runtime - Skill discovery, loading, tools integration |
+| P2 | S.02 | Skills Evaluation - Benchmark harness for skill activation |
+
 ### 📋 Optional/Deferred
 | Priority | Story | Description |
 |:---------|:------|:------------|
 | P2 | L.05 | Additional LLM Models - More model options |
+| P3 | S.03 | Skill Scripts - Execute scripts within skills |
+| P3 | S.04 | Skills Marketplace - Browse and install community skills |
+| P3 | S.05 | Embedding Retrieval - Semantic skill search |
 
 ---
 

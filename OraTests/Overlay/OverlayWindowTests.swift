@@ -65,4 +65,49 @@ final class OverlayWindowTests: XCTestCase {
         // Cleanup
         controller.hide(animated: false)
     }
+
+    func test_overlayWindow_sizeMatchesDesign() {
+        let controller = OverlayWindowController.shared
+
+        controller.show()
+
+        guard let panel = self.extractPanel() else {
+            XCTFail("Could not access panel via reflection")
+            return
+        }
+
+        XCTAssertEqual(panel.frame.size.width, 560, accuracy: 0.5)
+        XCTAssertEqual(panel.frame.size.height, 380, accuracy: 0.5)
+
+        controller.hide(animated: false)
+    }
+
+    func test_overlayWindow_positionsTopCenter() {
+        let controller = OverlayWindowController.shared
+
+        controller.show()
+
+        guard let panel = self.extractPanel() else {
+            XCTFail("Could not access panel via reflection")
+            return
+        }
+
+        guard let screenFrame = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame else {
+            XCTFail("Unable to read screen frame")
+            return
+        }
+
+        let expectedX = screenFrame.midX - panel.frame.width / 2
+        let expectedY = screenFrame.maxY - panel.frame.height - 10
+
+        XCTAssertEqual(panel.frame.origin.x, expectedX, accuracy: 1.0)
+        XCTAssertEqual(panel.frame.origin.y, expectedY, accuracy: 1.0)
+
+        controller.hide(animated: false)
+    }
+
+    private func extractPanel() -> NSPanel? {
+        let mirror = Mirror(reflecting: OverlayWindowController.shared)
+        return mirror.children.first(where: { $0.label == "panel" })?.value as? NSPanel
+    }
 }

@@ -58,7 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func onSetupComplete() {
         self.logger.info("Setup complete, initializing main functionality")
-        
+
         // Start preloading models in the background
         Task {
             do {
@@ -68,7 +68,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.logger.error("Failed to prepare ASR service: \(error.localizedDescription)")
             }
         }
-        
+
+        // Prepare TTS engine for faster first response
+        Task {
+            do {
+                try await TTSService.shared.prepare()
+                self.logger.info("TTS service prepared")
+            } catch {
+                self.logger.warning("TTS preparation failed: \(error.localizedDescription)")
+            }
+        }
+
+        // Prepare audio playback engine
+        Task {
+            do {
+                try await AudioPlaybackService.shared.prepare()
+                self.logger.info("Audio playback service prepared")
+            } catch {
+                self.logger.warning("Audio playback preparation failed: \(error.localizedDescription)")
+            }
+        }
+
         self.startHotkeyManager()
     }
 

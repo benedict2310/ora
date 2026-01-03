@@ -186,6 +186,8 @@ defaults delete com.ora.app "com.ora.hotkeyConfiguration"
 4.  **Cleanup:**
     Delete the feature branch after merging.
 
+**Important**: There is an ./agent-tools folder in the root of the project. This is for quick tests, helper scripts and testing. This folder is gitignored and shouldn't be commited per design.
+
 ### Git Safety Rules (MANDATORY)
 
 **ALWAYS COMMIT, NEVER STASH:**

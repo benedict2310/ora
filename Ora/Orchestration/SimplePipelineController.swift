@@ -43,6 +43,7 @@ final class SimplePipelineController: ObservableObject {
     
     private var sessionTask: Task<Void, Never>?
     private var autoDismissTask: Task<Void, Never>?
+    private var ttsTask: Task<Void, Never>?
     
     /// Delay before auto-dismissing after completion (seconds)
     private let autoDismissDelay: TimeInterval = 5.0
@@ -169,18 +170,22 @@ final class SimplePipelineController: ObservableObject {
     /// Cancel current operation and return to idle
     func cancel() {
         self.logger.info("Cancelling current operation from state: \(self.state.description)")
-        
+
         // Cancel all tasks
         self.sessionTask?.cancel()
         self.sessionTask = nil
         self.autoDismissTask?.cancel()
         self.autoDismissTask = nil
-        
-        // Stop audio
+        self.ttsTask?.cancel()
+        self.ttsTask = nil
+
+        // Stop audio capture and TTS playback
         Task {
+            await TTSService.shared.stop()
+            await AudioPlaybackService.shared.stop()
             await AudioService.shared.cancel()
         }
-        
+
         self.transition(to: .idle)
         OverlayWindowController.shared.hide(animated: true)
     }
@@ -315,25 +320,60 @@ final class SimplePipelineController: ObservableObject {
         }
     }
     
-    // MARK: - Private - Completion
-    
+    // MARK: - Private - Completion & TTS
+
     private func handleCompletion() {
-        self.logger.info("Response complete: \(self.currentResponse.prefix(50))...")
-        
-        // Transition to awaiting follow-up state (AC-14)
+        self.logger.info("Response complete, starting TTS: \(self.currentResponse.prefix(50))...")
+
+        // Start TTS playback
+        self.speakResponse(self.currentResponse)
+    }
+
+    private func speakResponse(_ text: String) {
+        self.transition(to: .speaking)
+        // Keep overlay in responding mode during speech (shows the text)
+        // OverlayWindowController.shared.mode = .responding  // Already set
+
+        self.ttsTask = Task {
+            do {
+                // Get audio stream from TTS
+                let audioStream = TTSService.shared.speak(text)
+
+                // Play through AudioPlaybackService
+                try await AudioPlaybackService.shared.play(chunks: audioStream)
+
+                guard !Task.isCancelled else { return }
+
+                // TTS complete, transition to awaiting follow-up
+                self.finishSpeaking()
+
+            } catch {
+                guard !Task.isCancelled else { return }
+
+                self.logger.error("TTS playback failed: \(error.localizedDescription)")
+                // Still complete - user saw the text
+                self.finishSpeaking()
+            }
+        }
+    }
+
+    private func finishSpeaking() {
+        self.logger.info("TTS complete")
+
+        // Transition to awaiting follow-up state
         self.transition(to: .awaitingFollowUp)
         OverlayWindowController.shared.mode = .awaitingFollowUp
-        
-        // Handle Auto-Listen (AC-23)
+
+        // Handle Auto-Listen if enabled
         if self.isAutoListenEnabled {
             self.logger.info("Auto-listen enabled, scheduling follow-up")
             Task {
                 // Short delay to let the user process the response
                 try? await Task.sleep(for: .milliseconds(500))
-                
+
                 // Ensure we are still in awaitingFollowUp state (user didn't cancel)
                 guard !Task.isCancelled, self.state == .awaitingFollowUp else { return }
-                
+
                 await MainActor.run {
                     self.startFollowUp()
                 }
@@ -391,6 +431,8 @@ final class SimplePipelineController: ObservableObject {
             StatusBarController.shared?.setState(.listening)
         case .thinking, .responding, .awaitingFollowUp:
             StatusBarController.shared?.setState(.thinking)
+        case .speaking:
+            StatusBarController.shared?.setState(.speaking)
         case .error(let message):
             StatusBarController.shared?.setState(.error(message))
         }
