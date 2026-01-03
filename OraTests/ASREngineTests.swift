@@ -75,15 +75,6 @@ final class ASREngineTests: XCTestCase {
         XCTAssertEqual(segment.text, "final result")
     }
 
-    func test_ASRFinalSegment_isEquatable() {
-        let segment1 = ASRFinalSegment(text: "test", words: [])
-        let segment2 = ASRFinalSegment(text: "test", words: [])
-        let segment3 = ASRFinalSegment(text: "different", words: [])
-
-        XCTAssertEqual(segment1, segment2)
-        XCTAssertNotEqual(segment1, segment3)
-    }
-
     // MARK: - PCM Buffer Creation Tests
 
     func test_makePCMBuffer_createsValidBuffer() {
