@@ -54,7 +54,13 @@ actor ToolRegistry {
     
     /// Register all default tools
     func registerDefaultTools() {
-        // Will be populated as tools are implemented
+        // Calendar tools
+        register(CalendarQueryTool())
+        register(CalendarFindSlotsTool())
+        register(CalendarCreateEventTool())
+        register(CalendarEditEventTool())
+        register(CalendarDeleteEventTool())
+        
         logger.info("Registered \(self.tools.count) tools")
     }
     

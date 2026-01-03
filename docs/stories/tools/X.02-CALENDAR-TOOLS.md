@@ -3,32 +3,213 @@
 **Epic:** Tools
 **Status:** Not Started
 **Priority:** P0 (Critical Path)
-**Estimated Effort:** 2 days
-**Dependencies:** X.01 (Tool Protocol), F.02 (Permissions)
+**Estimated Effort:** 2-3 days
+**Dependencies:** X.01 (Tool Protocol - Complete), F.02 (Permissions - Complete)
 **Target:** macOS 26 (Tahoe)
 
 ---
 
 ## 1. Objective
 
-Implement calendar tools using EventKit for querying, finding slots, creating, and deleting events.
+Implement calendar tools using EventKit for querying, finding slots, creating, editing, and deleting events. These tools enable Ora to be a practical calendar assistant.
 
 ---
 
-## 2. Tools
+## 2. User Story
 
-| Tool | Kind | Description |
-|:-----|:-----|:------------|
-| `calendar.query` | read | Query events in a date range |
-| `calendar.find_slots` | read | Find available time slots |
-| `calendar.create_event` | mutate | Create a new event |
-| `calendar.delete_event` | mutate | Delete an existing event |
+As a **user**, I want Ora to **manage my calendar** so that I can **schedule meetings, check availability, and modify events using voice**.
 
 ---
 
-## 3. Implementation
+## 3. Architecture Context & Reuse Guidance
 
-### 3.1 Calendar Query Tool
+### 3.1 Existing Infrastructure (MUST REUSE)
+
+| Component | Location | Purpose |
+|:----------|:---------|:--------|
+| `Tool` protocol | `Ora/Tools/ToolProtocol.swift` | Base protocol all tools implement |
+| `ToolRegistry` | `Ora/Tools/ToolRegistry.swift` | Register tools at startup |
+| `ToolHost` | `Ora/Tools/ToolHost.swift` | Executes tools with confirmation gates + audit |
+| `JSONValue` | `Ora/LLM/LLMOutput.swift` | Argument type for tool parameters |
+| `ToolResult` | `Ora/Tools/ToolProtocol.swift` | Return type with JSON + human summary |
+| `EventKitPermission` | `Ora/Permissions/EventKitPermission.swift` | Calendar permission checks |
+| `AuditLogger` | `Ora/Persistence/AuditLogger.swift` | Automatic logging via ToolHost |
+
+### 3.2 EventKit Patterns
+
+From Apple EventKit documentation:
+
+```swift
+// EKEventStore is the gateway - create once, reuse
+let store = EKEventStore()
+
+// Query events in date range
+let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
+let events = store.events(matching: predicate)
+
+// Get event by ID (for edit/delete)
+let event = store.event(withIdentifier: eventID)
+
+// Save changes (create or update)
+try store.save(event, span: .thisEvent, commit: true)
+
+// Delete
+try store.remove(event, span: .thisEvent, commit: true)
+```
+
+**Key EKEvent mutable properties:**
+- `title: String`
+- `startDate: Date`
+- `endDate: Date`
+- `location: String?`
+- `notes: String?`
+- `calendar: EKCalendar`
+- `isAllDay: Bool`
+- `url: URL?`
+- `alarms: [EKAlarm]?`
+- `availability: EKEventAvailability`
+
+**EKSpan for recurring events:**
+- `.thisEvent` - Only this occurrence
+- `.futureEvents` - This and all future occurrences
+
+### 3.3 Guardrails Pattern
+
+From `ToolProtocol.swift`:
+- `kind: .read` → No confirmation required (query, find_slots)
+- `kind: .mutate` → Requires confirmation (create, edit, delete)
+
+The `ToolHost` automatically enforces this - if `tool.requiresConfirmation && !confirmed`, it throws `ToolHostError.confirmationRequired`.
+
+---
+
+## 4. Tools
+
+| Tool | Kind | Description | Confirmation |
+|:-----|:-----|:------------|:-------------|
+| `calendar.query` | read | Query events in a date range | No |
+| `calendar.find_slots` | read | Find available time slots | No |
+| `calendar.create_event` | mutate | Create a new event | **Yes** |
+| `calendar.edit_event` | mutate | Edit an existing event | **Yes** |
+| `calendar.delete_event` | mutate | Delete an existing event | **Yes** |
+
+---
+
+## 5. File Touch List
+
+### Files to Create
+
+| File | Rationale |
+|:-----|:----------|
+| `Ora/Tools/Calendar/CalendarQueryTool.swift` | Query events by date range |
+| `Ora/Tools/Calendar/CalendarFindSlotsTool.swift` | Find free time slots |
+| `Ora/Tools/Calendar/CalendarCreateEventTool.swift` | Create new events |
+| `Ora/Tools/Calendar/CalendarEditEventTool.swift` | Edit existing events (NEW) |
+| `Ora/Tools/Calendar/CalendarDeleteEventTool.swift` | Delete events |
+| `Ora/Tools/Calendar/CalendarToolErrors.swift` | Shared error types |
+| `Ora/Tools/Calendar/EventStoreProvider.swift` | Shared EKEventStore access |
+| `OraTests/Tools/Calendar/CalendarToolsTests.swift` | Unit tests for all calendar tools |
+
+### Files to Modify
+
+| File | Change |
+|:-----|:-------|
+| `Ora/Tools/ToolRegistry.swift` | Register calendar tools in `registerDefaultTools()` |
+| `project.yml` | Add `Ora/Tools/Calendar/` folder to sources (if not auto-discovered) |
+
+---
+
+## 6. Implementation Plan
+
+### Step 1: Create Shared Infrastructure
+
+**File:** `Ora/Tools/Calendar/EventStoreProvider.swift`
+
+```swift
+//
+//  EventStoreProvider.swift
+//  Ora
+//
+//  Shared EKEventStore provider for calendar tools
+//
+
+import EventKit
+
+/// Provides shared access to EKEventStore
+enum EventStoreProvider {
+    /// Shared event store instance
+    /// Note: EKEventStore is thread-safe and meant to be reused
+    static let shared = EKEventStore()
+    
+    /// ISO8601 date formatter with fractional seconds
+    static var dateFormatter: ISO8601DateFormatter {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }
+    
+    /// Fallback formatter without fractional seconds
+    static var dateFormatterNoFractional: ISO8601DateFormatter {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }
+    
+    /// Parse ISO8601 date string with fallback
+    static func parseDate(_ string: String) -> Date? {
+        dateFormatter.date(from: string) ?? dateFormatterNoFractional.date(from: string)
+    }
+    
+    /// Format date to ISO8601 string
+    static func formatDate(_ date: Date) -> String {
+        dateFormatter.string(from: date)
+    }
+}
+```
+
+**File:** `Ora/Tools/Calendar/CalendarToolErrors.swift`
+
+```swift
+//
+//  CalendarToolErrors.swift
+//  Ora
+//
+//  Error types for calendar tools
+//
+
+import Foundation
+
+enum CalendarToolError: LocalizedError {
+    case invalidDateFormat(String)
+    case eventNotFound(String)
+    case endBeforeStart
+    case noDefaultCalendar
+    case permissionDenied
+    case saveFailed(String)
+    case deleteFailed(String)
+    
+    var errorDescription: String? {
+        switch self {
+        case .invalidDateFormat(let value):
+            return "Invalid date format: \(value). Use ISO 8601 format."
+        case .eventNotFound(let id):
+            return "Event not found: \(id)"
+        case .endBeforeStart:
+            return "End time must be after start time."
+        case .noDefaultCalendar:
+            return "No default calendar available."
+        case .permissionDenied:
+            return "Calendar access denied. Please grant permission in System Settings."
+        case .saveFailed(let reason):
+            return "Failed to save event: \(reason)"
+        case .deleteFailed(let reason):
+            return "Failed to delete event: \(reason)"
+        }
+    }
+}
+```
+
+### Step 2: Implement Query Tool
 
 **File:** `Ora/Tools/Calendar/CalendarQueryTool.swift`
 
@@ -37,7 +218,7 @@ Implement calendar tools using EventKit for querying, finding slots, creating, a
 //  CalendarQueryTool.swift
 //  Ora
 //
-//  Query calendar events
+//  Query calendar events in a date range
 //
 
 import Foundation
@@ -54,55 +235,189 @@ struct CalendarQueryTool: Tool {
             parameters: [
                 "start": ParameterSchema(type: "string", description: "Start date/time (ISO 8601)", format: "date-time"),
                 "end": ParameterSchema(type: "string", description: "End date/time (ISO 8601)", format: "date-time"),
-                "calendar_id": ParameterSchema(type: "string", description: "Optional calendar ID", format: nil)
+                "calendar_id": ParameterSchema(type: "string", description: "Optional calendar ID to filter by")
             ],
-            requiredParameters: ["start", "end"]
+            requiredParameters: ["start", "end"],
+            requiresConfirmation: false
         )
     }
     
     func validate(args: [String: JSONValue]) throws {
-        guard args["start"]?.stringValue != nil else {
-            throw ToolValidationError.missingParameter("start")
+        guard let startStr = args["start"]?.stringValue else {
+            throw ToolHostError.validationFailed(name, "Missing required parameter: start")
         }
-        guard args["end"]?.stringValue != nil else {
-            throw ToolValidationError.missingParameter("end")
+        guard let endStr = args["end"]?.stringValue else {
+            throw ToolHostError.validationFailed(name, "Missing required parameter: end")
+        }
+        guard EventStoreProvider.parseDate(startStr) != nil else {
+            throw CalendarToolError.invalidDateFormat(startStr)
+        }
+        guard EventStoreProvider.parseDate(endStr) != nil else {
+            throw CalendarToolError.invalidDateFormat(endStr)
         }
     }
     
     func execute(args: [String: JSONValue]) async throws -> ToolResult {
-        let store = EKEventStore()
+        let store = EventStoreProvider.shared
         
         guard let startStr = args["start"]?.stringValue,
               let endStr = args["end"]?.stringValue,
-              let start = ISO8601DateFormatter().date(from: startStr),
-              let end = ISO8601DateFormatter().date(from: endStr) else {
-            throw ToolExecutionError.invalidArgument("Invalid date format")
+              let start = EventStoreProvider.parseDate(startStr),
+              let end = EventStoreProvider.parseDate(endStr) else {
+            throw CalendarToolError.invalidDateFormat("start or end")
         }
         
-        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
+        // Optional calendar filter
+        var calendars: [EKCalendar]? = nil
+        if let calendarID = args["calendar_id"]?.stringValue,
+           let calendar = store.calendar(withIdentifier: calendarID) {
+            calendars = [calendar]
+        }
+        
+        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: calendars)
         let events = store.events(matching: predicate)
         
         let eventData: [JSONValue] = events.map { event in
             .object([
                 "id": .string(event.eventIdentifier),
                 "title": .string(event.title ?? ""),
-                "start": .string(ISO8601DateFormatter().string(from: event.startDate)),
-                "end": .string(ISO8601DateFormatter().string(from: event.endDate)),
+                "start": .string(EventStoreProvider.formatDate(event.startDate)),
+                "end": .string(EventStoreProvider.formatDate(event.endDate)),
                 "location": .string(event.location ?? ""),
-                "calendar": .string(event.calendar.title)
+                "calendar": .string(event.calendar.title),
+                "is_all_day": .bool(event.isAllDay)
             ])
         }
         
-        let summary = events.isEmpty 
-            ? "No events found in that time range."
-            : "Found \(events.count) event\(events.count == 1 ? "" : "s")."
+        let summary: String
+        if events.isEmpty {
+            summary = "No events found in that time range."
+        } else if events.count == 1 {
+            summary = "Found 1 event: \(events[0].title ?? "Untitled")."
+        } else {
+            summary = "Found \(events.count) events."
+        }
         
         return .success(.array(eventData), summary: summary)
     }
 }
 ```
 
-### 3.2 Calendar Create Event Tool
+### Step 3: Implement Find Slots Tool
+
+**File:** `Ora/Tools/Calendar/CalendarFindSlotsTool.swift`
+
+```swift
+//
+//  CalendarFindSlotsTool.swift
+//  Ora
+//
+//  Find available time slots in a date range
+//
+
+import Foundation
+import EventKit
+
+struct CalendarFindSlotsTool: Tool {
+    let name = "calendar.find_slots"
+    let kind: ToolKind = .read
+    
+    var schema: ToolSchema {
+        ToolSchema(
+            name: name,
+            description: "Find available time slots of a given duration within a date range",
+            parameters: [
+                "start": ParameterSchema(type: "string", description: "Start of search range (ISO 8601)", format: "date-time"),
+                "end": ParameterSchema(type: "string", description: "End of search range (ISO 8601)", format: "date-time"),
+                "duration_minutes": ParameterSchema(type: "number", description: "Required slot duration in minutes"),
+                "max_results": ParameterSchema(type: "number", description: "Maximum slots to return (default 5)")
+            ],
+            requiredParameters: ["start", "end", "duration_minutes"],
+            requiresConfirmation: false
+        )
+    }
+    
+    func validate(args: [String: JSONValue]) throws {
+        guard args["start"]?.stringValue != nil else {
+            throw ToolHostError.validationFailed(name, "Missing required parameter: start")
+        }
+        guard args["end"]?.stringValue != nil else {
+            throw ToolHostError.validationFailed(name, "Missing required parameter: end")
+        }
+        guard args["duration_minutes"]?.numberValue != nil else {
+            throw ToolHostError.validationFailed(name, "Missing required parameter: duration_minutes")
+        }
+    }
+    
+    func execute(args: [String: JSONValue]) async throws -> ToolResult {
+        let store = EventStoreProvider.shared
+        
+        guard let startStr = args["start"]?.stringValue,
+              let endStr = args["end"]?.stringValue,
+              let start = EventStoreProvider.parseDate(startStr),
+              let end = EventStoreProvider.parseDate(endStr),
+              let durationMinutes = args["duration_minutes"]?.numberValue else {
+            throw CalendarToolError.invalidDateFormat("start, end, or duration")
+        }
+        
+        let duration = durationMinutes * 60  // Convert to seconds
+        let maxResults = Int(args["max_results"]?.numberValue ?? 5)
+        
+        // Get existing events
+        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
+        let events = store.events(matching: predicate).sorted { $0.startDate < $1.startDate }
+        
+        // Find gaps
+        var slots: [(start: Date, end: Date)] = []
+        var cursor = start
+        
+        for event in events {
+            if event.startDate > cursor {
+                let gapEnd = event.startDate
+                let gapDuration = gapEnd.timeIntervalSince(cursor)
+                if gapDuration >= duration {
+                    slots.append((cursor, cursor.addingTimeInterval(duration)))
+                    if slots.count >= maxResults { break }
+                }
+            }
+            if event.endDate > cursor {
+                cursor = event.endDate
+            }
+        }
+        
+        // Check for slot after last event
+        if slots.count < maxResults && cursor < end {
+            let gapDuration = end.timeIntervalSince(cursor)
+            if gapDuration >= duration {
+                slots.append((cursor, cursor.addingTimeInterval(duration)))
+            }
+        }
+        
+        let slotData: [JSONValue] = slots.map { slot in
+            .object([
+                "start": .string(EventStoreProvider.formatDate(slot.start)),
+                "end": .string(EventStoreProvider.formatDate(slot.end))
+            ])
+        }
+        
+        let summary: String
+        if slots.isEmpty {
+            summary = "No available slots found for \(Int(durationMinutes)) minutes."
+        } else if slots.count == 1 {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .none
+            formatter.timeStyle = .short
+            summary = "Found 1 available slot at \(formatter.string(from: slots[0].start))."
+        } else {
+            summary = "Found \(slots.count) available slots."
+        }
+        
+        return .success(.array(slotData), summary: summary)
+    }
+}
+```
+
+### Step 4: Implement Create Event Tool
 
 **File:** `Ora/Tools/Calendar/CalendarCreateEventTool.swift`
 
@@ -111,7 +426,7 @@ struct CalendarQueryTool: Tool {
 //  CalendarCreateEventTool.swift
 //  Ora
 //
-//  Create calendar events (requires confirmation)
+//  Create new calendar events (requires confirmation)
 //
 
 import Foundation
@@ -126,43 +441,45 @@ struct CalendarCreateEventTool: Tool {
             name: name,
             description: "Create a new calendar event. Requires confirmation.",
             parameters: [
-                "title": ParameterSchema(type: "string", description: "Event title", format: nil),
+                "title": ParameterSchema(type: "string", description: "Event title"),
                 "start": ParameterSchema(type: "string", description: "Start date/time (ISO 8601)", format: "date-time"),
                 "end": ParameterSchema(type: "string", description: "End date/time (ISO 8601)", format: "date-time"),
-                "location": ParameterSchema(type: "string", description: "Event location", format: nil),
-                "notes": ParameterSchema(type: "string", description: "Event notes", format: nil),
-                "calendar_id": ParameterSchema(type: "string", description: "Calendar ID (uses default if omitted)", format: nil)
+                "location": ParameterSchema(type: "string", description: "Event location (optional)"),
+                "notes": ParameterSchema(type: "string", description: "Event notes (optional)"),
+                "calendar_id": ParameterSchema(type: "string", description: "Calendar ID (uses default if omitted)"),
+                "is_all_day": ParameterSchema(type: "boolean", description: "All-day event (default false)")
             ],
-            requiredParameters: ["title", "start", "end"]
+            requiredParameters: ["title", "start", "end"],
+            requiresConfirmation: true
         )
     }
     
     func validate(args: [String: JSONValue]) throws {
         guard let title = args["title"]?.stringValue, !title.isEmpty else {
-            throw ToolValidationError.missingParameter("title")
+            throw ToolHostError.validationFailed(name, "Missing required parameter: title")
         }
-        guard args["start"]?.stringValue != nil else {
-            throw ToolValidationError.missingParameter("start")
+        guard let startStr = args["start"]?.stringValue,
+              let start = EventStoreProvider.parseDate(startStr) else {
+            throw CalendarToolError.invalidDateFormat(args["start"]?.stringValue ?? "nil")
         }
-        guard args["end"]?.stringValue != nil else {
-            throw ToolValidationError.missingParameter("end")
+        guard let endStr = args["end"]?.stringValue,
+              let end = EventStoreProvider.parseDate(endStr) else {
+            throw CalendarToolError.invalidDateFormat(args["end"]?.stringValue ?? "nil")
+        }
+        guard end > start else {
+            throw CalendarToolError.endBeforeStart
         }
     }
     
     func execute(args: [String: JSONValue]) async throws -> ToolResult {
-        let store = EKEventStore()
+        let store = EventStoreProvider.shared
         
         guard let title = args["title"]?.stringValue,
               let startStr = args["start"]?.stringValue,
               let endStr = args["end"]?.stringValue,
-              let start = ISO8601DateFormatter().date(from: startStr),
-              let end = ISO8601DateFormatter().date(from: endStr) else {
-            throw ToolExecutionError.invalidArgument("Invalid arguments")
-        }
-        
-        // Validate end > start
-        guard end > start else {
-            throw ToolExecutionError.invalidArgument("End time must be after start time")
+              let start = EventStoreProvider.parseDate(startStr),
+              let end = EventStoreProvider.parseDate(endStr) else {
+            throw CalendarToolError.invalidDateFormat("title, start, or end")
         }
         
         let event = EKEvent(eventStore: store)
@@ -171,16 +488,24 @@ struct CalendarCreateEventTool: Tool {
         event.endDate = end
         event.location = args["location"]?.stringValue
         event.notes = args["notes"]?.stringValue
+        event.isAllDay = args["is_all_day"]?.boolValue ?? false
         
         // Set calendar
         if let calendarID = args["calendar_id"]?.stringValue,
            let calendar = store.calendar(withIdentifier: calendarID) {
             event.calendar = calendar
         } else {
-            event.calendar = store.defaultCalendarForNewEvents
+            guard let defaultCalendar = store.defaultCalendarForNewEvents else {
+                throw CalendarToolError.noDefaultCalendar
+            }
+            event.calendar = defaultCalendar
         }
         
-        try store.save(event, span: .thisEvent, commit: true)
+        do {
+            try store.save(event, span: .thisEvent, commit: true)
+        } catch {
+            throw CalendarToolError.saveFailed(error.localizedDescription)
+        }
         
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
@@ -189,14 +514,153 @@ struct CalendarCreateEventTool: Tool {
         let summary = "Created '\(title)' on \(formatter.string(from: start))."
         
         return .success(
-            .object(["event_id": .string(event.eventIdentifier)]),
+            .object([
+                "event_id": .string(event.eventIdentifier),
+                "title": .string(title),
+                "start": .string(EventStoreProvider.formatDate(start)),
+                "end": .string(EventStoreProvider.formatDate(end))
+            ]),
             summary: summary
         )
     }
 }
 ```
 
-### 3.3 Calendar Delete Event Tool
+### Step 5: Implement Edit Event Tool (NEW)
+
+**File:** `Ora/Tools/Calendar/CalendarEditEventTool.swift`
+
+```swift
+//
+//  CalendarEditEventTool.swift
+//  Ora
+//
+//  Edit existing calendar events (requires confirmation)
+//
+
+import Foundation
+import EventKit
+
+struct CalendarEditEventTool: Tool {
+    let name = "calendar.edit_event"
+    let kind: ToolKind = .mutate
+    
+    var schema: ToolSchema {
+        ToolSchema(
+            name: name,
+            description: "Edit an existing calendar event. Requires confirmation. Only provided fields are updated.",
+            parameters: [
+                "event_id": ParameterSchema(type: "string", description: "Event identifier (from query)"),
+                "title": ParameterSchema(type: "string", description: "New event title (optional)"),
+                "start": ParameterSchema(type: "string", description: "New start date/time (ISO 8601, optional)", format: "date-time"),
+                "end": ParameterSchema(type: "string", description: "New end date/time (ISO 8601, optional)", format: "date-time"),
+                "location": ParameterSchema(type: "string", description: "New event location (optional)"),
+                "notes": ParameterSchema(type: "string", description: "New event notes (optional)"),
+                "span": ParameterSchema(type: "string", description: "For recurring: 'this' or 'future' (default: 'this')")
+            ],
+            requiredParameters: ["event_id"],
+            requiresConfirmation: true
+        )
+    }
+    
+    func validate(args: [String: JSONValue]) throws {
+        guard let eventID = args["event_id"]?.stringValue, !eventID.isEmpty else {
+            throw ToolHostError.validationFailed(name, "Missing required parameter: event_id")
+        }
+        
+        // Validate date formats if provided
+        if let startStr = args["start"]?.stringValue {
+            guard EventStoreProvider.parseDate(startStr) != nil else {
+                throw CalendarToolError.invalidDateFormat(startStr)
+            }
+        }
+        if let endStr = args["end"]?.stringValue {
+            guard EventStoreProvider.parseDate(endStr) != nil else {
+                throw CalendarToolError.invalidDateFormat(endStr)
+            }
+        }
+        
+        // Validate span if provided
+        if let span = args["span"]?.stringValue {
+            guard span == "this" || span == "future" else {
+                throw ToolHostError.validationFailed(name, "span must be 'this' or 'future'")
+            }
+        }
+    }
+    
+    func execute(args: [String: JSONValue]) async throws -> ToolResult {
+        let store = EventStoreProvider.shared
+        
+        guard let eventID = args["event_id"]?.stringValue,
+              let event = store.event(withIdentifier: eventID) else {
+            throw CalendarToolError.eventNotFound(args["event_id"]?.stringValue ?? "nil")
+        }
+        
+        let originalTitle = event.title ?? "Untitled"
+        var changes: [String] = []
+        
+        // Apply updates only for provided fields
+        if let title = args["title"]?.stringValue {
+            event.title = title
+            changes.append("title")
+        }
+        
+        if let startStr = args["start"]?.stringValue,
+           let start = EventStoreProvider.parseDate(startStr) {
+            event.startDate = start
+            changes.append("start time")
+        }
+        
+        if let endStr = args["end"]?.stringValue,
+           let end = EventStoreProvider.parseDate(endStr) {
+            event.endDate = end
+            changes.append("end time")
+        }
+        
+        if let location = args["location"]?.stringValue {
+            event.location = location
+            changes.append("location")
+        }
+        
+        if let notes = args["notes"]?.stringValue {
+            event.notes = notes
+            changes.append("notes")
+        }
+        
+        // Validate end > start after updates
+        if event.endDate <= event.startDate {
+            throw CalendarToolError.endBeforeStart
+        }
+        
+        // Determine span for recurring events
+        let span: EKSpan
+        if let spanStr = args["span"]?.stringValue, spanStr == "future" {
+            span = .futureEvents
+        } else {
+            span = .thisEvent
+        }
+        
+        do {
+            try store.save(event, span: span, commit: true)
+        } catch {
+            throw CalendarToolError.saveFailed(error.localizedDescription)
+        }
+        
+        let changesText = changes.isEmpty ? "no fields" : changes.joined(separator: ", ")
+        let summary = "Updated '\(originalTitle)': \(changesText)."
+        
+        return .success(
+            .object([
+                "event_id": .string(event.eventIdentifier),
+                "updated_fields": .array(changes.map { .string($0) })
+            ]),
+            summary: summary
+        )
+    }
+}
+```
+
+### Step 6: Implement Delete Event Tool
 
 **File:** `Ora/Tools/Calendar/CalendarDeleteEventTool.swift`
 
@@ -220,54 +684,274 @@ struct CalendarDeleteEventTool: Tool {
             name: name,
             description: "Delete a calendar event. Requires confirmation.",
             parameters: [
-                "event_id": ParameterSchema(type: "string", description: "Event identifier", format: nil)
+                "event_id": ParameterSchema(type: "string", description: "Event identifier (from query)"),
+                "span": ParameterSchema(type: "string", description: "For recurring: 'this' or 'future' (default: 'this')")
             ],
-            requiredParameters: ["event_id"]
+            requiredParameters: ["event_id"],
+            requiresConfirmation: true
         )
     }
     
     func validate(args: [String: JSONValue]) throws {
-        guard args["event_id"]?.stringValue != nil else {
-            throw ToolValidationError.missingParameter("event_id")
+        guard let eventID = args["event_id"]?.stringValue, !eventID.isEmpty else {
+            throw ToolHostError.validationFailed(name, "Missing required parameter: event_id")
+        }
+        
+        if let span = args["span"]?.stringValue {
+            guard span == "this" || span == "future" else {
+                throw ToolHostError.validationFailed(name, "span must be 'this' or 'future'")
+            }
         }
     }
     
     func execute(args: [String: JSONValue]) async throws -> ToolResult {
-        let store = EKEventStore()
+        let store = EventStoreProvider.shared
         
         guard let eventID = args["event_id"]?.stringValue,
               let event = store.event(withIdentifier: eventID) else {
-            throw ToolExecutionError.notFound("Event not found")
+            throw CalendarToolError.eventNotFound(args["event_id"]?.stringValue ?? "nil")
         }
         
         let title = event.title ?? "Untitled"
-        try store.remove(event, span: .thisEvent, commit: true)
+        
+        let span: EKSpan
+        if let spanStr = args["span"]?.stringValue, spanStr == "future" {
+            span = .futureEvents
+        } else {
+            span = .thisEvent
+        }
+        
+        do {
+            try store.remove(event, span: span, commit: true)
+        } catch {
+            throw CalendarToolError.deleteFailed(error.localizedDescription)
+        }
         
         return .success(
-            .object(["deleted": .bool(true)]),
+            .object([
+                "deleted": .bool(true),
+                "title": .string(title)
+            ]),
             summary: "Deleted '\(title)'."
         )
     }
 }
 ```
 
+### Step 7: Register Tools
+
+**Modify:** `Ora/Tools/ToolRegistry.swift`
+
+Add to `registerDefaultTools()`:
+
+```swift
+func registerDefaultTools() {
+    // Calendar tools
+    register(CalendarQueryTool())
+    register(CalendarFindSlotsTool())
+    register(CalendarCreateEventTool())
+    register(CalendarEditEventTool())
+    register(CalendarDeleteEventTool())
+    
+    logger.info("Registered \(self.tools.count) tools")
+}
+```
+
 ---
 
-## 4. Acceptance Criteria
+## 7. Tests and Validation
 
-- [ ] **AC-1:** Query returns events in date range
-- [ ] **AC-2:** Create adds event with all fields
-- [ ] **AC-3:** Delete removes event by ID
-- [ ] **AC-4:** Mutations require confirmation (via ToolHost)
-- [ ] **AC-5:** Human summaries are clear and concise
+### 7.1 Unit Tests
+
+**File:** `OraTests/Tools/Calendar/CalendarToolsTests.swift`
+
+```swift
+import XCTest
+@testable import Ora
+
+final class CalendarToolsTests: XCTestCase {
+    
+    // MARK: - Query Tool Tests
+    
+    func test_queryTool_validate_missingStart() async throws {
+        let tool = CalendarQueryTool()
+        
+        XCTAssertThrowsError(try tool.validate(args: [
+            "end": .string("2026-01-02T00:00:00Z")
+        ]))
+    }
+    
+    func test_queryTool_validate_invalidDateFormat() async throws {
+        let tool = CalendarQueryTool()
+        
+        XCTAssertThrowsError(try tool.validate(args: [
+            "start": .string("not-a-date"),
+            "end": .string("2026-01-02T00:00:00Z")
+        ]))
+    }
+    
+    func test_queryTool_schema() {
+        let tool = CalendarQueryTool()
+        XCTAssertEqual(tool.name, "calendar.query")
+        XCTAssertEqual(tool.kind, .read)
+        XCTAssertFalse(tool.requiresConfirmation)
+    }
+    
+    // MARK: - Create Event Tool Tests
+    
+    func test_createTool_validate_success() throws {
+        let tool = CalendarCreateEventTool()
+        
+        XCTAssertNoThrow(try tool.validate(args: [
+            "title": .string("Meeting"),
+            "start": .string("2026-01-15T10:00:00Z"),
+            "end": .string("2026-01-15T11:00:00Z")
+        ]))
+    }
+    
+    func test_createTool_validate_endBeforeStart() {
+        let tool = CalendarCreateEventTool()
+        
+        XCTAssertThrowsError(try tool.validate(args: [
+            "title": .string("Meeting"),
+            "start": .string("2026-01-15T11:00:00Z"),
+            "end": .string("2026-01-15T10:00:00Z")
+        ])) { error in
+            XCTAssertTrue(error is CalendarToolError)
+        }
+    }
+    
+    func test_createTool_requiresConfirmation() {
+        let tool = CalendarCreateEventTool()
+        XCTAssertTrue(tool.requiresConfirmation)
+        XCTAssertEqual(tool.kind, .mutate)
+    }
+    
+    // MARK: - Edit Event Tool Tests
+    
+    func test_editTool_validate_success() throws {
+        let tool = CalendarEditEventTool()
+        
+        XCTAssertNoThrow(try tool.validate(args: [
+            "event_id": .string("12345")
+        ]))
+    }
+    
+    func test_editTool_validate_missingEventID() {
+        let tool = CalendarEditEventTool()
+        
+        XCTAssertThrowsError(try tool.validate(args: [:]))
+    }
+    
+    func test_editTool_validate_invalidSpan() {
+        let tool = CalendarEditEventTool()
+        
+        XCTAssertThrowsError(try tool.validate(args: [
+            "event_id": .string("12345"),
+            "span": .string("invalid")
+        ]))
+    }
+    
+    func test_editTool_requiresConfirmation() {
+        let tool = CalendarEditEventTool()
+        XCTAssertTrue(tool.requiresConfirmation)
+        XCTAssertEqual(tool.kind, .mutate)
+    }
+    
+    // MARK: - Delete Event Tool Tests
+    
+    func test_deleteTool_validate_success() throws {
+        let tool = CalendarDeleteEventTool()
+        
+        XCTAssertNoThrow(try tool.validate(args: [
+            "event_id": .string("12345")
+        ]))
+    }
+    
+    func test_deleteTool_requiresConfirmation() {
+        let tool = CalendarDeleteEventTool()
+        XCTAssertTrue(tool.requiresConfirmation)
+    }
+    
+    // MARK: - Find Slots Tool Tests
+    
+    func test_findSlotsTool_schema() {
+        let tool = CalendarFindSlotsTool()
+        XCTAssertEqual(tool.name, "calendar.find_slots")
+        XCTAssertEqual(tool.kind, .read)
+        XCTAssertFalse(tool.requiresConfirmation)
+    }
+    
+    // MARK: - EventStoreProvider Tests
+    
+    func test_parseDate_iso8601() {
+        let date = EventStoreProvider.parseDate("2026-01-15T10:30:00Z")
+        XCTAssertNotNil(date)
+    }
+    
+    func test_parseDate_withTimezone() {
+        let date = EventStoreProvider.parseDate("2026-01-15T10:30:00-08:00")
+        XCTAssertNotNil(date)
+    }
+    
+    func test_parseDate_invalid() {
+        let date = EventStoreProvider.parseDate("not-a-date")
+        XCTAssertNil(date)
+    }
+}
+```
+
+### 7.2 Manual Tests
+
+| Test | Steps | Expected |
+|:-----|:------|:---------|
+| Query events | Ask "What's on my calendar tomorrow?" | Returns events or "no events" |
+| Find slots | Ask "Find a 30 minute slot this afternoon" | Returns available times |
+| Create event | Ask "Schedule a meeting with John at 3pm tomorrow" | Proposes, confirms, creates |
+| Edit event | Ask "Move my 3pm meeting to 4pm" | Proposes edit, confirms, updates |
+| Delete event | Ask "Cancel my 3pm meeting" | Proposes deletion, confirms, removes |
+| Recurring event | Ask "Delete all future instances of standup" | Uses span=future |
 
 ---
 
-## 5. Implementation Checklist
+## 8. Acceptance Criteria
 
-- [ ] Create `CalendarQueryTool.swift`
-- [ ] Create `CalendarFindSlotsTool.swift`
-- [ ] Create `CalendarCreateEventTool.swift`
-- [ ] Create `CalendarDeleteEventTool.swift`
-- [ ] Register in `ToolRegistry`
-- [ ] Test with real calendar data
+- [ ] **AC-1:** `calendar.query` returns events in date range with proper JSON structure
+- [ ] **AC-2:** `calendar.find_slots` finds available time gaps
+- [ ] **AC-3:** `calendar.create_event` creates events with all fields (title, dates, location, notes)
+- [ ] **AC-4:** `calendar.edit_event` updates only provided fields, preserves others
+- [ ] **AC-5:** `calendar.delete_event` removes event by ID
+- [ ] **AC-6:** All mutations (`create`, `edit`, `delete`) require confirmation via ToolHost
+- [ ] **AC-7:** Human summaries are clear and concise for TTS
+- [ ] **AC-8:** Recurring events use `span` parameter correctly
+- [ ] **AC-9:** All tools registered in `ToolRegistry.registerDefaultTools()`
+- [ ] **AC-10:** Unit tests pass for validation and schema
+
+---
+
+## 9. Risks and Open Questions
+
+### Risks
+
+| Risk | Mitigation |
+|:-----|:-----------|
+| Calendar permission denied at runtime | Tools should throw `CalendarToolError.permissionDenied` with helpful message |
+| Event ID becomes stale (event deleted externally) | Handle `eventNotFound` gracefully |
+| Recurring events: user doesn't specify which instances | Default to `span: .thisEvent`, require explicit "all future" |
+| EKEventStore threading | EKEventStore is thread-safe, but we create shared instance |
+
+### Open Questions
+
+1. **Should edit support clearing fields?** (e.g., remove location) - Currently only sets if provided
+2. **Should we return calendar list tool?** - Users might want to pick which calendar
+3. **Should find_slots respect working hours?** - Currently finds any free time
+
+---
+
+## 10. Future Enhancements (Out of Scope)
+
+- [ ] `calendar.list_calendars` - List available calendars
+- [ ] Attendee management (invites)
+- [ ] Recurrence rule creation
+- [ ] Travel time between events
+- [ ] Smart scheduling (respect working hours, lunch)
