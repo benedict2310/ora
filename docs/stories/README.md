@@ -2,6 +2,28 @@
 
 > **Note:** This repository follows a strict documentation-driven development process. Every feature must be defined in a story file before implementation begins.
 
+## Current Status
+
+**Voice assistant MVP is functional!** You can:
+- Press hotkey → speak → get LLM response → hear TTS playback
+- Multi-turn conversations with context preserved
+
+**What's working:**
+- ✅ Hotkey activation (Option+Space)
+- ✅ Speech-to-text (Parakeet ASR)
+- ✅ LLM responses (Qwen 2.5 via MLX)
+- ✅ Text-to-speech (Kokoro TTS)
+- ✅ Overlay UI with conversation display
+- ✅ Auto-listen for follow-up turns
+
+**What's next:**
+- 🚧 Wire AgentLoop so tools actually execute (O.06)
+- 🚧 Upgrade to Qwen 3 (L.06)
+- 🚧 Fix setup wizard UX (F.11)
+- 🚧 Add conversation mode with silence detection (O.07)
+
+---
+
 ## Epics
 
 ### 🏗 Foundations (F)
@@ -19,7 +41,7 @@ Core application structure, UI, and state management.
 | F.07 | [Overlay Window](foundations/F.07-OVERLAY-WINDOW.md) | ✅ Complete |
 | F.08 | [Persistence Layer](foundations/F.08-PERSISTENCE-LAYER.md) | ✅ Complete |
 | F.09 | [Model Download Implementation](foundations/F.09-MODEL-DOWNLOAD-IMPLEMENTATION.md) | ✅ Complete |
-| F.10 | [Liquid Glass Overlay Refresh](foundations/F.10-LIQUID-GLASS-OVERLAY-REFRESH.md) | 🚧 To Do |
+| F.10 | [Liquid Glass Overlay Refresh](foundations/F.10-LIQUID-GLASS-OVERLAY-REFRESH.md) | 📋 Deferred |
 | F.11 | [Setup Wizard Polish](foundations/F.11-SETUP-WIZARD-POLISH.md) | 🚧 To Do |
 
 #### Bug Fixes
@@ -39,7 +61,7 @@ Speech-to-text pipeline using FluidAudio Parakeet.
 | A.04 | [Hotkey Wiring](asr-integration/A.04-HOTKEY-WIRING.md) | ✅ Complete |
 
 ### 🧠 LLM Integration (L)
-Local inference using MLX Swift and Qwen 2.5.
+Local inference using MLX Swift.
 
 | ID | Title | Status |
 |:---|:------|:-------|
@@ -47,7 +69,7 @@ Local inference using MLX Swift and Qwen 2.5.
 | L.02 | [Structured Output](llm-integration/L.02-STRUCTURED-OUTPUT.md) | ✅ Complete |
 | L.03 | [Conversation Manager](llm-integration/L.03-CONVERSATION-MANAGER.md) | ✅ Complete |
 | L.04 | [System Prompt](llm-integration/L.04-SYSTEM-PROMPT.md) | ✅ Complete |
-| L.05 | [Additional LLM Models](llm-integration/L.05-ADDITIONAL-LLM-MODELS.md) | 🚧 To Do |
+| L.05 | [Additional LLM Models](llm-integration/L.05-ADDITIONAL-LLM-MODELS.md) | 📋 Deferred |
 | L.06 | [Qwen 3 Upgrade](llm-integration/L.06-QWEN3-UPGRADE.md) | 🚧 To Do |
 
 ### 🗣 TTS Integration (T)
@@ -56,8 +78,8 @@ Text-to-speech using Kokoro MLX.
 | ID | Title | Status |
 |:---|:------|:-------|
 | T.01 | [TTS Service](tts-integration/T.01-TTS-SERVICE.md) | ✅ Complete |
-| T.02 | [Audio Playback](tts-integration/T.02-AUDIO-PLAYBACK.md) | 🚧 To Do |
-| T.03 | [Sentence Chunker](tts-integration/T.03-SENTENCE-CHUNKER.md) | 🚧 To Do |
+| T.02 | [Audio Playback](tts-integration/T.02-AUDIO-PLAYBACK.md) | ✅ Complete |
+| T.03 | [Sentence Chunker](tts-integration/T.03-SENTENCE-CHUNKER.md) | 📋 Deferred |
 
 ### 🛠 Tools (X)
 Agentic tools for system integration.
@@ -88,81 +110,11 @@ Optional orchestration playbooks that layer on top of native tools.
 
 | ID | Title | Status |
 |:---|:------|:-------|
-| S.01 | [Skills Runtime](skills/S.01-SKILLS-RUNTIME.md) | 🚧 To Do |
-| S.02 | [Skills Evaluation](skills/S.02-SKILLS-EVALUATION.md) | 🚧 To Do |
+| S.01 | [Skills Runtime](skills/S.01-SKILLS-RUNTIME.md) | 📋 Future |
+| S.02 | [Skills Evaluation](skills/S.02-SKILLS-EVALUATION.md) | 📋 Future |
 | S.03 | [Skill Scripts](skills/S.03-SKILL-SCRIPTS.md) | 📋 Future |
 | S.04 | [Skills Marketplace](skills/S.04-SKILLS-MARKETPLACE.md) | 📋 Future |
 | S.05 | [Embedding Retrieval](skills/S.05-EMBEDDING-RETRIEVAL.md) | 📋 Future |
-
----
-
-## Dependency Graph
-
-```
-                           ┌─────────────────────────────────────┐
-                           │         FOUNDATIONS (F)              │
-                           │  F.00 → F.01 → F.02 → F.03 → F.04   │
-                           │         F.05, F.06, F.07, F.08, F.09 │
-                           └──────────────────┬──────────────────┘
-                                              │ ✅ All Complete
-                    ┌─────────────────────────┼─────────────────────────┐
-                    │                         │                         │
-                    ▼                         ▼                         ▼
-         ┌──────────────────┐      ┌──────────────────┐      ┌──────────────────┐
-         │   ASR (A)        │      │   LLM (L)        │      │   TTS (T)        │
-         │ A.01 → A.02 →    │      │ L.01 → L.02 →    │      │ T.01 → T.02 →    │
-         │ A.03 → A.04      │      │ L.03, L.04       │      │ T.03             │
-         │ ✅ All Complete  │      │ ✅ All Complete  │      │ 🚧 To Do         │
-         └────────┬─────────┘      └────────┬─────────┘      └────────┬─────────┘
-                  │                         │                         │
-                  │                         │                         │
-                  └────────────┬────────────┘                         │
-                               │                                      │
-                               ▼                                      │
-                  ┌────────────────────────┐                          │
-                  │  O.01 ASR-LLM Pipeline │                          │
-                  │  ✅ Complete           │                          │
-                  └───────────┬────────────┘                          │
-                              │                                       │
-         ┌────────────────────┤                                       │
-         │                    │                                       │
-         ▼                    ▼                                       │
-┌─────────────────┐  ┌─────────────────┐                              │
-│  TOOLS (X)      │  │  O.02 Agent     │                              │
-│  X.01 ✅        │  │  Loop           │                              │
-│  X.02-X.05      │  │  🚧 To Do       │                              │
-│  🚧 To Do       │  └────────┬────────┘                              │
-└────────┬────────┘           │                                       │
-         │                    │                                       │
-         └─────────┬──────────┘                                       │
-                   │                                                  │
-                   ▼                                                  │
-         ┌─────────────────────────────────────────────────┐          │
-         │  O.03 Conversation Orchestrator                 │◄─────────┘
-         │  (Full pipeline: ASR → LLM → Tools → TTS)       │
-         │  🚧 To Do                                       │
-         └────────────────────────┬────────────────────────┘
-                                  │
-                                  ▼
-                    ┌─────────────────────────┐
-                    │  O.04 Confirmation Flow │
-                    │  🚧 To Do               │
-                    └─────────────────────────┘
-
-         ┌─────────────────────────────────────────────────┐
-         │                  SKILLS (S)                     │
-         │  S.01 Skills Runtime ◄── O.02 Agent Loop        │
-         │       │                                         │
-         │       ▼                                         │
-         │  S.02 Skills Evaluation                         │
-         │       │                                         │
-         │       ▼ (Future)                                │
-         │  S.03 Skill Scripts                             │
-         │       │                                         │
-         │       ▼                                         │
-         │  S.04 Marketplace → S.05 Embedding Retrieval    │
-         └─────────────────────────────────────────────────┘
-```
 
 ---
 
@@ -174,58 +126,138 @@ All foundation stories (F.00-F.09) are complete. This includes app shell, permis
 ### ✅ Phase 2: Core Services (Complete)
 - **ASR (A.01-A.04):** Audio capture, Parakeet ASR, transcription streaming, hotkey wiring
 - **LLM (L.01-L.04):** MLX runtime, structured output, conversation manager, system prompt
+- **TTS (T.01-T.02):** Kokoro TTS, audio playback with jitter buffer
 
 ### ✅ Phase 3: Basic Pipeline (Complete)
 - **O.01:** ASR-LLM Pipeline - Voice input wired to LLM response
+- **O.02:** Agent Loop - Core reasoning with tool execution (infrastructure only)
+- **O.03:** Conversation Orchestrator - Full pipeline with TTS integration
+- **O.05:** Improved Hotkey Flow - Tap-to-start, Enter-to-submit
 - **X.01:** Tool Protocol - Foundation for agentic tools
+- **X.02:** Calendar Tools - Query, create, delete events (implemented but not wired)
 
-### 🚧 Phase 4: Tools & Agent Loop (Current)
+### 🚧 Phase 4: Working Tools (Current Priority)
 
-**Recommended next:** Start with **O.02 - Agent Loop**. This enables the LLM to parse tool calls, execute them via ToolHost, and continue reasoning until done. Once O.02 works, implement the actual tools (X.02-X.05).
+This phase connects the AgentLoop to the pipeline so tools actually execute.
 
-| Priority | Story | Description |
-|:---------|:------|:------------|
-| **P0** | **O.02** | **Agent Loop** - Multi-step reasoning with tool calls ← **Start here** |
-| P1 | X.02 | Calendar Tools - Query, create, delete events |
-| P1 | X.03 | Reminders Tools - Create, list reminders |
-| P1 | X.04 | Contacts Tools - Search contacts |
-| P1 | X.05 | System Tools - Open apps, URLs |
+| Priority | Story | Description | Status |
+|:---------|:------|:------------|:-------|
+| **P0** | **O.06** | **Agent Loop Integration** - Wire AgentLoop into pipeline so tools work | 🚧 **Start Here** |
+| P0 | O.04 | Confirmation Flow - UI for confirming tool mutations | 🚧 To Do |
 
-**Alternative:** If you want voice output first, skip to **T.01 - TTS Service**.
+### 🚧 Phase 5: Model & UX Improvements
 
-### 🚧 Phase 5: TTS Integration
-| Priority | Story | Description |
-|:---------|:------|:------------|
-| P1 | T.01 | TTS Service - Kokoro MLX integration |
-| P1 | T.02 | Audio Playback - Output audio pipeline |
-| P2 | T.03 | Sentence Chunker - Stream audio as sentences complete |
+| Priority | Story | Description | Status |
+|:---------|:------|:------------|:-------|
+| **P0** | **L.06** | **Qwen 3 Upgrade** - Replace Qwen 2.5 with Qwen 3 | 🚧 To Do |
+| P1 | F.11 | Setup Wizard Polish - Fix broken-feeling download UI | 🚧 To Do |
+| P1 | O.07 | Conversation Mode - Silence detection, auto-submit | 🚧 To Do |
 
-### 🚧 Phase 6: Full Orchestration
-| Priority | Story | Description |
-|:---------|:------|:------------|
-| P0 | O.03 | Conversation Orchestrator - Full pipeline coordination |
-| P1 | O.04 | Confirmation Flow - Tool mutation confirmation UI |
+### 🚧 Phase 6: Additional Tools
 
-### 🚧 Phase 7: Skills (Optional)
-| Priority | Story | Description |
-|:---------|:------|:------------|
-| P1 | S.01 | Skills Runtime - Skill discovery, loading, tools integration |
-| P2 | S.02 | Skills Evaluation - Benchmark harness for skill activation |
+| Priority | Story | Description | Status |
+|:---------|:------|:------------|:-------|
+| P1 | X.03 | Reminders Tools - Create, list reminders | 🚧 To Do |
+| P1 | X.04 | Contacts Tools - Search contacts | 🚧 To Do |
+| P1 | X.05 | System Tools - Open apps, URLs | 🚧 To Do |
 
-### 📋 Optional/Deferred
-| Priority | Story | Description |
-|:---------|:------|:------------|
-| P2 | L.05 | Additional LLM Models - More model options |
-| P3 | S.03 | Skill Scripts - Execute scripts within skills |
-| P3 | S.04 | Skills Marketplace - Browse and install community skills |
-| P3 | S.05 | Embedding Retrieval - Semantic skill search |
+### 📋 Deferred / Future
+
+| Priority | Story | Description | Reason |
+|:---------|:------|:------------|:-------|
+| P2 | F.10 | Liquid Glass Overlay Refresh | Nice-to-have visual polish |
+| P2 | L.05 | Additional LLM Models | Superseded by L.06 for now |
+| P2 | T.03 | Sentence Chunker | Optimization - batch TTS works fine |
+| P3 | S.* | Skills Epic | Future capability, not MVP |
+
+---
+
+## Dependency Graph
+
+```
+                    ┌────────────────────────────────────────┐
+                    │           FOUNDATIONS (F)               │
+                    │     F.00-F.09 ✅ All Complete           │
+                    └──────────────────┬─────────────────────┘
+                                       │
+          ┌────────────────────────────┼────────────────────────────┐
+          │                            │                            │
+          ▼                            ▼                            ▼
+┌──────────────────┐        ┌──────────────────┐        ┌──────────────────┐
+│    ASR (A)       │        │    LLM (L)       │        │    TTS (T)       │
+│  ✅ Complete     │        │  ✅ Complete     │        │  ✅ Complete     │
+└────────┬─────────┘        └────────┬─────────┘        └────────┬─────────┘
+         │                           │                           │
+         └───────────────┬───────────┘                           │
+                         │                                       │
+                         ▼                                       │
+          ┌──────────────────────────┐                           │
+          │  O.01 ASR-LLM Pipeline   │                           │
+          │  ✅ Complete             │                           │
+          └────────────┬─────────────┘                           │
+                       │                                         │
+    ┌──────────────────┼──────────────────┐                      │
+    │                  │                  │                      │
+    ▼                  ▼                  ▼                      │
+┌────────────┐  ┌────────────┐   ┌────────────────┐              │
+│ X.01 Tool  │  │ O.02 Agent │   │ O.05 Hotkey    │              │
+│ Protocol ✅│  │ Loop ✅    │   │ Flow ✅        │              │
+└─────┬──────┘  └─────┬──────┘   └────────────────┘              │
+      │               │                                          │
+      ▼               │                                          │
+┌────────────┐        │                                          │
+│ X.02       │        │                                          │
+│ Calendar ✅│        │                                          │
+└─────┬──────┘        │                                          │
+      │               │                                          │
+      └───────┬───────┘                                          │
+              │                                                  │
+              ▼                                                  │
+   ┌─────────────────────────────────────────────────┐           │
+   │  O.03 Conversation Orchestrator ✅              │◄──────────┘
+   │  (Full pipeline: ASR → LLM → TTS)               │
+   └────────────────────┬────────────────────────────┘
+                        │
+         ┌──────────────┴──────────────┐
+         │                             │
+         ▼                             ▼
+┌─────────────────────┐     ┌─────────────────────┐
+│  O.06 Agent Loop    │     │  O.07 Conversation  │
+│  Integration 🚧     │     │  Mode 🚧            │
+│  ← CURRENT PRIORITY │     │                     │
+└─────────┬───────────┘     └─────────────────────┘
+          │
+          ▼
+┌─────────────────────┐
+│  O.04 Confirmation  │
+│  Flow 🚧            │
+└─────────────────────┘
+```
+
+---
+
+## Quick Reference
+
+### What Works Now
+```
+Hotkey (⌥Space) → Listening → ASR → LLM → Response → TTS → Audio
+                      ↓
+              (Enter to submit, or wait for ASR)
+```
+
+### What O.06 Adds
+```
+Hotkey → Listening → ASR → AgentLoop → Tool Execution → Response → TTS
+                              ↓
+                    (Calendar queries, event creation, etc.)
+```
 
 ---
 
 ## Workflow
 
-1. **Pick a Story:** Select the next prioritized story from the list.
-2. **Review:** Read the story file carefully.
-3. **Implement:** Write code, tests, and documentation.
-4. **Verify:** Ensure all Acceptance Criteria (AC) are met.
-5. **Update:** Mark the story as "✅ Complete" in this README.
+1. **Pick a Story:** Select from "Current Priority" section above
+2. **Review:** Read the story file carefully
+3. **Implement:** Write code, tests, and documentation
+4. **Verify:** Ensure all Acceptance Criteria (AC) are met
+5. **Update:** Mark the story as "✅ Complete" in this README
