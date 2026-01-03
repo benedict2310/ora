@@ -64,6 +64,18 @@ actor ToolRegistry {
         logger.info("Registered \(self.tools.count) tools")
     }
     
+    /// Register default tools if not already registered (idempotent)
+    /// - Returns: true if tools were registered, false if already registered
+    @discardableResult
+    func registerDefaultToolsIfNeeded() -> Bool {
+        guard tools.isEmpty else {
+            logger.debug("Default tools already registered, skipping")
+            return false
+        }
+        registerDefaultTools()
+        return true
+    }
+    
     /// Clear all tools (for testing)
     func clear() {
         tools.removeAll()

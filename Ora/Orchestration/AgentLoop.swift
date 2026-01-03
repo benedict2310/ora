@@ -30,6 +30,13 @@ protocol AgentLoopDelegate: AnyObject, Sendable {
     func agentLoop(_ loop: AgentLoop, didExecuteTool name: String, result: String)
 }
 
+/// Pending proposal awaiting user confirmation
+struct PendingProposal: Sendable {
+    let summary: String
+    let tool: String
+    let args: [String: JSONValue]
+}
+
 /// Core agent loop for agentic tool use
 ///
 /// Processes user input through the structured LLM flow:
@@ -54,6 +61,12 @@ actor AgentLoop {
     private let maxTokensPerTurn: Int
     
     private var currentSessionID: UUID?
+    
+    /// Whether a session is active (conversation has been initialized)
+    private var sessionActive: Bool = false
+    
+    /// Pending proposal awaiting user confirmation
+    private var pendingProposal: PendingProposal?
     
     // Dependencies (injectable for testing)
     private let structuredGenerator: StructuredGenerator
@@ -89,23 +102,18 @@ actor AgentLoop {
         self._delegate = delegate
     }
     
-    /// Process user input and return response
+    /// Start a new session with tool definitions
     ///
-    /// This is the main entry point for the agent loop. It:
-    /// 1. Builds the system prompt with tool definitions
-    /// 2. Adds the user message to conversation
-    /// 3. Runs the reasoning loop until a response or proposal
+    /// This initializes the conversation with the system prompt containing
+    /// tool schemas. Call this once at the start of a new session.
     ///
-    /// - Parameters:
-    ///   - userText: The user's input text
-    ///   - sessionID: Optional session ID for audit logging
-    /// - Returns: The agent result (response, proposal, or error)
-    func process(userText: String, sessionID: UUID? = nil) async throws -> AgentResult {
+    /// - Parameter sessionID: Optional session ID for audit logging
+    func startSession(sessionID: UUID? = nil) async {
         self.currentSessionID = sessionID
+        self.sessionActive = true
+        self.pendingProposal = nil
         
-        logger.info("Processing: \(userText.prefix(50))...")
-        
-        await notifyDelegateThinkingStarted()
+        logger.info("Starting new agent session")
         
         // Build system prompt with tool definitions
         let toolSchemas = await toolRegistry.schemas()
@@ -122,10 +130,64 @@ actor AgentLoop {
         
         // Start fresh conversation with system prompt
         await conversationManager.startConversation(systemPrompt: systemPrompt)
+    }
+    
+    /// End the current session
+    func endSession() {
+        self.sessionActive = false
+        self.pendingProposal = nil
+        self.currentSessionID = nil
+        logger.debug("Agent session ended")
+    }
+    
+    /// Whether a session is currently active
+    func isSessionActive() -> Bool {
+        return sessionActive
+    }
+    
+    /// Get the pending proposal (if any)
+    func getPendingProposal() -> PendingProposal? {
+        return pendingProposal
+    }
+    
+    /// Clear the pending proposal (on deny or cancel)
+    func clearPendingProposal() {
+        pendingProposal = nil
+    }
+    
+    /// Process user input and return response (session-aware)
+    ///
+    /// If a session is already active, this continues the conversation.
+    /// Otherwise, it starts a new session.
+    ///
+    /// - Parameters:
+    ///   - userText: The user's input text
+    ///   - sessionID: Optional session ID for audit logging (only used if starting new session)
+    /// - Returns: The agent result (response, proposal, or error)
+    func process(userText: String, sessionID: UUID? = nil) async throws -> AgentResult {
+        // If no session is active, start one
+        if !sessionActive {
+            await startSession(sessionID: sessionID)
+        } else if let sid = sessionID {
+            self.currentSessionID = sid
+        }
+        
+        logger.info("Processing: \(userText.prefix(50))...")
+        
+        await notifyDelegateThinkingStarted()
+        
+        // Add user message to existing conversation
         await conversationManager.addUserMessage(userText)
         
         // Run agent loop
-        return await runLoop()
+        let result = await runLoop()
+        
+        // Store proposal for later execution if needed
+        if case .proposal(let summary, let tool, let args) = result {
+            self.pendingProposal = PendingProposal(summary: summary, tool: tool, args: args)
+        }
+        
+        return result
     }
     
     /// Continue processing after user confirms a proposal
