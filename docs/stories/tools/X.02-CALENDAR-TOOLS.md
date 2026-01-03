@@ -1,7 +1,7 @@
 # X.02 - Calendar Tools
 
 **Epic:** Tools
-**Status:** Not Started
+**Status:** Implemented
 **Priority:** P0 (Critical Path)
 **Estimated Effort:** 2-3 days
 **Dependencies:** X.01 (Tool Protocol - Complete), F.02 (Permissions - Complete)
@@ -916,16 +916,16 @@ final class CalendarToolsTests: XCTestCase {
 
 ## 8. Acceptance Criteria
 
-- [ ] **AC-1:** `calendar.query` returns events in date range with proper JSON structure
-- [ ] **AC-2:** `calendar.find_slots` finds available time gaps
-- [ ] **AC-3:** `calendar.create_event` creates events with all fields (title, dates, location, notes)
-- [ ] **AC-4:** `calendar.edit_event` updates only provided fields, preserves others
-- [ ] **AC-5:** `calendar.delete_event` removes event by ID
-- [ ] **AC-6:** All mutations (`create`, `edit`, `delete`) require confirmation via ToolHost
-- [ ] **AC-7:** Human summaries are clear and concise for TTS
-- [ ] **AC-8:** Recurring events use `span` parameter correctly
-- [ ] **AC-9:** All tools registered in `ToolRegistry.registerDefaultTools()`
-- [ ] **AC-10:** Unit tests pass for validation and schema
+- [x] **AC-1:** `calendar.query` returns events in date range with proper JSON structure ✅ Verified in `CalendarQueryTool.swift`
+- [x] **AC-2:** `calendar.find_slots` finds available time gaps ✅ Verified in `CalendarFindSlotsTool.swift`
+- [x] **AC-3:** `calendar.create_event` creates events with all fields (title, dates, location, notes) ✅ Verified in `CalendarCreateEventTool.swift`
+- [x] **AC-4:** `calendar.edit_event` updates only provided fields, preserves others ✅ Verified in `CalendarEditEventTool.swift`
+- [x] **AC-5:** `calendar.delete_event` removes event by ID ✅ Verified in `CalendarDeleteEventTool.swift`
+- [x] **AC-6:** All mutations (`create`, `edit`, `delete`) require confirmation via ToolHost ✅ `kind: .mutate` enforces confirmation
+- [x] **AC-7:** Human summaries are clear and concise for TTS ✅ Each tool returns descriptive `humanSummary`
+- [x] **AC-8:** Recurring events use `span` parameter correctly ✅ Verified in edit and delete tools
+- [x] **AC-9:** All tools registered in `ToolRegistry.registerDefaultTools()` ✅ Verified by `test_calendarToolsRegistered`
+- [x] **AC-10:** Unit tests pass for validation and schema ✅ 40 tests in `CalendarToolsTests.swift`
 
 ---
 
@@ -955,3 +955,43 @@ final class CalendarToolsTests: XCTestCase {
 - [ ] Recurrence rule creation
 - [ ] Travel time between events
 - [ ] Smart scheduling (respect working hours, lunch)
+
+---
+
+## Implementation Summary
+
+**Date:** 2026-01-03
+**Branch:** `feat/x.02-calendar-tools`
+**Commits:** 1
+
+### Files Created
+
+| File | Purpose |
+|:-----|:--------|
+| `Ora/Tools/Calendar/EventStoreProvider.swift` | Shared EKEventStore access, ISO8601 date parsing |
+| `Ora/Tools/Calendar/CalendarToolErrors.swift` | Error types for calendar operations |
+| `Ora/Tools/Calendar/CalendarQueryTool.swift` | Query events in date range (read) |
+| `Ora/Tools/Calendar/CalendarFindSlotsTool.swift` | Find available time slots (read) |
+| `Ora/Tools/Calendar/CalendarCreateEventTool.swift` | Create new events (mutate, requires confirmation) |
+| `Ora/Tools/Calendar/CalendarEditEventTool.swift` | Edit existing events (mutate, requires confirmation) |
+| `Ora/Tools/Calendar/CalendarDeleteEventTool.swift` | Delete events (mutate, requires confirmation) |
+| `OraTests/Tools/Calendar/CalendarToolsTests.swift` | 40 unit tests for validation, schemas, registration |
+
+### Files Modified
+
+| File | Change |
+|:-----|:-------|
+| `Ora/Tools/ToolRegistry.swift` | Register all 5 calendar tools in `registerDefaultTools()` |
+
+### Implementation Notes
+
+1. **Concurrency:** Used `@preconcurrency import EventKit` and `nonisolated(unsafe)` for shared EKEventStore to satisfy Swift 6 strict concurrency
+2. **Optional Handling:** EKEvent.startDate/endDate are optional in Swift, added proper unwrapping
+3. **Test Coverage:** Comprehensive unit tests for validation logic, schema properties, and tool registration
+4. **Pre-existing Test Failures:** 4 tests in `HuggingFaceDownloaderTests` fail due to unrelated network/download issues
+
+### Ready for Review
+
+- [x] All acceptance criteria verified
+- [x] Tests passing (638 tests, 4 pre-existing failures unrelated to calendar)
+- [x] Working tree clean
