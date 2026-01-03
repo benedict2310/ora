@@ -94,8 +94,8 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
             // Must include model weights to prevent treating partial downloads as complete
             return ["config.json", "tokenizer.json", "model.safetensors"]
         case .kokoro:
-            // Must include model weights to prevent treating partial downloads as complete
-            return ["config.json", "kokoro-v1_0.safetensors"]
+            // Must include model weights and default voice
+            return ["config.json", "kokoro-v1_0.safetensors", "voices/af_heart.safetensors"]
         }
     }
     
@@ -123,6 +123,7 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
             return [
                 "kokoro-v1_0.safetensors": 327_115_152,  // ~312 MB
                 "config.json": 2_351,
+                "voices/af_heart.safetensors": 524_288,  // ~512 KB (voice embedding)
             ]
         }
     }
