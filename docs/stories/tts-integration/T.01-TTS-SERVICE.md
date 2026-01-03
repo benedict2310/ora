@@ -1,12 +1,47 @@
 # T.01 - TTS Service
 
 **Epic:** TTS Integration
-**Status:** Implemented
+**Status:** Implemented (Partial - Fallback Only)
 **Priority:** P0 (Critical Path)
 **Estimated Effort:** 2 days
 **Dependencies:** F.03 (Model Manager)
 **Target:** macOS 26 (Tahoe)
 **Design Reference:** [kokoro-swift-mlx](https://github.com/mattmireles/kokoro-swift-mlx)
+
+---
+
+## ⚠️ Current Limitations
+
+**Kokoro TTS is NOT currently functional.** The implementation uses AVSpeechSynthesizer (macOS system voice) as a fallback.
+
+### What Works
+- `TTSService` actor with full API (`speak()`, `stop()`, `prepare()`)
+- AVSpeechSynthesizer fallback plays audio through system voice
+- Proper cancellation and lifecycle management
+- All tests pass
+
+### What Doesn't Work
+- **Kokoro model is downloaded but not used** (~500MB wasted)
+- **Audio quality is robotic** (system voice, not natural Kokoro voice)
+- AC-3 (streaming audio chunks from Kokoro) is not implemented
+
+### Root Cause
+The `kokoro-swift-mlx` library is **not a proper Swift Package**:
+- Structured as a sample iOS app, not an SPM package
+- Requires bundling eSpeak NG (C library) for phonemization
+- No `Package.swift` available to add as dependency
+
+### Options to Complete Kokoro Integration
+
+| Option | Effort | Description |
+|:-------|:-------|:------------|
+| **Wait** | 0 days | Wait for `kokoro-swift-mlx` maintainer to publish proper SPM package |
+| **Fork & Package** | 1-2 days | Fork repo, extract TTS engine, create Package.swift, bundle eSpeak NG xcframework |
+| **Alternative TTS** | 1-3 days | Research and integrate different on-device TTS solution |
+| **Accept Fallback** | 0 days | Ship v1 with system voice; users get voice output, just not premium quality |
+
+### Recommendation
+For v1, **accept the fallback** - users get functional voice output. Create a follow-up story (T.04) to properly integrate Kokoro when the package situation is resolved.
 
 ---
 

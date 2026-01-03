@@ -53,7 +53,7 @@ Text-to-speech using Kokoro MLX.
 
 | ID | Title | Status |
 |:---|:------|:-------|
-| T.01 | [TTS Service](tts-integration/T.01-TTS-SERVICE.md) | ✅ Complete |
+| T.01 | [TTS Service](tts-integration/T.01-TTS-SERVICE.md) | ⚠️ Partial (Fallback) |
 | T.02 | [Audio Playback](tts-integration/T.02-AUDIO-PLAYBACK.md) | 🚧 To Do |
 | T.03 | [Sentence Chunker](tts-integration/T.03-SENTENCE-CHUNKER.md) | 🚧 To Do |
 
