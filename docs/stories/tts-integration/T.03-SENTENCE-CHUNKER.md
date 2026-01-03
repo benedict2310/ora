@@ -2,9 +2,9 @@
 
 **Epic:** TTS Integration
 **Status:** Not Started
-**Priority:** P1 (Important)
+**Priority:** P2 (Nice to Have)
 **Estimated Effort:** 0.5 days
-**Dependencies:** T.01, T.02
+**Dependencies:** T.01, T.02, O.03
 **Target:** macOS 26 (Tahoe)
 
 ---
@@ -15,7 +15,31 @@ Split streaming LLM text into sentences for early TTS start, enabling voice outp
 
 ---
 
-## 2. Implementation
+## 2. Current State (Post O.03)
+
+As of O.03, TTS is integrated but works in a **batch mode**:
+1. LLM streams tokens → `currentResponse` accumulates in `SimplePipelineController`
+2. LLM finishes → `handleCompletion()` → `speakResponse(currentResponse)`  
+3. TTS speaks the **entire response at once**
+
+This means TTS doesn't start until the LLM has finished generating the complete response.
+
+### Why Sentence Chunking Helps
+
+For longer responses, the user waits for the full LLM generation before hearing anything. With sentence chunking:
+- TTS can start speaking the first sentence while the LLM is still generating
+- Perceived latency is reduced (first audio ~500ms after first sentence completes)
+- More natural conversational feel
+
+### When This Matters Less
+
+- Short responses (1-2 sentences): Minimal benefit since LLM finishes quickly
+- AgentLoop responses: StructuredGenerator produces full response, no token streaming
+- Current implementation is fine for MVP
+
+---
+
+## 3. Implementation
 
 **File:** `Ora/TTS/SentenceChunker.swift`
 
@@ -108,19 +132,84 @@ struct SentenceChunker: Sendable {
 
 ---
 
-## 3. Acceptance Criteria
+## 4. Acceptance Criteria
 
 - [ ] **AC-1:** Sentences extracted as they complete
 - [ ] **AC-2:** Remaining text flushed at end
 - [ ] **AC-3:** Handles streaming token input
 - [ ] **AC-4:** Uses NaturalLanguage for proper sentence detection
 - [ ] **AC-5:** Minimum sentence length filter
+- [ ] **AC-6:** Integration with SimplePipelineController (speakSentence during LLM streaming)
 
 ---
 
-## 4. Implementation Checklist
+## 5. Integration with SimplePipelineController
+
+To integrate sentence chunking, modify `processTranscript()` to start TTS per-sentence:
+
+```swift
+// In processTranscript(), replace the token accumulation loop:
+
+var fullResponse = ""
+var sentenceBuffer = ""
+let chunker = SentenceChunker()
+
+for try await delta in await LLMService.shared.generate(messages: messages, maxTokens: 500) {
+    guard !Task.isCancelled else { return }
+    
+    if case .token(let text) = delta {
+        fullResponse += text
+        sentenceBuffer += text
+        self.currentResponse = fullResponse
+        OverlayWindowController.shared.model.addAssistantMessage(fullResponse, isPartial: true)
+        
+        // Check for complete sentences
+        let sentences = chunker.extractCompleteSentences(from: &sentenceBuffer)
+        for sentence in sentences {
+            // Queue sentence for TTS (don't await - let it play in background)
+            self.queueSentenceForSpeaking(sentence)
+        }
+    }
+}
+
+// Speak any remaining text
+if !sentenceBuffer.isEmpty {
+    self.queueSentenceForSpeaking(sentenceBuffer)
+}
+```
+
+**Note:** This requires changes to the TTS queueing to handle multiple sentences in flight. Consider deferring to a future optimization pass.
+
+---
+
+## 6. Implementation Checklist
 
 - [ ] Create `SentenceChunker.swift`
+- [ ] Add synchronous `extractCompleteSentences(from:)` method for in-line use
 - [ ] Test with streaming input
-- [ ] Test edge cases (abbreviations, URLs)
-- [ ] Integrate with TTS pipeline
+- [ ] Test edge cases (abbreviations, URLs, "Dr.", "Mr.", numbers like "3.5")
+- [ ] Update SimplePipelineController to use chunker during LLM streaming
+- [ ] Add sentence queue to AudioPlaybackService (or SimplePipelineController)
+- [ ] Ensure TTS playback order is preserved
+
+---
+
+## 7. Risks & Mitigations
+
+| Risk | Mitigation |
+|------|------------|
+| Sentence detection false positives (e.g., "Dr. Smith") | Use NLTokenizer which handles common abbreviations |
+| Audio playback gaps between sentences | Use jitter buffer in AudioPlaybackService |
+| Complexity vs. benefit | Defer until user feedback indicates latency is an issue |
+
+---
+
+## 8. Decision: Defer for MVP
+
+**Recommendation:** Mark as P2 and defer until after O.06 (AgentLoop Integration).
+
+**Rationale:**
+1. O.06 uses `StructuredGenerator` which produces full responses (no streaming)
+2. Current batch TTS works well for typical response lengths
+3. Focus on core tool execution flow first
+4. Can revisit if user feedback indicates perceived latency is problematic

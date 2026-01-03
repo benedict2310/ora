@@ -63,15 +63,21 @@ struct AudioChunk: Sendable {
 ## Success Criteria
 
 - [x] TTS audio starts within ~500ms for short responses (0.28s model init + 0.82x RTF)
-- [ ] Streaming playback with no underruns (T.02)
+- [x] Streaming playback with no underruns (T.02)
 - [x] Graceful fallback to AVSpeechSynthesizer
 - [x] Text always shown in UI (regardless of TTS status)
-- [ ] Clean interrupt on user cancellation (T.02)
+- [x] Clean interrupt on user cancellation (T.02)
 
 ## Status
 
 | Story | Status |
 |:------|:-------|
 | T.01 - TTS Service | ✅ Complete (Kokoro + AVSpeech fallback) |
-| T.02 - Audio Playback | 🚧 To Do |
-| T.03 - Sentence Chunker | 🚧 To Do |
+| T.02 - Audio Playback | ✅ Complete (jitter buffer, streaming) |
+| T.03 - Sentence Chunker | 🔮 Deferred (P2 - optimization for perceived latency) |
+
+## Notes
+
+- **O.03 (Conversation Orchestrator)** integrated TTS into the voice pipeline
+- TTS currently works in batch mode (speaks after LLM completes)
+- T.03 would enable streaming TTS (speak while LLM generates) but is deferred until user feedback indicates need
