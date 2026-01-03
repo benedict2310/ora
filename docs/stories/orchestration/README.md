@@ -26,7 +26,8 @@ This epic provides the agentic loop and conversation flow that ties together:
 | **O.03** | [Conversation Orchestrator](O.03-CONVERSATION-ORCHESTRATOR.md) | Full pipeline coordination | O.01, O.02, T.02 | ✅ Complete |
 | **O.04** | [Confirmation Flow](O.04-CONFIRMATION-FLOW.md) | UI-driven tool confirmation | O.02, F.07 | 🚧 To Do |
 | **O.05** | [Improved Hotkey Flow](O.05-IMPROVED-HOTKEY-FLOW.md) | Tap-to-start, Enter-to-submit interaction | O.01 | ✅ Complete |
-| **O.06** | [Agent Loop Integration](O.06-AGENT-LOOP-INTEGRATION.md) | Wire AgentLoop into the main pipeline (tools + proposals). | O.02, X.02, L.04, F.07 | 🚧 To Do |
+| **O.06** | [Agent Loop Integration](O.06-AGENT-LOOP-INTEGRATION.md) | Wire AgentLoop into the main pipeline (tools + proposals). | O.02, O.03, X.02, L.04, F.07 | 🚧 To Do |
+| **O.07** | [Conversation Mode](O.07-CONVERSATION-MODE.md) | Automatic silence detection for hands-free conversation | O.03, O.05, A.02 | 🚧 To Do |
 
 ## Incremental Approach
 

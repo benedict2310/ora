@@ -23,6 +23,8 @@ This epic provides the local LLM runtime for Ora, enabling:
 | **L.02** | [Structured Output](L.02-STRUCTURED-OUTPUT.md) | JSON schema validation, retry logic | L.01 |
 | **L.03** | [Conversation Manager](L.03-CONVERSATION-MANAGER.md) | Context management, message history | L.01, F.08 |
 | **L.04** | [System Prompt](L.04-SYSTEM-PROMPT.md) | Dynamic prompt building with tools/context | L.01 |
+| **L.05** | [Additional LLM Models](L.05-ADDITIONAL-LLM-MODELS.md) | Multi-model support, planner/executor | L.01, F.03 |
+| **L.06** | [Qwen 3 Upgrade](L.06-QWEN3-UPGRADE.md) | Replace Qwen 2.5 with Qwen 3 | L.01, F.03, F.09 |
 
 ## Dependency Graph
 

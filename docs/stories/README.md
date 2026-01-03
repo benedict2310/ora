@@ -20,6 +20,7 @@ Core application structure, UI, and state management.
 | F.08 | [Persistence Layer](foundations/F.08-PERSISTENCE-LAYER.md) | ✅ Complete |
 | F.09 | [Model Download Implementation](foundations/F.09-MODEL-DOWNLOAD-IMPLEMENTATION.md) | ✅ Complete |
 | F.10 | [Liquid Glass Overlay Refresh](foundations/F.10-LIQUID-GLASS-OVERLAY-REFRESH.md) | 🚧 To Do |
+| F.11 | [Setup Wizard Polish](foundations/F.11-SETUP-WIZARD-POLISH.md) | 🚧 To Do |
 
 #### Bug Fixes
 
@@ -47,6 +48,7 @@ Local inference using MLX Swift and Qwen 2.5.
 | L.03 | [Conversation Manager](llm-integration/L.03-CONVERSATION-MANAGER.md) | ✅ Complete |
 | L.04 | [System Prompt](llm-integration/L.04-SYSTEM-PROMPT.md) | ✅ Complete |
 | L.05 | [Additional LLM Models](llm-integration/L.05-ADDITIONAL-LLM-MODELS.md) | 🚧 To Do |
+| L.06 | [Qwen 3 Upgrade](llm-integration/L.06-QWEN3-UPGRADE.md) | 🚧 To Do |
 
 ### 🗣 TTS Integration (T)
 Text-to-speech using Kokoro MLX.
@@ -79,6 +81,7 @@ Connecting the loop: Audio → ASR → LLM → Tools → TTS.
 | O.04 | [Confirmation Flow](orchestration/O.04-CONFIRMATION-FLOW.md) | 🚧 To Do |
 | O.05 | [Improved Hotkey Flow](orchestration/O.05-IMPROVED-HOTKEY-FLOW.md) | ✅ Complete |
 | O.06 | [Agent Loop Integration](orchestration/O.06-AGENT-LOOP-INTEGRATION.md) | 🚧 To Do |
+| O.07 | [Conversation Mode](orchestration/O.07-CONVERSATION-MODE.md) | 🚧 To Do |
 
 ### 📚 Skills (S)
 Optional orchestration playbooks that layer on top of native tools.
