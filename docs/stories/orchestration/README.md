@@ -22,10 +22,10 @@ This epic provides the agentic loop and conversation flow that ties together:
 | Story | Title | Description | Dependencies | Status |
 |-------|-------|-------------|--------------|--------|
 | **O.01** | [ASR-LLM Pipeline](O.01-ASR-LLM-PIPELINE.md) | Simple ASR → LLM wiring for testing | A.04, L.01, L.03, L.04 | ✅ Complete |
-| **O.02** | [Agent Loop](O.02-AGENT-LOOP.md) | Core reasoning loop with tool execution | L.01, L.02, X.01 | 🚧 To Do |
-| **O.03** | [Conversation Orchestrator](O.03-CONVERSATION-ORCHESTRATOR.md) | Full pipeline coordination | O.01, O.02, T.02 | 🚧 To Do |
+| **O.02** | [Agent Loop](O.02-AGENT-LOOP.md) | Core reasoning loop with tool execution | L.01, L.02, X.01 | ✅ Complete |
+| **O.03** | [Conversation Orchestrator](O.03-CONVERSATION-ORCHESTRATOR.md) | Full pipeline coordination | O.01, O.02, T.02 | ✅ Complete |
 | **O.04** | [Confirmation Flow](O.04-CONFIRMATION-FLOW.md) | UI-driven tool confirmation | O.02, F.07 | 🚧 To Do |
-| **O.05** | [Improved Hotkey Flow](O.05-IMPROVED-HOTKEY-FLOW.md) | Tap-to-start, Enter-to-submit interaction | O.01 | 🚧 To Do |
+| **O.05** | [Improved Hotkey Flow](O.05-IMPROVED-HOTKEY-FLOW.md) | Tap-to-start, Enter-to-submit interaction | O.01 | ✅ Complete |
 | **O.06** | [Agent Loop Integration](O.06-AGENT-LOOP-INTEGRATION.md) | Wire AgentLoop into the main pipeline (tools + proposals). | O.02, X.02, L.04, F.07 | 🚧 To Do |
 
 ## Incremental Approach
