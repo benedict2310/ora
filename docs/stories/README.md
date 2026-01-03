@@ -53,7 +53,7 @@ Text-to-speech using Kokoro MLX.
 
 | ID | Title | Status |
 |:---|:------|:-------|
-| T.01 | [TTS Service](tts-integration/T.01-TTS-SERVICE.md) | ⚠️ Partial (Fallback) |
+| T.01 | [TTS Service](tts-integration/T.01-TTS-SERVICE.md) | ✅ Complete |
 | T.02 | [Audio Playback](tts-integration/T.02-AUDIO-PLAYBACK.md) | 🚧 To Do |
 | T.03 | [Sentence Chunker](tts-integration/T.03-SENTENCE-CHUNKER.md) | 🚧 To Do |
 
@@ -63,7 +63,7 @@ Agentic tools for system integration.
 | ID | Title | Status |
 |:---|:------|:-------|
 | X.01 | [Tool Protocol](tools/X.01-TOOL-PROTOCOL.md) | ✅ Complete |
-| X.02 | [Calendar Tools](tools/X.02-CALENDAR-TOOLS.md) | 🚧 To Do |
+| X.02 | [Calendar Tools](tools/X.02-CALENDAR-TOOLS.md) | ✅ Complete |
 | X.03 | [Reminders Tools](tools/X.03-REMINDERS-TOOLS.md) | 🚧 To Do |
 | X.04 | [Contacts Tools](tools/X.04-CONTACTS-TOOLS.md) | 🚧 To Do |
 | X.05 | [System Tools](tools/X.05-SYSTEM-TOOLS.md) | 🚧 To Do |
@@ -74,7 +74,7 @@ Connecting the loop: Audio → ASR → LLM → Tools → TTS.
 | ID | Title | Status |
 |:---|:------|:-------|
 | O.01 | [ASR-LLM Pipeline](orchestration/O.01-ASR-LLM-PIPELINE.md) | ✅ Complete |
-| O.02 | [Agent Loop](orchestration/O.02-AGENT-LOOP.md) | 🚧 To Do |
+| O.02 | [Agent Loop](orchestration/O.02-AGENT-LOOP.md) | ✅ Complete |
 | O.03 | [Conversation Orchestrator](orchestration/O.03-CONVERSATION-ORCHESTRATOR.md) | 🚧 To Do |
 | O.04 | [Confirmation Flow](orchestration/O.04-CONFIRMATION-FLOW.md) | 🚧 To Do |
 | O.05 | [Improved Hotkey Flow](orchestration/O.05-IMPROVED-HOTKEY-FLOW.md) | ✅ Complete |

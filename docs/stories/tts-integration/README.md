@@ -62,8 +62,16 @@ struct AudioChunk: Sendable {
 
 ## Success Criteria
 
-- [ ] TTS audio starts within ~500ms for short responses
-- [ ] Streaming playback with no underruns
-- [ ] Graceful fallback to AVSpeechSynthesizer
-- [ ] Text always shown in UI (regardless of TTS status)
-- [ ] Clean interrupt on user cancellation
+- [x] TTS audio starts within ~500ms for short responses (0.28s model init + 0.82x RTF)
+- [ ] Streaming playback with no underruns (T.02)
+- [x] Graceful fallback to AVSpeechSynthesizer
+- [x] Text always shown in UI (regardless of TTS status)
+- [ ] Clean interrupt on user cancellation (T.02)
+
+## Status
+
+| Story | Status |
+|:------|:-------|
+| T.01 - TTS Service | ✅ Complete (Kokoro + AVSpeech fallback) |
+| T.02 - Audio Playback | 🚧 To Do |
+| T.03 - Sentence Chunker | 🚧 To Do |
