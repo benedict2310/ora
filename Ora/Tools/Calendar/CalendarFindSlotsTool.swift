@@ -28,14 +28,20 @@ struct CalendarFindSlotsTool: Tool {
     }
     
     func validate(args: [String: JSONValue]) throws {
-        guard args["start"]?.stringValue != nil else {
+        guard let startStr = args["start"]?.stringValue else {
             throw ToolHostError.validationFailed(name, "Missing required parameter: start")
         }
-        guard args["end"]?.stringValue != nil else {
+        guard let endStr = args["end"]?.stringValue else {
             throw ToolHostError.validationFailed(name, "Missing required parameter: end")
         }
         guard args["duration_minutes"]?.numberValue != nil else {
             throw ToolHostError.validationFailed(name, "Missing required parameter: duration_minutes")
+        }
+        guard EventStoreProvider.parseDate(startStr) != nil else {
+            throw CalendarToolError.invalidDateFormat(startStr)
+        }
+        guard EventStoreProvider.parseDate(endStr) != nil else {
+            throw CalendarToolError.invalidDateFormat(endStr)
         }
     }
     

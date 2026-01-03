@@ -325,6 +325,30 @@ final class CalendarToolsTests: XCTestCase {
         }
     }
     
+    func test_findSlotsTool_validate_invalidStartDate() {
+        let tool = CalendarFindSlotsTool()
+        
+        XCTAssertThrowsError(try tool.validate(args: [
+            "start": .string("invalid-date"),
+            "end": .string("2026-01-15T18:00:00Z"),
+            "duration_minutes": .number(30)
+        ])) { error in
+            XCTAssertTrue(error is CalendarToolError)
+        }
+    }
+    
+    func test_findSlotsTool_validate_invalidEndDate() {
+        let tool = CalendarFindSlotsTool()
+        
+        XCTAssertThrowsError(try tool.validate(args: [
+            "start": .string("2026-01-15T08:00:00Z"),
+            "end": .string("not-a-date"),
+            "duration_minutes": .number(30)
+        ])) { error in
+            XCTAssertTrue(error is CalendarToolError)
+        }
+    }
+    
     func test_findSlotsTool_schema() {
         let tool = CalendarFindSlotsTool()
         XCTAssertEqual(tool.name, "calendar.find_slots")
