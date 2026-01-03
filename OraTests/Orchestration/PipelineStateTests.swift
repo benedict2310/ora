@@ -31,7 +31,12 @@ final class PipelineStateTests: XCTestCase {
         let state = PipelineState.responding
         XCTAssertEqual(state.description, "Responding...")
     }
-    
+
+    func test_speaking_description() {
+        let state = PipelineState.speaking
+        XCTAssertEqual(state.description, "Speaking...")
+    }
+
     func test_awaitingFollowUp_description() {
         let state = PipelineState.awaitingFollowUp
         XCTAssertEqual(state.description, "Awaiting Follow-up")
@@ -76,7 +81,11 @@ final class PipelineStateTests: XCTestCase {
     func test_canStartListening_fromResponding_isFalse() {
         XCTAssertFalse(PipelineState.responding.canStartListening)
     }
-    
+
+    func test_canStartListening_fromSpeaking_isFalse() {
+        XCTAssertFalse(PipelineState.speaking.canStartListening)
+    }
+
     // MARK: - Equatable Tests
     
     func test_equatable_sameStates_areEqual() {
@@ -84,13 +93,15 @@ final class PipelineStateTests: XCTestCase {
         XCTAssertEqual(PipelineState.listening, PipelineState.listening)
         XCTAssertEqual(PipelineState.thinking, PipelineState.thinking)
         XCTAssertEqual(PipelineState.responding, PipelineState.responding)
+        XCTAssertEqual(PipelineState.speaking, PipelineState.speaking)
         XCTAssertEqual(PipelineState.completed, PipelineState.completed)
         XCTAssertEqual(PipelineState.error("test"), PipelineState.error("test"))
     }
-    
+
     func test_equatable_differentStates_areNotEqual() {
         XCTAssertNotEqual(PipelineState.idle, PipelineState.listening)
         XCTAssertNotEqual(PipelineState.thinking, PipelineState.responding)
+        XCTAssertNotEqual(PipelineState.speaking, PipelineState.responding)
         XCTAssertNotEqual(PipelineState.error("a"), PipelineState.error("b"))
     }
     

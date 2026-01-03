@@ -13,6 +13,7 @@ enum PipelineState: Equatable, Sendable {
     case listening
     case thinking
     case responding
+    case speaking
     case awaitingFollowUp
     case completed
     case error(String)
@@ -24,6 +25,7 @@ enum PipelineState: Equatable, Sendable {
         case .listening: return "Listening..."
         case .thinking: return "Thinking..."
         case .responding: return "Responding..."
+        case .speaking: return "Speaking..."
         case .awaitingFollowUp: return "Awaiting Follow-up"
         case .completed: return "Done"
         case .error(let msg): return "Error: \(msg)"
@@ -35,7 +37,7 @@ enum PipelineState: Equatable, Sendable {
         switch self {
         case .idle, .completed, .error, .awaitingFollowUp:
             return true
-        case .listening, .thinking, .responding:
+        case .listening, .thinking, .responding, .speaking:
             return false
         }
     }
