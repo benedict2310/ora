@@ -6,9 +6,13 @@
 //
 
 @preconcurrency import EventKit
+import os
 
 /// Provides shared access to EKEventStore
 enum EventStoreProvider {
+    
+    private static let logger = Logger(subsystem: "com.ora.app", category: "EventStoreProvider")
+    
     /// Shared event store instance
     /// Note: EKEventStore is thread-safe and meant to be reused
     nonisolated(unsafe) static let shared = EKEventStore()
@@ -35,5 +39,47 @@ enum EventStoreProvider {
     /// Format date to ISO8601 string
     static func formatDate(_ date: Date) -> String {
         dateFormatter.string(from: date)
+    }
+    
+    /// Check if calendar access is authorized, and request if not determined
+    /// - Throws: CalendarToolError.permissionDenied if access is denied
+    static func ensureCalendarAccess() async throws {
+        let status = EKEventStore.authorizationStatus(for: .event)
+        
+        switch status {
+        case .fullAccess, .authorized:
+            // Already authorized
+            logger.debug("Calendar access already authorized")
+            return
+            
+        case .notDetermined:
+            // Request access
+            logger.info("Requesting calendar access...")
+            do {
+                let granted = try await shared.requestFullAccessToEvents()
+                if granted {
+                    logger.info("Calendar access granted")
+                    return
+                } else {
+                    logger.warning("Calendar access denied by user")
+                    throw CalendarToolError.permissionDenied
+                }
+            } catch {
+                logger.error("Calendar access request failed: \(error.localizedDescription)")
+                throw CalendarToolError.permissionDenied
+            }
+            
+        case .denied, .writeOnly:
+            logger.warning("Calendar access denied (status: \(String(describing: status)))")
+            throw CalendarToolError.permissionDenied
+            
+        case .restricted:
+            logger.warning("Calendar access restricted")
+            throw CalendarToolError.permissionDenied
+            
+        @unknown default:
+            logger.warning("Unknown calendar authorization status")
+            throw CalendarToolError.permissionDenied
+        }
     }
 }

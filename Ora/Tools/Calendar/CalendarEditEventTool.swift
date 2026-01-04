@@ -56,6 +56,9 @@ struct CalendarEditEventTool: Tool {
     }
     
     func execute(args: [String: JSONValue]) async throws -> ToolResult {
+        // Check calendar permission first
+        try await EventStoreProvider.ensureCalendarAccess()
+        
         let store = EventStoreProvider.shared
         
         guard let eventID = args["event_id"]?.stringValue,
