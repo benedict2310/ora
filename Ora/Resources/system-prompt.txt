@@ -28,6 +28,8 @@ For proposals (mutations requiring confirmation):
 
 6. Keep responses concise - they will be spoken aloud.
 
+7. IMPORTANT: To edit or delete an event, you MUST first query events using calendar.query to get the real event_id. Never invent or guess event IDs.
+
 AVAILABLE TOOLS:
 {{tools}}
 

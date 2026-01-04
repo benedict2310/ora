@@ -15,12 +15,14 @@
 - ✅ Text-to-speech (Kokoro TTS)
 - ✅ Overlay UI with conversation display
 - ✅ Auto-listen for follow-up turns
+- ✅ Calendar tools (query, create, edit, delete events)
+- ✅ Multi-step agentic flows (query → delete with confirmation)
 
 **What's next:**
-- 🚧 Wire AgentLoop so tools actually execute (O.06)
 - 🚧 Upgrade to Qwen 3 (L.06)
 - 🚧 Fix setup wizard UX (F.11)
 - 🚧 Add conversation mode with silence detection (O.07)
+- 🚧 Implement Reminders, Contacts, System tools (X.03-X.05)
 
 ---
 
@@ -102,7 +104,7 @@ Connecting the loop: Audio → ASR → LLM → Tools → TTS.
 | O.03 | [Conversation Orchestrator](orchestration/O.03-CONVERSATION-ORCHESTRATOR.md) | ✅ Complete |
 | O.04 | [Confirmation Flow](orchestration/O.04-CONFIRMATION-FLOW.md) | 🚧 To Do |
 | O.05 | [Improved Hotkey Flow](orchestration/O.05-IMPROVED-HOTKEY-FLOW.md) | ✅ Complete |
-| O.06 | [Agent Loop Integration](orchestration/O.06-AGENT-LOOP-INTEGRATION.md) | 🚧 To Do |
+| O.06 | [Agent Loop Integration](orchestration/O.06-AGENT-LOOP-INTEGRATION.md) | ✅ Complete |
 | O.07 | [Conversation Mode](orchestration/O.07-CONVERSATION-MODE.md) | 🚧 To Do |
 
 ### 📚 Skills (S)
@@ -136,14 +138,14 @@ All foundation stories (F.00-F.09) are complete. This includes app shell, permis
 - **X.01:** Tool Protocol - Foundation for agentic tools
 - **X.02:** Calendar Tools - Query, create, delete events (implemented but not wired)
 
-### 🚧 Phase 4: Working Tools (Current Priority)
+### ✅ Phase 4: Working Tools (Complete)
 
-This phase connects the AgentLoop to the pipeline so tools actually execute.
+AgentLoop is wired into the pipeline and calendar tools work end-to-end.
 
 | Priority | Story | Description | Status |
 |:---------|:------|:------------|:-------|
-| **P0** | **O.06** | **Agent Loop Integration** - Wire AgentLoop into pipeline so tools work | 🚧 **Start Here** |
-| P0 | O.04 | Confirmation Flow - UI for confirming tool mutations | 🚧 To Do |
+| ✅ | O.06 | Agent Loop Integration - Wire AgentLoop into pipeline so tools work | ✅ Complete |
+| P1 | O.04 | Confirmation Flow - UI polish for confirming tool mutations | 🚧 To Do |
 
 ### 🚧 Phase 5: Model & UX Improvements
 
@@ -223,8 +225,7 @@ This phase connects the AgentLoop to the pipeline so tools actually execute.
          ▼                             ▼
 ┌─────────────────────┐     ┌─────────────────────┐
 │  O.06 Agent Loop    │     │  O.07 Conversation  │
-│  Integration 🚧     │     │  Mode 🚧            │
-│  ← CURRENT PRIORITY │     │                     │
+│  Integration ✅     │     │  Mode 🚧            │
 └─────────┬───────────┘     └─────────────────────┘
           │
           ▼

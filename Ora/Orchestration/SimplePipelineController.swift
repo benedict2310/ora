@@ -409,6 +409,10 @@ final class SimplePipelineController: ObservableObject {
             
             guard !Task.isCancelled else { return }
             
+            // Ensure overlay is still visible and app is active
+            // (permission dialogs may have stolen focus)
+            OverlayWindowController.shared.show()
+            
             // Generate follow-up response
             self.transition(to: .responding)
             OverlayWindowController.shared.mode = .responding

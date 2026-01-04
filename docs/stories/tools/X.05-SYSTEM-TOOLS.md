@@ -225,3 +225,17 @@ struct SystemOpenURLTool: Tool {
 - [ ] Register in `ToolRegistry`
 - [ ] Test with various apps
 - [ ] Test with various URL formats
+
+---
+
+## 6. Implementation Notes (From X.02 Learnings)
+
+### Tool Result Context
+
+System tools are simpler (no multi-step flows), but follow the same patterns:
+
+1. **Return confirmation in JSON:** Include `opened: true` and relevant details (path, URL) so the LLM can confirm success to the user.
+
+2. **Human summary for TTS:** Keep it brief and confirmatory ("Opened Safari", "Opening google.com in your browser").
+
+3. **Error handling:** System tools can fail silently (app not found, URL invalid). Return clear errors that the LLM can relay naturally.

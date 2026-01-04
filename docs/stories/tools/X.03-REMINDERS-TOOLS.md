@@ -213,3 +213,31 @@ struct RemindersCreateTool: Tool {
 - [ ] Create `RemindersCompleteTool.swift`
 - [ ] Register in `ToolRegistry`
 - [ ] Test with real reminders data
+
+---
+
+## 6. Implementation Notes (From X.02 Learnings)
+
+### Tool Result Context for Multi-Step Flows
+
+When implementing tools that return IDs (like `reminder_id` in the create result), ensure:
+
+1. **Include IDs in JSON:** The `ToolResult.json` must include the `id` field so the LLM can reference it in subsequent operations (e.g., marking complete after creation).
+
+2. **AgentLoop handles context:** The `AgentLoop` passes `result.json.compactJSON` to the conversation context, not just the human summary. This is already implemented.
+
+3. **System prompt guidance:** If the LLM needs to query before mutating (e.g., finding a reminder by name before completing it), add an instruction to the system prompt similar to:
+   > "To complete or delete a reminder, you MUST first list reminders to get the reminder_id."
+
+### Example Pattern
+
+```swift
+return .success(
+    .object([
+        "reminder_id": .string(reminder.calendarItemIdentifier),  // Critical for follow-up operations
+        "title": .string(title),
+        "list": .string(reminder.calendar.title)
+    ]),
+    summary: "Created reminder '\(title)'."
+)
+```

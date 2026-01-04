@@ -1085,3 +1085,49 @@ This matches the pattern used in `CalendarQueryTool` and `CalendarCreateEventToo
 - [x] All P0 issues resolved
 - [x] All P1 issues resolved
 - [x] Ready for merge
+
+---
+
+## Implementation Learnings (Post-Merge)
+
+**Date:** 2026-01-04
+
+### Critical: Tool Result Context for Multi-Step Flows
+
+When implementing tools that require multi-step agentic flows (e.g., query → delete), the **AgentLoop must pass full JSON data to the LLM**, not just the human summary.
+
+**Problem:** The LLM was unable to delete events because it never saw the event IDs. The `AgentLoop` was only passing `humanSummary` ("Found 3 events.") to the conversation context.
+
+**Solution:** Pass compact JSON data so the LLM can see details like event IDs:
+
+```swift
+// WRONG - LLM can't see event IDs for subsequent operations
+let resultText = "Tool \(tool) returned: \(result.humanSummary)"
+
+// CORRECT - Include full JSON so LLM can reference data in next steps
+let jsonString = result.json.compactJSON
+let resultText = "Tool \(tool) returned: \(jsonString)"
+```
+
+**Added to LLMOutput.swift:**
+```swift
+extension JSONValue {
+    var compactJSON: String {
+        // Compact single-line JSON, no extra whitespace
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let data = try encoder.encode(self)
+        return String(data: data, encoding: .utf8) ?? stringDescription
+    }
+}
+```
+
+**System prompt instruction added:**
+> "IMPORTANT: To edit or delete an event, you MUST first query events using calendar.query to get the real event_id. Never invent or guess event IDs."
+
+### Key Takeaway for All Tools
+
+Any tool that returns data needed for subsequent operations (IDs, identifiers, references) must:
+1. Include those IDs in the `json` field of `ToolResult`
+2. Rely on the AgentLoop passing full JSON to conversation context
+3. Instruct the LLM in the system prompt to query first if needed

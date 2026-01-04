@@ -80,3 +80,26 @@ struct ToolResult: Sendable {
 - [ ] All tool calls logged to audit log
 - [ ] Clean error messages for permission failures
 - [ ] Tools return both JSON and human summary
+
+---
+
+## Implementation Learnings
+
+### Tool Result Context for Multi-Step Flows (Critical)
+
+When the AgentLoop passes tool results back to the LLM, it must include the **full JSON data** (in compact format), not just the `humanSummary`. This is essential for multi-step agentic flows where the LLM needs to reference data from previous tool calls.
+
+**Example:** To delete a calendar event, the LLM must first query events to get the `event_id`. If only the summary ("Found 3 events.") is passed back, the LLM cannot see the actual event IDs.
+
+**Pattern in AgentLoop:**
+```swift
+// Include full JSON so LLM can reference IDs in subsequent operations
+let jsonString = result.json.compactJSON
+let resultText = "Tool \(tool) returned: \(jsonString)"
+await conversationManager.addToolResult(resultText)
+```
+
+**When implementing new tools, ensure:**
+1. Include identifiers (IDs, references) in the `json` field of `ToolResult`
+2. Keep JSON compact to avoid token bloat
+3. Add system prompt instructions if the LLM needs to query before mutating
