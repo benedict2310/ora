@@ -225,9 +225,8 @@ final class SetupCoordinatorTests: XCTestCase {
     func test_state_hasRecommendedModel() {
         let coordinator = SetupCoordinator.shared
 
-        // Should recommend based on RAM
-        let expectedModel = coordinator.state.systemRAMGB >= 16 ? "Qwen 2.5 7B" : "Qwen 2.5 3B"
-        XCTAssertEqual(coordinator.state.recommendedModel, expectedModel)
+        // Should recommend Qwen 3 4B for all RAM configurations
+        XCTAssertEqual(coordinator.state.recommendedModel, "Qwen 3 4B")
     }
 
     func test_state_primaryLLMMatchesRAM() {
