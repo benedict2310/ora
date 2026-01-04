@@ -61,14 +61,16 @@ struct VoiceInputControlView: View {
                 .overlay(shape.stroke(Color.white.opacity(0.12), lineWidth: 0.6))
                 .shadow(color: Color.black.opacity(0.35), radius: 14, x: 0, y: 8)
         } else {
+            // Fix B: glassEffect must be LAST - apply shadow to outer container
             base
                 .glassEffect(
                     .regular.tint(.black.opacity(0.9)),
                     in: shape
                 )
-                .shadow(color: Color.black.opacity(0.35), radius: 14, x: 0, y: 8)
                 .glassEffectID("voiceInput", in: self.namespace)
                 .applyGlassTransition(reduceMotion: self.reduceMotion)
+                .compositingGroup()  // Flatten before shadow
+                .shadow(color: Color.black.opacity(0.35), radius: 14, x: 0, y: 8)
         }
     }
 

@@ -123,16 +123,15 @@ struct SystemPromptBuilder {
         if tools.isEmpty {
             return "No tools available."
         }
-        
+
         var lines: [String] = []
         for tool in tools {
-            lines.append("- \(tool.name): \(tool.description)")
+            // Add read-only or confirmation marker to tool name
+            let marker = tool.requiresConfirmation ? "[REQUIRES CONFIRMATION]" : "[READ-ONLY]"
+            lines.append("- \(tool.name) \(marker): \(tool.description)")
             if !tool.parameters.isEmpty {
                 let params = tool.parameters.map { "\($0.key): \($0.value)" }.joined(separator: ", ")
                 lines.append("  Parameters: \(params)")
-            }
-            if tool.requiresConfirmation {
-                lines.append("  (Requires confirmation)")
             }
         }
         return lines.joined(separator: "\n")

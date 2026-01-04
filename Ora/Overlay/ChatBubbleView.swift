@@ -59,19 +59,20 @@ struct ChatBubbleView: View {
 
         if self.reduceTransparency {
             base
+                .userChromaOverlay(
+                    enabled: self.role == .user,
+                    shape: shape
+                )
                 .background(shape.fill(self.baseFillColor(for: self.role)))
                 .overlay(shape.stroke(Color.white.opacity(0.08), lineWidth: 0.6))
-                .userChromaOverlay(
-                    enabled: self.role == .user,
-                    shape: shape
-                )
         } else {
+            // Fix B: glassEffect must be LAST to avoid black outline artifacts
             base
-                .glassEffect(self.glassStyle(for: self.role), in: shape)
                 .userChromaOverlay(
                     enabled: self.role == .user,
                     shape: shape
                 )
+                .glassEffect(self.glassStyle(for: self.role), in: shape)
         }
     }
 
@@ -93,13 +94,14 @@ struct ChatBubbleView: View {
     }
 
     private func glassStyle(for role: Role) -> Glass {
+        // Use .clear variant for nested glass to reduce black outline artifacts
         switch role {
         case .user:
-            return .regular.tint(Color(red: 0.12, green: 0.55, blue: 0.95).opacity(0.7))
+            return .clear.tint(Color(red: 0.12, green: 0.55, blue: 0.95).opacity(0.7))
         case .assistant:
-            return .regular.tint(.white.opacity(0.08))
+            return .clear.tint(.white.opacity(0.12))
         case .tool:
-            return .regular.tint(.white.opacity(0.12))
+            return .clear.tint(.white.opacity(0.15))
         }
     }
 

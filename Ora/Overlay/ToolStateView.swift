@@ -51,18 +51,19 @@ struct ToolStateView: View {
                 .background(shape.fill(Color(nsColor: .controlBackgroundColor).opacity(0.94)))
                 .overlay(shape.stroke(Color.white.opacity(0.08), lineWidth: 0.6))
         } else {
+            // Use .clear variant to reduce black outline artifacts when nested in GlassEffectContainer
             base
-                .glassEffect(.regular.tint(.white.opacity(0.12)), in: shape)
+                .glassEffect(.clear.tint(.white.opacity(0.15)), in: shape)
         }
     }
 
     private func proposalContent(proposal: ToolProposal) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundColor(.yellow)
+                Image(systemName: self.iconForTool(proposal.toolName))
+                    .foregroundColor(self.colorForTool(proposal.toolName))
                     .accessibilityHidden(true)
-                Text("Confirm Action")
+                Text(self.titleForTool(proposal.toolName))
                     .font(.headline)
             }
 
@@ -113,6 +114,50 @@ struct ToolStateView: View {
             Text(label)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - Tool-Specific Styling
+
+    private func iconForTool(_ toolName: String) -> String {
+        if toolName.contains("delete") {
+            return "trash.fill"
+        } else if toolName.contains("create") {
+            return "plus.circle.fill"
+        } else if toolName.contains("edit") {
+            return "pencil.circle.fill"
+        } else if toolName.contains("complete") {
+            return "checkmark.circle.fill"
+        } else {
+            return "questionmark.circle.fill"
+        }
+    }
+
+    private func colorForTool(_ toolName: String) -> Color {
+        if toolName.contains("delete") {
+            return .red
+        } else if toolName.contains("create") {
+            return .green
+        } else if toolName.contains("edit") {
+            return .orange
+        } else if toolName.contains("complete") {
+            return .green
+        } else {
+            return .blue
+        }
+    }
+
+    private func titleForTool(_ toolName: String) -> String {
+        if toolName.contains("delete") {
+            return "Confirm Delete"
+        } else if toolName.contains("create") {
+            return "Confirm Create"
+        } else if toolName.contains("edit") {
+            return "Confirm Edit"
+        } else if toolName.contains("complete") {
+            return "Confirm Complete"
+        } else {
+            return "Confirm Action"
         }
     }
 }
