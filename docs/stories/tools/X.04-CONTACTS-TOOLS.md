@@ -134,3 +134,17 @@ struct ContactsSearchTool: Tool {
 - [ ] Create `ContactsSearchTool.swift`
 - [ ] Register in `ToolRegistry`
 - [ ] Test with real contacts
+
+---
+
+## 6. Implementation Notes (From X.02 Learnings)
+
+### Tool Result Context
+
+Contacts tools are read-only, but the same principle applies:
+
+1. **Include identifying info in JSON:** Return enough data in `ToolResult.json` for the LLM to take follow-up actions (e.g., making a call, sending an email).
+
+2. **Compact JSON:** The AgentLoop passes `result.json.compactJSON` to the conversation, so keep the response reasonably sized (limit results, only essential fields).
+
+3. **Human summary for TTS:** The `humanSummary` is spoken aloud - make it natural and useful. For single results, include the key info directly ("John's phone is 555-1234").

@@ -203,22 +203,28 @@ actor AgentLoop {
         tool: String,
         args: [String: JSONValue]
     ) async throws -> ToolResult {
-        logger.info("Executing confirmed tool: \(tool)")
+        logger.info("Executing confirmed tool: \(tool) with args: \(args.keys.joined(separator: ", "))")
         
-        let result = try await toolHost.execute(
-            toolName: tool,
-            args: args,
-            confirmed: true,
-            sessionID: currentSessionID
-        )
-        
-        // Add to conversation context
-        let resultText = "Tool \(tool) executed: \(result.humanSummary)"
-        await conversationManager.addToolResult(resultText)
-        
-        await notifyDelegateToolExecuted(name: tool, result: result.humanSummary)
-        
-        return result
+        do {
+            let result = try await toolHost.execute(
+                toolName: tool,
+                args: args,
+                confirmed: true,
+                sessionID: currentSessionID
+            )
+            
+            // Add to conversation context
+            let resultText = "Tool \(tool) executed: \(result.humanSummary)"
+            await conversationManager.addToolResult(resultText)
+            
+            await notifyDelegateToolExecuted(name: tool, result: result.humanSummary)
+            
+            logger.info("Tool \(tool) executed successfully: \(result.humanSummary)")
+            return result
+        } catch {
+            logger.error("Tool \(tool) execution failed: \(error.localizedDescription)")
+            throw error
+        }
     }
     
     /// Generate follow-up response after tool execution
@@ -297,9 +303,11 @@ actor AgentLoop {
                     )
                     
                     await notifyDelegateToolExecuted(name: tool, result: result.humanSummary)
-                    
+
                     // Add result to context for next iteration
-                    let resultText = "Tool \(tool) returned: \(result.humanSummary)"
+                    // Include full JSON data so LLM can see details like event IDs
+                    let jsonString = result.json.compactJSON
+                    let resultText = "Tool \(tool) returned: \(jsonString)"
                     await conversationManager.addToolResult(resultText)
                     
                 } catch {

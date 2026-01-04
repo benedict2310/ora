@@ -45,4 +45,28 @@ enum JSONValue: Sendable, Equatable, Codable {
         if case .bool(let b) = self { return b }
         return nil
     }
+
+    /// Convert to compact JSON string (single line, no extra whitespace)
+    var compactJSON: String {
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .sortedKeys
+            let data = try encoder.encode(self)
+            return String(data: data, encoding: .utf8) ?? stringDescription
+        } catch {
+            return stringDescription
+        }
+    }
+
+    /// Simple string description for debugging
+    var stringDescription: String {
+        switch self {
+        case .string(let s): return "\"\(s)\""
+        case .number(let n): return String(n)
+        case .bool(let b): return b ? "true" : "false"
+        case .null: return "null"
+        case .array(let arr): return "[\(arr.map { $0.stringDescription }.joined(separator: ","))]"
+        case .object(let obj): return "{\(obj.map { "\"\($0.key)\":\($0.value.stringDescription)" }.joined(separator: ","))}"
+        }
+    }
 }

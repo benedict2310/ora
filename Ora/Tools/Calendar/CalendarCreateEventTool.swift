@@ -6,11 +6,14 @@
 //
 
 import Foundation
+import os
 @preconcurrency import EventKit
 
 struct CalendarCreateEventTool: Tool {
     let name = "calendar.create_event"
     let kind: ToolKind = .mutate
+    
+    private static let logger = Logger(subsystem: "com.ora.app", category: "CalendarCreateTool")
     
     var schema: ToolSchema {
         ToolSchema(
@@ -48,8 +51,11 @@ struct CalendarCreateEventTool: Tool {
     }
     
     func execute(args: [String: JSONValue]) async throws -> ToolResult {
+        Self.logger.info("CalendarCreateEventTool.execute called with args: \(args.keys.joined(separator: ", "))")
+        
         // Check calendar permission first
         try await EventStoreProvider.ensureCalendarAccess()
+        Self.logger.info("Calendar access confirmed")
         
         let store = EventStoreProvider.shared
         
@@ -58,8 +64,11 @@ struct CalendarCreateEventTool: Tool {
               let endStr = args["end"]?.stringValue,
               let start = EventStoreProvider.parseDate(startStr),
               let end = EventStoreProvider.parseDate(endStr) else {
+            Self.logger.error("Failed to parse args: title=\(args["title"]?.stringValue ?? "nil"), start=\(args["start"]?.stringValue ?? "nil"), end=\(args["end"]?.stringValue ?? "nil")")
             throw CalendarToolError.invalidDateFormat("title, start, or end")
         }
+        
+        Self.logger.info("Creating event: \(title) from \(startStr) to \(endStr)")
         
         let event = EKEvent(eventStore: store)
         event.title = title
@@ -73,16 +82,21 @@ struct CalendarCreateEventTool: Tool {
         if let calendarID = args["calendar_id"]?.stringValue,
            let calendar = store.calendar(withIdentifier: calendarID) {
             event.calendar = calendar
+            Self.logger.info("Using specified calendar: \(calendar.title)")
         } else {
             guard let defaultCalendar = store.defaultCalendarForNewEvents else {
+                Self.logger.error("No default calendar available")
                 throw CalendarToolError.noDefaultCalendar
             }
             event.calendar = defaultCalendar
+            Self.logger.info("Using default calendar: \(defaultCalendar.title)")
         }
         
         do {
             try store.save(event, span: .thisEvent, commit: true)
+            Self.logger.info("Event saved successfully with ID: \(event.eventIdentifier ?? "nil")")
         } catch {
+            Self.logger.error("Failed to save event: \(error.localizedDescription)")
             throw CalendarToolError.saveFailed(error.localizedDescription)
         }
         
