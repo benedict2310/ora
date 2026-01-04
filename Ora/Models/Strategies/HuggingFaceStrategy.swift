@@ -103,14 +103,25 @@ struct HuggingFaceStrategy: ModelDownloadStrategy, Sendable {
     /// Known files for each model type
     private func knownFiles(for model: ModelIdentifier) -> [String] {
         switch model {
-        case .qwen7B, .qwen3B:
-            // MLX-community Qwen models use standard MLX format
+        case .qwen3_4B:
+            // Qwen 3 4B Instruct MLX model with chat template
             return [
                 "config.json",
                 "tokenizer.json",
                 "tokenizer_config.json",
                 "special_tokens_map.json",
-                "model.safetensors",  // Single file for 4-bit quantized
+                "model.safetensors",
+                "chat_template.jinja",  // Qwen 3 uses separate jinja file
+            ]
+            
+        case .qwen7B, .qwen3B:
+            // Legacy Qwen 2.5 models - MLX-community format
+            return [
+                "config.json",
+                "tokenizer.json",
+                "tokenizer_config.json",
+                "special_tokens_map.json",
+                "model.safetensors",
             ]
 
         case .kokoro:

@@ -107,7 +107,7 @@ final class SetupStateTests: XCTestCase {
 
     func test_initialState_primaryLLMDefault() {
         let state = SetupState()
-        XCTAssertEqual(state.primaryLLM, .qwen7B)
+        XCTAssertEqual(state.primaryLLM, .qwen3_4B)
     }
 
     // MARK: - System Info
@@ -117,9 +117,9 @@ final class SetupStateTests: XCTestCase {
         XCTAssertEqual(state.systemRAMGB, 0)
     }
 
-    func test_recommendedModel_defaultsTo7B() {
+    func test_recommendedModel_defaultsToQwen3() {
         let state = SetupState()
-        XCTAssertEqual(state.recommendedModel, "Qwen 2.5 7B")
+        XCTAssertEqual(state.recommendedModel, "Qwen 3 4B")
     }
 
     // MARK: - Model Progresses
@@ -132,11 +132,11 @@ final class SetupStateTests: XCTestCase {
     func test_modelProgresses_canTrackIndividualModels() {
         var state = SetupState()
         state.modelProgresses[.parakeetTDT] = 0.5
-        state.modelProgresses[.qwen7B] = 0.25
+        state.modelProgresses[.qwen3_4B] = 0.25
         state.modelProgresses[.kokoro] = 1.0
 
         XCTAssertEqual(state.modelProgresses[.parakeetTDT], 0.5)
-        XCTAssertEqual(state.modelProgresses[.qwen7B], 0.25)
+        XCTAssertEqual(state.modelProgresses[.qwen3_4B], 0.25)
         XCTAssertEqual(state.modelProgresses[.kokoro], 1.0)
     }
 
@@ -233,9 +233,8 @@ final class SetupCoordinatorTests: XCTestCase {
     func test_state_primaryLLMMatchesRAM() {
         let coordinator = SetupCoordinator.shared
 
-        // Primary LLM should be set based on RAM
-        let expectedLLM: ModelIdentifier = coordinator.state.systemRAMGB >= 16 ? .qwen7B : .qwen3B
-        XCTAssertEqual(coordinator.state.primaryLLM, expectedLLM)
+        // Primary LLM is now always Qwen 3 4B regardless of RAM
+        XCTAssertEqual(coordinator.state.primaryLLM, .qwen3_4B)
     }
 
     // MARK: - Setup Complete Detection Tests

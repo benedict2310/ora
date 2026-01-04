@@ -186,7 +186,8 @@ final class SetupCoordinator: NSObject, ObservableObject {
         let ramBytes = ProcessInfo.processInfo.physicalMemory
         self.state.systemRAMGB = Int(ramBytes / (1024 * 1024 * 1024))
 
-        let recommendedLLM: ModelIdentifier = self.state.systemRAMGB >= 16 ? .qwen7B : .qwen3B
+        // Qwen 3 4B is the only active LLM now
+        let recommendedLLM: ModelIdentifier = .qwen3_4B
         self.state.recommendedModel = recommendedLLM.displayName
         self.state.primaryLLM = recommendedLLM  // Initial default, may be updated by ensurePrimaryLLMSelected
     }
@@ -245,14 +246,21 @@ final class SetupCoordinator: NSObject, ObservableObject {
         
         // Check if there's already a persisted primary LLM
         if let persistedLLM = await self.getPersistedPrimaryLLM() {
+            // If persisted LLM is a legacy model, force migration to Qwen 3
+            if persistedLLM.isLegacy {
+                self.logger.info("Legacy model \(persistedLLM.displayName) detected, migrating to Qwen 3 4B")
+                self.state.primaryLLM = .qwen3_4B
+                await ModelManager.shared.setPrimaryLLM(.qwen3_4B)
+                return
+            }
             self.state.primaryLLM = persistedLLM
             // Sync to ModelManager to ensure downloads use the correct LLM
             await ModelManager.shared.setPrimaryLLM(persistedLLM)
             return
         }
 
-        // No persisted primary - use the recommended model
-        let recommendedLLM: ModelIdentifier = self.state.systemRAMGB >= 16 ? .qwen7B : .qwen3B
+        // No persisted primary - use Qwen 3 4B
+        let recommendedLLM: ModelIdentifier = .qwen3_4B
         self.state.primaryLLM = recommendedLLM
         await ModelManager.shared.setPrimaryLLM(recommendedLLM)
     }

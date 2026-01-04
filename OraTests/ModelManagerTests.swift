@@ -14,23 +14,43 @@ final class ModelManagerTests: XCTestCase {
 
     func test_modelIdentifier_categoryMapping() {
         XCTAssertEqual(ModelIdentifier.parakeetTDT.category, .asr)
-        XCTAssertEqual(ModelIdentifier.qwen7B.category, .llm)
-        XCTAssertEqual(ModelIdentifier.qwen3B.category, .llm)
+        XCTAssertEqual(ModelIdentifier.qwen3_4B.category, .llm)
+        XCTAssertEqual(ModelIdentifier.qwen7B.category, .llm)  // Legacy
+        XCTAssertEqual(ModelIdentifier.qwen3B.category, .llm)  // Legacy
         XCTAssertEqual(ModelIdentifier.kokoro.category, .tts)
     }
 
     func test_modelIdentifier_displayName() {
         XCTAssertEqual(ModelIdentifier.parakeetTDT.displayName, "Parakeet TDT 0.6B")
-        XCTAssertEqual(ModelIdentifier.qwen7B.displayName, "Qwen 2.5 7B")
-        XCTAssertEqual(ModelIdentifier.qwen3B.displayName, "Qwen 2.5 3B")
+        XCTAssertEqual(ModelIdentifier.qwen3_4B.displayName, "Qwen 3 4B")
+        XCTAssertEqual(ModelIdentifier.qwen7B.displayName, "Qwen 2.5 7B (Legacy)")
+        XCTAssertEqual(ModelIdentifier.qwen3B.displayName, "Qwen 2.5 3B (Legacy)")
         XCTAssertEqual(ModelIdentifier.kokoro.displayName, "Kokoro TTS")
     }
 
     func test_modelIdentifier_storagePath() {
         XCTAssertEqual(ModelIdentifier.parakeetTDT.storagePath, "asr/parakeet-tdt-0.6b-v3-coreml")
-        XCTAssertEqual(ModelIdentifier.qwen7B.storagePath, "llm/qwen2.5-7b-instruct-4bit")
-        XCTAssertEqual(ModelIdentifier.qwen3B.storagePath, "llm/qwen2.5-3b-instruct-4bit")
+        XCTAssertEqual(ModelIdentifier.qwen3_4B.storagePath, "llm/qwen3-4b-instruct-4bit")
+        XCTAssertEqual(ModelIdentifier.qwen7B.storagePath, "llm/qwen2.5-7b-instruct-4bit")  // Legacy
+        XCTAssertEqual(ModelIdentifier.qwen3B.storagePath, "llm/qwen2.5-3b-instruct-4bit")  // Legacy
         XCTAssertEqual(ModelIdentifier.kokoro.storagePath, "tts/kokoro")
+    }
+    
+    func test_modelIdentifier_isLegacy() {
+        XCTAssertFalse(ModelIdentifier.parakeetTDT.isLegacy)
+        XCTAssertFalse(ModelIdentifier.qwen3_4B.isLegacy)
+        XCTAssertTrue(ModelIdentifier.qwen7B.isLegacy)
+        XCTAssertTrue(ModelIdentifier.qwen3B.isLegacy)
+        XCTAssertFalse(ModelIdentifier.kokoro.isLegacy)
+    }
+    
+    func test_modelIdentifier_activeModels() {
+        let activeModels = ModelIdentifier.activeModels
+        XCTAssertTrue(activeModels.contains(.parakeetTDT))
+        XCTAssertTrue(activeModels.contains(.qwen3_4B))
+        XCTAssertTrue(activeModels.contains(.kokoro))
+        XCTAssertFalse(activeModels.contains(.qwen7B))  // Legacy
+        XCTAssertFalse(activeModels.contains(.qwen3B))  // Legacy
     }
 
     func test_modelIdentifier_requiredFiles() {
@@ -39,9 +59,9 @@ final class ModelManagerTests: XCTestCase {
         XCTAssertTrue(ModelIdentifier.parakeetTDT.requiredFiles.contains("parakeet_vocab.json"))
 
         // LLM requires config, tokenizer, and weights
-        XCTAssertTrue(ModelIdentifier.qwen7B.requiredFiles.contains("config.json"))
-        XCTAssertTrue(ModelIdentifier.qwen7B.requiredFiles.contains("tokenizer.json"))
-        XCTAssertTrue(ModelIdentifier.qwen7B.requiredFiles.contains("model.safetensors"))
+        XCTAssertTrue(ModelIdentifier.qwen3_4B.requiredFiles.contains("config.json"))
+        XCTAssertTrue(ModelIdentifier.qwen3_4B.requiredFiles.contains("tokenizer.json"))
+        XCTAssertTrue(ModelIdentifier.qwen3_4B.requiredFiles.contains("model.safetensors"))
 
         // TTS requires config and weights
         XCTAssertTrue(ModelIdentifier.kokoro.requiredFiles.contains("config.json"))
@@ -54,8 +74,8 @@ final class ModelManagerTests: XCTestCase {
         let asrPath = ModelPaths.path(for: .parakeetTDT)
         XCTAssertTrue(asrPath.path.contains("Ora/Models/asr/parakeet-tdt-0.6b-v3-coreml"))
 
-        let llmPath = ModelPaths.path(for: .qwen7B)
-        XCTAssertTrue(llmPath.path.contains("Ora/Models/llm/qwen2.5-7b-instruct-4bit"))
+        let llmPath = ModelPaths.path(for: .qwen3_4B)
+        XCTAssertTrue(llmPath.path.contains("Ora/Models/llm/qwen3-4b-instruct-4bit"))
 
         let ttsPath = ModelPaths.path(for: .kokoro)
         XCTAssertTrue(ttsPath.path.contains("Ora/Models/tts/kokoro"))
@@ -71,9 +91,9 @@ final class ModelManagerTests: XCTestCase {
     func test_modelsState_requiredModelsReady_allReady() {
         var state = ModelsState()
         state.statuses[.parakeetTDT] = .ready
-        state.statuses[.qwen7B] = .ready
+        state.statuses[.qwen3_4B] = .ready
         state.statuses[.kokoro] = .ready
-        state.primaryLLM = .qwen7B
+        state.primaryLLM = .qwen3_4B
 
         XCTAssertTrue(state.requiredModelsReady)
     }
@@ -81,9 +101,9 @@ final class ModelManagerTests: XCTestCase {
     func test_modelsState_requiredModelsReady_missingASR() {
         var state = ModelsState()
         state.statuses[.parakeetTDT] = .notDownloaded
-        state.statuses[.qwen7B] = .ready
+        state.statuses[.qwen3_4B] = .ready
         state.statuses[.kokoro] = .ready
-        state.primaryLLM = .qwen7B
+        state.primaryLLM = .qwen3_4B
 
         XCTAssertFalse(state.requiredModelsReady)
     }
@@ -91,9 +111,9 @@ final class ModelManagerTests: XCTestCase {
     func test_modelsState_requiredModelsReady_missingTTS() {
         var state = ModelsState()
         state.statuses[.parakeetTDT] = .ready
-        state.statuses[.qwen7B] = .ready
+        state.statuses[.qwen3_4B] = .ready
         state.statuses[.kokoro] = .notDownloaded
-        state.primaryLLM = .qwen7B
+        state.primaryLLM = .qwen3_4B
 
         XCTAssertFalse(state.requiredModelsReady)
     }
@@ -101,16 +121,16 @@ final class ModelManagerTests: XCTestCase {
     func test_modelsState_requiredModelsReady_missingLLM() {
         var state = ModelsState()
         state.statuses[.parakeetTDT] = .ready
-        state.statuses[.qwen7B] = .notDownloaded
+        state.statuses[.qwen3_4B] = .notDownloaded
         state.statuses[.kokoro] = .ready
-        state.primaryLLM = .qwen7B
+        state.primaryLLM = .qwen3_4B
 
         XCTAssertFalse(state.requiredModelsReady)
     }
 
     func test_modelsState_overallProgress_noProgress() {
         var state = ModelsState()
-        state.primaryLLM = .qwen7B
+        state.primaryLLM = .qwen3_4B
 
         XCTAssertEqual(state.overallProgress, 0.0, accuracy: 0.01)
     }
@@ -118,9 +138,9 @@ final class ModelManagerTests: XCTestCase {
     func test_modelsState_overallProgress_allReady() {
         var state = ModelsState()
         state.statuses[.parakeetTDT] = .ready
-        state.statuses[.qwen7B] = .ready
+        state.statuses[.qwen3_4B] = .ready
         state.statuses[.kokoro] = .ready
-        state.primaryLLM = .qwen7B
+        state.primaryLLM = .qwen3_4B
 
         XCTAssertEqual(state.overallProgress, 1.0, accuracy: 0.01)
     }
@@ -128,11 +148,25 @@ final class ModelManagerTests: XCTestCase {
     func test_modelsState_overallProgress_partialDownload() {
         var state = ModelsState()
         state.statuses[.parakeetTDT] = .downloading(progress: 0.5)
-        state.statuses[.qwen7B] = .downloading(progress: 0.5)
+        state.statuses[.qwen3_4B] = .downloading(progress: 0.5)
         state.statuses[.kokoro] = .downloading(progress: 0.5)
-        state.primaryLLM = .qwen7B
+        state.primaryLLM = .qwen3_4B
 
         XCTAssertEqual(state.overallProgress, 0.5, accuracy: 0.01)
+    }
+    
+    func test_modelsState_hasLegacyModels_true() {
+        var state = ModelsState()
+        state.statuses[.qwen7B] = .ready
+        
+        XCTAssertTrue(state.hasLegacyModels)
+    }
+    
+    func test_modelsState_hasLegacyModels_false() {
+        var state = ModelsState()
+        state.statuses[.qwen3_4B] = .ready
+        
+        XCTAssertFalse(state.hasLegacyModels)
     }
 
     func test_modelsState_subscript() {
@@ -205,8 +239,8 @@ final class ModelManagerTests: XCTestCase {
 
         let recommended = await manager.recommendedLLM()
 
-        // On any modern Mac, we should get either 7B or 3B
-        XCTAssertTrue(recommended == .qwen7B || recommended == .qwen3B)
+        // Qwen 3 4B is now the only recommended model
+        XCTAssertEqual(recommended, .qwen3_4B)
     }
 
     func test_modelManager_refreshStatuses_updatesState() async {
@@ -219,7 +253,7 @@ final class ModelManagerTests: XCTestCase {
         let state = await manager.state
 
         XCTAssertEqual(state.statuses[.parakeetTDT], .ready)
-        XCTAssertEqual(state.statuses[.qwen7B], .notDownloaded)
+        XCTAssertEqual(state.statuses[.qwen3_4B], .notDownloaded)
     }
 
     func test_modelManager_downloadModel_success() async throws {
@@ -270,7 +304,7 @@ final class ModelManagerTests: XCTestCase {
         await manager.setPrimaryLLM(.parakeetTDT) // This should be ignored
 
         let state = await manager.state
-        XCTAssertEqual(state.primaryLLM, .qwen7B) // Should remain default
+        XCTAssertEqual(state.primaryLLM, .qwen3_4B) // Should remain default
     }
 
     func test_modelManager_requiredModelsAvailable_false() async {
@@ -283,7 +317,7 @@ final class ModelManagerTests: XCTestCase {
 
     func test_modelManager_requiredModelsAvailable_true() async {
         let mock = MockModelDownloader()
-        mock.existingModels = [.parakeetTDT, .qwen7B, .kokoro]
+        mock.existingModels = [.parakeetTDT, .qwen3_4B, .kokoro]
 
         let manager = ModelManager(downloader: mock)
 

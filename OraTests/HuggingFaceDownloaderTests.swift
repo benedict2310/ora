@@ -13,10 +13,10 @@ final class HuggingFaceDownloaderTests: XCTestCase {
     // MARK: - URL Builder Tests
 
     func test_fileURL_buildsCorrectURL() {
-        let url = HuggingFaceDownloader.fileURL(repo: "mlx-community/Qwen2.5-7B-Instruct-4bit", path: "config.json")
+        let url = HuggingFaceDownloader.fileURL(repo: "mlx-community/Qwen3-4B-Instruct-2507-4bit", path: "config.json")
 
         XCTAssertNotNil(url)
-        XCTAssertEqual(url?.absoluteString, "https://huggingface.co/mlx-community/Qwen2.5-7B-Instruct-4bit/resolve/main/config.json")
+        XCTAssertEqual(url?.absoluteString, "https://huggingface.co/mlx-community/Qwen3-4B-Instruct-2507-4bit/resolve/main/config.json")
     }
 
     func test_fileURL_buildsCorrectURL_withRevision() {
@@ -107,7 +107,7 @@ final class HuggingFaceDownloaderTests: XCTestCase {
     func test_huggingFaceStrategy_downloadsLLMModel() async throws {
         let mock = MockFileDownloader()
         mock.downloadDelay = 0.01
-        mock.fileSizeOverrides = ModelIdentifier.qwen7B.expectedFileSizes
+        mock.fileSizeOverrides = ModelIdentifier.qwen3_4B.expectedFileSizes
 
         let strategy = HuggingFaceStrategy(downloader: mock)
 
@@ -115,7 +115,7 @@ final class HuggingFaceDownloaderTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
         let progressCollector = DoubleCollector()
-        try await strategy.download(model: .qwen7B, to: tempDir) { progress in
+        try await strategy.download(model: .qwen3_4B, to: tempDir) { progress in
             progressCollector.append(progress.progress)
         }
 
@@ -145,7 +145,7 @@ final class HuggingFaceDownloaderTests: XCTestCase {
     func test_huggingFaceStrategy_reportsCurrentFile() async throws {
         let mock = MockFileDownloader()
         mock.downloadDelay = 0.01
-        mock.fileSizeOverrides = ModelIdentifier.qwen7B.expectedFileSizes
+        mock.fileSizeOverrides = ModelIdentifier.qwen3_4B.expectedFileSizes
 
         let strategy = HuggingFaceStrategy(downloader: mock)
 
@@ -153,7 +153,7 @@ final class HuggingFaceDownloaderTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
         let fileCollector = StringSetCollector()
-        try await strategy.download(model: .qwen7B, to: tempDir) { progress in
+        try await strategy.download(model: .qwen3_4B, to: tempDir) { progress in
             if let file = progress.currentFile {
                 fileCollector.insert(file)
             }
@@ -193,10 +193,10 @@ final class HuggingFaceDownloaderTests: XCTestCase {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        try await downloader.download(model: .qwen7B, to: tempDir) { _ in }
+        try await downloader.download(model: .qwen3_4B, to: tempDir) { _ in }
 
-        XCTAssertFalse(asrMock.downloadedModels.contains(.qwen7B))
-        XCTAssertTrue(hfMock.downloadedModels.contains(.qwen7B))
+        XCTAssertFalse(asrMock.downloadedModels.contains(.qwen3_4B))
+        XCTAssertTrue(hfMock.downloadedModels.contains(.qwen3_4B))
     }
 
     func test_defaultModelDownloader_selectsHuggingFaceForTTS() async throws {
@@ -229,7 +229,7 @@ final class HuggingFaceDownloaderTests: XCTestCase {
         // Create directory but no files
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
-        let verified = await downloader.verify(model: .qwen7B, at: tempDir)
+        let verified = await downloader.verify(model: .qwen3_4B, at: tempDir)
         XCTAssertFalse(verified)
     }
 
@@ -282,7 +282,7 @@ final class HuggingFaceDownloaderTests: XCTestCase {
 
         let nonExistentDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
 
-        let exists = downloader.exists(model: .qwen7B, at: nonExistentDir)
+        let exists = downloader.exists(model: .qwen3_4B, at: nonExistentDir)
         XCTAssertFalse(exists)
     }
 
@@ -299,7 +299,7 @@ final class HuggingFaceDownloaderTests: XCTestCase {
         try Data("test".utf8).write(to: tempDir.appendingPathComponent("config.json"))
         // Missing: tokenizer.json
 
-        let exists = downloader.exists(model: .qwen7B, at: tempDir)
+        let exists = downloader.exists(model: .qwen3_4B, at: tempDir)
         XCTAssertFalse(exists)
     }
 
@@ -344,13 +344,13 @@ final class HuggingFaceDownloaderTests: XCTestCase {
 
         // Create directory with all required files but undersized
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        for file in ModelIdentifier.qwen7B.requiredFiles {
+        for file in ModelIdentifier.qwen3_4B.requiredFiles {
             // Create tiny files that won't meet size requirements
             try Data("test".utf8).write(to: tempDir.appendingPathComponent(file))
         }
 
         // Should return false because files are way too small
-        let exists = downloader.exists(model: .qwen7B, at: tempDir)
+        let exists = downloader.exists(model: .qwen3_4B, at: tempDir)
         XCTAssertFalse(exists, "exists() should return false when model files are undersized")
     }
     
@@ -484,8 +484,7 @@ final class HuggingFaceDownloaderTests: XCTestCase {
     func test_requiredFiles_includesWeightFiles() {
         // Verify that required files for LLM/TTS models include weight files
         // to prevent treating partial downloads as complete
-        XCTAssertTrue(ModelIdentifier.qwen7B.requiredFiles.contains("model.safetensors"))
-        XCTAssertTrue(ModelIdentifier.qwen3B.requiredFiles.contains("model.safetensors"))
+        XCTAssertTrue(ModelIdentifier.qwen3_4B.requiredFiles.contains("model.safetensors"))
         XCTAssertTrue(ModelIdentifier.kokoro.requiredFiles.contains("kokoro-v1_0.safetensors"))
     }
 
