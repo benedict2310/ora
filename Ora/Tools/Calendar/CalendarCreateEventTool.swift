@@ -48,6 +48,9 @@ struct CalendarCreateEventTool: Tool {
     }
     
     func execute(args: [String: JSONValue]) async throws -> ToolResult {
+        // Check calendar permission first
+        try await EventStoreProvider.ensureCalendarAccess()
+        
         let store = EventStoreProvider.shared
         
         guard let title = args["title"]?.stringValue,

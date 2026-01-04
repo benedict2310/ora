@@ -46,6 +46,9 @@ struct CalendarFindSlotsTool: Tool {
     }
     
     func execute(args: [String: JSONValue]) async throws -> ToolResult {
+        // Check calendar permission first
+        try await EventStoreProvider.ensureCalendarAccess()
+        
         let store = EventStoreProvider.shared
         
         guard let startStr = args["start"]?.stringValue,
