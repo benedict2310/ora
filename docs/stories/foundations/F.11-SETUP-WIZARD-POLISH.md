@@ -1,7 +1,7 @@
 # F.11 - Setup Wizard Polish
 
 **Epic:** Foundations
-**Status:** Not Started
+**Status:** In Progress
 **Priority:** P1 (High)
 **Estimated Effort:** 2-3 days
 **Dependencies:** F.04, F.09, O.07
@@ -285,6 +285,42 @@ Simple, direct, no lengthy tutorial.
 - Window chrome (already handled by system)
 - Text content directly
 - Full backgrounds
+
+---
+
+## Pre-Implementation Progress
+
+### Date: 2026-01-05
+
+#### Completed Before Implementation
+
+1. **Story Rewrite** - Completely rewrote story with:
+   - New "Model Explanation" step design
+   - Simplified "All Set" screen ("Press ⌥Space and start talking")
+   - Proper progress bars (no legacy spinners)
+   - Liquid Glass design guidelines
+   - 24 acceptance criteria
+
+2. **HTML Mockups Created** - `docs/stories/foundations/F.11-mockups.html`
+   - Step 3: Model Explanation (new)
+   - Step 4: Download Progress (improved)
+   - Step 5: All Set (simplified)
+
+3. **Bug Fix: Model Detection** - Committed to main (62b4ea3)
+   - Fixed race condition where already-downloaded models might not show as 100%
+   - Changed `exists()` to use minimum reasonable sizes instead of hardcoded expected sizes
+   - Now resilient to HuggingFace file size changes
+   - Proper verification still happens via API in `verify()`
+
+4. **File Size Correction** - Committed to main (7daaeed)
+   - Fixed Kokoro voice file expected size (522,320 bytes, not 524,288)
+
+#### Ready for Implementation
+
+- Story lint: ✅ Clean
+- Dependencies: ✅ F.04, F.09, O.07 all complete
+- Mockups: ✅ Created and reviewed
+- Design: ✅ Approved (simplified All Set screen)
 
 ---
 
