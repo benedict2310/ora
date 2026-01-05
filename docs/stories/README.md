@@ -15,13 +15,13 @@
 - ✅ Text-to-speech (Kokoro TTS)
 - ✅ Overlay UI with conversation display
 - ✅ Auto-listen for follow-up turns
+- ✅ Conversation Mode (silence detection)
 - ✅ Calendar tools (query, create, edit, delete events)
 - ✅ Multi-step agentic flows (query → delete with confirmation)
 
 **What's next:**
 - 🚧 Upgrade to Qwen 3 (L.06)
 - 🚧 Fix setup wizard UX (F.11)
-- 🚧 Add conversation mode with silence detection (O.07)
 - 🚧 Implement Reminders, Contacts, System tools (X.03-X.05)
 
 ---
@@ -105,7 +105,7 @@ Connecting the loop: Audio → ASR → LLM → Tools → TTS.
 | O.04 | [Confirmation Flow](orchestration/O.04-CONFIRMATION-FLOW.md) | 🚧 To Do |
 | O.05 | [Improved Hotkey Flow](orchestration/O.05-IMPROVED-HOTKEY-FLOW.md) | ✅ Complete |
 | O.06 | [Agent Loop Integration](orchestration/O.06-AGENT-LOOP-INTEGRATION.md) | ✅ Complete |
-| O.07 | [Conversation Mode](orchestration/O.07-CONVERSATION-MODE.md) | 🚧 To Do |
+| O.07 | [Conversation Mode](orchestration/O.07-CONVERSATION-MODE.md) | ✅ Complete |
 
 ### 📚 Skills (S)
 Optional orchestration playbooks that layer on top of native tools.
@@ -153,7 +153,7 @@ AgentLoop is wired into the pipeline and calendar tools work end-to-end.
 |:---------|:------|:------------|:-------|
 | **P0** | **L.06** | **Qwen 3 Upgrade** - Replace Qwen 2.5 with Qwen 3 | 🚧 To Do |
 | P1 | F.11 | Setup Wizard Polish - Fix broken-feeling download UI | 🚧 To Do |
-| P1 | O.07 | Conversation Mode - Silence detection, auto-submit | 🚧 To Do |
+| ✅ | O.07 | Conversation Mode - Silence detection, auto-submit | ✅ Complete |
 
 ### 🚧 Phase 6: Additional Tools
 
@@ -225,7 +225,7 @@ AgentLoop is wired into the pipeline and calendar tools work end-to-end.
          ▼                             ▼
 ┌─────────────────────┐     ┌─────────────────────┐
 │  O.06 Agent Loop    │     │  O.07 Conversation  │
-│  Integration ✅     │     │  Mode 🚧            │
+│  Integration ✅     │     │  Mode ✅            │
 └─────────┬───────────┘     └─────────────────────┘
           │
           ▼
@@ -243,7 +243,7 @@ AgentLoop is wired into the pipeline and calendar tools work end-to-end.
 ```
 Hotkey (⌥Space) → Listening → ASR → LLM → Response → TTS → Audio
                       ↓
-              (Enter to submit, or wait for ASR)
+              (Enter or silence to submit)
 ```
 
 ### What O.06 Adds
