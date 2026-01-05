@@ -1,7 +1,7 @@
 # M.01 - Test Coverage Improvements
 
 **Epic:** Maintenance
-**Status:** To Do
+**Status:** In Progress
 **Priority:** P1 (High)
 **Estimated Effort:** 2-3 days
 **Dependencies:** None
@@ -13,6 +13,10 @@
 ## Active Branches
 
 - `test/m01-coverage-setup-preferences-v2` (Setup + Preferences coverage)
+
+## Progress Updates
+
+- 2026-01-05: Added Setup/Preferences view coverage and helper extraction; `Ora.app` coverage now 68.71% (9477/13793) from `agent-tools/test-results-coverage-2.xcresult`.
 
 ## 1. Objective
 
@@ -91,8 +95,8 @@ As a maintainer, I want higher automated coverage of core UI and orchestration l
 
 ### Automated Tests
 
-- [ ] `xcodebuild test -project Ora.xcodeproj -scheme Ora -enableCodeCoverage YES`
-- [ ] `xcrun xccov view --report --only-targets agent-tools/test-results.xcresult`
+- [x] `xcodebuild test -project Ora.xcodeproj -scheme Ora -enableCodeCoverage YES -resultBundlePath agent-tools/test-results-coverage-2.xcresult`
+- [x] `xcrun xccov view --report --only-targets agent-tools/test-results-coverage-2.xcresult`
 
 ### Manual Tests
 

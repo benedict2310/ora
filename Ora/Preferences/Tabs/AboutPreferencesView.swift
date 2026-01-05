@@ -395,7 +395,8 @@ struct AuditLogEntryRow: View {
     }
 
     static func formatJSON(_ dict: [String: Any]) -> String {
-        guard let data = try? JSONSerialization.data(withJSONObject: dict, options: .prettyPrinted),
+        guard JSONSerialization.isValidJSONObject(dict),
+              let data = try? JSONSerialization.data(withJSONObject: dict, options: .prettyPrinted),
               let string = String(data: data, encoding: .utf8) else {
             return String(describing: dict)
         }
