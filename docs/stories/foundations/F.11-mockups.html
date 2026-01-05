@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>F.11 Setup Wizard Polish - Mockups</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            padding: 40px;
+            color: #fff;
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 40px;
+            font-weight: 600;
+        }
+        
+        .mockup-container {
+            display: flex;
+            flex-direction: column;
+            gap: 60px;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+        
+        .mockup {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 16px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .mockup-title {
+            font-size: 14px;
+            color: #888;
+            margin-bottom: 16px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        /* Window Frame */
+        .window {
+            background: linear-gradient(180deg, #2d2d3a 0%, #1e1e2a 100%);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
+        }
+        
+        .window-header {
+            background: linear-gradient(180deg, #3d3d4a 0%, #2d2d3a 100%);
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .window-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        
+        .window-dot.red { background: #ff5f57; }
+        .window-dot.yellow { background: #febc2e; }
+        .window-dot.green { background: #28c840; }
+        
+        .window-title {
+            flex: 1;
+            text-align: center;
+            font-size: 13px;
+            color: #999;
+        }
+        
+        .window-content {
+            padding: 32px 40px;
+        }
+        
+        /* Progress Steps */
+        .progress-steps {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 24px;
+            padding-bottom: 24px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .step {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .step-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #555;
+        }
+        
+        .step-dot.active { background: #007AFF; }
+        .step-dot.complete { background: #28c840; }
+        
+        .step-label {
+            font-size: 11px;
+            color: #666;
+        }
+        
+        .step-label.active { color: #fff; }
+        
+        .step-line {
+            width: 24px;
+            height: 2px;
+            background: #444;
+        }
+        
+        .step-line.complete { background: #28c840; }
+        
+        /* Glass Card */
+        .glass-card {
+            background: linear-gradient(135deg, 
+                rgba(255, 255, 255, 0.12) 0%, 
+                rgba(255, 255, 255, 0.05) 100%);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 16px;
+            padding: 24px;
+            margin: 16px 0;
+        }
+        
+        .glass-card-inner {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            padding: 16px;
+        }
+        
+        /* Content Styles */
+        .section-title {
+            font-size: 28px;
+            font-weight: 600;
+            text-align: center;
+            margin-bottom: 8px;
+        }
+        
+        .section-subtitle {
+            font-size: 15px;
+            color: #999;
+            text-align: center;
+            margin-bottom: 24px;
+        }
+        
+        /* Model List */
+        .model-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        
+        .model-item:last-child {
+            border-bottom: none;
+        }
+        
+        .model-icon {
+            width: 36px;
+            height: 36px;
+            background: rgba(0, 122, 255, 0.2);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            margin-right: 12px;
+        }
+        
+        .model-info {
+            flex: 1;
+        }
+        
+        .model-name {
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .model-desc {
+            font-size: 12px;
+            color: #888;
+        }
+        
+        .model-size {
+            font-size: 13px;
+            color: #666;
+            font-weight: 500;
+        }
+        
+        /* Privacy Badge */
+        .privacy-badge {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(40, 200, 64, 0.15);
+            border: 1px solid rgba(40, 200, 64, 0.3);
+            border-radius: 10px;
+            padding: 12px 16px;
+            margin-top: 16px;
+        }
+        
+        .privacy-icon {
+            font-size: 20px;
+        }
+        
+        .privacy-text {
+            font-size: 13px;
+            color: #6ee07a;
+        }
+        
+        /* Buttons */
+        .button-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 24px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .btn {
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(180deg, #0a84ff 0%, #0066cc 100%);
+            color: #fff;
+        }
+        
+        .btn-secondary {
+            background: transparent;
+            color: #888;
+        }
+        
+        /* Progress Bar */
+        .progress-container {
+            margin: 20px 0;
+        }
+        
+        .progress-bar-bg {
+            height: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #007AFF 0%, #00c7ff 100%);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+        
+        .progress-stats {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 8px;
+            font-size: 12px;
+            color: #888;
+        }
+        
+        .progress-stats .highlight {
+            color: #fff;
+        }
+        
+        /* Download States */
+        .download-item {
+            display: flex;
+            align-items: center;
+            padding: 14px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+            margin-bottom: 8px;
+        }
+        
+        .download-status {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 12px;
+            font-size: 12px;
+        }
+        
+        .status-pending {
+            border: 2px solid #555;
+            color: #555;
+        }
+        
+        .status-downloading {
+            border: 2px solid #007AFF;
+            border-top-color: transparent;
+            animation: spin 1s linear infinite;
+        }
+        
+        .status-complete {
+            background: #28c840;
+            color: #fff;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .download-info {
+            flex: 1;
+        }
+        
+        .download-name {
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .download-progress-text {
+            font-size: 12px;
+            color: #888;
+        }
+        
+        .download-size {
+            font-size: 12px;
+            color: #666;
+        }
+        
+        /* Mini progress bar for individual items */
+        .mini-progress {
+            height: 3px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            margin-top: 6px;
+            overflow: hidden;
+        }
+        
+        .mini-progress-fill {
+            height: 100%;
+            background: #007AFF;
+            border-radius: 2px;
+        }
+        
+        /* Tutorial Steps */
+        .tutorial-steps {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+        }
+        
+        .tutorial-step {
+            flex: 1;
+            text-align: center;
+            padding: 20px 12px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+        }
+        
+        .tutorial-icon {
+            width: 48px;
+            height: 48px;
+            background: rgba(0, 122, 255, 0.2);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 12px;
+            font-size: 20px;
+        }
+        
+        .tutorial-number {
+            font-size: 11px;
+            color: #007AFF;
+            margin-bottom: 4px;
+        }
+        
+        .tutorial-title {
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+        
+        .tutorial-desc {
+            font-size: 12px;
+            color: #888;
+        }
+        
+        .tutorial-arrow {
+            display: flex;
+            align-items: center;
+            color: #555;
+            font-size: 20px;
+        }
+        
+        /* Conversation Mode Box */
+        .convo-mode {
+            background: rgba(0, 122, 255, 0.1);
+            border: 1px solid rgba(0, 122, 255, 0.3);
+            border-radius: 12px;
+            padding: 16px;
+            margin-top: 20px;
+        }
+        
+        .convo-mode-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .convo-mode-icon {
+            font-size: 18px;
+        }
+        
+        .convo-mode-title {
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        .convo-mode-text {
+            font-size: 13px;
+            color: #aaa;
+            line-height: 1.5;
+        }
+        
+        /* Success Icon */
+        .success-icon {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #28c840 0%, #1fa834 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+            font-size: 40px;
+        }
+        
+        /* Tip */
+        .tip {
+            font-size: 12px;
+            color: #888;
+            text-align: center;
+            margin-top: 16px;
+        }
+        
+        .tip strong {
+            color: #aaa;
+        }
+    </style>
+</head>
+<body>
+    <h1>F.11 Setup Wizard Polish - UI Mockups</h1>
+    
+    <div class="mockup-container">
+        
+        <!-- STEP 3: Model Explanation (NEW) -->
+        <div class="mockup">
+            <div class="mockup-title">Step 3: Model Explanation (New Step)</div>
+            <div class="window">
+                <div class="window-header">
+                    <div class="window-dot red"></div>
+                    <div class="window-dot yellow"></div>
+                    <div class="window-dot green"></div>
+                    <div class="window-title">Welcome to Ora</div>
+                </div>
+                <div class="window-content">
+                    <div class="progress-steps">
+                        <div class="step">
+                            <div class="step-dot complete"></div>
+                            <span class="step-label">Welcome</span>
+                        </div>
+                        <div class="step-line complete"></div>
+                        <div class="step">
+                            <div class="step-dot complete"></div>
+                            <span class="step-label">Permissions</span>
+                        </div>
+                        <div class="step-line complete"></div>
+                        <div class="step">
+                            <div class="step-dot active"></div>
+                            <span class="step-label active">Models</span>
+                        </div>
+                        <div class="step-line"></div>
+                        <div class="step">
+                            <div class="step-dot"></div>
+                            <span class="step-label">Download</span>
+                        </div>
+                        <div class="step-line"></div>
+                        <div class="step">
+                            <div class="step-dot"></div>
+                            <span class="step-label">Ready</span>
+                        </div>
+                    </div>
+                    
+                    <div class="section-title">Ora Runs Locally</div>
+                    <div class="section-subtitle">Three AI models power your private assistant</div>
+                    
+                    <div class="glass-card">
+                        <div class="model-item">
+                            <div class="model-icon">🎤</div>
+                            <div class="model-info">
+                                <div class="model-name">Speech Recognition (Parakeet)</div>
+                                <div class="model-desc">Converts your voice to text</div>
+                            </div>
+                            <div class="model-size">~600 MB</div>
+                        </div>
+                        <div class="model-item">
+                            <div class="model-icon">🧠</div>
+                            <div class="model-info">
+                                <div class="model-name">Language Model (Qwen 3)</div>
+                                <div class="model-desc">Understands requests and generates responses</div>
+                            </div>
+                            <div class="model-size">~2.5 GB</div>
+                        </div>
+                        <div class="model-item">
+                            <div class="model-icon">🔊</div>
+                            <div class="model-info">
+                                <div class="model-name">Text-to-Speech (Kokoro)</div>
+                                <div class="model-desc">Speaks responses back to you</div>
+                            </div>
+                            <div class="model-size">~500 MB</div>
+                        </div>
+                        
+                        <div style="text-align: center; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1); margin-top: 12px;">
+                            <span style="font-size: 14px; color: #fff;">Total download: </span>
+                            <span style="font-size: 16px; font-weight: 600; color: #007AFF;">~3.6 GB</span>
+                        </div>
+                    </div>
+                    
+                    <div class="privacy-badge">
+                        <div class="privacy-icon">🔒</div>
+                        <div class="privacy-text">
+                            <strong>Your privacy is protected.</strong> All models run locally on your Mac. 
+                            Your conversations never leave your device.
+                        </div>
+                    </div>
+                    
+                    <div class="button-row">
+                        <button class="btn btn-secondary">Maybe Later</button>
+                        <button class="btn btn-primary">Download Now →</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- STEP 4: Download Progress -->
+        <div class="mockup">
+            <div class="mockup-title">Step 4: Download Progress (Improved)</div>
+            <div class="window">
+                <div class="window-header">
+                    <div class="window-dot red"></div>
+                    <div class="window-dot yellow"></div>
+                    <div class="window-dot green"></div>
+                    <div class="window-title">Welcome to Ora</div>
+                </div>
+                <div class="window-content">
+                    <div class="progress-steps">
+                        <div class="step">
+                            <div class="step-dot complete"></div>
+                            <span class="step-label">Welcome</span>
+                        </div>
+                        <div class="step-line complete"></div>
+                        <div class="step">
+                            <div class="step-dot complete"></div>
+                            <span class="step-label">Permissions</span>
+                        </div>
+                        <div class="step-line complete"></div>
+                        <div class="step">
+                            <div class="step-dot complete"></div>
+                            <span class="step-label">Models</span>
+                        </div>
+                        <div class="step-line complete"></div>
+                        <div class="step">
+                            <div class="step-dot active"></div>
+                            <span class="step-label active">Download</span>
+                        </div>
+                        <div class="step-line"></div>
+                        <div class="step">
+                            <div class="step-dot"></div>
+                            <span class="step-label">Ready</span>
+                        </div>
+                    </div>
+                    
+                    <div class="section-title">Downloading Models</div>
+                    <div class="section-subtitle">This may take a few minutes depending on your connection</div>
+                    
+                    <div class="progress-container">
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar-fill" style="width: 47%;"></div>
+                        </div>
+                        <div class="progress-stats">
+                            <span><span class="highlight">1.7 GB</span> of 3.6 GB</span>
+                            <span><span class="highlight">12.3 MB/s</span> • ~2 min remaining</span>
+                        </div>
+                    </div>
+                    
+                    <div class="glass-card" style="padding: 16px;">
+                        <div class="download-item">
+                            <div class="download-status status-complete">✓</div>
+                            <div class="download-info">
+                                <div class="download-name">Parakeet ASR</div>
+                                <div class="download-progress-text">Complete</div>
+                            </div>
+                            <div class="download-size">612 MB</div>
+                        </div>
+                        
+                        <div class="download-item">
+                            <div class="download-status status-downloading"></div>
+                            <div class="download-info">
+                                <div class="download-name">Qwen 3 4B</div>
+                                <div class="download-progress-text">1.1 GB of 2.5 GB (45%)</div>
+                                <div class="mini-progress">
+                                    <div class="mini-progress-fill" style="width: 45%;"></div>
+                                </div>
+                            </div>
+                            <div class="download-size">2.5 GB</div>
+                        </div>
+                        
+                        <div class="download-item">
+                            <div class="download-status status-pending">○</div>
+                            <div class="download-info">
+                                <div class="download-name">Kokoro TTS</div>
+                                <div class="download-progress-text">Waiting...</div>
+                            </div>
+                            <div class="download-size">487 MB</div>
+                        </div>
+                    </div>
+                    
+                    <div class="button-row">
+                        <button class="btn btn-secondary">Cancel</button>
+                        <button class="btn btn-primary" style="opacity: 0.5; cursor: not-allowed;">Continue</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- STEP 5: Ready (Updated for Conversation Mode) -->
+        <div class="mockup">
+            <div class="mockup-title">Step 5: All Set (Updated for Conversation Mode)</div>
+            <div class="window">
+                <div class="window-header">
+                    <div class="window-dot red"></div>
+                    <div class="window-dot yellow"></div>
+                    <div class="window-dot green"></div>
+                    <div class="window-title">Welcome to Ora</div>
+                </div>
+                <div class="window-content">
+                    <div class="progress-steps">
+                        <div class="step">
+                            <div class="step-dot complete"></div>
+                            <span class="step-label">Welcome</span>
+                        </div>
+                        <div class="step-line complete"></div>
+                        <div class="step">
+                            <div class="step-dot complete"></div>
+                            <span class="step-label">Permissions</span>
+                        </div>
+                        <div class="step-line complete"></div>
+                        <div class="step">
+                            <div class="step-dot complete"></div>
+                            <span class="step-label">Models</span>
+                        </div>
+                        <div class="step-line complete"></div>
+                        <div class="step">
+                            <div class="step-dot complete"></div>
+                            <span class="step-label">Download</span>
+                        </div>
+                        <div class="step-line complete"></div>
+                        <div class="step">
+                            <div class="step-dot active"></div>
+                            <span class="step-label active">Ready</span>
+                        </div>
+                    </div>
+                    
+                    <div class="success-icon">✓</div>
+                    <div class="section-title">You're All Set!</div>
+                    <div class="section-subtitle">Here's how to use Ora</div>
+                    
+                    <div class="glass-card" style="padding: 20px;">
+                        <div class="tutorial-steps">
+                            <div class="tutorial-step">
+                                <div class="tutorial-icon">⌨️</div>
+                                <div class="tutorial-number">STEP 1</div>
+                                <div class="tutorial-title">Tap ⌥Space</div>
+                                <div class="tutorial-desc">to start listening</div>
+                            </div>
+                            <div class="tutorial-arrow">→</div>
+                            <div class="tutorial-step">
+                                <div class="tutorial-icon">🎤</div>
+                                <div class="tutorial-number">STEP 2</div>
+                                <div class="tutorial-title">Speak</div>
+                                <div class="tutorial-desc">your request</div>
+                            </div>
+                            <div class="tutorial-arrow">→</div>
+                            <div class="tutorial-step">
+                                <div class="tutorial-icon">⏸️</div>
+                                <div class="tutorial-number">STEP 3</div>
+                                <div class="tutorial-title">Pause</div>
+                                <div class="tutorial-desc">to send</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="convo-mode">
+                        <div class="convo-mode-header">
+                            <div class="convo-mode-icon">💬</div>
+                            <div class="convo-mode-title">Conversation Mode</div>
+                        </div>
+                        <div class="convo-mode-text">
+                            Ora automatically listens for your next question after responding. 
+                            Just keep talking naturally!<br><br>
+                            Press <strong>Escape</strong> or click outside to end the conversation.
+                        </div>
+                    </div>
+                    
+                    <div class="tip">
+                        <strong>Tip:</strong> Press Enter to submit immediately instead of waiting for the pause.
+                    </div>
+                    
+                    <div class="button-row">
+                        <span></span>
+                        <button class="btn btn-primary">Get Started →</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+    </div>
+</body>
+</html>

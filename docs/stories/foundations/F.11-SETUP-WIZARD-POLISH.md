@@ -6,7 +6,7 @@
 **Estimated Effort:** 2-3 days
 **Dependencies:** F.04, F.09, O.07
 **Target:** macOS 26 (Tahoe)
-**Design Reference:** `docs/references/liquid-glass-ui.md`, `docs/references/liquid-glass-chat-ui.md`
+**Design Reference:** `docs/references/liquid-glass-ui.md`, `docs/references/liquid-glass-chat-ui.md`, `docs/stories/foundations/F.11-mockups.html`
 
 ---
 
@@ -39,7 +39,8 @@ As a new user, I want to understand why Ora needs to download AI models, activel
 - Show download speed (MB/s)
 - Show estimated time remaining
 - Clear state transitions: Pending → Downloading → Verifying → Ready → Error
-- Spinning indicator during download, checkmark when complete
+- **Proper progress bars** (no legacy spinners) - both overall and per-model
+- Checkmark icon when model complete, pending circle when waiting
 - Error icon with message when failed
 - Cancel button to abort, Retry button on error
 
