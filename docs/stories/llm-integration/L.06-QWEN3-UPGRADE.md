@@ -396,3 +396,30 @@ None.
 - [x] Merged to main: 4b6ccd9
 - [x] Date: 2026-01-05
 
+## Post-Merge Fixes
+
+### Fix 1: Incorrect Qwen 3 expected file sizes (commit 1127a8b)
+- **Issue:** Download verification failed because hardcoded file sizes didn't match actual HuggingFace file sizes
+- **Fix:** Corrected expected file sizes from HuggingFace API
+
+### Fix 2: Dynamic file size fetching (commit 1d005fb)
+- **Issue:** Hardcoded file sizes are fragile - they break when models are updated on HuggingFace
+- **Fix:** Now fetches actual file sizes from HuggingFace API at download time
+- **Fallback chain:**
+  1. API-fetched sizes (exact match)
+  2. Hardcoded sizes from `ModelTypes.swift`
+  3. Minimum reasonable sizes based on file type
+
+### Fix 3: Subdirectory file size verification (commit 277b66d)
+- **Issue:** Kokoro TTS voice files in `voices/` subdirectory failed verification with "too small" error
+- **Root Cause:** API fetch only queried root directory; minimum size for `.safetensors` was 100MB but voice files are ~500KB
+- **Fix:** 
+  1. API now fetches file sizes from subdirectories
+  2. Voice embedding files (`voices/*.safetensors`) have 100KB minimum instead of 100MB
+  3. General `.safetensors` files reduced to 10MB minimum (some small model components exist)
+
+### Transient TTS Fallback (investigated, not a bug)
+- **Observation:** One instance of Kokoro synthesis failing and falling back to system voice
+- **Finding:** Transient error in KokoroSwift (error message redacted as `<private>` by OS logging)
+- **Status:** Not a bug - fallback mechanism worked correctly, subsequent TTS calls succeeded
+
