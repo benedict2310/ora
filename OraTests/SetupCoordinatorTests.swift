@@ -17,7 +17,8 @@ final class SetupStepTests: XCTestCase {
     func test_title_returnsCorrectValues() {
         XCTAssertEqual(SetupStep.welcome.title, "Welcome")
         XCTAssertEqual(SetupStep.permissions.title, "Permissions")
-        XCTAssertEqual(SetupStep.download.title, "Download Models")
+        XCTAssertEqual(SetupStep.modelExplanation.title, "Models")
+        XCTAssertEqual(SetupStep.download.title, "Download")
         XCTAssertEqual(SetupStep.ready.title, "Ready")
     }
 
@@ -31,6 +32,10 @@ final class SetupStepTests: XCTestCase {
         XCTAssertTrue(SetupStep.permissions.canGoBack)
     }
 
+    func test_canGoBack_modelExplanationCanGoBack() {
+        XCTAssertTrue(SetupStep.modelExplanation.canGoBack)
+    }
+
     func test_canGoBack_downloadCannotGoBack() {
         // Can't go back during download to prevent interruption
         XCTAssertFalse(SetupStep.download.canGoBack)
@@ -42,15 +47,16 @@ final class SetupStepTests: XCTestCase {
 
     // MARK: - CaseIterable Tests
 
-    func test_allCases_containsFourSteps() {
-        XCTAssertEqual(SetupStep.allCases.count, 4)
+    func test_allCases_containsFiveSteps() {
+        XCTAssertEqual(SetupStep.allCases.count, 5)
     }
 
     func test_rawValues_areSequential() {
         XCTAssertEqual(SetupStep.welcome.rawValue, 0)
         XCTAssertEqual(SetupStep.permissions.rawValue, 1)
-        XCTAssertEqual(SetupStep.download.rawValue, 2)
-        XCTAssertEqual(SetupStep.ready.rawValue, 3)
+        XCTAssertEqual(SetupStep.modelExplanation.rawValue, 2)
+        XCTAssertEqual(SetupStep.download.rawValue, 3)
+        XCTAssertEqual(SetupStep.ready.rawValue, 4)
     }
 
     // MARK: - Step Transition Tests
@@ -60,8 +66,12 @@ final class SetupStepTests: XCTestCase {
         XCTAssertEqual(SetupStep.welcome.rawValue + 1, SetupStep.permissions.rawValue)
     }
 
-    func test_stepTransition_permissionsToDownload() {
-        XCTAssertEqual(SetupStep.permissions.rawValue + 1, SetupStep.download.rawValue)
+    func test_stepTransition_permissionsToModelExplanation() {
+        XCTAssertEqual(SetupStep.permissions.rawValue + 1, SetupStep.modelExplanation.rawValue)
+    }
+
+    func test_stepTransition_modelExplanationToDownload() {
+        XCTAssertEqual(SetupStep.modelExplanation.rawValue + 1, SetupStep.download.rawValue)
     }
 
     func test_stepTransition_downloadToReady() {
@@ -188,6 +198,118 @@ final class SetupStateTests: XCTestCase {
         state.skippedOptionalPermissions = true
 
         XCTAssertTrue(state.skippedOptionalPermissions)
+    }
+
+    // MARK: - Enhanced Download Stats
+
+    func test_initialState_downloadStatsAreZero() {
+        let state = SetupState()
+        XCTAssertEqual(state.totalBytesDownloaded, 0)
+        XCTAssertEqual(state.totalBytesToDownload, 0)
+        XCTAssertEqual(state.downloadSpeedBytesPerSecond, 0)
+        XCTAssertNil(state.estimatedTimeRemainingSeconds)
+        XCTAssertFalse(state.isDownloading)
+        XCTAssertFalse(state.downloadWasCancelled)
+    }
+
+    func test_formattedBytesDownloaded_formatsCorrectly() {
+        var state = SetupState()
+
+        state.totalBytesDownloaded = 500 * 1024 * 1024  // 500 MB
+        XCTAssertEqual(state.formattedBytesDownloaded, "500 MB")
+
+        state.totalBytesDownloaded = Int64(1.5 * 1024 * 1024 * 1024)  // 1.5 GB
+        XCTAssertEqual(state.formattedBytesDownloaded, "1.5 GB")
+    }
+
+    func test_formattedDownloadSpeed_formatsCorrectly() {
+        var state = SetupState()
+
+        state.downloadSpeedBytesPerSecond = 12.3 * 1024 * 1024  // 12.3 MB/s
+        XCTAssertEqual(state.formattedDownloadSpeed, "12.3 MB/s")
+
+        state.downloadSpeedBytesPerSecond = 0.01 * 1024 * 1024  // Very slow
+        XCTAssertEqual(state.formattedDownloadSpeed, "...")  // Shows placeholder for slow speeds
+    }
+
+    func test_formattedTimeRemaining_formatsSeconds() {
+        var state = SetupState()
+        state.estimatedTimeRemainingSeconds = 45
+        XCTAssertEqual(state.formattedTimeRemaining, "~45s left")
+    }
+
+    func test_formattedTimeRemaining_formatsMinutes() {
+        var state = SetupState()
+        state.estimatedTimeRemainingSeconds = 120
+        XCTAssertEqual(state.formattedTimeRemaining, "~2 min left")
+    }
+
+    func test_formattedTimeRemaining_formatsHours() {
+        var state = SetupState()
+        state.estimatedTimeRemainingSeconds = 3660  // 1 hour 1 minute
+        XCTAssertEqual(state.formattedTimeRemaining, "~1h 1m left")
+    }
+
+    func test_formattedTimeRemaining_nilForZero() {
+        var state = SetupState()
+        state.estimatedTimeRemainingSeconds = 0
+        XCTAssertNil(state.formattedTimeRemaining)
+    }
+
+    func test_modelDownloadStates_canTrackStates() {
+        var state = SetupState()
+        state.modelDownloadStates[.parakeetTDT] = .complete
+        state.modelDownloadStates[.qwen3_4B] = .downloading(progress: 0.5, bytesDownloaded: 1250000000, totalBytes: 2500000000)
+        state.modelDownloadStates[.kokoro] = .pending
+
+        XCTAssertEqual(state.modelDownloadStates[.parakeetTDT], .complete)
+        if case .downloading(let progress, _, _) = state.modelDownloadStates[.qwen3_4B] {
+            XCTAssertEqual(progress, 0.5)
+        } else {
+            XCTFail("Expected downloading state")
+        }
+        XCTAssertEqual(state.modelDownloadStates[.kokoro], .pending)
+    }
+}
+
+// MARK: - Model Download State Tests
+
+final class ModelDownloadStateTests: XCTestCase {
+
+    func test_pending_progressIsZero() {
+        let state = ModelDownloadState.pending
+        XCTAssertEqual(state.progress, 0)
+        XCTAssertFalse(state.isComplete)
+    }
+
+    func test_downloading_reportsProgress() {
+        let state = ModelDownloadState.downloading(progress: 0.5, bytesDownloaded: 500, totalBytes: 1000)
+        XCTAssertEqual(state.progress, 0.5)
+        XCTAssertFalse(state.isComplete)
+    }
+
+    func test_verifying_progressIsOne() {
+        let state = ModelDownloadState.verifying
+        XCTAssertEqual(state.progress, 1.0)
+        XCTAssertFalse(state.isComplete)
+    }
+
+    func test_complete_isComplete() {
+        let state = ModelDownloadState.complete
+        XCTAssertEqual(state.progress, 1.0)
+        XCTAssertTrue(state.isComplete)
+    }
+
+    func test_error_progressIsZero() {
+        let state = ModelDownloadState.error("Network error")
+        XCTAssertEqual(state.progress, 0)
+        XCTAssertFalse(state.isComplete)
+    }
+
+    func test_equatable_worksBetweenCases() {
+        XCTAssertEqual(ModelDownloadState.pending, ModelDownloadState.pending)
+        XCTAssertEqual(ModelDownloadState.complete, ModelDownloadState.complete)
+        XCTAssertNotEqual(ModelDownloadState.pending, ModelDownloadState.complete)
     }
 }
 

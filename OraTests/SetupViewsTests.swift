@@ -43,6 +43,16 @@ final class SetupViewsTests: XCTestCase {
         _ = pending.body
     }
 
+    func test_modelExplanationStepView_bodyBuilds() {
+        let state = SetupState()
+        let view = ModelExplanationStepView(
+            state: state,
+            onDownloadNow: {},
+            onMaybeLater: {}
+        )
+        _ = view.body
+    }
+
     func test_downloadStepView_bodyBuilds_forStates() {
         var downloadingState = SetupState()
         downloadingState.currentStep = .download
@@ -53,7 +63,12 @@ final class SetupViewsTests: XCTestCase {
             .qwen3_4B: 0.1,
             .kokoro: 0
         ]
-        let downloadingView = DownloadStepView(state: downloadingState, onRetry: {})
+        downloadingState.modelDownloadStates = [
+            .parakeetTDT: .downloading(progress: 0.35, bytesDownloaded: 200_000_000, totalBytes: 600_000_000),
+            .qwen3_4B: .pending,
+            .kokoro: .pending
+        ]
+        let downloadingView = DownloadStepView(state: downloadingState, onRetry: {}, onCancel: {})
         _ = downloadingView.body
 
         var completeState = SetupState()
@@ -64,7 +79,12 @@ final class SetupViewsTests: XCTestCase {
             .qwen3_4B: 1.0,
             .kokoro: 1.0
         ]
-        let completeView = DownloadStepView(state: completeState, onRetry: {})
+        completeState.modelDownloadStates = [
+            .parakeetTDT: .complete,
+            .qwen3_4B: .complete,
+            .kokoro: .complete
+        ]
+        let completeView = DownloadStepView(state: completeState, onRetry: {}, onCancel: {})
         _ = completeView.body
 
         var errorState = SetupState()
@@ -76,28 +96,17 @@ final class SetupViewsTests: XCTestCase {
             .qwen3_4B: 0.3,
             .kokoro: 0.0
         ]
-        let errorView = DownloadStepView(state: errorState, onRetry: {})
+        errorState.modelDownloadStates = [
+            .parakeetTDT: .complete,
+            .qwen3_4B: .error("Network error"),
+            .kokoro: .pending
+        ]
+        let errorView = DownloadStepView(state: errorState, onRetry: {}, onCancel: {})
         _ = errorView.body
-    }
-
-    func test_modelDownloadRow_bodyBuilds_forProgressStates() {
-        let empty = ModelDownloadRow(name: "Model", size: "~1 GB", progress: 0)
-        _ = empty.body
-
-        let partial = ModelDownloadRow(name: "Model", size: "~1 GB", progress: 0.4)
-        _ = partial.body
-
-        let complete = ModelDownloadRow(name: "Model", size: "~1 GB", progress: 1.0)
-        _ = complete.body
     }
 
     func test_readyStepView_bodyBuilds() {
         let view = ReadyStepView()
-        _ = view.body
-    }
-
-    func test_tutorialStep_bodyBuilds() {
-        let view = TutorialStep(number: 1, icon: "keyboard", title: "Press", description: "Option+Space")
         _ = view.body
     }
 
@@ -116,6 +125,7 @@ final class SetupViewsTests: XCTestCase {
 
         XCTAssertEqual(SetupNavigationView.nextButtonTitle(for: .welcome), "Get Started")
         XCTAssertEqual(SetupNavigationView.nextButtonTitle(for: .permissions), "Continue")
+        XCTAssertEqual(SetupNavigationView.nextButtonTitle(for: .modelExplanation), "Download Now")
         XCTAssertEqual(SetupNavigationView.nextButtonTitle(for: .download), "Continue")
         XCTAssertEqual(SetupNavigationView.nextButtonTitle(for: .ready), "Done")
 
@@ -127,6 +137,9 @@ final class SetupViewsTests: XCTestCase {
         XCTAssertFalse(SetupNavigationView.canProceed(for: baseState))
 
         baseState.permissionsGranted = true
+        XCTAssertTrue(SetupNavigationView.canProceed(for: baseState))
+
+        baseState.currentStep = .modelExplanation
         XCTAssertTrue(SetupNavigationView.canProceed(for: baseState))
 
         baseState.currentStep = .download
@@ -163,6 +176,11 @@ final class SetupViewsTests: XCTestCase {
             .parakeetTDT: step == .download ? 0.4 : 1.0,
             .qwen3_4B: step == .download ? 0.2 : 1.0,
             .kokoro: step == .download ? 0.0 : 1.0
+        ]
+        state.modelDownloadStates = [
+            .parakeetTDT: step == .download ? .downloading(progress: 0.4, bytesDownloaded: 240_000_000, totalBytes: 600_000_000) : .complete,
+            .qwen3_4B: step == .download ? .pending : .complete,
+            .kokoro: step == .download ? .pending : .complete
         ]
         return state
     }

@@ -25,6 +25,12 @@ final class SetupCoordinator: NSObject, ObservableObject {
     private var setupWindow: NSWindow?
     private var downloadTask: Task<Void, Never>?
 
+    // Download speed tracking
+    private var downloadSpeedSamples: [Double] = []
+    private var lastProgressUpdateTime: Date?
+    private var lastBytesDownloaded: Int64 = 0
+    private let maxSpeedSamples = 5 // Rolling average window
+
     // MARK: - Singleton
 
     static let shared = SetupCoordinator()
@@ -55,11 +61,10 @@ final class SetupCoordinator: NSObject, ObservableObject {
             // Verify models are still available
             let modelsReady = await ModelManager.shared.requiredModelsAvailable()
             if !modelsReady {
-                self.logger.warning("Setup was complete but models missing, restarting setup")
-                self.state.currentStep = .download
+                self.logger.warning("Setup was complete but models missing, showing model explanation")
+                // Go to model explanation step so user can choose to re-download
+                self.state.currentStep = .modelExplanation
                 self.showSetup()
-                // Start downloads automatically when resuming to download step
-                await self.startDownloads()
                 return true  // Setup is needed
             }
             return false  // Setup not needed, models ready
@@ -119,16 +124,18 @@ final class SetupCoordinator: NSObject, ObservableObject {
             await self.refreshPermissionsState()
 
         case .permissions:
-            // Validate required permissions
+            // Validate required permissions before proceeding to model explanation
             let permState = await PermissionsManager.shared.state
             if permState.requiredPermissionsGranted {
                 self.state.permissionsGranted = true
-                self.state.currentStep = .download
-                // Start downloads automatically
-                await self.startDownloads()
+                self.state.currentStep = .modelExplanation
             } else {
                 self.logger.warning("Required permissions not granted")
             }
+
+        case .modelExplanation:
+            // This step doesn't auto-advance; user must click "Download Now"
+            break
 
         case .download:
             // Only proceed if downloads complete
@@ -140,6 +147,17 @@ final class SetupCoordinator: NSObject, ObservableObject {
         case .ready:
             self.completeSetup()
         }
+    }
+
+    /// Start downloads from the model explanation step (user clicked "Download Now")
+    func startDownloadFromExplanation() async {
+        guard self.state.currentStep == .modelExplanation else {
+            self.logger.warning("startDownloadFromExplanation called from wrong step: \(self.state.currentStep.title)")
+            return
+        }
+        self.state.currentStep = .download
+        self.state.downloadWasCancelled = false
+        await self.startDownloads()
     }
 
     /// Go back to previous step
@@ -177,10 +195,23 @@ final class SetupCoordinator: NSObject, ObservableObject {
         self.logger.info("Setup postponed by user")
     }
 
-    /// Cancel any in-progress downloads
+    /// Cancel any in-progress downloads and return to model explanation step
     func cancelDownloads() {
         self.downloadTask?.cancel()
         self.downloadTask = nil
+        self.state.downloadWasCancelled = true
+        self.state.isDownloading = false
+        self.state.downloadError = nil
+        self.state.downloadProgress = 0
+        self.state.modelDownloadStates = [:]
+        self.state.totalBytesDownloaded = 0
+        self.state.downloadSpeedBytesPerSecond = 0
+        self.state.estimatedTimeRemainingSeconds = nil
+        self.resetSpeedTracking()
+
+        // Return to model explanation step
+        self.state.currentStep = .modelExplanation
+        self.logger.info("Download cancelled, returning to model explanation")
     }
 
     /// Update permissions granted state (called from PermissionsStepView)
@@ -208,9 +239,29 @@ final class SetupCoordinator: NSObject, ObservableObject {
 
     private func startDownloads() async {
         await self.ensurePrimaryLLMSelected()
+
+        // Reset download state
         self.state.downloadProgress = 0
         self.state.downloadError = nil
         self.state.modelProgresses = [:]
+        self.state.isDownloading = true
+        self.state.modelDownloadStates = [:]
+        self.state.totalBytesDownloaded = 0
+        self.state.downloadSpeedBytesPerSecond = 0
+        self.state.estimatedTimeRemainingSeconds = nil
+        self.resetSpeedTracking()
+
+        // Calculate total bytes to download
+        let modelsToDownload: [ModelIdentifier] = [.parakeetTDT, self.state.primaryLLM, .kokoro]
+        self.state.totalBytesToDownload = modelsToDownload.reduce(0) { $0 + $1.estimatedSizeBytes }
+
+        // Initialize all models as pending
+        for model in modelsToDownload {
+            self.state.modelDownloadStates[model] = .pending
+        }
+
+        // Check which models are already downloaded
+        await self.initializeAlreadyDownloadedModels(modelsToDownload)
 
         // Start the download in a tracked task for cancellation support
         self.downloadTask = Task { @MainActor in
@@ -220,32 +271,125 @@ final class SetupCoordinator: NSObject, ObservableObject {
                         guard let self = self else { return }
                         self.state.downloadProgress = progress.overallProgress
 
+                        // Track bytes downloaded and calculate speed
+                        var totalBytesNow: Int64 = 0
+
                         // Track individual model progress
                         for (model, modelProgress) in progress.models {
                             self.state.modelProgresses[model] = modelProgress.progress
-                            if modelProgress.progress < 1.0 && modelProgress.progress > 0 {
+                            totalBytesNow += modelProgress.bytesDownloaded
+
+                            // Update model download state
+                            if modelProgress.progress >= 1.0 {
+                                self.state.modelDownloadStates[model] = .complete
+                            } else if modelProgress.progress > 0 {
+                                self.state.modelDownloadStates[model] = .downloading(
+                                    progress: modelProgress.progress,
+                                    bytesDownloaded: modelProgress.bytesDownloaded,
+                                    totalBytes: modelProgress.totalBytes
+                                )
                                 self.state.downloadingModel = model.displayName
                             }
                         }
+
+                        // Update total bytes and calculate speed/ETA
+                        self.state.totalBytesDownloaded = totalBytesNow
+                        self.updateDownloadSpeed(currentBytes: totalBytesNow)
                     }
                 }
 
                 self.state.downloadProgress = 1.0
                 self.state.downloadingModel = nil
+                self.state.isDownloading = false
+
+                // Mark all models as complete
+                for model in modelsToDownload {
+                    self.state.modelDownloadStates[model] = .complete
+                }
+
                 self.logger.info("All downloads complete")
 
                 // Auto-advance to ready
                 self.state.currentStep = .ready
 
             } catch {
+                self.state.isDownloading = false
                 if !Task.isCancelled {
                     self.state.downloadError = error.localizedDescription
                     self.logger.error("Download failed: \(error.localizedDescription)")
+
+                    // Mark current downloading model as error
+                    if let currentModel = self.state.downloadingModel {
+                        for model in modelsToDownload where model.displayName == currentModel {
+                            self.state.modelDownloadStates[model] = .error(error.localizedDescription)
+                        }
+                    }
                 }
             }
         }
 
         await self.downloadTask?.value
+    }
+
+    /// Check which models are already downloaded and mark them as complete
+    private func initializeAlreadyDownloadedModels(_ models: [ModelIdentifier]) async {
+        for model in models {
+            if ModelPaths.modelExists(model) {
+                self.state.modelDownloadStates[model] = .complete
+                self.state.modelProgresses[model] = 1.0
+                // Add to total bytes downloaded
+                self.state.totalBytesDownloaded += model.estimatedSizeBytes
+            }
+        }
+        // Update overall progress based on already downloaded models
+        if self.state.totalBytesToDownload > 0 {
+            self.state.downloadProgress = Double(self.state.totalBytesDownloaded) / Double(self.state.totalBytesToDownload)
+        }
+    }
+
+    private func resetSpeedTracking() {
+        self.downloadSpeedSamples = []
+        self.lastProgressUpdateTime = nil
+        self.lastBytesDownloaded = 0
+    }
+
+    private func updateDownloadSpeed(currentBytes: Int64) {
+        let now = Date()
+
+        guard let lastTime = self.lastProgressUpdateTime else {
+            self.lastProgressUpdateTime = now
+            self.lastBytesDownloaded = currentBytes
+            return
+        }
+
+        let timeDelta = now.timeIntervalSince(lastTime)
+        guard timeDelta > 0.1 else { return } // Throttle updates
+
+        let bytesDelta = currentBytes - self.lastBytesDownloaded
+        guard bytesDelta > 0 else { return }
+
+        let speed = Double(bytesDelta) / timeDelta
+
+        // Add to rolling average
+        self.downloadSpeedSamples.append(speed)
+        if self.downloadSpeedSamples.count > self.maxSpeedSamples {
+            self.downloadSpeedSamples.removeFirst()
+        }
+
+        // Calculate average speed
+        let averageSpeed = self.downloadSpeedSamples.reduce(0, +) / Double(self.downloadSpeedSamples.count)
+        self.state.downloadSpeedBytesPerSecond = averageSpeed
+
+        // Calculate ETA
+        let remainingBytes = self.state.totalBytesToDownload - currentBytes
+        if averageSpeed > 0 && remainingBytes > 0 {
+            self.state.estimatedTimeRemainingSeconds = Double(remainingBytes) / averageSpeed
+        } else {
+            self.state.estimatedTimeRemainingSeconds = nil
+        }
+
+        self.lastProgressUpdateTime = now
+        self.lastBytesDownloaded = currentBytes
     }
 
     private func ensurePrimaryLLMSelected() async {

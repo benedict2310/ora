@@ -2,7 +2,7 @@
 //  ReadyStepView.swift
 //  Ora
 //
-//  Setup complete step
+//  Setup complete step - Conversation Mode instructions
 //
 
 import SwiftUI
@@ -23,53 +23,40 @@ struct ReadyStepView: View {
                 .font(.largeTitle)
                 .fontWeight(.bold)
 
-            Text("Ora is ready to assist you.")
-                .font(.title3)
-                .foregroundColor(.secondary)
-
             Spacer()
-                .frame(height: 20)
+                .frame(height: 16)
 
-            // Hotkey tutorial
-            VStack(spacing: 16) {
-                Text("How to Use Ora")
-                    .font(.headline)
+            // Hotkey card
+            VStack(spacing: 20) {
+                Text("Press")
+                    .font(.title3)
+                    .foregroundColor(.secondary)
 
-                HStack(spacing: 20) {
-                    TutorialStep(
-                        number: 1,
-                        icon: "keyboard",
-                        title: "Press & Hold",
-                        description: self.hotkeyDisplayString
-                    )
+                // Hotkey display in glass card
+                Text(self.hotkeyDisplayString)
+                    .font(.system(size: 32, weight: .semibold, design: .rounded))
+                    .padding(.horizontal, 32)
+                    .padding(.vertical, 16)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
 
-                    Image(systemName: "arrow.right")
-                        .foregroundColor(.secondary)
-
-                    TutorialStep(
-                        number: 2,
-                        icon: "waveform",
-                        title: "Speak",
-                        description: "Say your request"
-                    )
-
-                    Image(systemName: "arrow.right")
-                        .foregroundColor(.secondary)
-
-                    TutorialStep(
-                        number: 3,
-                        icon: "hand.raised",
-                        title: "Release",
-                        description: "Let go to send"
-                    )
-                }
+                Text("and start talking")
+                    .font(.title3)
+                    .foregroundColor(.secondary)
             }
-            .padding()
-            .background(Color(nsColor: .controlBackgroundColor))
-            .cornerRadius(8)
+
+            Spacer()
+                .frame(height: 8)
+
+            // Conversation mode description
+            Text("Ora will listen, respond, and keep the conversation going.")
+                .font(.body)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
 
             Spacer()
 
+            // Tip
             Text("You can change settings anytime from the menu bar icon.")
                 .font(.caption)
                 .foregroundColor(.secondary)
@@ -77,31 +64,10 @@ struct ReadyStepView: View {
     }
 }
 
-struct TutorialStep: View {
-    let number: Int
-    let icon: String
-    let title: String
-    let description: String
+// MARK: - Preview
 
-    var body: some View {
-        VStack(spacing: 8) {
-            ZStack {
-                Circle()
-                    .fill(Color.accentColor.opacity(0.1))
-                    .frame(width: 50, height: 50)
-
-                Image(systemName: self.icon)
-                    .font(.title2)
-                    .foregroundColor(.accentColor)
-            }
-
-            Text(self.title)
-                .font(.caption)
-                .fontWeight(.medium)
-
-            Text(self.description)
-                .font(.caption2)
-                .foregroundColor(.secondary)
-        }
-    }
+#Preview {
+    ReadyStepView()
+        .frame(width: 500, height: 400)
+        .padding()
 }
