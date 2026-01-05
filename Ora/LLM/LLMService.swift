@@ -196,8 +196,11 @@ actor LLMService: LLMServicing {
                         continuation.yield(.token(text))
                         count = tokens.count
                         
-                        // Stop on end-of-turn tokens
-                        if text.contains("<|im_end|>") || text.contains("<|endoftext|>") {
+                        // Stop on end-of-turn tokens (Qwen 2.5 and Qwen 3 compatible)
+                        // Qwen 3 also uses </tool_call> for tool call completion
+                        if text.contains("<|im_end|>") || 
+                           text.contains("<|endoftext|>") ||
+                           text.contains("</tool_call>") {
                             return .stop
                         }
                     }
@@ -238,9 +241,15 @@ actor LLMService: LLMServicing {
     private func checkMemoryAvailable(for model: ModelIdentifier) async -> Bool {
         let totalRAM = ProcessInfo.processInfo.physicalMemory
         
-        // AC-8: Prevent loading 7B if insufficient RAM
-        // Qwen 7B requires ~5GB. macOS ~3GB.
-        // We enforce 16GB minimum for 7B to ensure headroom.
+        // Qwen 3 4B requires ~3GB. macOS ~3GB.
+        // We recommend 8GB+ for comfortable usage.
+        // Note: Qwen 3 4B is smaller than the old Qwen 2.5 7B
+        if model == .qwen3_4B && totalRAM < 8_000_000_000 {
+            logger.warning("Low RAM for Qwen 3 4B. Available Total: \(totalRAM / 1_000_000_000)GB - proceeding anyway")
+            // We still allow it since 4B is more memory efficient
+        }
+        
+        // Legacy models kept for reference
         if model == .qwen7B && totalRAM < 16_000_000_000 {
             logger.error("Insufficient RAM for Qwen 7B. Required: 16GB+, Available Total: \(totalRAM / 1_000_000_000)GB")
             return false
@@ -250,10 +259,7 @@ actor LLMService: LLMServicing {
     }
     
     static func recommendedModel() -> ModelIdentifier {
-        let totalRAM = ProcessInfo.processInfo.physicalMemory
-        if totalRAM < 16_000_000_000 {
-            return .qwen3B
-        }
-        return .qwen7B
+        // Qwen 3 4B is the only active model now
+        return .qwen3_4B
     }
 }

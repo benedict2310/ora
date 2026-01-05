@@ -23,7 +23,7 @@ final class AppSettings {
     var voiceOutputEnabled: Bool = true
 
     /// Primary LLM model identifier
-    var primaryLLMModel: String = "qwen2.5-7b-instruct-4bit"
+    var primaryLLMModel: String = "qwen3-4b-instruct-4bit"
 
     /// Last app update check
     var lastUpdateCheck: Date?

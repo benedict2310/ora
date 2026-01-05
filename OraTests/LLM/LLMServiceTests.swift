@@ -35,7 +35,8 @@ final class LLMServiceTests: XCTestCase {
     func testMemoryCheckLogic() {
         // Since we cannot easily mock ProcessInfo, we just verify the helper method exists and returns a valid identifier
         let recommended = LLMService.recommendedModel()
-        XCTAssertTrue(recommended == .qwen7B || recommended == .qwen3B)
+        // Qwen 3 4B is now the only recommended model
+        XCTAssertEqual(recommended, .qwen3_4B)
     }
     
     // MARK: - Inference Tests
@@ -44,17 +45,17 @@ final class LLMServiceTests: XCTestCase {
         let service = LLMService.shared
         
         // 1. Check for model availability
-        // We'll check if either 7B or 3B is available on disk
+        // Check if Qwen 3 or legacy models are available on disk
         let modelManager = ModelManager.shared
         await modelManager.refreshStatuses()
         let state = await modelManager.state
         
-        let availableModel = [ModelIdentifier.qwen7B, .qwen3B].first { modelID in
+        let availableModel = [ModelIdentifier.qwen3_4B, .qwen7B, .qwen3B].first { modelID in
             state.statuses[modelID]?.isReady == true
         }
         
         guard let _ = availableModel else {
-            throw XCTSkip("No LLM model downloaded (Qwen 7B or 3B). Skipping generation test.")
+            throw XCTSkip("No LLM model downloaded. Skipping generation test.")
         }
         
         // 2. Prepare service
@@ -109,7 +110,7 @@ final class LLMServiceTests: XCTestCase {
         await modelManager.refreshStatuses()
         let state = await modelManager.state
         
-        let availableModel = [ModelIdentifier.qwen7B, .qwen3B].first { modelID in
+        let availableModel = [ModelIdentifier.qwen3_4B, .qwen7B, .qwen3B].first { modelID in
             state.statuses[modelID]?.isReady == true
         }
         

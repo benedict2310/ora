@@ -23,17 +23,34 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
     // ASR
     case parakeetTDT = "parakeet-tdt-0.6b-v3"
 
-    // LLM
+    // LLM - Qwen 3 models
+    case qwen3_4B = "qwen3-4b-instruct-4bit"
+    
+    // Legacy Qwen 2.5 identifiers (for migration detection)
+    // These are kept for backward compatibility with existing metadata
     case qwen7B = "qwen2.5-7b-instruct-4bit"
     case qwen3B = "qwen2.5-3b-instruct-4bit"
 
     // TTS
     case kokoro = "kokoro-82m"
+    
+    /// Whether this is a legacy model that should trigger migration
+    var isLegacy: Bool {
+        switch self {
+        case .qwen7B, .qwen3B: return true
+        default: return false
+        }
+    }
+    
+    /// All active (non-legacy) models
+    static var activeModels: [ModelIdentifier] {
+        return allCases.filter { !$0.isLegacy }
+    }
 
     var category: ModelCategory {
         switch self {
         case .parakeetTDT: return .asr
-        case .qwen7B, .qwen3B: return .llm
+        case .qwen3_4B, .qwen7B, .qwen3B: return .llm
         case .kokoro: return .tts
         }
     }
@@ -41,8 +58,9 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
     var displayName: String {
         switch self {
         case .parakeetTDT: return "Parakeet TDT 0.6B"
-        case .qwen7B: return "Qwen 2.5 7B"
-        case .qwen3B: return "Qwen 2.5 3B"
+        case .qwen3_4B: return "Qwen 3 4B"
+        case .qwen7B: return "Qwen 2.5 7B (Legacy)"
+        case .qwen3B: return "Qwen 2.5 3B (Legacy)"
         case .kokoro: return "Kokoro TTS"
         }
     }
@@ -50,8 +68,9 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
     var huggingFaceRepo: String {
         switch self {
         case .parakeetTDT: return "FluidInference/parakeet-tdt-0.6b-v3-coreml"
-        case .qwen7B: return "mlx-community/Qwen2.5-7B-Instruct-4bit"
-        case .qwen3B: return "mlx-community/Qwen2.5-3B-Instruct-4bit"
+        case .qwen3_4B: return "mlx-community/Qwen3-4B-Instruct-2507-4bit"
+        case .qwen7B: return "mlx-community/Qwen2.5-7B-Instruct-4bit"  // Legacy
+        case .qwen3B: return "mlx-community/Qwen2.5-3B-Instruct-4bit"  // Legacy
         case .kokoro: return "mlx-community/Kokoro-82M-bf16"
         }
     }
@@ -59,8 +78,9 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
     var estimatedSizeBytes: Int64 {
         switch self {
         case .parakeetTDT: return 600_000_000      // ~600 MB
-        case .qwen7B: return 5_000_000_000         // ~5 GB
-        case .qwen3B: return 2_000_000_000         // ~2 GB
+        case .qwen3_4B: return 2_500_000_000       // ~2.5 GB (actual: 2.26 GB model + tokenizer)
+        case .qwen7B: return 5_000_000_000         // ~5 GB (legacy)
+        case .qwen3B: return 2_000_000_000         // ~2 GB (legacy)
         case .kokoro: return 500_000_000           // ~500 MB
         }
     }
@@ -68,7 +88,8 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
     var isRequired: Bool {
         switch self {
         case .parakeetTDT, .kokoro: return true
-        case .qwen7B, .qwen3B: return false // One is required, not both
+        case .qwen3_4B: return false  // Required as the only active LLM, but handled specially
+        case .qwen7B, .qwen3B: return false  // Legacy models
         }
     }
 
@@ -78,8 +99,9 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
         // Note: FluidAudio creates its own directory name when downloading,
         // so this must match what FluidAudio actually creates
         case .parakeetTDT: return "asr/parakeet-tdt-0.6b-v3-coreml"
-        case .qwen7B: return "llm/qwen2.5-7b-instruct-4bit"
-        case .qwen3B: return "llm/qwen2.5-3b-instruct-4bit"
+        case .qwen3_4B: return "llm/qwen3-4b-instruct-4bit"
+        case .qwen7B: return "llm/qwen2.5-7b-instruct-4bit"  // Legacy
+        case .qwen3B: return "llm/qwen2.5-3b-instruct-4bit"  // Legacy
         case .kokoro: return "tts/kokoro"
         }
     }
@@ -90,8 +112,11 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
         case .parakeetTDT:
             // FluidAudio creates these CoreML models with capitalized names
             return ["Encoder.mlmodelc", "Decoder.mlmodelc", "JointDecision.mlmodelc", "parakeet_vocab.json"]
+        case .qwen3_4B:
+            // Qwen 3 uses sharded weights with index file
+            return ["config.json", "tokenizer.json", "model.safetensors"]
         case .qwen7B, .qwen3B:
-            // Must include model weights to prevent treating partial downloads as complete
+            // Legacy Qwen 2.5 models
             return ["config.json", "tokenizer.json", "model.safetensors"]
         case .kokoro:
             // Must include model weights and default voice
@@ -101,21 +126,27 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
     
     /// Expected file sizes for critical files (in bytes)
     /// Used to verify downloads are complete and not truncated
-    /// Sizes are from HuggingFace API as of 2026-01-01
+    /// Sizes are from HuggingFace API as of 2026-01-04
     var expectedFileSizes: [String: Int64] {
         switch self {
         case .parakeetTDT:
             // FluidAudio handles its own verification
             return [:]
+        case .qwen3_4B:
+            return [
+                "model.safetensors": 2_262_990_416,  // ~2.26 GB
+                "tokenizer.json": 11_421_896,        // ~11 MB
+                "config.json": 1_034,
+            ]
         case .qwen7B:
             return [
-                "model.safetensors": 4_284_346_255,  // ~4.0 GB
+                "model.safetensors": 4_284_346_255,  // ~4.0 GB (legacy)
                 "tokenizer.json": 7_031_673,
                 "config.json": 787,
             ]
         case .qwen3B:
             return [
-                "model.safetensors": 1_736_293_090,  // ~1.6 GB
+                "model.safetensors": 1_736_293_090,  // ~1.6 GB (legacy)
                 "tokenizer.json": 7_031_673,
                 "config.json": 785,
             ]
@@ -194,7 +225,17 @@ struct ModelMetadata: Codable, Sendable, Equatable {
 struct ModelsState: Sendable, Equatable {
     var statuses: [ModelIdentifier: ModelStatus] = [:]
     var metadata: [ModelIdentifier: ModelMetadata] = [:]
-    var primaryLLM: ModelIdentifier = .qwen7B
+    var primaryLLM: ModelIdentifier = .qwen3_4B
+    
+    /// Whether legacy Qwen 2.5 models are detected (for migration prompts)
+    var hasLegacyModels: Bool {
+        for model in [ModelIdentifier.qwen7B, .qwen3B] {
+            if statuses[model]?.isReady == true {
+                return true
+            }
+        }
+        return false
+    }
 
     /// Check if minimum required models are ready
     var requiredModelsReady: Bool {

@@ -47,11 +47,11 @@ struct SetupState: Sendable {
     var downloadingModel: String? = nil
     var downloadError: String? = nil
     var modelProgresses: [ModelIdentifier: Double] = [:]
-    var primaryLLM: ModelIdentifier = .qwen7B  // The actual LLM being downloaded
+    var primaryLLM: ModelIdentifier = .qwen3_4B  // The actual LLM being downloaded
 
     // System info
     var systemRAMGB: Int = 0
-    var recommendedModel: String = "Qwen 2.5 7B"
+    var recommendedModel: String = "Qwen 3 4B"
 }
 
 // MARK: - Notifications

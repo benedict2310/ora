@@ -19,9 +19,9 @@ struct ModelsPreferencesView: View {
 
     var body: some View {
         Form {
-            // Models by category
+            // Models by category - only show active (non-legacy) models
             Section {
-                ForEach(ModelIdentifier.allCases.filter { $0.category == .asr }, id: \.self) { model in
+                ForEach(ModelIdentifier.activeModels.filter { $0.category == .asr }, id: \.self) { model in
                     ModelRowView(
                         model: model,
                         status: modelsState.statuses[model] ?? .notDownloaded,
@@ -36,7 +36,7 @@ struct ModelsPreferencesView: View {
             }
 
             Section {
-                ForEach(ModelIdentifier.allCases.filter { $0.category == .llm }, id: \.self) { model in
+                ForEach(ModelIdentifier.activeModels.filter { $0.category == .llm }, id: \.self) { model in
                     ModelRowView(
                         model: model,
                         status: modelsState.statuses[model] ?? .notDownloaded,
@@ -51,7 +51,7 @@ struct ModelsPreferencesView: View {
             }
 
             Section {
-                ForEach(ModelIdentifier.allCases.filter { $0.category == .tts }, id: \.self) { model in
+                ForEach(ModelIdentifier.activeModels.filter { $0.category == .tts }, id: \.self) { model in
                     ModelRowView(
                         model: model,
                         status: modelsState.statuses[model] ?? .notDownloaded,
@@ -63,6 +63,39 @@ struct ModelsPreferencesView: View {
                 }
             } header: {
                 Text("Text to Speech")
+            }
+            
+            // Show legacy models section if any are present
+            if modelsState.hasLegacyModels {
+                Section {
+                    ForEach(ModelIdentifier.allCases.filter { $0.isLegacy && modelsState.statuses[$0]?.isReady == true }, id: \.self) { model in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(model.displayName)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.secondary)
+                                Text("No longer supported")
+                                    .font(.caption)
+                                    .foregroundColor(.orange)
+                            }
+                            
+                            Spacer()
+                            
+                            Button(role: .destructive) {
+                                self.confirmDelete(model)
+                            } label: {
+                                Text("Delete")
+                            }
+                            .controlSize(.small)
+                        }
+                    }
+                } header: {
+                    Text("Legacy Models")
+                } footer: {
+                    Text("These models can be deleted to free up disk space. Ora now uses Qwen 3.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
 
             Section {

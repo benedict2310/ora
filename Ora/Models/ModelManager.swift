@@ -90,8 +90,8 @@ actor ModelManager {
         guard model.category == .llm else { return }
         _state.primaryLLM = model
 
-        // Update metadata
-        for llm in [ModelIdentifier.qwen7B, .qwen3B] {
+        // Update metadata for all LLM models
+        for llm in ModelIdentifier.allCases where llm.category == .llm {
             if var meta = _state.metadata[llm] {
                 meta.isPrimary = (llm == model)
                 _state.metadata[llm] = meta
@@ -105,8 +105,8 @@ actor ModelManager {
 
     /// Get recommended LLM based on system RAM
     func recommendedLLM() -> ModelIdentifier {
-        let ramGB = ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024)
-        return ramGB >= 16 ? .qwen7B : .qwen3B
+        // Qwen 3 4B is now the only recommended model
+        return .qwen3_4B
     }
 
     /// Download all required models in parallel
