@@ -188,6 +188,24 @@ defaults delete com.ora.app "com.ora.hotkeyConfiguration"
 
 **Important**: There is an ./agent-tools folder in the root of the project. This is for quick tests, helper scripts and testing. This folder is gitignored and shouldn't be commited per design.
 
+### Branch Hygiene & Multi-Agent Coordination (MANDATORY)
+
+- Always sync `main` before branching: `git fetch origin`, `git checkout main`, `git pull origin main`.
+- Use one branch per story/bug; include the story/bug ID in the branch name when possible.
+- Keep branches short-lived. If `main` moves significantly, **do not merge** an old branch; create a new branch from current `main` and cherry-pick the relevant commits (no rebase unless explicitly approved).
+- Before opening a PR, verify scope: `git log --oneline main..HEAD` and `git diff --stat main...HEAD`. If unrelated files show up, split into separate branches.
+- When multiple agents work in parallel, nominate a single owner per story/bug and record active branches in the story doc (or add a dated report in `docs/reports/` when a branch is abandoned).
+- If a stale branch is discovered, document it (story note or report), reopen the story if needed, and retire the branch.
+- After merge, delete local and remote branches to avoid stale branch drift.
+
+### Bug Fixes (Non-Story Work)
+
+- Use the same branch hygiene as above even when not using the implement-story skill.
+- If a bug has a story/bug doc, update it with branch name, commit count, and verification notes before PR.
+### Story Work (When Implementing Specs)
+
+- Prefer the implement-story skill for story work; if not used, still follow the same branch hygiene and doc updates.
+
 ### Git Safety Rules (MANDATORY)
 
 **ALWAYS COMMIT, NEVER STASH:**
