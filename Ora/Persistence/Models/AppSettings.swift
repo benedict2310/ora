@@ -31,8 +31,10 @@ final class AppSettings {
     /// Hotkey configuration (JSON)
     var hotkeyConfigData: Data?
 
-    /// Auto-listen after response
-    var autoListenEnabled: Bool = false
+    /// Conversation mode: combines silence detection + auto-listen (AC-6)
+    /// Using originalName to preserve existing user settings during migration
+    @Attribute(originalName: "autoListenEnabled")
+    var conversationModeEnabled: Bool = true
 
     // MARK: - Initialization
 

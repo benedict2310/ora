@@ -56,7 +56,10 @@ final class SimplePipelineController: ObservableObject {
     
     /// The agent loop for processing requests
     private let agentLoop: AgentLoop
-    
+
+    /// Silence detector for auto-submit in conversation mode
+    private var silenceDetector: SilenceDetector?
+
     /// Observers for proposal confirmation/denial
     /// Using nonisolated(unsafe) since these are only accessed from MainActor
     /// and this is a singleton that lives for the app's lifetime
@@ -66,9 +69,9 @@ final class SimplePipelineController: ObservableObject {
     /// Delay before auto-recovering from error (seconds)
     private let errorRecoveryDelay: TimeInterval = 3.0
     
-    /// Whether auto-listen is enabled
-    private var isAutoListenEnabled: Bool {
-        return self.fetchAutoListenSetting()
+    /// Whether conversation mode is enabled (combines silence detection + auto-listen)
+    private var isConversationModeEnabled: Bool {
+        return self.fetchConversationModeSetting()
     }
 
     /// Whether there is an active conversation session
@@ -88,8 +91,8 @@ final class SimplePipelineController: ObservableObject {
         self.setupProposalObservers()
     }
     
-    private func fetchAutoListenSetting() -> Bool {
-        return PersistenceManager.shared.settings.autoListenEnabled
+    private func fetchConversationModeSetting() -> Bool {
+        return PersistenceManager.shared.settings.conversationModeEnabled
     }
     
     /// Create a test instance with injectable agent loop
@@ -167,15 +170,18 @@ final class SimplePipelineController: ObservableObject {
         self.logger.info("Started listening")
     }
     
-    /// Submit transcript manually (Enter key)
+    /// Submit transcript manually (Enter key) or via silence detection
     func submitTranscript() {
         guard self.state == .listening else {
             self.logger.warning("Cannot submit transcript in state: \(self.state.description)")
             return
         }
-        
+
         self.logger.debug("Submitting transcript")
-        
+
+        // Cancel silence detector to prevent double-submit (AC-9)
+        self.silenceDetector?.cancel()
+
         // Stop audio capture - this will cause the ASR stream to finalize
         Task {
             await AudioService.shared.stop()
@@ -208,9 +214,13 @@ final class SimplePipelineController: ObservableObject {
         // No-op for tap-to-talk flow
     }
     
-    /// Cancel current operation and return to idle
+    /// Cancel current operation and return to idle (AC-10)
     func cancel() {
         self.logger.info("Cancelling current operation from state: \(self.state.description)")
+
+        // Cancel silence detector
+        self.silenceDetector?.cancel()
+        self.silenceDetector = nil
 
         // Cancel all tasks
         self.sessionTask?.cancel()
@@ -235,31 +245,62 @@ final class SimplePipelineController: ObservableObject {
         OverlayWindowController.shared.hide(animated: true)
     }
     
+    // MARK: - Private - Silence Detection
+
+    /// Set up silence detection for conversation mode
+    private func setupSilenceDetector() {
+        // Only enable in conversation mode (AC-7)
+        guard self.isConversationModeEnabled else {
+            self.silenceDetector = nil
+            return
+        }
+
+        self.logger.debug("Setting up silence detector")
+
+        let detector = SilenceDetector()
+        detector.onSilenceDetected = { [weak self] in
+            guard let self = self else { return }
+            // Only auto-submit if we have a transcript (AC-4)
+            guard !self.currentTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                self.logger.debug("Silence detected but transcript empty, ignoring")
+                return
+            }
+            self.logger.info("Silence detected, auto-submitting")
+            self.submitTranscript()
+        }
+        self.silenceDetector = detector
+    }
+
     // MARK: - Private - Session Management
-    
+
     private func runListeningSession() async {
         do {
             // Reset ASR state for new session
             await ASRService.shared.reset()
-            
+
+            // Set up silence detection for conversation mode (AC-1, AC-7)
+            self.setupSilenceDetector()
+
             // Start audio capture
             let audioStream = try await AudioService.shared.start()
-            
+
             // Start transcription
             let asrStream = await ASRService.shared.transcribe(frames: audioStream)
-            
+
             // Process ASR events
             for try await event in asrStream {
                 guard !Task.isCancelled else {
                     self.logger.debug("Session cancelled during ASR")
                     return
                 }
-                
+
                 switch event {
                 case .partial(let text, _):
                     self.currentTranscript = text
                     OverlayWindowController.shared.model.addUserMessage(text, isPartial: true)
-                    
+                    // Notify silence detector of new partial (AC-3)
+                    self.silenceDetector?.onPartialReceived()
+
                 case .final(let text):
                     self.currentTranscript = text
                     OverlayWindowController.shared.model.addUserMessage(text, isPartial: false)
@@ -482,9 +523,9 @@ final class SimplePipelineController: ObservableObject {
         self.transition(to: .awaitingFollowUp)
         OverlayWindowController.shared.mode = .awaitingFollowUp
 
-        // Handle Auto-Listen if enabled
-        if self.isAutoListenEnabled {
-            self.logger.info("Auto-listen enabled, scheduling follow-up")
+        // Handle Conversation Mode: auto-listen after response (AC-7, AC-11)
+        if self.isConversationModeEnabled {
+            self.logger.info("Conversation mode enabled, scheduling follow-up")
             Task {
                 // Short delay to let the user process the response
                 try? await Task.sleep(for: .milliseconds(500))
