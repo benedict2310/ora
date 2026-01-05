@@ -1,7 +1,7 @@
 # F.12 - Overlay Focus Recovery
 
 **Epic:** Foundations
-**Status:** In Review
+**Status:** Complete
 **Priority:** P1 (High)
 **Estimated Effort:** 1 day
 **Dependencies:** F.07, F.02
@@ -102,7 +102,7 @@ As a user, I want the assistant overlay to close when I click elsewhere and retu
 
 **Date:** 2026-01-05
 **Branch:** `feat/f12-overlay-focus-recovery-clean`
-**Commits:** 2
+**Commits:** 3
 
 ### Files Changed
 - `Ora/Overlay/OverlayWindowController.swift` - Handle app deactivation and prompt restoration; add test hook.
@@ -115,7 +115,7 @@ As a user, I want the assistant overlay to close when I click elsewhere and retu
 
 ### Ready for Review
 - [x] All acceptance criteria verified
-- [ ] Tests passing (relevant tests passed; full suite still fails on main due to `SystemPromptBuilderTests`, addressed in `fix/test-regressions`)
+- [x] Tests passing (full suite: `xcodebuild test -project Ora.xcodeproj -scheme Ora`)
 - [x] Working tree clean
 
 ## Code Review Findings
@@ -183,4 +183,8 @@ As a user, I want the assistant overlay to close when I click elsewhere and retu
 
 ## Completion Status
 
-(TBD after merge.)
+- [x] Implementation complete
+- [x] Code review passed (2 iterations)
+- [x] PR merged: https://github.com/benedict2310/ora/pull/38
+- [x] Merged to main: 3638f5b20c819d9d0c9140aa306352fb48cff7b9
+- [x] Date: 2026-01-05

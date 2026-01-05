@@ -1,9 +1,10 @@
 # BUG.02 - Liquid Glass Black Outline Artifact
 
-**Status:** Open
+**Status:** ✅ Fixed
 **Priority:** P2 (Visual polish)
 **Affects:** Light mode only (dark mode appears fixed)
 **Target:** macOS 26 (Tahoe)
+**Fixed:** 2026-01-05
 
 ---
 
