@@ -126,9 +126,8 @@ struct SystemPromptBuilder {
 
         var lines: [String] = []
         for tool in tools {
-            // Add read-only or confirmation marker to tool name
-            let marker = tool.requiresConfirmation ? "[REQUIRES CONFIRMATION]" : "[READ-ONLY]"
-            lines.append("- \(tool.name) \(marker): \(tool.description)")
+            let accessLabel = tool.requiresConfirmation ? "Requires confirmation" : "Read-only"
+            lines.append("- \(tool.name) (\(accessLabel)): \(tool.description)")
             if !tool.parameters.isEmpty {
                 let params = tool.parameters.map { "\($0.key): \($0.value)" }.joined(separator: ", ")
                 lines.append("  Parameters: \(params)")

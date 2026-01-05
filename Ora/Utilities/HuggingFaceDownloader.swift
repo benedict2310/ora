@@ -361,7 +361,18 @@ final class MockFileDownloader: FileDownloader, @unchecked Sendable {
         // Create the file
         let parentDir = destination.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true)
-        let sizeOverride = lock.withLock { _fileSizeOverrides[destination.lastPathComponent] }
+        let sizeOverride = lock.withLock { () -> Int64? in
+            if let override = _fileSizeOverrides[destination.lastPathComponent] {
+                return override
+            }
+
+            let path = destination.path
+            for (key, value) in _fileSizeOverrides where path.hasSuffix("/" + key) {
+                return value
+            }
+
+            return nil
+        }
         try self.writeMockFile(to: destination, sizeOverride: sizeOverride)
 
         lock.withLock {
