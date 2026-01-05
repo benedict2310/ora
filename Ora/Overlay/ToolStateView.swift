@@ -13,6 +13,14 @@ struct ToolStateView: View {
         case executing(label: String)
     }
 
+    enum ToolStyle: Equatable {
+        case delete
+        case create
+        case edit
+        case complete
+        case unknown
+    }
+
     let mode: Mode
     let reduceTransparency: Bool
     let reduceMotion: Bool
@@ -60,10 +68,10 @@ struct ToolStateView: View {
     private func proposalContent(proposal: ToolProposal) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Image(systemName: self.iconForTool(proposal.toolName))
-                    .foregroundColor(self.colorForTool(proposal.toolName))
+                Image(systemName: Self.iconForTool(proposal.toolName))
+                    .foregroundColor(Self.colorForTool(proposal.toolName))
                     .accessibilityHidden(true)
-                Text(self.titleForTool(proposal.toolName))
+                Text(Self.titleForTool(proposal.toolName))
                     .font(.headline)
             }
 
@@ -119,44 +127,73 @@ struct ToolStateView: View {
 
     // MARK: - Tool-Specific Styling
 
-    private func iconForTool(_ toolName: String) -> String {
+    static func style(for toolName: String) -> ToolStyle {
         if toolName.contains("delete") {
-            return "trash.fill"
+            return .delete
         } else if toolName.contains("create") {
-            return "plus.circle.fill"
+            return .create
         } else if toolName.contains("edit") {
-            return "pencil.circle.fill"
+            return .edit
         } else if toolName.contains("complete") {
-            return "checkmark.circle.fill"
+            return .complete
         } else {
+            return .unknown
+        }
+    }
+
+    static func iconForTool(_ toolName: String) -> String {
+        Self.icon(for: Self.style(for: toolName))
+    }
+
+    static func colorForTool(_ toolName: String) -> Color {
+        Self.color(for: Self.style(for: toolName))
+    }
+
+    static func titleForTool(_ toolName: String) -> String {
+        Self.title(for: Self.style(for: toolName))
+    }
+
+    static func icon(for style: ToolStyle) -> String {
+        switch style {
+        case .delete:
+            return "trash.fill"
+        case .create:
+            return "plus.circle.fill"
+        case .edit:
+            return "pencil.circle.fill"
+        case .complete:
+            return "checkmark.circle.fill"
+        case .unknown:
             return "questionmark.circle.fill"
         }
     }
 
-    private func colorForTool(_ toolName: String) -> Color {
-        if toolName.contains("delete") {
+    static func color(for style: ToolStyle) -> Color {
+        switch style {
+        case .delete:
             return .red
-        } else if toolName.contains("create") {
+        case .create:
             return .green
-        } else if toolName.contains("edit") {
+        case .edit:
             return .orange
-        } else if toolName.contains("complete") {
+        case .complete:
             return .green
-        } else {
+        case .unknown:
             return .blue
         }
     }
 
-    private func titleForTool(_ toolName: String) -> String {
-        if toolName.contains("delete") {
+    static func title(for style: ToolStyle) -> String {
+        switch style {
+        case .delete:
             return "Confirm Delete"
-        } else if toolName.contains("create") {
+        case .create:
             return "Confirm Create"
-        } else if toolName.contains("edit") {
+        case .edit:
             return "Confirm Edit"
-        } else if toolName.contains("complete") {
+        case .complete:
             return "Confirm Complete"
-        } else {
+        case .unknown:
             return "Confirm Action"
         }
     }
