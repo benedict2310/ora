@@ -157,6 +157,10 @@ actor ModelManager {
         if self.downloader.exists(model: model, at: path) {
             self.logger.debug("\(model.rawValue) already exists, skipping download")
             _state.statuses[model] = .ready
+            
+            // Notify listener that we are effectively 100% done
+            progress?(ModelDownloadProgress(identifier: model, progress: 1.0))
+            
             await self.postStateChange()
             return
         }
