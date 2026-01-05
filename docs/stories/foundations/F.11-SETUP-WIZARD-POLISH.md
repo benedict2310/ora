@@ -45,10 +45,10 @@ As a new user, I want to understand why Ora needs to download AI models, activel
 - Cancel button to abort, Retry button on error
 
 #### "All Set" Screen Update (Conversation Mode)
-- **Replace** the old "Press & Hold → Speak → Release" flow
-- **New flow**: Tap hotkey → Speak → Pause (auto-submits) OR press Enter
-- Explain Conversation Mode: "Ora listens, responds, then listens again"
-- Mention the toggle in Preferences if user wants manual mode
+- **Simple and direct**: "Press ⌥Space and start talking"
+- Show the hotkey prominently in a glass card
+- One-liner: "Ora will listen, respond, and keep the conversation going"
+- No lengthy tutorial steps - keep it minimal
 
 #### Liquid Glass Design
 - Apply `.glassEffect()` to cards/panels where appropriate
@@ -126,21 +126,21 @@ As a new user, I want to understand why Ora needs to download AI models, activel
 - [ ] AC-13: "Continue" button only enabled when all models complete
 
 ### Ready Screen
-- [ ] AC-14: Tutorial shows "Tap → Speak → Pause" (not Press & Hold)
-- [ ] AC-15: Explains Conversation Mode behavior
-- [ ] AC-16: Mentions Escape/click outside to end conversation
-- [ ] AC-17: Mentions Enter as alternative to pause
+- [ ] AC-14: Shows hotkey prominently (e.g., "⌥Space") in a glass card
+- [ ] AC-15: Simple message: "Press [hotkey] and start talking"
+- [ ] AC-16: Brief description of conversation mode behavior
 
 ### Liquid Glass
-- [ ] AC-18: Info cards use `.glassEffect()` styling
-- [ ] AC-19: Respects Reduced Transparency accessibility setting
-- [ ] AC-20: Glass only on appropriate elements (not full backgrounds)
+- [ ] AC-17: Info cards use `.glassEffect()` styling
+- [ ] AC-18: Respects Reduced Transparency accessibility setting
+- [ ] AC-19: Glass only on appropriate elements (not full backgrounds)
 
 ### Edge Cases
-- [ ] AC-21: Slow network shows realistic progress (not stuck)
-- [ ] AC-22: Network disconnect shows helpful error message
-- [ ] AC-23: Disk space error detected and reported
-- [ ] AC-24: Partial downloads can be retried
+- [ ] AC-20: Slow network shows realistic progress (not stuck)
+- [ ] AC-21: Network disconnect shows helpful error message
+- [ ] AC-22: Disk space error detected and reported
+- [ ] AC-23: Partial downloads can be retried
+- [ ] AC-24: Already-downloaded models immediately show as 100% complete (fix race condition)
 
 ## 7. Verification Plan
 
@@ -254,26 +254,25 @@ never leave your Mac. No cloud. No data collection.
 
 **Content:**
 ```
-How to Use Ora
+                    ✓ (success icon)
+              
+              You're All Set!
 
-┌─────────────────────────────────────────────────────┐
-│                                                     │
-│  1️⃣ Tap ⌥Space          2️⃣ Speak              3️⃣ Pause │
-│  ⌨️ Keyboard             🎤 Waveform            ⏸️ Stop │
-│  to start listening      your request          to send │
-│                                                     │
-└─────────────────────────────────────────────────────┘
+                   Press
 
-💬 Conversation Mode
+            ┌─────────────────┐
+            │    ⌥ Space      │  (glass card)
+            └─────────────────┘
 
-Ora automatically listens for your next question after 
-responding. Just keep talking naturally!
+              and start talking
 
-To end the conversation, press Escape or click outside.
+   Ora will listen, respond, and keep 
+        the conversation going.
 
-Tip: You can also press Enter to submit immediately 
-instead of waiting for the pause.
+              [Get Started]
 ```
+
+Simple, direct, no lengthy tutorial.
 
 ### Liquid Glass Application
 

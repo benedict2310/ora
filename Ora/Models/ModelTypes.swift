@@ -152,9 +152,9 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
             ]
         case .kokoro:
             return [
-                "kokoro-v1_0.safetensors": 327_115_152,  // ~312 MB
+                "kokoro-v1_0.safetensors": 327_115_152,  // ~312 MB (from HuggingFace API)
                 "config.json": 2_351,
-                "voices/af_heart.safetensors": 524_288,  // ~512 KB (voice embedding)
+                "voices/af_heart.safetensors": 522_320,  // ~510 KB (voice embedding, from HuggingFace API)
             ]
         }
     }
