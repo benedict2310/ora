@@ -1,7 +1,7 @@
 # F.10 - Liquid Glass Overlay Refresh
 
 **Epic:** Foundations
-**Status:** Complete
+**Status:** Open
 **Priority:** P1 (High)
 **Estimated Effort:** 3-4 days
 **Dependencies:** F.07
@@ -262,3 +262,4 @@ private func positionPanel(_ panel: NSPanel) {
 - [x] PR merged: https://github.com/benedict2310/ora/pull/33
 - [x] Merged to main: cd0ae45
 - [x] Date: 2026-01-05
+- Reopened: 2026-01-05 (stale branch review; see `docs/reports/branch-merge-status-2026-01-05.md`)
