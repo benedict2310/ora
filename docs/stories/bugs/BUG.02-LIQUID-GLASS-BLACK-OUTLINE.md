@@ -214,6 +214,24 @@ Also check:
 - GitHub issues on SwiftUI glass effect repos
 - Medium/Dev.to articles on liquid glass implementation pitfalls
 
+### Expected Deliverables from Research
+
+When using AI-assisted search, gather and document:
+
+1. **Code snippets** - Any working solutions with `.glassEffect()` that avoid black outlines
+2. **Modifier order** - Confirmed correct order of modifiers for nested glass effects
+3. **Variant comparison** - Real-world experiences with `.regular` vs `.clear` vs `.identity`
+4. **GlassEffectContainer tips** - Best practices for spacing parameter and nested elements
+5. **Light mode specific fixes** - Any workarounds specifically for light mode artifacts
+6. **Apple Feedback references** - Any filed radars or feedback IDs for this issue
+7. **Version-specific info** - Whether this is fixed in newer macOS 26.x betas
+
+Format findings as actionable code changes we can apply to:
+- `ChatBubbleView.swift`
+- `ToolStateView.swift`
+- `VoiceInputControlView.swift`
+- `OverlayView.swift`
+
 ---
 
 ## 10. References
