@@ -141,6 +141,27 @@ final class SimplePipelineControllerTests: XCTestCase {
         let state = PipelineState.executing
         XCTAssertFalse(state.canStartListening)
     }
+
+    // MARK: - Derived State Helpers
+
+    func test_isSessionActive_helper() {
+        XCTAssertFalse(SimplePipelineController.isSessionActive(for: .idle))
+        XCTAssertFalse(SimplePipelineController.isSessionActive(for: .completed))
+        XCTAssertTrue(SimplePipelineController.isSessionActive(for: .listening))
+        XCTAssertTrue(SimplePipelineController.isSessionActive(for: .error("Oops")))
+    }
+
+    func test_statusBarState_mapping() {
+        XCTAssertEqual(SimplePipelineController.statusBarState(for: .idle), .idle)
+        XCTAssertEqual(SimplePipelineController.statusBarState(for: .completed), .idle)
+        XCTAssertEqual(SimplePipelineController.statusBarState(for: .listening), .listening)
+        XCTAssertEqual(SimplePipelineController.statusBarState(for: .thinking), .thinking)
+        XCTAssertEqual(SimplePipelineController.statusBarState(for: .responding), .thinking)
+        XCTAssertEqual(SimplePipelineController.statusBarState(for: .awaitingFollowUp), .thinking)
+        XCTAssertEqual(SimplePipelineController.statusBarState(for: .executing), .thinking)
+        XCTAssertEqual(SimplePipelineController.statusBarState(for: .speaking), .speaking)
+        XCTAssertEqual(SimplePipelineController.statusBarState(for: .error("Failure")), .error("Failure"))
+    }
     
     // MARK: - Agent Loop Integration Tests (with makeTestInstance)
     

@@ -29,6 +29,14 @@ final class SetupCoordinator: NSObject, ObservableObject {
 
     static let shared = SetupCoordinator()
 
+#if DEBUG
+    static func makeForTesting(state: SetupState) -> SetupCoordinator {
+        let coordinator = SetupCoordinator()
+        coordinator.state = state
+        return coordinator
+    }
+#endif
+
     // MARK: - Initialization
 
     private override init() {

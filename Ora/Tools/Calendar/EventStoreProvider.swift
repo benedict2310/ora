@@ -12,6 +12,12 @@ import os
 enum EventStoreProvider {
     
     private static let logger = Logger(subsystem: "com.ora.app", category: "EventStoreProvider")
+
+    enum CalendarAccessAction: Equatable {
+        case authorized
+        case requestAccess
+        case denied
+    }
     
     /// Shared event store instance
     /// Note: EKEventStore is thread-safe and meant to be reused
@@ -45,15 +51,12 @@ enum EventStoreProvider {
     /// - Throws: CalendarToolError.permissionDenied if access is denied
     static func ensureCalendarAccess() async throws {
         let status = EKEventStore.authorizationStatus(for: .event)
-        
-        switch status {
-        case .fullAccess, .authorized:
-            // Already authorized
+
+        switch authorizationAction(for: status) {
+        case .authorized:
             logger.debug("Calendar access already authorized")
             return
-            
-        case .notDetermined:
-            // Request access
+        case .requestAccess:
             logger.info("Requesting calendar access...")
             do {
                 await PermissionPromptTracker.shared.beginPrompt(for: .calendar)
@@ -71,18 +74,22 @@ enum EventStoreProvider {
                 logger.error("Calendar access request failed: \(error.localizedDescription)")
                 throw CalendarToolError.permissionDenied
             }
-            
-        case .denied, .writeOnly:
+        case .denied:
             logger.warning("Calendar access denied (status: \(String(describing: status)))")
             throw CalendarToolError.permissionDenied
-            
-        case .restricted:
-            logger.warning("Calendar access restricted")
-            throw CalendarToolError.permissionDenied
-            
+        }
+    }
+
+    static func authorizationAction(for status: EKAuthorizationStatus) -> CalendarAccessAction {
+        switch status {
+        case .fullAccess, .authorized:
+            return .authorized
+        case .notDetermined:
+            return .requestAccess
+        case .denied, .writeOnly, .restricted:
+            return .denied
         @unknown default:
-            logger.warning("Unknown calendar authorization status")
-            throw CalendarToolError.permissionDenied
+            return .denied
         }
     }
 }

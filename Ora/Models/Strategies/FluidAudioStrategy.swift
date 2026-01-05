@@ -67,6 +67,22 @@ struct FluidAudioStrategy: ModelDownloadStrategy, Sendable {
             throw ModelError.downloadFailed(model, error.localizedDescription)
         }
     }
+
+    static func progress(
+        for state: ParakeetModelDownloader.State,
+        model: ModelIdentifier
+    ) -> ModelDownloadProgress? {
+        switch state {
+        case .running(let progress, _, _, _):
+            return ModelDownloadProgress(identifier: model, progress: progress)
+        case .verifying:
+            return ModelDownloadProgress(identifier: model, progress: 0.95)
+        case .done:
+            return ModelDownloadProgress(identifier: model, progress: 1.0)
+        case .idle, .failed:
+            return nil
+        }
+    }
 }
 
 // MARK: - Progress Observer
@@ -93,31 +109,8 @@ private actor FluidAudioProgressObserver {
         ) { notification in
             guard let state = notification.object as? ParakeetModelDownloader.State else { return }
 
-            switch state {
-            case .running(let progress, _, _, _):
-                let modelProgress = ModelDownloadProgress(
-                    identifier: model,
-                    progress: progress
-                )
+            if let modelProgress = FluidAudioStrategy.progress(for: state, model: model) {
                 handler(modelProgress)
-
-            case .verifying:
-                // Verifying is ~95% complete
-                let modelProgress = ModelDownloadProgress(
-                    identifier: model,
-                    progress: 0.95
-                )
-                handler(modelProgress)
-
-            case .done:
-                let modelProgress = ModelDownloadProgress(
-                    identifier: model,
-                    progress: 1.0
-                )
-                handler(modelProgress)
-
-            case .idle, .failed:
-                break
             }
         }
     }

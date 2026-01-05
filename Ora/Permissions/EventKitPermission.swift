@@ -15,13 +15,13 @@ struct EventKitPermission: Sendable {
     /// Check calendar authorization status
     static func checkCalendarStatus() -> PermissionStatus {
         let status = EKEventStore.authorizationStatus(for: .event)
-        return mapStatus(status)
+        return permissionStatus(for: status)
     }
 
     /// Check reminders authorization status
     static func checkRemindersStatus() -> PermissionStatus {
         let status = EKEventStore.authorizationStatus(for: .reminder)
-        return mapStatus(status)
+        return permissionStatus(for: status)
     }
 
     /// Request calendar permission
@@ -68,7 +68,7 @@ struct EventKitPermission: Sendable {
         }
     }
 
-    private static func mapStatus(_ status: EKAuthorizationStatus) -> PermissionStatus {
+    static func permissionStatus(for status: EKAuthorizationStatus) -> PermissionStatus {
         switch status {
         case .notDetermined: return .notDetermined
         case .fullAccess, .authorized: return .authorized

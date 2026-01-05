@@ -76,12 +76,7 @@ final class SimplePipelineController: ObservableObject {
 
     /// Whether there is an active conversation session
     var isSessionActive: Bool {
-        switch self.state {
-        case .idle, .completed:
-            return false
-        default:
-            return true
-        }
+        Self.isSessionActive(for: self.state)
     }
 
     // MARK: - Initialization
@@ -580,17 +575,42 @@ final class SimplePipelineController: ObservableObject {
     }
     
     private func updateStatusBar(for state: PipelineState) {
+        let statusState = Self.statusBarState(for: state)
         switch state {
         case .idle, .completed:
-            StatusBarController.shared?.setState(.idle)
+            StatusBarController.shared?.setState(statusState)
         case .listening:
-            StatusBarController.shared?.setState(.listening)
+            StatusBarController.shared?.setState(statusState)
         case .thinking, .responding, .awaitingFollowUp, .executing:
-            StatusBarController.shared?.setState(.thinking)
+            StatusBarController.shared?.setState(statusState)
         case .speaking:
-            StatusBarController.shared?.setState(.speaking)
+            StatusBarController.shared?.setState(statusState)
         case .error(let message):
-            StatusBarController.shared?.setState(.error(message))
+            StatusBarController.shared?.setState(statusState)
+        }
+    }
+
+    static func isSessionActive(for state: PipelineState) -> Bool {
+        switch state {
+        case .idle, .completed:
+            return false
+        default:
+            return true
+        }
+    }
+
+    static func statusBarState(for state: PipelineState) -> StatusBarController.State {
+        switch state {
+        case .idle, .completed:
+            return .idle
+        case .listening:
+            return .listening
+        case .thinking, .responding, .awaitingFollowUp, .executing:
+            return .thinking
+        case .speaking:
+            return .speaking
+        case .error(let message):
+            return .error(message)
         }
     }
 }

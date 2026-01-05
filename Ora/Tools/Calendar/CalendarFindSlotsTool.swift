@@ -64,19 +64,49 @@ struct CalendarFindSlotsTool: Tool {
         
         // Get existing events
         let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
-        let events = store.events(matching: predicate).sorted { ($0.startDate ?? .distantPast) < ($1.startDate ?? .distantPast) }
+        let events = store.events(matching: predicate)
+        let busyIntervals = Self.busyIntervals(from: events)
         
-        // Find gaps
-        var slots: [(start: Date, end: Date)] = []
-        var cursor = start
+        let slots = Self.findSlots(
+            rangeStart: start,
+            rangeEnd: end,
+            duration: duration,
+            maxResults: maxResults,
+            busyIntervals: busyIntervals
+        )
         
-        for event in events {
+        let slotData = Self.slotData(for: slots)
+        let summary = Self.summary(for: slots, durationMinutes: durationMinutes)
+        
+        return .success(.array(slotData), summary: summary)
+    }
+
+    static func busyIntervals(from events: [EKEvent]) -> [(start: Date, end: Date)] {
+        events.compactMap { event in
             guard let eventStart = event.startDate, let eventEnd = event.endDate else {
-                continue
+                return nil
             }
+            return (start: eventStart, end: eventEnd)
+        }
+        .sorted { $0.start < $1.start }
+    }
+
+    static func findSlots(
+        rangeStart: Date,
+        rangeEnd: Date,
+        duration: TimeInterval,
+        maxResults: Int,
+        busyIntervals: [(start: Date, end: Date)]
+    ) -> [(start: Date, end: Date)] {
+        var slots: [(start: Date, end: Date)] = []
+        var cursor = rangeStart
+        
+        for interval in busyIntervals {
+            let eventStart = interval.start
+            let eventEnd = interval.end
+            
             if eventStart > cursor {
-                let gapEnd = eventStart
-                let gapDuration = gapEnd.timeIntervalSince(cursor)
+                let gapDuration = eventStart.timeIntervalSince(cursor)
                 if gapDuration >= duration {
                     slots.append((cursor, cursor.addingTimeInterval(duration)))
                     if slots.count >= maxResults { break }
@@ -87,33 +117,37 @@ struct CalendarFindSlotsTool: Tool {
             }
         }
         
-        // Check for slot after last event
-        if slots.count < maxResults && cursor < end {
-            let gapDuration = end.timeIntervalSince(cursor)
+        if slots.count < maxResults && cursor < rangeEnd {
+            let gapDuration = rangeEnd.timeIntervalSince(cursor)
             if gapDuration >= duration {
                 slots.append((cursor, cursor.addingTimeInterval(duration)))
             }
         }
         
-        let slotData: [JSONValue] = slots.map { slot in
+        return slots
+    }
+
+    static func slotData(for slots: [(start: Date, end: Date)]) -> [JSONValue] {
+        slots.map { slot in
             .object([
                 "start": .string(EventStoreProvider.formatDate(slot.start)),
                 "end": .string(EventStoreProvider.formatDate(slot.end))
             ])
         }
-        
-        let summary: String
+    }
+
+    static func summary(for slots: [(start: Date, end: Date)], durationMinutes: Double) -> String {
         if slots.isEmpty {
-            summary = "No available slots found for \(Int(durationMinutes)) minutes."
-        } else if slots.count == 1 {
+            return "No available slots found for \(Int(durationMinutes)) minutes."
+        }
+        
+        if slots.count == 1 {
             let formatter = DateFormatter()
             formatter.dateStyle = .none
             formatter.timeStyle = .short
-            summary = "Found 1 available slot at \(formatter.string(from: slots[0].start))."
-        } else {
-            summary = "Found \(slots.count) available slots."
+            return "Found 1 available slot at \(formatter.string(from: slots[0].start))."
         }
         
-        return .success(.array(slotData), summary: summary)
+        return "Found \(slots.count) available slots."
     }
 }

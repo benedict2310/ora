@@ -20,10 +20,23 @@
 - ✅ Multi-step agentic flows (query → delete with confirmation)
 
 **What's next:**
+- 🚧 Improve Ora.app test coverage to 85%+ (M.01, now 72.8%)
 - 🚧 Fix setup wizard UX (F.11)
+- 🚧 Build confirmation flow polish (O.04)
 - 🚧 Implement Reminders, Contacts, System tools (X.03-X.05)
 
+**Current priority:** M.01 Test Coverage Improvements (raise Ora.app to 85%+; next tranche: ParakeetModelDownloader verification + remaining setup/download gating paths).
+
+**Next actions (M.01):**
+- Exercise `Ora/ASR/ParakeetModelDownloader.swift` verification/error paths via helper extraction.
+- Expand setup/download gating coverage in `Ora/Setup/SetupCoordinator.swift`.
+- Re-run coverage and update `docs/stories/maintenance/M.01-TEST-COVERAGE-IMPROVEMENTS.md`.
+
 ---
+
+## Recent Maintenance
+
+- 2026-01-05: Removed stale local branches (`feat/f10-liquid-glass-overlay`, `feat/O.02-agent-loop`) after audit. See `docs/reports/branch-merge-status-2026-01-05.md`.
 
 ## Epics
 
@@ -93,6 +106,13 @@ Agentic tools for system integration.
 | X.04 | [Contacts Tools](tools/X.04-CONTACTS-TOOLS.md) | 🚧 To Do |
 | X.05 | [System Tools](tools/X.05-SYSTEM-TOOLS.md) | 🚧 To Do |
 
+### 🧹 Maintenance (M)
+Quality, coverage, and repository hygiene.
+
+| ID | Title | Status |
+|:---|:------|:-------|
+| M.01 | [Test Coverage Improvements](maintenance/M.01-TEST-COVERAGE-IMPROVEMENTS.md) | 🚧 In Progress |
+
 ### 🎼 Orchestration (O)
 Connecting the loop: Audio → ASR → LLM → Tools → TTS.
 
@@ -145,6 +165,12 @@ AgentLoop is wired into the pipeline and calendar tools work end-to-end.
 |:---------|:------|:------------|:-------|
 | ✅ | O.06 | Agent Loop Integration - Wire AgentLoop into pipeline so tools work | ✅ Complete |
 | P1 | O.04 | Confirmation Flow - UI polish for confirming tool mutations | 🚧 To Do |
+
+### 🚧 Phase 4.5: Quality & Maintenance
+
+| Priority | Story | Description | Status |
+|:---------|:------|:------------|:-------|
+| **P0** | **M.01** | **Test Coverage Improvements** - Raise Ora.app coverage to 85%+ | 🚧 In Progress |
 
 ### 🚧 Phase 5: Model & UX Improvements
 

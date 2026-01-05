@@ -164,4 +164,72 @@ final class JSONValidatorTests: XCTestCase {
             XCTFail("Expected failure")
         }
     }
+
+    func testUnknownType() {
+        let json = """
+        {
+            "type": "unknown"
+        }
+        """
+
+        let result = JSONValidator.parse(json)
+
+        if case .failure(let error) = result {
+            if case .unknownType(let type) = error {
+                XCTAssertEqual(type, "unknown")
+            } else {
+                XCTFail("Expected .unknownType error")
+            }
+        } else {
+            XCTFail("Expected failure")
+        }
+    }
+
+    func testNotAnObject() {
+        let json = "[1, 2, 3]"
+        let result = JSONValidator.parse(json)
+
+        if case .failure(let error) = result {
+            if case .notAnObject = error {
+                // Pass
+            } else {
+                XCTFail("Expected .notAnObject error")
+            }
+        } else {
+            XCTFail("Expected failure")
+        }
+    }
+
+    func testParseToolCall_mapsBoolAndNumber() {
+        let json = """
+        {
+            "type": "tool_call",
+            "tool": "calendar.query",
+            "args": {
+                "all_day": true,
+                "limit": 5
+            }
+        }
+        """
+
+        let result = JSONValidator.parse(json)
+
+        if case .success(let output) = result {
+            if case .toolCall(_, let args) = output {
+                XCTAssertEqual(args["all_day"]?.boolValue, true)
+                XCTAssertEqual(args["limit"]?.numberValue, 5)
+            } else {
+                XCTFail("Expected .toolCall")
+            }
+        } else {
+            XCTFail("Parse failed")
+        }
+    }
+
+    func testValidationError_descriptions() {
+        XCTAssertEqual(JSONValidationError.invalidEncoding.errorDescription, "Invalid text encoding")
+        XCTAssertEqual(JSONValidationError.notAnObject.errorDescription, "Expected JSON object at root")
+        XCTAssertEqual(JSONValidationError.missingField("tool").errorDescription, "Missing required field: tool")
+        XCTAssertEqual(JSONValidationError.unknownType("foo").errorDescription, "Unknown response type: foo")
+    }
 }

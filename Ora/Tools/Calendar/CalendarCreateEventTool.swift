@@ -100,11 +100,8 @@ struct CalendarCreateEventTool: Tool {
             throw CalendarToolError.saveFailed(error.localizedDescription)
         }
         
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        
-        let summary = "Created '\(title)' on \(formatter.string(from: start))."
+        let formatter = Self.summaryFormatter()
+        let summary = Self.summary(title: title, start: start, formatter: formatter)
         
         return .success(
             .object([
@@ -115,5 +112,16 @@ struct CalendarCreateEventTool: Tool {
             ]),
             summary: summary
         )
+    }
+
+    static func summaryFormatter() -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }
+
+    static func summary(title: String, start: Date, formatter: DateFormatter) -> String {
+        "Created '\(title)' on \(formatter.string(from: start))."
     }
 }
