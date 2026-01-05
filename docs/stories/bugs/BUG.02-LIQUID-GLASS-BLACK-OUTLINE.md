@@ -193,7 +193,30 @@ If this is a macOS 26 bug, report to Apple with reproduction case.
 
 ---
 
-## 9. References
+## 9. Research Prompt
+
+Use this prompt with web search tools to find solutions:
+
+```
+SwiftUI macOS 26 Tahoe iOS 26 liquid glass glassEffect black outline border artifact fix 2025 2026
+
+Specific queries to try:
+- "SwiftUI glassEffect black border artifact fix"
+- "GlassEffectContainer nested glass rendering issue"
+- "liquid glass dark outline light mode SwiftUI"
+- "SwiftUI .regular vs .clear glass variant artifacts"
+- "macOS 26 glass effect rendering bug workaround"
+- "WWDC 2025 liquid glass best practices edge artifacts"
+```
+
+Also check:
+- Apple Developer Forums for "glassEffect artifact" or "liquid glass border"
+- GitHub issues on SwiftUI glass effect repos
+- Medium/Dev.to articles on liquid glass implementation pitfalls
+
+---
+
+## 10. References
 
 - Research document: `/Users/bene/Downloads/fixes_for_liquid_glass_black_outlines_a_d.md`
 - [Apple GlassEffectContainer Documentation](https://developer.apple.com/documentation/swiftui/glasseffectcontainer/)
