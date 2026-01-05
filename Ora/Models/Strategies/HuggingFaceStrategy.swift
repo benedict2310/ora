@@ -151,38 +151,51 @@ struct HuggingFaceStrategy: ModelDownloadStrategy, Sendable {
     /// Returns a dictionary of filename -> size in bytes
     /// Falls back to empty dictionary if API call fails (verification will use minimum size checks)
     private func fetchFileSizesFromAPI(repo: String, files: [String]) async -> [String: Int64] {
-        let apiURL = URL(string: "https://huggingface.co/api/models/\(repo)/tree/main")!
+        var sizes: [String: Int64] = [:]
         
-        do {
-            let (data, response) = try await URLSession.shared.data(from: apiURL)
-            
-            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                self.logger.warning("HuggingFace API returned non-200 status, falling back to minimum size verification")
-                return [:]
+        // Group files by directory
+        var directories: Set<String> = [""]  // Root directory
+        for file in files {
+            if file.contains("/") {
+                let dir = String(file.prefix(while: { $0 != "/" }))
+                directories.insert(dir)
             }
-            
-            // Parse JSON response
-            guard let jsonArray = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-                self.logger.warning("Failed to parse HuggingFace API response")
-                return [:]
-            }
-            
-            var sizes: [String: Int64] = [:]
-            for item in jsonArray {
-                if let path = item["path"] as? String,
-                   let size = item["size"] as? Int64,
-                   files.contains(path) {
-                    sizes[path] = size
-                }
-            }
-            
-            self.logger.debug("Fetched \(sizes.count) file sizes from HuggingFace API")
-            return sizes
-            
-        } catch {
-            self.logger.warning("Failed to fetch file sizes from HuggingFace API: \(error.localizedDescription)")
-            return [:]
         }
+        
+        // Fetch sizes from each directory
+        for dir in directories {
+            let path = dir.isEmpty ? "main" : "main/\(dir)"
+            let apiURL = URL(string: "https://huggingface.co/api/models/\(repo)/tree/\(path)")!
+            
+            do {
+                let (data, response) = try await URLSession.shared.data(from: apiURL)
+                
+                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                    continue
+                }
+                
+                guard let jsonArray = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+                    continue
+                }
+                
+                for item in jsonArray {
+                    guard let itemPath = item["path"] as? String,
+                          let size = item["size"] as? Int64 else {
+                        continue
+                    }
+                    
+                    // Check if this file is in our list
+                    if files.contains(itemPath) {
+                        sizes[itemPath] = size
+                    }
+                }
+            } catch {
+                self.logger.warning("Failed to fetch sizes from \(path): \(error.localizedDescription)")
+            }
+        }
+        
+        self.logger.debug("Fetched \(sizes.count) file sizes from HuggingFace API")
+        return sizes
     }
     
     /// Verify downloaded files match expected sizes
@@ -234,9 +247,12 @@ struct HuggingFaceStrategy: ModelDownloadStrategy, Sendable {
     
     /// Minimum reasonable size for a file type (fallback when API unavailable)
     private func minimumReasonableSize(for file: String) -> Int64 {
-        if file.hasSuffix(".safetensors") {
-            // Model weights should be at least 100MB
-            return 100_000_000
+        // Voice embedding files are small (~500KB)
+        if file.contains("voices/") && file.hasSuffix(".safetensors") {
+            return 100_000  // 100KB minimum for voice files
+        } else if file.hasSuffix(".safetensors") {
+            // Model weights should be at least 10MB (some small components exist)
+            return 10_000_000
         } else if file.hasSuffix(".json") {
             // JSON files should be at least 100 bytes
             return 100
