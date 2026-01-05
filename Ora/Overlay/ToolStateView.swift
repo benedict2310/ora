@@ -51,9 +51,9 @@ struct ToolStateView: View {
                 .background(shape.fill(Color(nsColor: .controlBackgroundColor).opacity(0.94)))
                 .overlay(shape.stroke(Color.white.opacity(0.08), lineWidth: 0.6))
         } else {
-            // Use .clear variant to reduce black outline artifacts when nested in GlassEffectContainer
+            // Use .regular variant for full background adaptivity (light/dark)
             base
-                .glassEffect(.clear.tint(.white.opacity(0.15)), in: shape)
+                .glassEffect(.regular.tint(.white.opacity(0.08)), in: shape)
         }
     }
 
