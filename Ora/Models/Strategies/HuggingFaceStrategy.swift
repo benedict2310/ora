@@ -33,12 +33,15 @@ struct HuggingFaceStrategy: ModelDownloadStrategy, Sendable {
         progress(ModelDownloadProgress(identifier: model, progress: 0.0))
 
         // Get list of files to download
-        let filesToDownload = try await self.getFilesToDownload(for: model)
+        let filesToDownload = self.knownFiles(for: model)
 
         guard !filesToDownload.isEmpty else {
             throw ModelError.downloadFailed(model, "No files found in repository")
         }
 
+        // Fetch actual file sizes from HuggingFace API for verification
+        let expectedSizes = await self.fetchFileSizesFromAPI(repo: model.huggingFaceRepo, files: filesToDownload)
+        
         self.logger.info("Found \(filesToDownload.count) files to download for \(model.displayName)")
 
         // Calculate total size for weighted progress
@@ -76,9 +79,9 @@ struct HuggingFaceStrategy: ModelDownloadStrategy, Sendable {
             downloadedBytes += fileEstimatedSize
         }
 
-        // Verify download integrity by checking file sizes
+        // Verify download integrity
         self.logger.info("Verifying download for \(model.displayName)...")
-        let verificationPassed = await self.verifyDownload(model: model, at: directory)
+        let verificationPassed = await self.verifyDownload(model: model, at: directory, expectedSizes: expectedSizes)
         if !verificationPassed {
             self.logger.error("Download verification failed for \(model.displayName)")
             // Clean up partial/corrupted download
@@ -92,13 +95,6 @@ struct HuggingFaceStrategy: ModelDownloadStrategy, Sendable {
     }
 
     // MARK: - Private
-
-    /// Get the list of files to download for a model
-    private func getFilesToDownload(for model: ModelIdentifier) async throws -> [String] {
-        // For known models, we have predefined file lists
-        // This avoids an API call and handles models without public file listing
-        return self.knownFiles(for: model)
-    }
 
     /// Known files for each model type
     private func knownFiles(for model: ModelIdentifier) -> [String] {
@@ -151,10 +147,51 @@ struct HuggingFaceStrategy: ModelDownloadStrategy, Sendable {
         }
     }
     
+    /// Fetch actual file sizes from HuggingFace API
+    /// Returns a dictionary of filename -> size in bytes
+    /// Falls back to empty dictionary if API call fails (verification will use minimum size checks)
+    private func fetchFileSizesFromAPI(repo: String, files: [String]) async -> [String: Int64] {
+        let apiURL = URL(string: "https://huggingface.co/api/models/\(repo)/tree/main")!
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(from: apiURL)
+            
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                self.logger.warning("HuggingFace API returned non-200 status, falling back to minimum size verification")
+                return [:]
+            }
+            
+            // Parse JSON response
+            guard let jsonArray = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+                self.logger.warning("Failed to parse HuggingFace API response")
+                return [:]
+            }
+            
+            var sizes: [String: Int64] = [:]
+            for item in jsonArray {
+                if let path = item["path"] as? String,
+                   let size = item["size"] as? Int64,
+                   files.contains(path) {
+                    sizes[path] = size
+                }
+            }
+            
+            self.logger.debug("Fetched \(sizes.count) file sizes from HuggingFace API")
+            return sizes
+            
+        } catch {
+            self.logger.warning("Failed to fetch file sizes from HuggingFace API: \(error.localizedDescription)")
+            return [:]
+        }
+    }
+    
     /// Verify downloaded files match expected sizes
-    private func verifyDownload(model: ModelIdentifier, at directory: URL) async -> Bool {
+    /// Uses API-fetched sizes if available, otherwise falls back to minimum size checks
+    private func verifyDownload(model: ModelIdentifier, at directory: URL, expectedSizes: [String: Int64]) async -> Bool {
         let fm = FileManager.default
-        let expectedSizes = model.expectedFileSizes
+        
+        // Use API sizes if available, otherwise fall back to hardcoded sizes
+        let sizesToCheck = expectedSizes.isEmpty ? model.expectedFileSizes : expectedSizes
         
         for file in model.requiredFiles {
             let filePath = directory.appendingPathComponent(file)
@@ -165,27 +202,50 @@ struct HuggingFaceStrategy: ModelDownloadStrategy, Sendable {
                 return false
             }
             
-            // Check file size if we have an expected size
-            if let expectedSize = expectedSizes[file] {
-                do {
-                    let attrs = try fm.attributesOfItem(atPath: filePath.path)
-                    let actualSize = attrs[.size] as? Int64 ?? 0
-                    
-                    // Reject files significantly smaller than expected
+            do {
+                let attrs = try fm.attributesOfItem(atPath: filePath.path)
+                let actualSize = attrs[.size] as? Int64 ?? 0
+                
+                if let expectedSize = sizesToCheck[file] {
+                    // We have an expected size - use 99% threshold
                     let minimumSize = Int64(Double(expectedSize) * ModelIdentifier.minimumFileSizeThreshold)
                     if actualSize < minimumSize {
                         self.logger.error("Verification failed: \(file) is too small. Expected: \(expectedSize) bytes, Actual: \(actualSize) bytes")
                         return false
                     }
-                    
-                    self.logger.debug("Verified \(file): \(actualSize) bytes (expected: \(expectedSize))")
-                } catch {
-                    self.logger.error("Verification failed: cannot read file attributes for \(file): \(error.localizedDescription)")
-                    return false
+                } else {
+                    // No expected size - use minimum reasonable sizes
+                    let minimumReasonableSize = self.minimumReasonableSize(for: file)
+                    if actualSize < minimumReasonableSize {
+                        self.logger.error("Verification failed: \(file) is too small. Actual: \(actualSize) bytes, Minimum: \(minimumReasonableSize) bytes")
+                        return false
+                    }
                 }
+                
+                self.logger.debug("Verified \(file): \(actualSize) bytes")
+            } catch {
+                self.logger.error("Verification failed: cannot read file attributes for \(file): \(error.localizedDescription)")
+                return false
             }
         }
         
         return true
+    }
+    
+    /// Minimum reasonable size for a file type (fallback when API unavailable)
+    private func minimumReasonableSize(for file: String) -> Int64 {
+        if file.hasSuffix(".safetensors") {
+            // Model weights should be at least 100MB
+            return 100_000_000
+        } else if file.hasSuffix(".json") {
+            // JSON files should be at least 100 bytes
+            return 100
+        } else if file.hasSuffix(".jinja") {
+            // Template files should be at least 100 bytes
+            return 100
+        } else {
+            // Other files - at least 10 bytes
+            return 10
+        }
     }
 }
