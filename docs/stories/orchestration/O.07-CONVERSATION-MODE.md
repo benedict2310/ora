@@ -72,28 +72,62 @@ TTS completes → .listening (auto-start recording for next turn)
 (repeat until user presses hotkey to end or says "goodbye")
 ```
 
-## 5. Implementation Plan (Draft)
+## 5. Implementation Plan
 
 ### 5.1 Files to Create
 
-- `Ora/Orchestration/SilenceDetector.swift` - Monitors ASR timing and detects end-of-speech
+- `Ora/Orchestration/SilenceDetector.swift` - Monitors ASR partial timing and detects end-of-speech
 
 ### 5.2 Files to Modify
 
-- `Ora/Orchestration/SimplePipelineController.swift` - Add silence timer, auto-submit logic
-- `Ora/Orchestration/PipelineState.swift` - Consider adding transitional states if needed
-- `Ora/Persistence/AppSettings.swift` - Rename setting, change default
-- `Ora/Preferences/Tabs/GeneralPreferencesView.swift` - Update UI label to "Conversation Mode"
-- `Ora/UI/OverlayContentView.swift` - Optional: show silence countdown indicator
+- `Ora/Orchestration/SimplePipelineController.swift` - Integrate SilenceDetector, auto-submit on timeout
+- `Ora/Persistence/Models/AppSettings.swift` - Rename `autoListenEnabled` → `conversationModeEnabled`, default `true`
+- `Ora/Preferences/Tabs/GeneralPreferencesView.swift` - Add "Conversation Mode" toggle
+- `Ora/UI/StatusBarController.swift` - Rename menu item to "Conversation Mode"
 
 ### 5.3 Tests to Add
 
-- `OraTests/Orchestration/SilenceDetectorTests.swift` - Test timeout logic, edge cases
-- `OraTests/Orchestration/SimplePipelineControllerTests.swift` - Test auto-submit flow
+- `OraTests/Orchestration/SilenceDetectorTests.swift` - Timeout triggers, reset on partial, cancellation
 
-### 5.4 Dependencies/Config
+### 5.4 Implementation Details
 
-- None
+#### SilenceDetector Design
+```swift
+@MainActor
+final class SilenceDetector {
+    // Configurable timeout (default 1.5s)
+    private let timeout: TimeInterval
+    private var silenceTask: Task<Void, Never>?
+    private var hasReceivedPartial = false
+
+    // Called when ASR partial received - resets timer
+    func onPartialReceived()
+
+    // Called when silence timeout fires
+    var onSilenceDetected: (() -> Void)?
+
+    // Cancel any pending timer
+    func cancel()
+
+    // Reset state for new session
+    func reset()
+}
+```
+
+#### Integration Flow
+1. When `conversationModeEnabled` and state is `.listening`:
+   - Create SilenceDetector with configured timeout
+   - On each `.partial` ASR event: call `onPartialReceived()`
+   - When `onSilenceDetected` fires: auto-submit (same as Enter key)
+2. Manual submit (Enter) cancels the silence timer
+3. Cancel operation cancels the silence timer
+
+#### Migration Strategy
+Use `@Attribute(originalName: "autoListenEnabled")` to preserve existing user settings while renaming the property to `conversationModeEnabled`.
+
+### 5.5 Dependencies/Config
+
+- Silence timeout constant: 1.5 seconds (could be made configurable later)
 
 ## 6. Acceptance Criteria
 
@@ -154,10 +188,13 @@ TTS completes → .listening (auto-start recording for next turn)
 ## 10. Open Questions
 
 - [ ] What's the ideal default silence timeout? (1.5s proposed)
+1.5 sec is fine, but make it configurable.
 - [ ] Should we show a visual countdown during silence detection?
+No, but let's leave that decision for manual testing.
 - [ ] Should Conversation Mode require re-pressing hotkey to start, or persist until explicit cancel?
+No.
 - [ ] How to handle "goodbye" / explicit end of conversation?
-
+Not a at all at the moment. We end the conversation with esc/click outside the window/2nd press of hotkey.
 ---
 
 ## Implementation Summary
