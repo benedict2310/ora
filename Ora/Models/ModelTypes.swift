@@ -134,9 +134,9 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
             return [:]
         case .qwen3_4B:
             return [
-                "model.safetensors": 2_262_990_416,  // ~2.26 GB
-                "tokenizer.json": 11_421_896,        // ~11 MB
-                "config.json": 1_034,
+                "model.safetensors": 2_263_022_417,  // ~2.26 GB (from HuggingFace API)
+                "tokenizer.json": 11_422_654,        // ~11 MB
+                "config.json": 938,
             ]
         case .qwen7B:
             return [
