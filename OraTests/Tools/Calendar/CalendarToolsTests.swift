@@ -356,6 +356,97 @@ final class CalendarToolsTests: XCTestCase {
         XCTAssertFalse(tool.requiresConfirmation)
         XCTAssertEqual(tool.schema.requiredParameters, ["start", "end", "duration_minutes"])
     }
+
+    func test_findSlotsTool_findSlots_respectsGapsAndMaxResults() {
+        let rangeStart = self.makeDate(hour: 9, minute: 0)
+        let rangeEnd = self.makeDate(hour: 12, minute: 0)
+        let duration: TimeInterval = 20 * 60
+        let busy = [
+            (start: self.makeDate(hour: 9, minute: 30), end: self.makeDate(hour: 10, minute: 0)),
+            (start: self.makeDate(hour: 10, minute: 30), end: self.makeDate(hour: 11, minute: 0))
+        ]
+
+        let slots = CalendarFindSlotsTool.findSlots(
+            rangeStart: rangeStart,
+            rangeEnd: rangeEnd,
+            duration: duration,
+            maxResults: 2,
+            busyIntervals: busy
+        )
+
+        XCTAssertEqual(slots.count, 2)
+        XCTAssertEqual(slots[0].start, rangeStart)
+        XCTAssertEqual(slots[1].start, self.makeDate(hour: 10, minute: 0))
+    }
+
+    func test_findSlotsTool_findSlots_includesFinalGap() {
+        let rangeStart = self.makeDate(hour: 9, minute: 0)
+        let rangeEnd = self.makeDate(hour: 11, minute: 0)
+        let duration: TimeInterval = 20 * 60
+        let busy = [
+            (start: self.makeDate(hour: 9, minute: 0), end: self.makeDate(hour: 10, minute: 30))
+        ]
+
+        let slots = CalendarFindSlotsTool.findSlots(
+            rangeStart: rangeStart,
+            rangeEnd: rangeEnd,
+            duration: duration,
+            maxResults: 5,
+            busyIntervals: busy
+        )
+
+        XCTAssertEqual(slots.count, 1)
+        XCTAssertEqual(slots[0].start, self.makeDate(hour: 10, minute: 30))
+    }
+
+    func test_findSlotsTool_summary_messages() {
+        let durationMinutes = 30.0
+        XCTAssertEqual(CalendarFindSlotsTool.summary(for: [], durationMinutes: durationMinutes),
+                       "No available slots found for 30 minutes.")
+
+        let singleSlot = [(start: self.makeDate(hour: 9, minute: 0), end: self.makeDate(hour: 9, minute: 30))]
+        let singleSummary = CalendarFindSlotsTool.summary(for: singleSlot, durationMinutes: durationMinutes)
+        XCTAssertTrue(singleSummary.hasPrefix("Found 1 available slot at "))
+
+        let twoSlots = [
+            (start: self.makeDate(hour: 9, minute: 0), end: self.makeDate(hour: 9, minute: 30)),
+            (start: self.makeDate(hour: 10, minute: 0), end: self.makeDate(hour: 10, minute: 30))
+        ]
+        XCTAssertEqual(CalendarFindSlotsTool.summary(for: twoSlots, durationMinutes: durationMinutes),
+                       "Found 2 available slots.")
+    }
+
+    func test_findSlotsTool_slotData_formatsDates() {
+        let slots = [(start: self.makeDate(hour: 9, minute: 0), end: self.makeDate(hour: 9, minute: 30))]
+        let data = CalendarFindSlotsTool.slotData(for: slots)
+
+        XCTAssertEqual(data.count, 1)
+        guard case .object(let payload) = data[0] else {
+            XCTFail("Expected object payload")
+            return
+        }
+        XCTAssertNotNil(payload["start"]?.stringValue)
+        XCTAssertNotNil(payload["end"]?.stringValue)
+    }
+
+    func test_createEventTool_summary_usesFormatter() {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+
+        let date = self.makeDate(hour: 9, minute: 0)
+        let expectedDate = formatter.string(from: date)
+        let summary = CalendarCreateEventTool.summary(title: "Standup", start: date, formatter: formatter)
+        XCTAssertEqual(summary, "Created 'Standup' on \(expectedDate).")
+    }
+
+    func test_createEventTool_summaryFormatter_styles() {
+        let formatter = CalendarCreateEventTool.summaryFormatter()
+        XCTAssertEqual(formatter.dateStyle, .medium)
+        XCTAssertEqual(formatter.timeStyle, .short)
+    }
     
     // MARK: - EventStoreProvider Tests
     
@@ -382,6 +473,15 @@ final class CalendarToolsTests: XCTestCase {
     func test_parseDate_emptyString() {
         let date = EventStoreProvider.parseDate("")
         XCTAssertNil(date)
+    }
+
+    func test_eventStoreProvider_authorizationAction_mapping() {
+        XCTAssertEqual(EventStoreProvider.authorizationAction(for: .authorized), .authorized)
+        XCTAssertEqual(EventStoreProvider.authorizationAction(for: .fullAccess), .authorized)
+        XCTAssertEqual(EventStoreProvider.authorizationAction(for: .notDetermined), .requestAccess)
+        XCTAssertEqual(EventStoreProvider.authorizationAction(for: .denied), .denied)
+        XCTAssertEqual(EventStoreProvider.authorizationAction(for: .writeOnly), .denied)
+        XCTAssertEqual(EventStoreProvider.authorizationAction(for: .restricted), .denied)
     }
     
     func test_formatDate_roundTrip() {
@@ -458,5 +558,22 @@ final class CalendarToolsTests: XCTestCase {
         XCTAssertTrue(names.contains("calendar.create_event"))
         XCTAssertTrue(names.contains("calendar.edit_event"))
         XCTAssertTrue(names.contains("calendar.delete_event"))
+    }
+
+    private func makeDate(
+        year: Int = 2026,
+        month: Int = 1,
+        day: Int = 15,
+        hour: Int,
+        minute: Int
+    ) -> Date {
+        var components = DateComponents()
+        components.year = year
+        components.month = month
+        components.day = day
+        components.hour = hour
+        components.minute = minute
+        components.timeZone = TimeZone(secondsFromGMT: 0)
+        return Calendar(identifier: .gregorian).date(from: components)!
     }
 }

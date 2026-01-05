@@ -13,10 +13,15 @@
 ## Active Branches
 
 - `test/m01-coverage-setup-preferences-v2` (Setup + Preferences coverage)
+- `test/m01-coverage-worktree` (Overlay view coverage helpers + tests)
 
 ## Progress Updates
 
 - 2026-01-05: Added Setup/Preferences view coverage and helper extraction; `Ora.app` coverage now 68.71% (9477/13793) from `agent-tools/test-results-coverage-2.xcresult`.
+- 2026-01-05: Added Overlay view helper coverage and new `OverlayViewsTests`; `Ora.app` coverage now 68.81% (9513/13826) from `agent-tools/test-results-coverage-6.xcresult`.
+- 2026-01-05: Added calendar slot helper coverage, EventKit mapping tests, and LLM type tests; `Ora.app` coverage now 69.40% (9619/13860) from `agent-tools/test-results-coverage-7.xcresult`.
+- 2026-01-05: Added AuditLogger/LLMOutput/SimplePipeline/FluidAudio strategy tests; `Ora.app` coverage now 72.78% (10069/13834) from `agent-tools/test-results-coverage-9.xcresult`.
+- 2026-01-05: Attempted full suite coverage run; `xcodebuild test` timed out waiting on microphone permission during `TranscriptCoordinatorTests`, so `agent-tools/test-results-coverage-10b.xcresult` and `agent-tools/test-results-coverage-10c.xcresult` are incomplete.
 
 ## 1. Objective
 
@@ -97,6 +102,12 @@ As a maintainer, I want higher automated coverage of core UI and orchestration l
 
 - [x] `xcodebuild test -project Ora.xcodeproj -scheme Ora -enableCodeCoverage YES -resultBundlePath agent-tools/test-results-coverage-2.xcresult`
 - [x] `xcrun xccov view --report --only-targets agent-tools/test-results-coverage-2.xcresult`
+- [x] `xcodebuild test -project Ora.xcodeproj -scheme Ora -enableCodeCoverage YES -resultBundlePath agent-tools/test-results-coverage-6.xcresult`
+- [x] `xcrun xccov view --report --only-targets agent-tools/test-results-coverage-6.xcresult`
+- [x] `xcodebuild test -project Ora.xcodeproj -scheme Ora -enableCodeCoverage YES -resultBundlePath agent-tools/test-results-coverage-7.xcresult`
+- [x] `xcrun xccov view --report --only-targets agent-tools/test-results-coverage-7.xcresult`
+- [x] `xcodebuild test -project Ora.xcodeproj -scheme Ora -enableCodeCoverage YES -resultBundlePath agent-tools/test-results-coverage-9.xcresult`
+- [x] `xcrun xccov view --report --only-targets agent-tools/test-results-coverage-9.xcresult`
 
 ### Manual Tests
 

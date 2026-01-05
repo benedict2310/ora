@@ -112,21 +112,7 @@ actor AuditLogger {
     func exportTo(url: URL) {
         let entries = fetchEntries(limit: 10000)
 
-        let exportEntries = entries.map { entry -> [String: Any] in
-            var dict: [String: Any] = [
-                "id": entry.id.uuidString,
-                "timestamp": ISO8601DateFormatter().string(from: entry.timestamp),
-                "category": entry.category.rawValue,
-                "summary": entry.summary,
-                "success": entry.success,
-                "userConfirmed": entry.userConfirmed
-            ]
-            if let toolName = entry.toolName { dict["toolName"] = toolName }
-            if let result = entry.result { dict["result"] = result }
-            if let error = entry.errorMessage { dict["error"] = error }
-            if let sessionID = entry.sessionID { dict["sessionID"] = sessionID.uuidString }
-            return dict
-        }
+        let exportEntries = Self.exportEntries(from: entries)
 
         do {
             let data = try JSONSerialization.data(withJSONObject: exportEntries, options: [.prettyPrinted, .sortedKeys])
@@ -135,5 +121,25 @@ actor AuditLogger {
         } catch {
             self.logger.error("Failed to export audit log: \(error.localizedDescription)")
         }
+    }
+
+    static func exportEntries(from entries: [AuditLogEntry]) -> [[String: Any]] {
+        entries.map { exportEntry(for: $0) }
+    }
+
+    static func exportEntry(for entry: AuditLogEntry) -> [String: Any] {
+        var dict: [String: Any] = [
+            "id": entry.id.uuidString,
+            "timestamp": ISO8601DateFormatter().string(from: entry.timestamp),
+            "category": entry.category.rawValue,
+            "summary": entry.summary,
+            "success": entry.success,
+            "userConfirmed": entry.userConfirmed
+        ]
+        if let toolName = entry.toolName { dict["toolName"] = toolName }
+        if let result = entry.result { dict["result"] = result }
+        if let error = entry.errorMessage { dict["error"] = error }
+        if let sessionID = entry.sessionID { dict["sessionID"] = sessionID.uuidString }
+        return dict
     }
 }

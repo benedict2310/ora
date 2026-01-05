@@ -597,3 +597,17 @@ final class PermissionHelperTests: XCTestCase {
         XCTAssertEqual(requestResult, status)
     }
 }
+
+// MARK: - EventKit Permission Mapping Tests
+
+final class EventKitPermissionMappingTests: XCTestCase {
+
+    func test_eventKitPermission_mapsAuthorizationStatuses() {
+        XCTAssertEqual(EventKitPermission.permissionStatus(for: .notDetermined), .notDetermined)
+        XCTAssertEqual(EventKitPermission.permissionStatus(for: .authorized), .authorized)
+        XCTAssertEqual(EventKitPermission.permissionStatus(for: .fullAccess), .authorized)
+        XCTAssertEqual(EventKitPermission.permissionStatus(for: .writeOnly), .denied)
+        XCTAssertEqual(EventKitPermission.permissionStatus(for: .denied), .denied)
+        XCTAssertEqual(EventKitPermission.permissionStatus(for: .restricted), .restricted)
+    }
+}
