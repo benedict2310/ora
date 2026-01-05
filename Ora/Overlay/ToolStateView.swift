@@ -18,52 +18,7 @@ struct ToolStateView: View {
         case create
         case edit
         case complete
-        case fallback
-
-        var iconName: String {
-            switch self {
-            case .delete:
-                return "trash.fill"
-            case .create:
-                return "plus.circle.fill"
-            case .edit:
-                return "pencil.circle.fill"
-            case .complete:
-                return "checkmark.circle.fill"
-            case .fallback:
-                return "questionmark.circle.fill"
-            }
-        }
-
-        var title: String {
-            switch self {
-            case .delete:
-                return "Confirm Delete"
-            case .create:
-                return "Confirm Create"
-            case .edit:
-                return "Confirm Edit"
-            case .complete:
-                return "Confirm Complete"
-            case .fallback:
-                return "Confirm Action"
-            }
-        }
-
-        var color: Color {
-            switch self {
-            case .delete:
-                return .red
-            case .create:
-                return .green
-            case .edit:
-                return .orange
-            case .complete:
-                return .green
-            case .fallback:
-                return .blue
-            }
-        }
+        case unknown
     }
 
     let mode: Mode
@@ -182,19 +137,64 @@ struct ToolStateView: View {
         } else if toolName.contains("complete") {
             return .complete
         } else {
-            return .fallback
+            return .unknown
         }
     }
 
     static func iconForTool(_ toolName: String) -> String {
-        Self.style(for: toolName).iconName
+        Self.icon(for: Self.style(for: toolName))
     }
 
     static func colorForTool(_ toolName: String) -> Color {
-        Self.style(for: toolName).color
+        Self.color(for: Self.style(for: toolName))
     }
 
     static func titleForTool(_ toolName: String) -> String {
-        Self.style(for: toolName).title
+        Self.title(for: Self.style(for: toolName))
+    }
+
+    static func icon(for style: ToolStyle) -> String {
+        switch style {
+        case .delete:
+            return "trash.fill"
+        case .create:
+            return "plus.circle.fill"
+        case .edit:
+            return "pencil.circle.fill"
+        case .complete:
+            return "checkmark.circle.fill"
+        case .unknown:
+            return "questionmark.circle.fill"
+        }
+    }
+
+    static func color(for style: ToolStyle) -> Color {
+        switch style {
+        case .delete:
+            return .red
+        case .create:
+            return .green
+        case .edit:
+            return .orange
+        case .complete:
+            return .green
+        case .unknown:
+            return .blue
+        }
+    }
+
+    static func title(for style: ToolStyle) -> String {
+        switch style {
+        case .delete:
+            return "Confirm Delete"
+        case .create:
+            return "Confirm Create"
+        case .edit:
+            return "Confirm Edit"
+        case .complete:
+            return "Confirm Complete"
+        case .unknown:
+            return "Confirm Action"
+        }
     }
 }

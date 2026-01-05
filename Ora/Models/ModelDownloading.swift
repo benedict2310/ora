@@ -141,9 +141,9 @@ final class DefaultModelDownloader: ModelDownloader, @unchecked Sendable {
         let fm = FileManager.default
         guard fm.fileExists(atPath: directory.path) else { return false }
 
-        let expectedSizes = model.expectedFileSizes
-        
         // Check ALL required files to ensure model is complete
+        // Use minimum reasonable sizes rather than exact expected sizes
+        // (exact verification happens in verify() which fetches from API)
         for file in model.requiredFiles {
             let path = directory.appendingPathComponent(file)
             if file.hasSuffix(".mlmodelc") {
@@ -156,24 +156,42 @@ final class DefaultModelDownloader: ModelDownloader, @unchecked Sendable {
                     return false
                 }
                 
-                // Check file size if we have an expected size
-                if let expectedSize = expectedSizes[file] {
-                    do {
-                        let attrs = try fm.attributesOfItem(atPath: path.path)
-                        let actualSize = attrs[.size] as? Int64 ?? 0
-                        let minimumSize = Int64(Double(expectedSize) * ModelIdentifier.minimumFileSizeThreshold)
-                        if actualSize < minimumSize {
-                            // File is too small - treat as not existing (corrupted)
-                            return false
-                        }
-                    } catch {
+                // Check file has minimum reasonable size (not truncated/empty)
+                do {
+                    let attrs = try fm.attributesOfItem(atPath: path.path)
+                    let actualSize = attrs[.size] as? Int64 ?? 0
+                    let minimumSize = self.minimumReasonableSize(for: file)
+                    if actualSize < minimumSize {
+                        // File is too small - likely corrupted or incomplete
                         return false
                     }
+                } catch {
+                    return false
                 }
             }
         }
 
         return true
+    }
+    
+    /// Minimum reasonable size for a file type (quick sanity check)
+    private func minimumReasonableSize(for file: String) -> Int64 {
+        // Voice embedding files are small (~500KB)
+        if file.contains("voices/") && file.hasSuffix(".safetensors") {
+            return 100_000  // 100KB minimum for voice files
+        } else if file.hasSuffix(".safetensors") {
+            // Model weights should be at least 10MB
+            return 10_000_000
+        } else if file.hasSuffix(".json") {
+            // JSON files should be at least 100 bytes
+            return 100
+        } else if file.hasSuffix(".jinja") {
+            // Template files should be at least 100 bytes
+            return 100
+        } else {
+            // Other files - at least 10 bytes
+            return 10
+        }
     }
 
     // MARK: - Private

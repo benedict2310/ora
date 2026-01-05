@@ -313,7 +313,7 @@ final class HuggingFaceDownloaderTests: XCTestCase {
 
         // Create directory with all required files for parakeetTDT
         // parakeetTDT has no expectedFileSizes (FluidAudio handles its own verification)
-        // so it only checks for file/directory existence
+        // so it only checks for file/directory existence and minimum reasonable size
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         
         // Create the .mlmodelc directories and vocab file that parakeetTDT requires
@@ -325,8 +325,9 @@ final class HuggingFaceDownloaderTests: XCTestCase {
                     withIntermediateDirectories: true
                 )
             } else {
-                // Create as file
-                try Data("test".utf8).write(to: tempDir.appendingPathComponent(file))
+                // Create as file with minimum reasonable size (>100 bytes for JSON)
+                let content = String(repeating: "x", count: 200)
+                try Data(content.utf8).write(to: tempDir.appendingPathComponent(file))
             }
         }
 
