@@ -155,25 +155,34 @@ struct ChatBubbleView: View {
     }
 
     private var accessibilityLabel: String {
-        let roleLabel: String
-        switch self.role {
-        case .user:
-            roleLabel = "You said"
-        case .assistant:
-            roleLabel = "Ora said"
-        case .tool:
-            roleLabel = "Ora tool"
-        }
-
-        if let text = self.text, !text.isEmpty {
-            return "\(roleLabel): \(text)"
-        }
-
-        return roleLabel
+        Self.accessibilityLabel(for: self.role, text: self.text)
     }
 
     private var accessibilityHint: String {
-        self.isPartial ? "Partial transcription" : ""
+        Self.accessibilityHint(isPartial: self.isPartial)
+    }
+
+    static func accessibilityLabel(for role: Role, text: String?) -> String {
+        let roleLabel = Self.roleLabel(for: role)
+        if let text = text, !text.isEmpty {
+            return "\(roleLabel): \(text)"
+        }
+        return roleLabel
+    }
+
+    static func accessibilityHint(isPartial: Bool) -> String {
+        isPartial ? "Partial transcription" : ""
+    }
+
+    static func roleLabel(for role: Role) -> String {
+        switch role {
+        case .user:
+            return "You said"
+        case .assistant:
+            return "Ora said"
+        case .tool:
+            return "Ora tool"
+        }
     }
 }
 
