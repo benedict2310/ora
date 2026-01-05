@@ -28,12 +28,14 @@ The Foundations epic creates a working macOS menu bar application with:
 | **F.09** | [Model Download Implementation](F.09-MODEL-DOWNLOAD-IMPLEMENTATION.md) | HuggingFace download with verification | F.03 |
 | **F.10** | [Liquid Glass Overlay Refresh](F.10-LIQUID-GLASS-OVERLAY-REFRESH.md) | Upgrade the Ora overlay to the new liquid-glass chat UI with voice input morphing and state-driven bubble rendering. | F.07 |
 | **F.11** | [Setup Wizard Polish](F.11-SETUP-WIZARD-POLISH.md) | Fix broken-feeling download UI, add progress/feedback | F.04, F.09 |
+| **F.12** | [Overlay Focus Recovery](F.12-OVERLAY-FOCUS-RECOVERY.md) | Dismiss overlay on click-away and restore after permission prompts | F.07, F.02 |
 
 ## Bug Fixes
 
 | ID | Title | Description | Status |
 |:---|:------|:------------|:-------|
 | **BUG.01** | [Model Download Verification](BUG.01-MODEL-DOWNLOAD-VERIFICATION.md) | File size verification to prevent corrupted/truncated model downloads | ✅ Fixed |
+| **BUG.02** | [Liquid Glass Black Outline](BUG.02-LIQUID-GLASS-BLACK-OUTLINE.md) | Fix black outline artifacts in glass UI components | ✅ Fixed |
 
 ## Dependency Graph
 
