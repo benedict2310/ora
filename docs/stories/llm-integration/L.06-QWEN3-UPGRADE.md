@@ -1,7 +1,7 @@
 # L.06 - Qwen 3 Upgrade (Qwen Free)
 
 **Epic:** LLM Integration  
-**Status:** In Progress  
+**Status:** Complete  
 **Priority:** P0 (Critical Path)  
 **Estimated Effort:** 2–3 days  
 **Dependencies:** L.01, F.03, F.09  
@@ -390,5 +390,9 @@ None.
 
 ## Completion Status
 
-(TBD after merge.)
+- [x] Implementation complete
+- [x] Code review passed (1 iteration)
+- [x] PR merged: https://github.com/benedict2310/ora/pull/37
+- [x] Merged to main: 4b6ccd9
+- [x] Date: 2026-01-05
 
