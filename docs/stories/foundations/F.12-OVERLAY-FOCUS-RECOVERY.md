@@ -1,7 +1,7 @@
 # F.12 - Overlay Focus Recovery
 
 **Epic:** Foundations
-**Status:** Not Started
+**Status:** In Review
 **Priority:** P1 (High)
 **Estimated Effort:** 1 day
 **Dependencies:** F.07, F.02
@@ -101,8 +101,8 @@ As a user, I want the assistant overlay to close when I click elsewhere and retu
 ## Implementation Summary
 
 **Date:** 2026-01-05
-**Branch:** Not created (dirty worktree)
-**Commits:** 0
+**Branch:** `feat/f12-overlay-focus-recovery-clean`
+**Commits:** 2
 
 ### Files Changed
 - `Ora/Overlay/OverlayWindowController.swift` - Handle app deactivation and prompt restoration; add test hook.
@@ -115,8 +115,8 @@ As a user, I want the assistant overlay to close when I click elsewhere and retu
 
 ### Ready for Review
 - [x] All acceptance criteria verified
-- [ ] Tests passing (full suite failed: `AudioServiceTests/test_start_requires_microphone_permission`, `HuggingFaceDownloaderTests/test_huggingFaceStrategy_downloadsTTSModel`, `SystemPromptBuilderTests/test_encodeToolSchemas_toolWithParamsAndConfirmation`, `SystemPromptBuilderTests/test_resolveVariables_replacesToolsWithDefinitions`)
-- [ ] Working tree clean
+- [ ] Tests passing (relevant tests passed; full suite still fails on main due to `SystemPromptBuilderTests`, addressed in `fix/test-regressions`)
+- [x] Working tree clean
 
 ## Code Review Findings
 
@@ -139,10 +139,41 @@ As a user, I want the assistant overlay to close when I click elsewhere and retu
 - [ ] None.
 
 #### P2 - Minor (Can defer)
-- [ ] `docs/stories/foundations/F.12-OVERLAY-FOCUS-RECOVERY.md` - The diff contains mixed concerns (F.12 and BUG.02). The changes to `ChatBubbleView.swift` and `ToolStateView.swift` along with `BUG.02-LIQUID-GLASS-BLACK-OUTLINE.md` are included in this changeset. While benign, they should ideally be in a separate PR.
+- [x] `docs/stories/foundations/F.12-OVERLAY-FOCUS-RECOVERY.md` - The diff contains mixed concerns (F.12 and BUG.02). The changes to `ChatBubbleView.swift` and `ToolStateView.swift` along with `BUG.02-LIQUID-GLASS-BLACK-OUTLINE.md` are included in this changeset. While benign, they should ideally be in a separate PR. (Resolved by isolating F.12 on a clean branch.)
 
 ### Future Considerations (Out of Scope)
 - `ChatBubbleView.swift`, `ToolStateView.swift`: Visual changes for "Liquid Glass Black Outline" (BUG.02) are present.
+- `SystemPromptBuilderTests`: Existing failures related to tool confirmation schemas need attention in a separate task.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
+
+### Iteration 2
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-01-05T11:08:00Z
+**Commit reviewed:** 596da7d
+**Iteration:** 2
+
+### Summary
+- Files reviewed: 7
+- Build status: Pass
+- Tests status: Fail (Unrelated failures in SystemPromptBuilderTests)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [x] None.
+
+#### P1 - Major (Should fix)
+- [x] None.
+
+#### P2 - Minor (Can defer)
+- [x] None.
+
+### Future Considerations (Out of Scope)
 - `SystemPromptBuilderTests`: Existing failures related to tool confirmation schemas need attention in a separate task.
 
 ### Approval Status
