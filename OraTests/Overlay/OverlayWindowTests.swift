@@ -106,6 +106,25 @@ final class OverlayWindowTests: XCTestCase {
         controller.hide(animated: false)
     }
 
+    func test_appDeactivation_cancelsWhenNoPromptActive() async {
+        let controller = OverlayWindowController.shared
+        let originalCancelHandler = controller.cancelHandler
+        let expectation = XCTestExpectation(description: "Cancel handler called")
+
+        controller.show()
+        controller.cancelHandler = {
+            expectation.fulfill()
+        }
+
+        PermissionPromptTracker.shared.endPrompt(for: .microphone)
+        NotificationCenter.default.post(name: NSApplication.didResignActiveNotification, object: nil)
+
+        await fulfillment(of: [expectation], timeout: 1.0)
+
+        controller.cancelHandler = originalCancelHandler
+        controller.hide(animated: false)
+    }
+
     private func extractPanel() -> NSPanel? {
         let mirror = Mirror(reflecting: OverlayWindowController.shared)
         return mirror.children.first(where: { $0.label == "panel" })?.value as? NSPanel

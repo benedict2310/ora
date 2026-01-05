@@ -120,6 +120,25 @@ final class PermissionStatusTests: XCTestCase {
     }
 }
 
+// MARK: - Permission Prompt Tracker Tests
+
+@MainActor
+final class PermissionPromptTrackerTests: XCTestCase {
+
+    func test_promptTracker_beginEndTogglesState() {
+        let tracker = PermissionPromptTracker.shared
+
+        tracker.endPrompt(for: .microphone)
+        XCTAssertFalse(tracker.isPromptActive)
+
+        tracker.beginPrompt(for: .microphone)
+        XCTAssertTrue(tracker.isPromptActive)
+
+        tracker.endPrompt(for: .microphone)
+        XCTAssertFalse(tracker.isPromptActive)
+    }
+}
+
 // MARK: - Permissions State Tests
 
 final class PermissionsStateTests: XCTestCase {
@@ -465,6 +484,33 @@ final class PermissionsManagerMockedTests: XCTestCase {
 
         await fulfillment(of: [expectation], timeout: 1.0)
         NotificationCenter.default.removeObserver(observer)
+    }
+
+    func test_request_postsPromptCompletionNotification() async {
+        mockClient.statuses[.microphone] = .notDetermined
+        mockClient.requestResults[.microphone] = .authorized
+
+        await MainActor.run {
+            PermissionPromptTracker.shared.endPrompt(for: .microphone)
+        }
+
+        let expectation = XCTestExpectation(description: "Prompt completion notification posted")
+
+        let observer = NotificationCenter.default.addObserver(
+            forName: .permissionPromptDidEnd,
+            object: nil,
+            queue: .main
+        ) { _ in
+            expectation.fulfill()
+        }
+
+        _ = await manager.request(.microphone)
+
+        await fulfillment(of: [expectation], timeout: 1.0)
+        NotificationCenter.default.removeObserver(observer)
+
+        let isPromptActive = await MainActor.run { PermissionPromptTracker.shared.isPromptActive }
+        XCTAssertFalse(isPromptActive)
     }
 }
 

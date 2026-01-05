@@ -70,10 +70,19 @@ actor PermissionsManager {
     func request(_ type: PermissionType) async -> PermissionStatus {
         logger.info("Requesting permission: \(type.rawValue)")
 
+        let shouldTrackPrompt = client.checkStatus(for: type) == .notDetermined
+        if shouldTrackPrompt {
+            await PermissionPromptTracker.shared.beginPrompt(for: type)
+        }
+
         let status = await client.request(type)
         _state[type] = status
 
         await postStateChange()
+
+        if shouldTrackPrompt {
+            await PermissionPromptTracker.shared.endPrompt(for: type)
+        }
         return status
     }
 
