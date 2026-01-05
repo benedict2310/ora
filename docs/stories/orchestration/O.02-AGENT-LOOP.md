@@ -1,7 +1,7 @@
 # O.02 - Agent Loop
 
 **Epic:** Orchestration
-**Status:** Complete
+**Status:** Open
 **Priority:** P0 (Critical Path)
 **Estimated Effort:** 2-3 days
 **Dependencies:** L.01 (LLM), L.02 (Structured Output), X.01 (Tool Protocol), O.01 (ASR-LLM Pipeline)
@@ -163,3 +163,4 @@ See the actual implementation in the source file for the complete code.
 - [x] PR merged: https://github.com/benedict2310/ora/pull/27
 - [x] Merged to main: a7ebf9c
 - [x] Date: 2026-01-02
+- Reopened: 2026-01-05 (stale branch review; see `docs/reports/branch-merge-status-2026-01-05.md`)
