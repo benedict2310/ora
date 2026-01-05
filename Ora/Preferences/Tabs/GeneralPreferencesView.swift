@@ -14,6 +14,7 @@ struct GeneralPreferencesView: View {
 
     @State private var hotkeyConfig = HotkeyConfiguration.load()
     @State private var voiceOutputEnabled = true
+    @State private var conversationModeEnabled = true
     @State private var selectedCalendarID: String = ""
     @State private var calendars: [EKCalendar] = []
 
@@ -52,6 +53,25 @@ struct GeneralPreferencesView: View {
                 .toggleStyle(.switch)
                 .onChange(of: voiceOutputEnabled) { _, newValue in
                     UserDefaults.standard.set(newValue, forKey: "com.ora.voiceOutputEnabled")
+                }
+            }
+
+            // Conversation Mode Section (AC-5)
+            Section {
+                Toggle(isOn: $conversationModeEnabled) {
+                    VStack(alignment: .leading) {
+                        Text("Conversation Mode")
+                            .font(.headline)
+                        Text("Auto-submit after silence, continue listening after response")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .toggleStyle(.switch)
+                .onChange(of: conversationModeEnabled) { _, newValue in
+                    PersistenceManager.shared.updateSettings { settings in
+                        settings.conversationModeEnabled = newValue
+                    }
                 }
             }
 
@@ -109,6 +129,9 @@ struct GeneralPreferencesView: View {
         } else {
             voiceOutputEnabled = UserDefaults.standard.bool(forKey: "com.ora.voiceOutputEnabled")
         }
+
+        // Conversation mode from SwiftData settings (AC-6: default true)
+        conversationModeEnabled = PersistenceManager.shared.settings.conversationModeEnabled
 
         selectedCalendarID = UserDefaults.standard.string(forKey: "com.ora.defaultCalendarID") ?? ""
     }

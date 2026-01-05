@@ -171,9 +171,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(NSMenuItem(title: "Preferences...", action: #selector(self.preferencesClicked), keyEquivalent: ","))
         menu.addItem(NSMenuItem.separator())
         
-        let autoListenItem = NSMenuItem(title: "Auto-Listen After Response", action: #selector(self.autoListenClicked), keyEquivalent: "")
-        autoListenItem.state = self.isAutoListenEnabled ? .on : .off
-        menu.addItem(autoListenItem)
+        let conversationModeItem = NSMenuItem(title: "Conversation Mode", action: #selector(self.conversationModeClicked), keyEquivalent: "")
+        conversationModeItem.state = self.isConversationModeEnabled ? .on : .off
+        menu.addItem(conversationModeItem)
         
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit Ora", action: #selector(self.quitClicked), keyEquivalent: "q"))
@@ -220,9 +220,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         self.showPreferences()
     }
     
-    @objc private func autoListenClicked(_ sender: NSMenuItem) {
-        let newState = !self.isAutoListenEnabled
-        self.setAutoListenEnabled(newState)
+    @objc private func conversationModeClicked(_ sender: NSMenuItem) {
+        let newState = !self.isConversationModeEnabled
+        self.setConversationModeEnabled(newState)
         sender.state = newState ? .on : .off
     }
 
@@ -234,20 +234,20 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     // MARK: - Menu Delegate
     
     func menuNeedsUpdate(_ menu: NSMenu) {
-        if let item = menu.items.first(where: { $0.title == "Auto-Listen After Response" }) {
-            item.state = self.isAutoListenEnabled ? .on : .off
+        if let item = menu.items.first(where: { $0.title == "Conversation Mode" }) {
+            item.state = self.isConversationModeEnabled ? .on : .off
         }
     }
     
     // MARK: - Private Helpers
     
-    private var isAutoListenEnabled: Bool {
-        return PersistenceManager.shared.settings.autoListenEnabled
+    private var isConversationModeEnabled: Bool {
+        return PersistenceManager.shared.settings.conversationModeEnabled
     }
-    
-    private func setAutoListenEnabled(_ enabled: Bool) {
+
+    private func setConversationModeEnabled(_ enabled: Bool) {
         PersistenceManager.shared.updateSettings { settings in
-            settings.autoListenEnabled = enabled
+            settings.conversationModeEnabled = enabled
         }
     }
 }
