@@ -117,7 +117,15 @@ struct SetupNavigationView: View {
     }
 
     private var nextButtonTitle: String {
-        switch self.coordinator.state.currentStep {
+        Self.nextButtonTitle(for: self.coordinator.state.currentStep)
+    }
+
+    private var canProceed: Bool {
+        Self.canProceed(for: self.coordinator.state)
+    }
+
+    static func nextButtonTitle(for step: SetupStep) -> String {
+        switch step {
         case .welcome: return "Get Started"
         case .permissions: return "Continue"
         case .download: return "Continue"
@@ -125,14 +133,14 @@ struct SetupNavigationView: View {
         }
     }
 
-    private var canProceed: Bool {
-        switch self.coordinator.state.currentStep {
+    static func canProceed(for state: SetupState) -> Bool {
+        switch state.currentStep {
         case .welcome:
             return true
         case .permissions:
-            return self.coordinator.state.permissionsGranted
+            return state.permissionsGranted
         case .download:
-            return self.coordinator.state.downloadProgress >= 1.0 && self.coordinator.state.downloadError == nil
+            return state.downloadProgress >= 1.0 && state.downloadError == nil
         case .ready:
             return true
         }

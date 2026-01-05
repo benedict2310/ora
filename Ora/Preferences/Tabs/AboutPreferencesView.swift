@@ -188,7 +188,11 @@ struct AuditLogView: View {
     // MARK: - Computed Properties
 
     private var filteredEntries: [AuditLogEntry] {
-        switch selectedFilter {
+        Self.filteredEntries(entries, filter: selectedFilter)
+    }
+
+    static func filteredEntries(_ entries: [AuditLogEntry], filter: AuditFilter) -> [AuditLogEntry] {
+        switch filter {
         case .all:
             return entries
         case .tools:
@@ -232,9 +236,13 @@ struct AuditLogView: View {
     }
 
     private func formattedDate() -> String {
+        Self.formattedDate(for: Date())
+    }
+
+    static func formattedDate(for date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: Date())
+        return formatter.string(from: date)
     }
 }
 
@@ -373,12 +381,20 @@ struct AuditLogEntryRow: View {
     }
 
     private var formattedTime: String {
+        Self.formattedTime(for: entry.timestamp)
+    }
+
+    static func formattedTime(for date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss"
-        return formatter.string(from: entry.timestamp)
+        return formatter.string(from: date)
     }
 
     private func formatJSON(_ dict: [String: Any]) -> String {
+        Self.formatJSON(dict)
+    }
+
+    static func formatJSON(_ dict: [String: Any]) -> String {
         guard let data = try? JSONSerialization.data(withJSONObject: dict, options: .prettyPrinted),
               let string = String(data: data, encoding: .utf8) else {
             return String(describing: dict)
