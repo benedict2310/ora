@@ -12,5 +12,5 @@
 
 ## Follow-Ups
 
-- Close out F.10 story status on `main` (tracked in `docs/f10-closeout`).
-- After review, delete the stale local branches and remove their remote counterparts if desired.
+- Reopened F.10 and O.02 stories for audit follow-up after confirming branch staleness.
+- Deleted the stale local branches (`feat/f10-liquid-glass-overlay`, `feat/O.02-agent-loop`); remove remotes if desired.
