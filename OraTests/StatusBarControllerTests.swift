@@ -228,4 +228,97 @@ final class StatusBarControllerTests: XCTestCase {
 
         XCTAssertTrue(controller.menuItemTitles.isEmpty, "Menu should be empty after shutdown")
     }
+
+    // MARK: - Conversation Mode Tests
+
+    func test_conversationModeMenuItemState_reflectsSetting() {
+        let controller = StatusBarController()
+
+        // Get initial state from persistence
+        let initialEnabled = PersistenceManager.shared.settings.conversationModeEnabled
+        let expectedState: NSControl.StateValue = initialEnabled ? .on : .off
+
+        XCTAssertEqual(controller.conversationModeMenuItemState, expectedState)
+
+        controller.shutdown()
+    }
+
+    func test_simulateConversationModeToggle_togglesSetting() {
+        let controller = StatusBarController()
+
+        // Get initial state
+        let initialEnabled = PersistenceManager.shared.settings.conversationModeEnabled
+
+        // Toggle
+        controller.simulateConversationModeToggle()
+
+        // Verify setting changed
+        let newEnabled = PersistenceManager.shared.settings.conversationModeEnabled
+        XCTAssertNotEqual(initialEnabled, newEnabled, "Setting should toggle")
+
+        // Verify menu item state updated
+        let expectedState: NSControl.StateValue = newEnabled ? .on : .off
+        XCTAssertEqual(controller.conversationModeMenuItemState, expectedState)
+
+        // Toggle back to restore original state
+        controller.simulateConversationModeToggle()
+        XCTAssertEqual(PersistenceManager.shared.settings.conversationModeEnabled, initialEnabled)
+
+        controller.shutdown()
+    }
+
+    func test_simulateConversationModeToggle_multipleTimes_alternatesState() {
+        let controller = StatusBarController()
+
+        let initial = PersistenceManager.shared.settings.conversationModeEnabled
+
+        controller.simulateConversationModeToggle()
+        XCTAssertEqual(PersistenceManager.shared.settings.conversationModeEnabled, !initial)
+
+        controller.simulateConversationModeToggle()
+        XCTAssertEqual(PersistenceManager.shared.settings.conversationModeEnabled, initial)
+
+        controller.simulateConversationModeToggle()
+        XCTAssertEqual(PersistenceManager.shared.settings.conversationModeEnabled, !initial)
+
+        // Restore original
+        if PersistenceManager.shared.settings.conversationModeEnabled != initial {
+            controller.simulateConversationModeToggle()
+        }
+
+        controller.shutdown()
+    }
+
+    func test_triggerMenuUpdate_updatesMenuItemState() {
+        let controller = StatusBarController()
+
+        // Change the setting directly via PersistenceManager
+        let initialEnabled = PersistenceManager.shared.settings.conversationModeEnabled
+        PersistenceManager.shared.updateSettings { settings in
+            settings.conversationModeEnabled = !initialEnabled
+        }
+
+        // Trigger menu update
+        controller.triggerMenuUpdate()
+
+        // Verify menu item state matches new setting
+        let expectedState: NSControl.StateValue = !initialEnabled ? .on : .off
+        XCTAssertEqual(controller.conversationModeMenuItemState, expectedState)
+
+        // Restore original
+        PersistenceManager.shared.updateSettings { settings in
+            settings.conversationModeEnabled = initialEnabled
+        }
+
+        controller.shutdown()
+    }
+
+    func test_conversationModeMenuItemState_afterShutdown_isNil() {
+        let controller = StatusBarController()
+        XCTAssertNotNil(controller.conversationModeMenuItemState)
+
+        controller.shutdown()
+
+        XCTAssertNil(controller.conversationModeMenuItemState)
+    }
 }

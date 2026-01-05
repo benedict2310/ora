@@ -150,6 +150,25 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         return result
     }
 
+    /// Returns the state of the Conversation Mode menu item. Exposed for testing.
+    var conversationModeMenuItemState: NSControl.StateValue? {
+        return self.statusItem?.menu?.items.first(where: { $0.title == "Conversation Mode" })?.state
+    }
+
+    /// Simulates clicking the Conversation Mode menu item. Exposed for testing.
+    func simulateConversationModeToggle() {
+        guard let menuItem = self.statusItem?.menu?.items.first(where: { $0.title == "Conversation Mode" }) else {
+            return
+        }
+        self.conversationModeClicked(menuItem)
+    }
+
+    /// Triggers menu update delegate method. Exposed for testing.
+    func triggerMenuUpdate() {
+        guard let menu = self.statusItem?.menu else { return }
+        self.menuNeedsUpdate(menu)
+    }
+
     // MARK: - Private Setup
 
     private func setupStatusItem() {
