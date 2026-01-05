@@ -1,7 +1,7 @@
 # O.02 - Agent Loop
 
 **Epic:** Orchestration
-**Status:** Open
+**Status:** Complete
 **Priority:** P0 (Critical Path)
 **Estimated Effort:** 2-3 days
 **Dependencies:** L.01 (LLM), L.02 (Structured Output), X.01 (Tool Protocol), O.01 (ASR-LLM Pipeline)
@@ -79,7 +79,7 @@ See the actual implementation in the source file for the complete code.
 ## 5. Implementation Checklist
 
 - [x] Create `AgentLoop.swift` actor
-- [ ] Update SimplePipelineController or create new orchestrator to use AgentLoop (future story)
+- [x] Update SimplePipelineController or create new orchestrator to use AgentLoop - ✅ Completed in O.06 (Agent Loop Integration)
 - [x] Reintroduce `SystemPromptBuilder.build(tools:)` with registered tool schemas
 - [x] Integrate with StructuredGenerator for JSON parsing
 - [x] Integrate with ToolHost for tool execution
@@ -142,11 +142,11 @@ See the actual implementation in the source file for the complete code.
 
 #### P2 - Minor (Can defer)
 
-- [ ] `AgentLoop.swift:52` - The `maxTokensPerTurn` property is unused. Consider either implementing token counting or removing this property.
+- [x] `AgentLoop.swift:52` - The `maxTokensPerTurn` property is unused. **Accepted:** Kept as placeholder for future token budget implementation (deferred to post-v1).
 
 ### Future Considerations (Out of Scope)
 
-- Integration with SimplePipelineController is deferred to O.03 story
+- ~~Integration with SimplePipelineController is deferred to O.03 story~~ - Done in O.06
 - Pre-existing test failures in HuggingFaceDownloaderTests (network-dependent tests)
 
 ### Approval Status
@@ -164,3 +164,4 @@ See the actual implementation in the source file for the complete code.
 - [x] Merged to main: a7ebf9c
 - [x] Date: 2026-01-02
 - Reopened: 2026-01-05 (stale branch review; see `docs/reports/branch-merge-status-2026-01-05.md`)
+- Finalized: 2026-01-05 (audit confirmed implementation complete on main, all items verified)
