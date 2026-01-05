@@ -56,7 +56,9 @@ enum EventStoreProvider {
             // Request access
             logger.info("Requesting calendar access...")
             do {
+                await PermissionPromptTracker.shared.beginPrompt(for: .calendar)
                 let granted = try await shared.requestFullAccessToEvents()
+                await PermissionPromptTracker.shared.endPrompt(for: .calendar)
                 if granted {
                     logger.info("Calendar access granted")
                     return
@@ -65,6 +67,7 @@ enum EventStoreProvider {
                     throw CalendarToolError.permissionDenied
                 }
             } catch {
+                await PermissionPromptTracker.shared.endPrompt(for: .calendar)
                 logger.error("Calendar access request failed: \(error.localizedDescription)")
                 throw CalendarToolError.permissionDenied
             }

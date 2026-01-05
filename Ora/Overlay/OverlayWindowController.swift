@@ -25,6 +25,13 @@ final class OverlayWindowController {
     private let panelSize = NSSize(width: 560, height: 380)
 
     private var escapeMonitor: Any?
+    private var appDeactivationObserver: NSObjectProtocol?
+    private var permissionPromptEndObserver: NSObjectProtocol?
+
+    /// Default cancel action (override in tests)
+    var cancelHandler: (() -> Void) = {
+        SimplePipelineController.shared.cancel()
+    }
 
     /// Current overlay mode
     var mode: OverlayMode {
@@ -160,6 +167,8 @@ final class OverlayWindowController {
     // MARK: - Dismiss Monitors
 
     private func addDismissMonitors() {
+        guard self.escapeMonitor == nil else { return }
+
         // Local keyboard monitor (when our panel has focus)
         self.escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self else { return event }
@@ -195,6 +204,22 @@ final class OverlayWindowController {
             
             return event
         }
+
+        self.appDeactivationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleAppDeactivated()
+        }
+
+        self.permissionPromptEndObserver = NotificationCenter.default.addObserver(
+            forName: .permissionPromptDidEnd,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handlePermissionPromptEnded()
+        }
     }
 
     private func removeDismissMonitors() {
@@ -202,6 +227,33 @@ final class OverlayWindowController {
             NSEvent.removeMonitor(monitor)
             self.escapeMonitor = nil
         }
+
+        if let observer = self.appDeactivationObserver {
+            NotificationCenter.default.removeObserver(observer)
+            self.appDeactivationObserver = nil
+        }
+
+        if let observer = self.permissionPromptEndObserver {
+            NotificationCenter.default.removeObserver(observer)
+            self.permissionPromptEndObserver = nil
+        }
+    }
+
+    private func handleAppDeactivated() {
+        guard self.isVisible else { return }
+        guard !PermissionPromptTracker.shared.isPromptActive else {
+            self.logger.debug("App deactivated during permission prompt; keeping overlay")
+            return
+        }
+
+        self.logger.info("App deactivated; cancelling session")
+        self.cancelHandler()
+    }
+
+    private func handlePermissionPromptEnded() {
+        guard SimplePipelineController.shared.isSessionActive else { return }
+        self.logger.debug("Permission prompt ended; restoring overlay focus")
+        self.show()
     }
 }
 

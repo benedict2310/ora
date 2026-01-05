@@ -71,6 +71,16 @@ final class SimplePipelineController: ObservableObject {
         return self.fetchAutoListenSetting()
     }
 
+    /// Whether there is an active conversation session
+    var isSessionActive: Bool {
+        switch self.state {
+        case .idle, .completed:
+            return false
+        default:
+            return true
+        }
+    }
+
     // MARK: - Initialization
     
     private init(agentLoop: AgentLoop = AgentLoop()) {
