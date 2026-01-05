@@ -11,7 +11,7 @@
 **What's working:**
 - ✅ Hotkey activation (Option+Space)
 - ✅ Speech-to-text (Parakeet ASR)
-- ✅ LLM responses (Qwen 2.5 via MLX)
+- ✅ LLM responses (Qwen 3 via MLX)
 - ✅ Text-to-speech (Kokoro TTS)
 - ✅ Overlay UI with conversation display
 - ✅ Auto-listen for follow-up turns
@@ -20,7 +20,6 @@
 - ✅ Multi-step agentic flows (query → delete with confirmation)
 
 **What's next:**
-- 🚧 Upgrade to Qwen 3 (L.06)
 - 🚧 Fix setup wizard UX (F.11)
 - 🚧 Implement Reminders, Contacts, System tools (X.03-X.05)
 
@@ -72,7 +71,7 @@ Local inference using MLX Swift.
 | L.03 | [Conversation Manager](llm-integration/L.03-CONVERSATION-MANAGER.md) | ✅ Complete |
 | L.04 | [System Prompt](llm-integration/L.04-SYSTEM-PROMPT.md) | ✅ Complete |
 | L.05 | [Additional LLM Models](llm-integration/L.05-ADDITIONAL-LLM-MODELS.md) | 📋 Deferred |
-| L.06 | [Qwen 3 Upgrade](llm-integration/L.06-QWEN3-UPGRADE.md) | 🚧 To Do |
+| L.06 | [Qwen 3 Upgrade](llm-integration/L.06-QWEN3-UPGRADE.md) | ✅ Complete |
 
 ### 🗣 TTS Integration (T)
 Text-to-speech using Kokoro MLX.
@@ -151,7 +150,7 @@ AgentLoop is wired into the pipeline and calendar tools work end-to-end.
 
 | Priority | Story | Description | Status |
 |:---------|:------|:------------|:-------|
-| **P0** | **L.06** | **Qwen 3 Upgrade** - Replace Qwen 2.5 with Qwen 3 | 🚧 To Do |
+| ✅ | **L.06** | **Qwen 3 Upgrade** - Replace Qwen 2.5 with Qwen 3 | ✅ Complete |
 | P1 | F.11 | Setup Wizard Polish - Fix broken-feeling download UI | 🚧 To Do |
 | ✅ | O.07 | Conversation Mode - Silence detection, auto-submit | ✅ Complete |
 
