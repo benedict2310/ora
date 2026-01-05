@@ -1,7 +1,7 @@
 # F.11 - Setup Wizard Polish
 
 **Epic:** Foundations
-**Status:** In Progress
+**Status:** Complete
 **Priority:** P1 (High)
 **Estimated Effort:** 2-3 days
 **Dependencies:** F.04, F.09, O.07
@@ -403,3 +403,11 @@ Simple, direct, no lengthy tutorial.
 - [x] All P0 issues resolved
 - [x] All P1 issues resolved
 - [x] Ready for merge
+
+## Completion Status
+
+- [x] Implementation complete
+- [x] Code review passed (1 iteration)
+- [x] PR merged: https://github.com/benedict2310/ora/pull/49
+- [x] Merged to main: 707e96c
+- [x] Date: 2026-01-05
