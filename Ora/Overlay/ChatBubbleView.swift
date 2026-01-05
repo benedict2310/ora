@@ -94,14 +94,15 @@ struct ChatBubbleView: View {
     }
 
     private func glassStyle(for role: Role) -> Glass {
-        // Use .clear variant for nested glass to reduce black outline artifacts
+        // Use .regular variant for full background adaptivity (light/dark)
+        // Keep tint opacity low to allow system adaptation to work
         switch role {
         case .user:
-            return .clear.tint(Color(red: 0.12, green: 0.55, blue: 0.95).opacity(0.7))
+            return .regular.tint(Color(red: 0.12, green: 0.55, blue: 0.95).opacity(0.4))
         case .assistant:
-            return .clear.tint(.white.opacity(0.12))
+            return .regular.tint(.white.opacity(0.06))
         case .tool:
-            return .clear.tint(.white.opacity(0.15))
+            return .regular.tint(.white.opacity(0.08))
         }
     }
 
