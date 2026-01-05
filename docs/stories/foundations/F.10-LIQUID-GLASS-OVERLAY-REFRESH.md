@@ -1,7 +1,7 @@
 # F.10 - Liquid Glass Overlay Refresh
 
 **Epic:** Foundations
-**Status:** In Progress
+**Status:** Complete
 **Priority:** P1 (High)
 **Estimated Effort:** 3-4 days
 **Dependencies:** F.07
@@ -205,8 +205,10 @@ private func positionPanel(_ panel: NSPanel) {
 ## Implementation Summary
 
 **Date:** 2026-01-02
-**Branch:** `feat/f10-liquid-glass-overlay`
-**Commits:** 3
+**Branch:** `feat/f10-liquid-glass-overlay` (superseded)
+**Commits:** 3 (superseded)
+
+**Note:** Implementation landed via O.03 integration in PR #33 (commit `cd0ae45`), with subsequent visual fixes in BUG.02.
 
 ### Files Changed
 - `Ora/Overlay/ChatBubbleView.swift` - Added liquid-glass chat bubbles with chroma overlay and thinking/tool states.
@@ -219,7 +221,7 @@ private func positionPanel(_ panel: NSPanel) {
 
 ### Ready for Review
 - [x] All acceptance criteria verified
-- [ ] Tests passing (`xcodebuild test` failed: `AudioServiceTests.test_start_requires_microphone_permission`, `HuggingFaceDownloaderTests.test_huggingFaceStrategy_downloadsLLMModel`, `HuggingFaceDownloaderTests.test_huggingFaceStrategy_downloadsTTSModel`, `HuggingFaceDownloaderTests.test_huggingFaceStrategy_reportsCurrentFile`)
+- [x] Tests passing (`xcodebuild test -project Ora.xcodeproj -scheme Ora`)
 - [x] Working tree clean
 
 ## Code Review Findings
@@ -251,8 +253,12 @@ private func positionPanel(_ panel: NSPanel) {
 ### Approval Status
 - [x] All P0 issues resolved
 - [x] All P1 issues resolved
-- [ ] Ready for merge
+- [x] Ready for merge
 
 ## Completion Status
 
-(TBD after merge.)
+- [x] Implementation complete
+- [x] Code review passed (1 iteration)
+- [x] PR merged: https://github.com/benedict2310/ora/pull/33
+- [x] Merged to main: cd0ae45
+- [x] Date: 2026-01-05
