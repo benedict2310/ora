@@ -543,6 +543,15 @@ final class ModelManagerTests: XCTestCase {
     }
 
     func test_modelManager_deleteModel_removesMetadata() async throws {
+        let previousOverride = ModelPaths.applicationSupportOverride
+        let tempRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ora-tests-\(UUID().uuidString)", isDirectory: true)
+        ModelPaths.applicationSupportOverride = tempRoot
+        defer {
+            ModelPaths.applicationSupportOverride = previousOverride
+            try? FileManager.default.removeItem(at: tempRoot)
+        }
+
         let mock = MockModelDownloader()
         mock.shouldSucceed = true
         mock.downloadDelay = 0.01

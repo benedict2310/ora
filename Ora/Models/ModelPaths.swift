@@ -13,8 +13,15 @@ enum ModelPaths {
 
     /// Base application support directory
     static var applicationSupport: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        if let override = applicationSupportOverride {
+            return override
+        }
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
     }
+
+    /// Test-only override for application support root.
+    /// Leave unset in production code.
+    nonisolated(unsafe) static var applicationSupportOverride: URL?
 
     /// Ora's root directory
     static var oraRoot: URL {
