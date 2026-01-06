@@ -36,6 +36,10 @@ final class AppSettings {
     @Attribute(originalName: "autoListenEnabled")
     var conversationModeEnabled: Bool = true
 
+    /// Silence timeout in seconds (0.5s - 2.0s range, default 1.0s)
+    /// Controls how long to wait after last speech before auto-submitting
+    var silenceTimeout: Double = 1.0
+
     // MARK: - Initialization
 
     init() {}

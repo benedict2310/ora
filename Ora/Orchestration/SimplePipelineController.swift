@@ -252,10 +252,13 @@ final class SimplePipelineController: ObservableObject {
 
         self.logger.debug("Setting up silence detector")
 
-        let detector = SilenceDetector()
+        // Use user-configured silence timeout (AC-2, AC-3)
+        let timeout = PersistenceManager.shared.settings.silenceTimeout
+
+        let detector = SilenceDetector(timeout: timeout)
         detector.onSilenceDetected = { [weak self] in
             guard let self = self else { return }
-            // Only auto-submit if we have a transcript (AC-4)
+            // Only auto-submit if we have a transcript (AC-6)
             guard !self.currentTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 self.logger.debug("Silence detected but transcript empty, ignoring")
                 return
@@ -279,8 +282,14 @@ final class SimplePipelineController: ObservableObject {
             // Start audio capture
             let audioStream = try await AudioService.shared.start()
 
-            // Start transcription
-            let asrStream = await ASRService.shared.transcribe(frames: audioStream)
+            // Start transcription with VAD callback for faster silence detection
+            let asrStream = await ASRService.shared.transcribe(
+                frames: audioStream,
+                onVADStateChange: { [weak self] isSpeech in
+                    // Wire VAD state changes to silence detector (AC-4, AC-5)
+                    self?.silenceDetector?.onVADStateChanged(isSpeech: isSpeech)
+                }
+            )
 
             // Process ASR events
             for try await event in asrStream {
@@ -293,7 +302,7 @@ final class SimplePipelineController: ObservableObject {
                 case .partial(let text, _):
                     self.currentTranscript = text
                     OverlayWindowController.shared.model.addUserMessage(text, isPartial: true)
-                    // Notify silence detector of new partial (AC-3)
+                    // Notify silence detector of new partial (AC-7)
                     self.silenceDetector?.onPartialReceived()
 
                 case .final(let text):
