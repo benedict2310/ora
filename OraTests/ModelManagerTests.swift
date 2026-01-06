@@ -86,6 +86,11 @@ final class ModelManagerTests: XCTestCase {
         XCTAssertTrue(metadataPath.path.hasSuffix("model-metadata.json"))
     }
 
+    func test_fluidAudioCachePath_returnsExpectedPath() {
+        let cachePath = DefaultModelDownloader.fluidAudioCachePath(for: .parakeetTDT)
+        XCTAssertTrue(cachePath.path.contains("FluidAudio/Models/parakeet-tdt-0.6b-v3-coreml"))
+    }
+
     // MARK: - Models State Tests
 
     func test_modelsState_requiredModelsReady_allReady() {

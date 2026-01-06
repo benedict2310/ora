@@ -283,6 +283,15 @@ actor ModelManager {
     /// Get path for a ready model
     func pathForModel(_ model: ModelIdentifier) -> URL? {
         guard _state.statuses[model]?.isReady ?? false else { return nil }
+
+        // For ASR models, check if they exist in FluidAudio's cache
+        if model.category == .asr {
+            let fluidAudioCache = DefaultModelDownloader.fluidAudioCachePath(for: model)
+            if FileManager.default.fileExists(atPath: fluidAudioCache.path) {
+                return fluidAudioCache
+            }
+        }
+
         return ModelPaths.path(for: model)
     }
 

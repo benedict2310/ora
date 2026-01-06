@@ -138,6 +138,31 @@ final class DefaultModelDownloader: ModelDownloader, @unchecked Sendable {
     }
 
     func exists(model: ModelIdentifier, at directory: URL) -> Bool {
+        // For ASR models, also check FluidAudio's default cache location
+        // FluidAudio SDK may download to its own cache directory regardless of the path we pass
+        if model.category == .asr {
+            let fluidAudioCache = Self.fluidAudioCachePath(for: model)
+            if self.checkModelFiles(for: model, at: fluidAudioCache) {
+                return true
+            }
+        }
+
+        return self.checkModelFiles(for: model, at: directory)
+    }
+
+    /// FluidAudio SDK's default cache location for ASR models
+    static func fluidAudioCachePath(for model: ModelIdentifier) -> URL {
+        let appSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first!
+        return appSupport
+            .appendingPathComponent("FluidAudio", isDirectory: true)
+            .appendingPathComponent("Models", isDirectory: true)
+            .appendingPathComponent("parakeet-tdt-0.6b-v3-coreml", isDirectory: true)
+    }
+
+    /// Check if all required model files exist at the given directory
+    private func checkModelFiles(for model: ModelIdentifier, at directory: URL) -> Bool {
         let fm = FileManager.default
         guard fm.fileExists(atPath: directory.path) else { return false }
 
@@ -155,7 +180,7 @@ final class DefaultModelDownloader: ModelDownloader, @unchecked Sendable {
                 if !fm.fileExists(atPath: path.path) {
                     return false
                 }
-                
+
                 // Check file has minimum reasonable size (not truncated/empty)
                 do {
                     let attrs = try fm.attributesOfItem(atPath: path.path)
