@@ -263,7 +263,65 @@ private func wireVADToSilenceDetector() {
 
 ## Code Review Findings
 
-(TBD by review agent.)
+**Reviewer:** Codex Subagent
+**Date:** 2026-01-06T17:20:00Z
+**Commit reviewed:** 1c54ee4
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 7
+- Build status: Pass
+- Tests status: Pass (780 tests, 0 failures, 1 skipped)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+
+None.
+
+#### P1 - Major (Should fix)
+
+None.
+
+#### P2 - Minor (Can defer)
+
+- [ ] `Ora/ASR/ASRService.swift:175` - The check `if isSpeech != lastVADState` is redundant since `transitionType` is only non-nil on actual state transitions. This is harmless but adds minor complexity. Consider removing for clarity in a follow-up.
+
+### Notes
+
+**Protocol Design:**
+The new `transcribe(frames:onVADStateChange:)` method was added to the `ASRServicing` protocol without a default implementation in the protocol itself. This is acceptable since `ASRService` is currently the only conformer, but future mock implementations would need to implement both methods. The implementation correctly provides a default by having the no-callback overload call the callback version with a no-op closure.
+
+**Concurrency:**
+- The VAD callback is properly annotated `@Sendable @MainActor` 
+- The call site correctly uses `await MainActor.run { }` to dispatch to MainActor
+- `SilenceDetector` is properly `@MainActor` isolated
+- Task cancellation is handled correctly in both timer tasks
+
+**Test Coverage:**
+Comprehensive test coverage with 31 tests covering:
+- Default timeout reduction (AC-1)
+- Timeout clamping to valid range
+- VAD-assisted detection flow (AC-4)
+- Speech resume cancellation (AC-5)
+- Empty transcript protection (AC-6)
+- Partial during confirmation reset (AC-7)
+- ASR-only fallback (AC-8)
+
+**UI Integration:**
+- Silence timeout slider properly gated behind conversation mode toggle
+- User preference correctly persisted to SwiftData
+- Slider range matches SilenceDetector min/max constants
+
+### Future Considerations (Out of Scope)
+
+- Consider adding a protocol extension for `ASRServicing` to provide a default implementation of the new method for easier mocking
+- The manual test cases (AC-9 through AC-12) should be verified before final release
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
 
 ## Completion Status
 
