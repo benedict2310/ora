@@ -15,6 +15,7 @@ struct GeneralPreferencesView: View {
     @State private var hotkeyConfig = HotkeyConfiguration.load()
     @State private var voiceOutputEnabled = true
     @State private var conversationModeEnabled = true
+    @State private var silenceTimeout: Double = 1.0
     @State private var selectedCalendarID: String = ""
     @State private var calendars: [EKCalendar] = []
 
@@ -72,6 +73,40 @@ struct GeneralPreferencesView: View {
                     PersistenceManager.shared.updateSettings { settings in
                         settings.conversationModeEnabled = newValue
                     }
+                }
+
+                // Silence timeout slider (only relevant when conversation mode is on)
+                if conversationModeEnabled {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Silence Timeout")
+                                .font(.headline)
+                            Spacer()
+                            Text(self.formatTimeout(silenceTimeout))
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .monospacedDigit()
+                        }
+                        Text("Time to wait after speech stops before auto-submitting")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        HStack {
+                            Text("0.5s")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Slider(value: $silenceTimeout, in: 0.5...2.0, step: 0.1)
+                                .onChange(of: silenceTimeout) { _, newValue in
+                                    PersistenceManager.shared.updateSettings { settings in
+                                        settings.silenceTimeout = newValue
+                                    }
+                                }
+                            Text("2.0s")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.top, 8)
                 }
             }
 
@@ -133,7 +168,14 @@ struct GeneralPreferencesView: View {
         // Conversation mode from SwiftData settings (AC-6: default true)
         conversationModeEnabled = PersistenceManager.shared.settings.conversationModeEnabled
 
+        // Silence timeout from SwiftData settings (default 1.0s)
+        silenceTimeout = PersistenceManager.shared.settings.silenceTimeout
+
         selectedCalendarID = UserDefaults.standard.string(forKey: "com.ora.defaultCalendarID") ?? ""
+    }
+
+    private func formatTimeout(_ value: Double) -> String {
+        return String(format: "%.1fs", value)
     }
 
     private func loadCalendars() {

@@ -26,6 +26,16 @@ protocol ASRServicing: Sendable {
     /// - Returns: Async throwing stream of ASR events
     func transcribe(frames: AsyncStream<AudioFrame>) -> AsyncThrowingStream<ASREvent, Error>
 
+    /// Transcribe audio frames with VAD state changes
+    /// - Parameters:
+    ///   - frames: Async stream of audio frames
+    ///   - onVADStateChange: Callback for VAD state transitions (speech started/ended)
+    /// - Returns: Async throwing stream of ASR events
+    func transcribe(
+        frames: AsyncStream<AudioFrame>,
+        onVADStateChange: @escaping @Sendable @MainActor (Bool) -> Void
+    ) -> AsyncThrowingStream<ASREvent, Error>
+
     /// Reset decoder state for new session
     func reset() async
 }
@@ -97,10 +107,23 @@ actor ASRService: @preconcurrency ASRServicing {
 
     /// Transcribe audio frames to text events
     func transcribe(frames: AsyncStream<AudioFrame>) -> AsyncThrowingStream<ASREvent, Error> {
+        // Default implementation without VAD callback
+        return transcribe(frames: frames, onVADStateChange: { _ in })
+    }
+
+    /// Transcribe audio frames to text events with VAD state changes
+    func transcribe(
+        frames: AsyncStream<AudioFrame>,
+        onVADStateChange: @escaping @Sendable @MainActor (Bool) -> Void
+    ) -> AsyncThrowingStream<ASREvent, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    try await self.runTranscription(frames: frames, continuation: continuation)
+                    try await self.runTranscription(
+                        frames: frames,
+                        continuation: continuation,
+                        onVADStateChange: onVADStateChange
+                    )
                 } catch {
                     continuation.finish(throwing: error)
                 }
@@ -127,7 +150,8 @@ actor ASRService: @preconcurrency ASRServicing {
 
     private func runTranscription(
         frames: AsyncStream<AudioFrame>,
-        continuation: AsyncThrowingStream<ASREvent, Error>.Continuation
+        continuation: AsyncThrowingStream<ASREvent, Error>.Continuation,
+        onVADStateChange: @escaping @Sendable @MainActor (Bool) -> Void
     ) async throws {
         guard isReady, let engine = engine else {
             throw ASRServiceError.notReady
@@ -138,9 +162,25 @@ actor ASRService: @preconcurrency ASRServicing {
         // Committed text from chunks that have rolled out of the window
         var committedText = ""
 
+        // VAD for speech detection
+        var vad = EnergyVAD(configuration: VADConfiguration())
+        var lastVADState = false
+
         // Process frames as they arrive
         for await frame in frames {
             accumulatedSamples.append(contentsOf: frame.samples)
+
+            // Run VAD on incoming frame for fast speech detection
+            let vadResult = vad.process(frame.samples)
+            if let transition = vadResult.transitionType {
+                let isSpeech = transition == .speechStart
+                if isSpeech != lastVADState {
+                    lastVADState = isSpeech
+                    await MainActor.run {
+                        onVADStateChange(isSpeech)
+                    }
+                }
+            }
 
             // When exceeding the max window, finalize the portion being dropped
             // and add it to committed text to preserve the full transcript

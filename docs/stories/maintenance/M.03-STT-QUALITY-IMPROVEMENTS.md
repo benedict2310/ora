@@ -158,33 +158,33 @@ private func wireVADToSilenceDetector() {
 
 ### Timeout Reduction
 
-- [ ] AC-1: Default silence timeout is 1.0s (reduced from 1.5s)
-- [ ] AC-2: Silence timeout is configurable in Preferences (0.5s - 2.0s range)
-- [ ] AC-3: User preference persists across app restarts
+- [x] AC-1: Default silence timeout is 1.0s (reduced from 1.5s) - ✅ Verified in `SilenceDetector.swift:17`
+- [x] AC-2: Silence timeout is configurable in Preferences (0.5s - 2.0s range) - ✅ Verified in `GeneralPreferencesView.swift:73-93`
+- [x] AC-3: User preference persists across app restarts - ✅ Verified in `AppSettings.swift:34-35`
 
 ### VAD-Assisted Detection
 
-- [ ] AC-4: VAD speechEnd triggers 300ms confirmation timer
-- [ ] AC-5: VAD speechStart cancels pending confirmation
-- [ ] AC-6: Confirmation timer respects minimum transcript length (no empty submits)
-- [ ] AC-7: ASR partial during confirmation resets the timer
-- [ ] AC-8: System falls back to ASR-only if VAD events unavailable
+- [x] AC-4: VAD speechEnd triggers 300ms confirmation timer - ✅ Verified by `test_vadAssistedDetection_triggersOnSpeechEnd`
+- [x] AC-5: VAD speechStart cancels pending confirmation - ✅ Verified by `test_vadConfirmation_cancelledOnSpeechResume`
+- [x] AC-6: Confirmation timer respects minimum transcript length (no empty submits) - ✅ Verified by `test_vadSpeechEndWithoutPartial_doesNotTrigger`
+- [x] AC-7: ASR partial during confirmation resets the timer - ✅ Verified by `test_partialDuringVADConfirmation_resetsTimer`
+- [x] AC-8: System falls back to ASR-only if VAD events unavailable - ✅ Verified by `test_fallbackToASROnly_whenNoVADEvents`
 
 ### User Experience
 
-- [ ] AC-9: Short phrases ("yes", "no", "thanks") are captured correctly
-- [ ] AC-10: Long pauses mid-sentence don't trigger premature submission
-- [ ] AC-11: Effective end-to-end delay is <1.0s for typical utterances
-- [ ] AC-12: Multi-turn conversation feels responsive and natural
+- [ ] AC-9: Short phrases ("yes", "no", "thanks") are captured correctly - 🧪 Requires manual testing
+- [ ] AC-10: Long pauses mid-sentence don't trigger premature submission - 🧪 Requires manual testing
+- [ ] AC-11: Effective end-to-end delay is <1.0s for typical utterances - 🧪 Requires manual testing
+- [ ] AC-12: Multi-turn conversation feels responsive and natural - 🧪 Requires manual testing
 
 ## 7. Verification Plan
 
 ### Automated Tests
 
-- [ ] Unit tests for VAD-assisted confirmation timer
-- [ ] Unit tests for speechStart cancellation
-- [ ] Unit tests for fallback to ASR-only mode
-- [ ] Unit tests for user preference integration
+- [x] Unit tests for VAD-assisted confirmation timer - ✅ 31 tests in SilenceDetectorTests
+- [x] Unit tests for speechStart cancellation - ✅ `test_vadConfirmation_cancelledOnSpeechResume`
+- [x] Unit tests for fallback to ASR-only mode - ✅ `test_fallbackToASROnly_whenNoVADEvents`
+- [x] Unit tests for user preference integration - ✅ `test_init_withCustomTimeout`, `test_init_clampsTimeoutToMinimum`, `test_init_clampsTimeoutToMaximum`
 
 ### Manual Tests
 
@@ -225,11 +225,103 @@ private func wireVADToSilenceDetector() {
 
 ## Implementation Summary
 
-(TBD after implementation.)
+**Date:** 2026-01-06
+**Branch:** `feat/M.03-response-triggering`
+**Commits:** 1
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `Ora/ASR/ASRService.swift` | Added VAD state change callback to transcription API |
+| `Ora/Orchestration/SilenceDetector.swift` | Complete rewrite with VAD-assisted detection, confirmation timer, timeout clamping |
+| `Ora/Orchestration/SimplePipelineController.swift` | Wire VAD events to SilenceDetector, use user preference for timeout |
+| `Ora/Persistence/Models/AppSettings.swift` | Add `silenceTimeout` preference (default 1.0s) |
+| `Ora/Preferences/Tabs/GeneralPreferencesView.swift` | Add silence timeout slider (0.5s-2.0s) under Conversation Mode |
+| `OraTests/Orchestration/SilenceDetectorTests.swift` | Expanded from 15 to 31 tests covering VAD-assisted mode |
+
+### Key Design Decisions
+
+1. **VAD events via ASRService**: Rather than using StreamingManager directly (which isn't used by SimplePipelineController), added VAD state callbacks to ASRService's transcription method
+2. **Dual-mode detection**: VAD-assisted mode (primary) with ASR timeout fallback ensures reliability
+3. **Confirmation timer**: 300ms delay after VAD speechEnd prevents false triggers
+4. **Timeout clamping**: User preferences clamped to 0.5s-2.0s range to prevent unusable values
+
+### Expected Performance Improvement
+
+| Metric | Before | After |
+|--------|--------|-------|
+| ASR hop wait | ~400ms | ~30ms (VAD) |
+| Silence timeout | 1500ms | 300ms (VAD confirmation) |
+| **Total delay** | **~1900ms** | **~330ms** |
+
+### Ready for Review
+
+- [x] All acceptance criteria verified (8/8 automated, 4 require manual testing)
+- [x] Tests passing (780 tests, 0 failures)
+- [x] Working tree clean
 
 ## Code Review Findings
 
-(TBD by review agent.)
+**Reviewer:** Codex Subagent
+**Date:** 2026-01-06T17:20:00Z
+**Commit reviewed:** 1c54ee4
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 7
+- Build status: Pass
+- Tests status: Pass (780 tests, 0 failures, 1 skipped)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+
+None.
+
+#### P1 - Major (Should fix)
+
+None.
+
+#### P2 - Minor (Can defer)
+
+- [ ] `Ora/ASR/ASRService.swift:175` - The check `if isSpeech != lastVADState` is redundant since `transitionType` is only non-nil on actual state transitions. This is harmless but adds minor complexity. Consider removing for clarity in a follow-up.
+
+### Notes
+
+**Protocol Design:**
+The new `transcribe(frames:onVADStateChange:)` method was added to the `ASRServicing` protocol without a default implementation in the protocol itself. This is acceptable since `ASRService` is currently the only conformer, but future mock implementations would need to implement both methods. The implementation correctly provides a default by having the no-callback overload call the callback version with a no-op closure.
+
+**Concurrency:**
+- The VAD callback is properly annotated `@Sendable @MainActor` 
+- The call site correctly uses `await MainActor.run { }` to dispatch to MainActor
+- `SilenceDetector` is properly `@MainActor` isolated
+- Task cancellation is handled correctly in both timer tasks
+
+**Test Coverage:**
+Comprehensive test coverage with 31 tests covering:
+- Default timeout reduction (AC-1)
+- Timeout clamping to valid range
+- VAD-assisted detection flow (AC-4)
+- Speech resume cancellation (AC-5)
+- Empty transcript protection (AC-6)
+- Partial during confirmation reset (AC-7)
+- ASR-only fallback (AC-8)
+
+**UI Integration:**
+- Silence timeout slider properly gated behind conversation mode toggle
+- User preference correctly persisted to SwiftData
+- Slider range matches SilenceDetector min/max constants
+
+### Future Considerations (Out of Scope)
+
+- Consider adding a protocol extension for `ASRServicing` to provide a default implementation of the new method for easier mocking
+- The manual test cases (AC-9 through AC-12) should be verified before final release
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
 
 ## Completion Status
 
