@@ -1,7 +1,7 @@
 # M.03 - Response Triggering Improvements
 
 **Epic:** Maintenance
-**Status:** Not Started
+**Status:** ✅ Complete
 **Priority:** P1 (High)
 **Estimated Effort:** 1-2 days
 **Dependencies:** O.07
@@ -325,4 +325,16 @@ Comprehensive test coverage with 31 tests covering:
 
 ## Completion Status
 
-(TBD after merge.)
+- [x] Implementation complete
+- [x] Code review passed (1 iteration)
+- [x] PR merged: https://github.com/benedict2310/ora/pull/52
+- [x] Merged to main: c17dd43
+- [x] Date: 2026-01-06
+
+### Manual Testing Recommendations
+
+Before considering fully complete, verify these UX criteria manually:
+- AC-9: Short phrases ("yes", "no", "thanks") are captured correctly
+- AC-10: Long pauses mid-sentence don't trigger premature submission
+- AC-11: Effective end-to-end delay is <1.0s for typical utterances
+- AC-12: Multi-turn conversation feels responsive and natural
