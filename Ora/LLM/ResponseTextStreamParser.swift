@@ -24,6 +24,7 @@ struct ResponseTextStreamParser: Sendable {
     private var isTextComplete = false
     private var isEscaping = false
     private var pendingUnicodeDigits: String?
+    private var pendingHighSurrogate: UInt16?
 
     mutating func append(_ fragment: String) -> [String] {
         guard !fragment.isEmpty else { return [] }
@@ -159,9 +160,8 @@ struct ResponseTextStreamParser: Sendable {
                     pendingUnicodeDigits = pending + String(character)
                     currentIndex = buffer.index(after: currentIndex)
                     if pendingUnicodeDigits?.count == 4 {
-                        if let scalarValue = UInt32(pendingUnicodeDigits ?? "", radix: 16),
-                           let scalar = UnicodeScalar(scalarValue) {
-                            output.append(Character(scalar))
+                        if let scalarValue = UInt16(pendingUnicodeDigits ?? "", radix: 16) {
+                            appendUnicodeScalar(scalarValue, output: &output)
                         }
                         pendingUnicodeDigits = nil
                         isEscaping = false
@@ -201,6 +201,10 @@ struct ResponseTextStreamParser: Sendable {
                 continue
             }
 
+            if pendingHighSurrogate != nil, character != "\\" {
+                flushPendingHighSurrogate(output: &output)
+            }
+
             if character == "\\" {
                 isEscaping = true
                 currentIndex = buffer.index(after: currentIndex)
@@ -208,6 +212,7 @@ struct ResponseTextStreamParser: Sendable {
             }
 
             if character == "\"" {
+                flushPendingHighSurrogate(output: &output)
                 isTextComplete = true
                 textScanIndex = buffer.index(after: currentIndex)
                 return output
@@ -219,5 +224,49 @@ struct ResponseTextStreamParser: Sendable {
 
         textScanIndex = buffer.endIndex
         return output
+    }
+
+    private mutating func appendUnicodeScalar(_ value: UInt16, output: inout String) {
+        if isHighSurrogate(value) {
+            pendingHighSurrogate = value
+            return
+        }
+
+        if isLowSurrogate(value) {
+            if let high = pendingHighSurrogate {
+                let scalarValue = 0x10000 + ((UInt32(high) - 0xD800) << 10) + (UInt32(value) - 0xDC00)
+                if let scalar = UnicodeScalar(scalarValue) {
+                    output.append(Character(scalar))
+                }
+                pendingHighSurrogate = nil
+            } else {
+                output.append("\u{FFFD}")
+            }
+            return
+        }
+
+        if pendingHighSurrogate != nil {
+            output.append("\u{FFFD}")
+            pendingHighSurrogate = nil
+        }
+
+        if let scalar = UnicodeScalar(UInt32(value)) {
+            output.append(Character(scalar))
+        }
+    }
+
+    private mutating func flushPendingHighSurrogate(output: inout String) {
+        if pendingHighSurrogate != nil {
+            output.append("\u{FFFD}")
+            pendingHighSurrogate = nil
+        }
+    }
+
+    private func isHighSurrogate(_ value: UInt16) -> Bool {
+        return value >= 0xD800 && value <= 0xDBFF
+    }
+
+    private func isLowSurrogate(_ value: UInt16) -> Bool {
+        return value >= 0xDC00 && value <= 0xDFFF
     }
 }

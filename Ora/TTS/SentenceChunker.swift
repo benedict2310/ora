@@ -44,11 +44,13 @@ struct SentenceChunker: Sendable {
             pending = ""
         }
 
-        if buffer.count > maxChunkLength {
-            let segments = splitOversizedChunk(buffer)
+        let combinedBuffer = joinSegments(pending, buffer)
+        if combinedBuffer.count > maxChunkLength {
+            let segments = splitOversizedChunk(combinedBuffer)
             if segments.count > 1 {
                 ready.append(contentsOf: segments.dropLast())
                 buffer = segments.last ?? ""
+                pending = ""
             }
         }
 

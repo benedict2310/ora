@@ -160,3 +160,36 @@ Chunking must respect Kokoro's token limit. If tokenization is not available at 
 - [ ] PR merged: N/A
 - [ ] Merged to main: N/A
 - [x] Date: 2026-01-06
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-01-06T20:26:47Z
+**Commit reviewed:** 1096cea
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 9
+- Build status: Pass
+- Tests status: Pass (825 tests, 2 skipped)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [ ] None.
+
+#### P1 - Major (Should fix)
+- [x] `Ora/TTS/SentenceChunker.swift:47` - When a short sentence is held in `pending` and the subsequent buffer exceeds `maxChunkLength`, `splitOversizedChunk(buffer)` emits later text before the earlier `pending` content, breaking playback order (AC "Queue chunks for playback in order").
+
+#### P2 - Minor (Can defer)
+- [x] `Ora/LLM/ResponseTextStreamParser.swift:157` - Unicode `\u` decoding ignores surrogate pairs, so non‑BMP characters (e.g., emoji encoded as `\uD83D\uDE00`) are dropped from the streamed text.
+
+### Future Considerations (Out of Scope)
+- None.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [ ] Ready for merge

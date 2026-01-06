@@ -69,4 +69,18 @@ final class SentenceChunkerTests: XCTestCase {
         let combined = second + remaining
         XCTAssertEqual(combined, ["Hi. This is longer."])
     }
+
+    func test_chunkerPreservesOrderWhenPendingAndBufferSplits() {
+        var chunker = SentenceChunker(minSentenceLength: 10, maxChunkLength: 20)
+        let first = chunker.consume("Hi.")
+
+        XCTAssertTrue(first.isEmpty)
+
+        let longText = String(repeating: "a", count: 40)
+        let outputs = chunker.consume(" " + longText)
+
+        XCTAssertTrue(outputs.count > 1)
+        XCTAssertTrue(outputs.joined(separator: " ").hasPrefix("Hi."))
+        XCTAssertTrue(outputs.joined().contains("aaaaa"))
+    }
 }
