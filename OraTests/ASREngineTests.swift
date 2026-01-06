@@ -239,7 +239,7 @@ final class ParakeetModelDownloaderTests: XCTestCase {
 
     func test_repoDirectory_containsParakeetPath() {
         let path = ParakeetModelDownloader.repoDirectory
-        XCTAssertTrue(path.path.contains("Ora/Models/asr/parakeet"))
+        XCTAssertTrue(path.path.contains("FluidAudio/Models/parakeet-tdt-0.6b-v3-coreml"))
     }
 
     func test_downloadError_descriptions() {
