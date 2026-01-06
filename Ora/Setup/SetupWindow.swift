@@ -39,7 +39,8 @@ struct SetupWindow: View {
                     )
                 case .download:
                     DownloadStepView(
-                        state: self.coordinator.state,
+                        setupState: self.coordinator.state,
+                        modelsState: self.coordinator.modelsState,
                         onRetry: {
                             Task { await self.coordinator.retryDownload() }
                         },

@@ -227,6 +227,22 @@ struct ModelsState: Sendable, Equatable {
     var metadata: [ModelIdentifier: ModelMetadata] = [:]
     var primaryLLM: ModelIdentifier = .qwen3_4B
     
+    // MARK: - Download Progress Metrics (Unified Tracking)
+    
+    /// Per-model download progress
+    var downloadProgress: [ModelIdentifier: ModelDownloadProgress] = [:]
+    
+    /// Overall download speed in bytes/second (rolling average)
+    var overallDownloadSpeed: Double = 0
+    
+    /// Estimated time remaining for all active downloads
+    var estimatedTimeRemainingSeconds: TimeInterval? = nil
+    
+    /// Whether any download is currently in progress
+    var isDownloading: Bool = false
+    
+    // MARK: - Computed Properties
+    
     /// Whether legacy Qwen 2.5 models are detected (for migration prompts)
     var hasLegacyModels: Bool {
         for model in [ModelIdentifier.qwen7B, .qwen3B] {
@@ -260,6 +276,57 @@ struct ModelsState: Sendable, Equatable {
             }
         }
         return total / Double(models.count)
+    }
+    
+    /// Total bytes downloaded across all active downloads
+    var totalBytesDownloaded: Int64 {
+        downloadProgress.values.reduce(0) { $0 + $1.bytesDownloaded }
+    }
+    
+    /// Total bytes to download across all active downloads
+    var totalBytesToDownload: Int64 {
+        downloadProgress.values.reduce(0) { $0 + $1.totalBytes }
+    }
+    
+    /// Formatted download speed (e.g., "12.3 MB/s")
+    var formattedDownloadSpeed: String {
+        let speedMBps = overallDownloadSpeed / (1024 * 1024)
+        if speedMBps < 0.1 { return "..." }
+        return String(format: "%.1f MB/s", speedMBps)
+    }
+    
+    /// Formatted time remaining (e.g., "~2 min left")
+    var formattedTimeRemaining: String? {
+        guard let seconds = estimatedTimeRemainingSeconds, seconds > 0 else { return nil }
+        if seconds < 60 {
+            return "~\(Int(seconds))s left"
+        } else if seconds < 3600 {
+            return "~\(Int(seconds / 60)) min left"
+        } else {
+            let hours = Int(seconds / 3600)
+            let minutes = Int((seconds.truncatingRemainder(dividingBy: 3600)) / 60)
+            return minutes > 0 ? "~\(hours)h \(minutes)m left" : "~\(hours)h left"
+        }
+    }
+    
+    /// Formatted bytes downloaded (e.g., "1.7 GB")
+    var formattedBytesDownloaded: String {
+        Self.formatBytes(totalBytesDownloaded)
+    }
+    
+    /// Formatted total bytes (e.g., "3.6 GB")
+    var formattedTotalBytes: String {
+        Self.formatBytes(totalBytesToDownload)
+    }
+    
+    /// Format bytes to human-readable string
+    static func formatBytes(_ bytes: Int64) -> String {
+        let gb = Double(bytes) / (1024 * 1024 * 1024)
+        if gb >= 1.0 {
+            return String(format: "%.1f GB", gb)
+        }
+        let mb = Double(bytes) / (1024 * 1024)
+        return String(format: "%.0f MB", mb)
     }
 
     subscript(model: ModelIdentifier) -> ModelStatus {

@@ -8,7 +8,7 @@
 import Foundation
 
 /// Progress update for a single model download
-struct ModelDownloadProgress: Sendable {
+struct ModelDownloadProgress: Sendable, Equatable {
     let identifier: ModelIdentifier
     let bytesDownloaded: Int64
     let totalBytes: Int64

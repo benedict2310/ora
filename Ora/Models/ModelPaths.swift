@@ -52,6 +52,9 @@ enum ModelPaths {
     }
 
     /// Check if model directory exists
+    /// - Warning: This only checks if the directory exists, not if all required files are present.
+    ///   Use `DefaultModelDownloader.shared.exists(model:at:)` for thorough validation.
+    @available(*, deprecated, message: "Use DefaultModelDownloader.shared.exists(model:at:) for thorough validation")
     static func modelExists(_ model: ModelIdentifier) -> Bool {
         let path = self.path(for: model)
         return FileManager.default.fileExists(atPath: path.path)

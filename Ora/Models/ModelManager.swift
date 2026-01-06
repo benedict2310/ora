@@ -22,6 +22,13 @@ actor ModelManager {
     private var _state = ModelsState()
     private var downloadTasks: [ModelIdentifier: Task<Void, Error>] = [:]
     private var hasLoadedMetadata = false
+    
+    // MARK: - Speed Tracking
+    
+    private var downloadSpeedSamples: [Double] = []
+    private var lastProgressUpdateTime: Date?
+    private var lastTotalBytesDownloaded: Int64 = 0
+    private let maxSpeedSamples = 5
 
     /// Current state
     var state: ModelsState {
@@ -116,6 +123,33 @@ actor ModelManager {
         let modelsToDownload: [ModelIdentifier] = [.parakeetTDT, _state.primaryLLM, .kokoro]
 
         self.logger.info("Starting download of \(modelsToDownload.count) models...")
+        
+        // Initialize download state
+        _state.isDownloading = true
+        resetSpeedTracking()
+        
+        // Initialize total bytes to download (for models not yet ready)
+        var totalBytesToDownload: Int64 = 0
+        for model in modelsToDownload {
+            let path = ModelPaths.path(for: model)
+            if !self.downloader.exists(model: model, at: path) {
+                totalBytesToDownload += model.estimatedSizeBytes
+                _state.downloadProgress[model] = ModelDownloadProgress(
+                    identifier: model,
+                    bytesDownloaded: 0,
+                    totalBytes: model.estimatedSizeBytes
+                )
+            }
+        }
+        
+        await postStateChange()
+        
+        defer {
+            // Clean up download state when done
+            Task {
+                await self.cleanupDownloadState()
+            }
+        }
 
         try ModelPaths.ensureDirectoriesExist()
 
@@ -140,6 +174,59 @@ actor ModelManager {
 
         await self.refreshStatuses()
         self.logger.info("All required models downloaded successfully")
+    }
+    
+    /// Clean up download state after completion or cancellation
+    private func cleanupDownloadState() async {
+        _state.isDownloading = false
+        _state.downloadProgress = [:]
+        _state.overallDownloadSpeed = 0
+        _state.estimatedTimeRemainingSeconds = nil
+        await postStateChange()
+    }
+    
+    /// Reset speed tracking state
+    private func resetSpeedTracking() {
+        downloadSpeedSamples = []
+        lastProgressUpdateTime = nil
+        lastTotalBytesDownloaded = 0
+    }
+    
+    /// Update download speed calculation
+    private func updateDownloadSpeed() {
+        let now = Date()
+        let currentTotal = _state.totalBytesDownloaded
+        
+        guard let lastTime = lastProgressUpdateTime else {
+            lastProgressUpdateTime = now
+            lastTotalBytesDownloaded = currentTotal
+            return
+        }
+        
+        let timeDelta = now.timeIntervalSince(lastTime)
+        guard timeDelta > 0.1 else { return }
+        
+        let bytesDelta = currentTotal - lastTotalBytesDownloaded
+        guard bytesDelta > 0 else { return }
+        
+        let speed = Double(bytesDelta) / timeDelta
+        downloadSpeedSamples.append(speed)
+        if downloadSpeedSamples.count > maxSpeedSamples {
+            downloadSpeedSamples.removeFirst()
+        }
+        
+        let averageSpeed = downloadSpeedSamples.reduce(0, +) / Double(downloadSpeedSamples.count)
+        _state.overallDownloadSpeed = averageSpeed
+        
+        let remainingBytes = _state.totalBytesToDownload - currentTotal
+        if averageSpeed > 0 && remainingBytes > 0 {
+            _state.estimatedTimeRemainingSeconds = Double(remainingBytes) / averageSpeed
+        } else {
+            _state.estimatedTimeRemainingSeconds = nil
+        }
+        
+        lastProgressUpdateTime = now
+        lastTotalBytesDownloaded = currentTotal
     }
 
     /// Download a single model (starts a tracked task for cancellation support)
@@ -201,7 +288,7 @@ actor ModelManager {
             try await self.downloader.download(model: model, to: path) { [weak self] modelProgress in
                 guard let self = self else { return }
                 Task {
-                    await self.updateDownloadProgressIfDownloading(model: model, progress: modelProgress.progress)
+                    await self.updateDownloadProgressIfDownloading(model: model, progress: modelProgress.progress, modelProgress: modelProgress)
                 }
                 progress?(modelProgress)
             }
@@ -290,13 +377,28 @@ actor ModelManager {
 
     /// Update download progress only if model is still in downloading state
     /// This prevents late-arriving progress updates from regressing state
-    private func updateDownloadProgressIfDownloading(model: ModelIdentifier, progress: Double) async {
+    private func updateDownloadProgressIfDownloading(model: ModelIdentifier, progress: Double, modelProgress: ModelDownloadProgress? = nil) async {
         // Only update if still downloading - prevents race where progress arrives
         // after verification/ready state has been set
         guard _state.statuses[model]?.isDownloading == true else {
             return
         }
         _state.statuses[model] = .downloading(progress: progress)
+        
+        // Update download progress dictionary for unified tracking
+        if let modelProgress = modelProgress {
+            _state.downloadProgress[model] = modelProgress
+        } else {
+            // Create from progress percentage if no detailed progress available
+            _state.downloadProgress[model] = ModelDownloadProgress(
+                identifier: model,
+                progress: progress
+            )
+        }
+        
+        // Update speed calculation
+        updateDownloadSpeed()
+        
         await self.postDownloadProgress(model: model, progress: progress)
     }
 
