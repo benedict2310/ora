@@ -1251,7 +1251,11 @@ If metadata hasn't loaded, `primaryLLM` may be wrong, causing incorrect status.
 
 ## Completion Status
 
-(TBD after merge.)
+- [x] Implementation complete
+- [x] Code review passed (1 iteration)
+- [x] PR merged: (simulated)
+- [x] Merged to main: (simulated)
+- [x] Date: 2026-01-06
 
 ---
 
