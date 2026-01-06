@@ -32,11 +32,9 @@ private enum ModelDisplayState: Equatable {
 struct DownloadStepView: View {
     let setupState: SetupState
     let modelsState: ModelsState
-    let onRetry: () -> Void
-    let onCancel: () -> Void
 
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 20) {
             Text("Downloading Models")
                 .font(.largeTitle)
                 .fontWeight(.bold)
@@ -45,117 +43,17 @@ struct DownloadStepView: View {
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
 
-            Spacer()
-                .frame(height: 8)
-
-            // Overall progress section - use ModelsState
-            VStack(spacing: 12) {
-                // Progress bar
-                ProgressView(value: self.modelsState.overallProgress)
-                    .progressViewStyle(.linear)
-
-                // Stats row
-                HStack {
-                    // Bytes downloaded - from ModelsState
-                    HStack(spacing: 4) {
-                        Text(self.modelsState.formattedBytesDownloaded)
-                            .fontWeight(.medium)
-                        Text("of")
-                            .foregroundColor(.secondary)
-                        Text(self.modelsState.formattedTotalBytes)
-                            .foregroundColor(.secondary)
+            GlassEffectContainer(spacing: 16) {
+                VStack(spacing: 16) {
+                    self.overallProgressCard
+                    self.modelProgressCard
+                    if let error = self.setupState.downloadError {
+                        self.errorCard(for: error)
                     }
-                    .font(.caption)
-
-                    Spacer()
-
-                    // Speed and ETA - from ModelsState
-                    HStack(spacing: 8) {
-                        Text(self.modelsState.formattedDownloadSpeed)
-                            .fontWeight(.medium)
-
-                        if let timeRemaining = self.modelsState.formattedTimeRemaining {
-                            Text("•")
-                                .foregroundColor(.secondary)
-                            Text(timeRemaining)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    .font(.caption)
-
-                    Text("\(Int(self.modelsState.overallProgress * 100))%")
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .monospacedDigit()
-                        .frame(width: 40, alignment: .trailing)
-                }
-            }
-
-            // Per-model progress card - mapped from ModelStatus
-            VStack(spacing: 0) {
-                ModelProgressRow(
-                    name: "Parakeet ASR",
-                    totalSize: "~600 MB",
-                    displayState: self.displayState(for: .parakeetTDT)
-                )
-
-                Divider()
-
-                ModelProgressRow(
-                    name: self.modelsState.primaryLLM.displayName,
-                    totalSize: self.llmSizeDisplay,
-                    displayState: self.displayState(for: self.modelsState.primaryLLM)
-                )
-
-                Divider()
-
-                ModelProgressRow(
-                    name: "Kokoro TTS",
-                    totalSize: "~500 MB",
-                    displayState: self.displayState(for: .kokoro)
-                )
-            }
-            .padding()
-            .background(Color(nsColor: .controlBackgroundColor))
-            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
-
-            Spacer()
-
-            // Error state - from SetupState (setup-specific)
-            if let error = self.setupState.downloadError {
-                VStack(spacing: 12) {
-                    Label(error, systemImage: "exclamationmark.triangle")
-                        .foregroundColor(.red)
-
-                    Button("Retry Download") {
-                        self.onRetry()
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-            }
-
-            // Bottom buttons
-            HStack {
-                Button("Cancel") {
-                    self.onCancel()
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(.secondary)
-                .disabled(self.modelsState.overallProgress >= 1.0)
-
-                Spacer()
-
-                if self.modelsState.overallProgress >= 1.0 && self.setupState.downloadError == nil {
-                    Button("Continue") {
-                        // The coordinator will handle advancing to the next step
-                        Task {
-                            await SetupCoordinator.shared.nextStep()
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .top)
     }
 
     // MARK: - Helpers
@@ -196,6 +94,88 @@ struct DownloadStepView: View {
         default:
             return "~2.5 GB"
         }
+    }
+
+    private var overallProgressCard: some View {
+        VStack(spacing: 12) {
+            ProgressView(value: self.modelsState.overallProgress)
+                .progressViewStyle(.linear)
+
+            HStack {
+                HStack(spacing: 4) {
+                    Text(self.modelsState.formattedBytesDownloaded)
+                        .fontWeight(.medium)
+                    Text("of")
+                        .foregroundColor(.secondary)
+                    Text(self.modelsState.formattedTotalBytes)
+                        .foregroundColor(.secondary)
+                }
+                .font(.caption)
+
+                Spacer()
+
+                HStack(spacing: 8) {
+                    Text(self.modelsState.formattedDownloadSpeed)
+                        .fontWeight(.medium)
+
+                    if let timeRemaining = self.modelsState.formattedTimeRemaining {
+                        Text("•")
+                            .foregroundColor(.secondary)
+                        Text(timeRemaining)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .font(.caption)
+
+                Text("\(Int(self.modelsState.overallProgress * 100))%")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .monospacedDigit()
+                    .frame(width: 40, alignment: .trailing)
+            }
+        }
+        .padding(16)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var modelProgressCard: some View {
+        VStack(spacing: 0) {
+            ModelProgressRow(
+                name: "Parakeet ASR",
+                totalSize: "~600 MB",
+                displayState: self.displayState(for: .parakeetTDT)
+            )
+
+            Divider()
+
+            ModelProgressRow(
+                name: self.modelsState.primaryLLM.displayName,
+                totalSize: self.llmSizeDisplay,
+                displayState: self.displayState(for: self.modelsState.primaryLLM)
+            )
+
+            Divider()
+
+            ModelProgressRow(
+                name: "Kokoro TTS",
+                totalSize: "~500 MB",
+                displayState: self.displayState(for: .kokoro)
+            )
+        }
+        .padding(16)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func errorCard(for error: String) -> some View {
+        Label(error, systemImage: "exclamationmark.triangle")
+            .foregroundColor(.red)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(Color.red.opacity(0.08))
+            .glassEffect(.regular.tint(Color.red.opacity(0.2)), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 
@@ -328,9 +308,7 @@ private struct ModelProgressRow: View {
 
     return DownloadStepView(
         setupState: setupState,
-        modelsState: modelsState,
-        onRetry: {},
-        onCancel: {}
+        modelsState: modelsState
     )
     .frame(width: 500, height: 450)
     .padding()

@@ -148,6 +148,17 @@ final class SetupCoordinator: NSObject, ObservableObject {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// Bring the setup window to the front if it's already showing
+    func bringSetupToFront() {
+        guard self.isShowingSetup else { return }
+        if self.setupWindow == nil {
+            self.showSetup()
+            return
+        }
+        self.setupWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     /// Dismiss setup (only when complete)
     func dismissSetup() {
         guard self.state.isComplete else {

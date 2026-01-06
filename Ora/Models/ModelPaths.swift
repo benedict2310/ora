@@ -26,11 +26,19 @@ enum ModelPaths {
         oraRoot.appendingPathComponent("Models", isDirectory: true)
     }
 
+    /// FluidAudio stores Parakeet models under its own Application Support root
+    static var fluidAudioModelsRoot: URL {
+        applicationSupport.appendingPathComponent("FluidAudio/Models", isDirectory: true)
+    }
+
     // MARK: - Model Paths
 
     /// Get path for a specific model
     static func path(for model: ModelIdentifier) -> URL {
-        modelsRoot.appendingPathComponent(model.storagePath, isDirectory: true)
+        if model == .parakeetTDT {
+            return fluidAudioModelsRoot.appendingPathComponent("parakeet-tdt-0.6b-v3-coreml", isDirectory: true)
+        }
+        return modelsRoot.appendingPathComponent(model.storagePath, isDirectory: true)
     }
 
     /// Metadata file path

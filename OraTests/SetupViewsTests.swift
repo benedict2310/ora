@@ -45,11 +45,7 @@ final class SetupViewsTests: XCTestCase {
 
     func test_modelExplanationStepView_bodyBuilds() {
         let state = SetupState()
-        let view = ModelExplanationStepView(
-            state: state,
-            onDownloadNow: {},
-            onMaybeLater: {}
-        )
+        let view = ModelExplanationStepView(state: state)
         _ = view.body
     }
 
@@ -77,9 +73,7 @@ final class SetupViewsTests: XCTestCase {
 
         let downloadingView = DownloadStepView(
             setupState: downloadingSetupState,
-            modelsState: downloadingModelsState,
-            onRetry: {},
-            onCancel: {}
+            modelsState: downloadingModelsState
         )
         _ = downloadingView.body
 
@@ -114,9 +108,7 @@ final class SetupViewsTests: XCTestCase {
 
         let completeView = DownloadStepView(
             setupState: completeSetupState,
-            modelsState: completeModelsState,
-            onRetry: {},
-            onCancel: {}
+            modelsState: completeModelsState
         )
         _ = completeView.body
 
@@ -147,9 +139,7 @@ final class SetupViewsTests: XCTestCase {
 
         let errorView = DownloadStepView(
             setupState: errorSetupState,
-            modelsState: errorModelsState,
-            onRetry: {},
-            onCancel: {}
+            modelsState: errorModelsState
         )
         _ = errorView.body
     }
