@@ -134,7 +134,7 @@ Chunking must respect Kokoro's token limit. If tokenization is not available at 
 ## Implementation Summary
 **Date:** 2026-01-06
 **Branch:** `feat/X.03-reminders-tools`
-**Commits:** 1
+**Commits:** 3
 
 ### Files Changed
 - `Ora/TTS/SentenceChunker.swift` - add streaming sentence chunking with size caps.
@@ -146,17 +146,18 @@ Chunking must respect Kokoro's token limit. If tokenization is not available at 
 - `Ora/TTS/KokoroEngine.swift` - protocol extraction for testability.
 - `OraTests/SentenceChunkerTests.swift` - chunker coverage.
 - `OraTests/TTSServiceTests.swift` - long input splitting coverage.
+- `OraTests/ResponseTextStreamParserTests.swift` - response parser streaming coverage.
 - `docs/stories/tts-integration/T.03-SENTENCE-CHUNKER.md` - plan + acceptance updates.
 - `docs/stories/README.md` - mark story complete.
 
 ### Ready for Review
 - [x] All acceptance criteria verified
-- [x] Tests passing (`./build.sh`, `xcodebuild test -project Ora.xcodeproj -scheme Ora -only-testing OraTests/SentenceChunkerTests -only-testing OraTests/TTSServiceTests`)
+- [x] Tests passing (`./build.sh`, `xcodebuild test -project Ora.xcodeproj -scheme Ora -only-testing OraTests/SentenceChunkerTests -only-testing OraTests/TTSServiceTests -only-testing OraTests/ResponseTextStreamParserTests`)
 - [x] Working tree clean
 
 ## Completion Status
 - [x] Implementation complete
-- [ ] Code review passed (0 iterations)
+- [x] Code review passed (3 iterations)
 - [ ] PR merged: N/A
 - [ ] Merged to main: N/A
 - [x] Date: 2026-01-06
@@ -166,25 +167,25 @@ Chunking must respect Kokoro's token limit. If tokenization is not available at 
 ## Code Review Findings
 
 **Reviewer:** Codex Subagent
-**Date:** 2026-01-06T21:18:41Z
-**Commit reviewed:** c0d5a97
-**Iteration:** 2
+**Date:** 2026-01-06T21:25:00Z
+**Commit reviewed:** c75d08b
+**Iteration:** 3
 
 ### Summary
-- Files reviewed: 22
-- Build status: Fail
-- Tests status: Fail (Build failed)
+- Files reviewed: 11
+- Build status: Pass
+- Tests status: Pass (18 tests)
 
 ### Issues Found
 
 #### P0 - Critical (Must fix)
-- [x] `OraTests/ResponseTextStreamParserTests.swift:23` - Build error: `output.append(contentsOf: parser.append(fragment))` fails because `parser.append` returns `[String]`, while `String.append(contentsOf:)` expects a sequence of Characters. It should be `output.append(contentsOf: parser.append(fragment).joined())` or similar.
+- [x] All P0 issues resolved.
 
 #### P1 - Major (Should fix)
-- [x] `Ora/TTS/SentenceChunker.swift:47` - Fixed. Code now uses `joinSegments(pending, buffer)` before splitting, preserving order.
+- [x] All P1 issues resolved.
 
 #### P2 - Minor (Can defer)
-- [x] `Ora/LLM/ResponseTextStreamParser.swift:157` - Fixed. Code now correctly handles Unicode surrogate pairs via `appendUnicodeScalar`.
+- [x] All P2 issues resolved.
 
 ### Future Considerations (Out of Scope)
 - None.
@@ -192,4 +193,4 @@ Chunking must respect Kokoro's token limit. If tokenization is not available at 
 ### Approval Status
 - [x] All P0 issues resolved
 - [x] All P1 issues resolved
-- [ ] Ready for merge
+- [x] Ready for merge
