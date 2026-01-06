@@ -303,7 +303,7 @@ final class SimplePipelineController: ObservableObject {
                     self.currentTranscript = text
                     OverlayWindowController.shared.model.addUserMessage(text, isPartial: true)
                     // Notify silence detector of new partial (AC-7)
-                    self.silenceDetector?.onPartialReceived()
+                    self.silenceDetector?.onPartialReceived(text: text)
 
                 case .final(let text):
                     self.currentTranscript = text

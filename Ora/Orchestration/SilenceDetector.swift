@@ -70,6 +70,9 @@ final class SilenceDetector {
 
     /// Current VAD speech state
     private var isSpeechActive = false
+    
+    /// Last normalized text for stability checking
+    private var lastNormalizedText = ""
 
     // MARK: - Initialization
 
@@ -87,7 +90,23 @@ final class SilenceDetector {
 
     /// Called when an ASR partial is received.
     /// Resets the ASR-based silence timer and cancels VAD confirmation if pending.
-    func onPartialReceived() {
+    /// - Parameter text: The partial transcript text (for stability checking)
+    func onPartialReceived(text: String = "") {
+        // Track if text actually changed (ignore punctuation-only changes)
+        let normalizedText = self.normalizeForComparison(text)
+        let textChanged = normalizedText != self.lastNormalizedText
+        
+        if !text.isEmpty {
+            if textChanged {
+                self.logger.info("Partial received (changed): '\(text.prefix(50))...'")
+                self.lastNormalizedText = normalizedText
+            } else {
+                self.logger.debug("Partial received (unchanged/punctuation only): '\(text.prefix(50))...'")
+                // Don't reset timers for punctuation-only changes
+                return
+            }
+        }
+        
         // Cancel any existing ASR timer
         self.silenceTask?.cancel()
         self.silenceTask = nil
@@ -124,7 +143,16 @@ final class SilenceDetector {
             }
         }
 
-        self.logger.debug("Partial received, silence timer reset")
+        self.logger.debug("Silence timer reset")
+    }
+    
+    /// Normalize text for comparison (strips punctuation to avoid flicker)
+    private func normalizeForComparison(_ text: String) -> String {
+        // Remove trailing punctuation and whitespace for comparison
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Remove common trailing punctuation that oscillates
+        let punctuationToStrip = CharacterSet(charactersIn: ".,!?;:")
+        return trimmed.trimmingCharacters(in: punctuationToStrip).lowercased()
     }
 
     /// Called when VAD state changes (speech started or ended).
@@ -163,6 +191,7 @@ final class SilenceDetector {
         self.hasReceivedPartial = false
         self.vadEventsReceived = false
         self.isSpeechActive = false
+        self.lastNormalizedText = ""
         self.logger.debug("Silence detector reset")
     }
 
