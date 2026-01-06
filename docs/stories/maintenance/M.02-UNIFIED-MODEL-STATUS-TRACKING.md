@@ -1252,3 +1252,37 @@ If metadata hasn't loaded, `primaryLLM` may be wrong, causing incorrect status.
 ## Completion Status
 
 (TBD after merge.)
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-01-06T08:04:33Z
+**Commit reviewed:** a7ff4fd
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 11
+- Build status: Pass
+- Tests status: Pass (764 tests)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- None.
+
+#### P1 - Major (Should fix)
+- [x] `Ora/Models/ModelManager.swift:378` - `updateDownloadProgressIfDownloading` mutates `_state.downloadProgress` and speed/ETA but never posts `.modelStateDidChange`, so `modelsState` observers (Setup wizard/Preferences) don't receive live progress updates and the UI can stay at 0% until completion.
+  - ✅ Fixed by adding `await self.postStateChange()` in `updateDownloadProgressIfDownloading`.
+
+#### P2 - Minor (Can defer)
+- None.
+
+### Future Considerations (Out of Scope)
+- None.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge

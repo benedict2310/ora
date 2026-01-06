@@ -399,6 +399,7 @@ actor ModelManager {
         // Update speed calculation
         updateDownloadSpeed()
         
+        await self.postStateChange()
         await self.postDownloadProgress(model: model, progress: progress)
     }
 
