@@ -12,7 +12,7 @@ struct PermissionsStepView: View {
     @State private var permissionsState = PermissionsState()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 20) {
             Text("Permissions")
                 .font(.largeTitle)
                 .fontWeight(.bold)
@@ -20,55 +20,60 @@ struct PermissionsStepView: View {
             Text("Ora needs a few permissions to work properly.")
                 .foregroundColor(.secondary)
 
-            VStack(spacing: 16) {
-                // Required permissions
-                Text("Required")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            GlassEffectContainer(spacing: 16) {
+                VStack(spacing: 16) {
+                    // Required permissions
+                    Text("Required")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
-                PermissionRow(
-                    type: .microphone,
-                    status: self.permissionsState.microphone,
-                    onRequest: { await self.coordinator.requestPermission(.microphone) }
-                )
+                    PermissionRow(
+                        type: .microphone,
+                        status: self.permissionsState.microphone,
+                        onRequest: { await self.coordinator.requestPermission(.microphone) }
+                    )
 
-                Divider()
+                    Divider()
 
-                // Optional permissions
-                Text("Optional")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    // Optional permissions
+                    Text("Optional")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
-                PermissionRow(
-                    type: .calendar,
-                    status: self.permissionsState.calendar,
-                    onRequest: { await self.coordinator.requestPermission(.calendar) }
-                )
+                    PermissionRow(
+                        type: .calendar,
+                        status: self.permissionsState.calendar,
+                        onRequest: { await self.coordinator.requestPermission(.calendar) }
+                    )
 
-                PermissionRow(
-                    type: .reminders,
-                    status: self.permissionsState.reminders,
-                    onRequest: { await self.coordinator.requestPermission(.reminders) }
-                )
+                    PermissionRow(
+                        type: .reminders,
+                        status: self.permissionsState.reminders,
+                        onRequest: { await self.coordinator.requestPermission(.reminders) }
+                    )
 
-                PermissionRow(
-                    type: .contacts,
-                    status: self.permissionsState.contacts,
-                    onRequest: { await self.coordinator.requestPermission(.contacts) }
-                )
+                    PermissionRow(
+                        type: .contacts,
+                        status: self.permissionsState.contacts,
+                        onRequest: { await self.coordinator.requestPermission(.contacts) }
+                    )
+                }
+                .padding(16)
+                .background(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
-            .padding()
-            .background(Color(nsColor: .controlBackgroundColor))
-            .cornerRadius(8)
-
-            Spacer()
 
             if !self.permissionsState.requiredPermissionsGranted {
                 Label("Microphone permission is required to continue.", systemImage: "exclamationmark.triangle")
                     .font(.caption)
                     .foregroundColor(.orange)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(Color.orange.opacity(0.12))
+                    .glassEffect(.regular.tint(Color.orange.opacity(0.18)), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
         }
+        .frame(maxWidth: .infinity, alignment: .top)
         .onAppear {
             self.refreshPermissions()
         }
@@ -77,11 +82,13 @@ struct PermissionsStepView: View {
             if let state = notification.object as? PermissionsState {
                 self.permissionsState = state
                 self.coordinator.updatePermissionsGranted(state.requiredPermissionsGranted)
+                self.bringSetupToFrontIfNeeded()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             // Refresh when returning from System Settings
             self.refreshPermissions()
+            self.bringSetupToFrontIfNeeded()
         }
     }
 
@@ -91,7 +98,14 @@ struct PermissionsStepView: View {
             let state = await PermissionsManager.shared.state
             self.permissionsState = state
             self.coordinator.updatePermissionsGranted(state.requiredPermissionsGranted)
+            self.bringSetupToFrontIfNeeded()
         }
+    }
+
+    private func bringSetupToFrontIfNeeded() {
+        guard self.coordinator.isShowingSetup,
+              self.coordinator.state.currentStep == .permissions else { return }
+        self.coordinator.bringSetupToFront()
     }
 }
 

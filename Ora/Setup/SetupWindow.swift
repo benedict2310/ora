@@ -9,59 +9,80 @@ import SwiftUI
 
 struct SetupWindow: View {
     @ObservedObject var coordinator: SetupCoordinator
+    private let windowSize = CGSize(width: 640, height: 640)
+    private let contentMaxWidth: CGFloat = 520
+    private let contentPadding: CGFloat = 24
 
     var body: some View {
         VStack(spacing: 0) {
             // Progress indicator
-            SetupProgressView(currentStep: self.coordinator.state.currentStep)
-                .padding(.top, 20)
-                .padding(.horizontal, 40)
+            self.header
 
             Divider()
-                .padding(.top, 20)
 
             // Content area
-            Group {
-                switch self.coordinator.state.currentStep {
-                case .welcome:
-                    WelcomeStepView(state: self.coordinator.state)
-                case .permissions:
-                    PermissionsStepView(coordinator: self.coordinator)
-                case .modelExplanation:
-                    ModelExplanationStepView(
-                        state: self.coordinator.state,
-                        onDownloadNow: {
-                            Task { await self.coordinator.startDownloadFromExplanation() }
-                        },
-                        onMaybeLater: {
-                            self.coordinator.postponeSetup()
-                        }
-                    )
-                case .download:
-                    DownloadStepView(
-                        state: self.coordinator.state,
-                        onRetry: {
-                            Task { await self.coordinator.retryDownload() }
-                        },
-                        onCancel: {
-                            self.coordinator.cancelDownloads()
-                        }
-                    )
-                case .ready:
-                    ReadyStepView()
-                }
+            ScrollView {
+                self.stepContent
+                    .frame(maxWidth: self.contentMaxWidth, alignment: .top)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, self.contentPadding)
+                    .padding(.vertical, 24)
+                    .padding(.bottom, 12)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(40)
+            .scrollIndicators(.automatic)
 
             Divider()
 
             // Navigation buttons
             SetupNavigationView(coordinator: self.coordinator)
-                .padding(20)
         }
-        .frame(width: 600, height: 500)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .frame(width: self.windowSize.width, height: self.windowSize.height)
+        .background(self.windowBackground)
+    }
+
+    @ViewBuilder
+    private var stepContent: some View {
+        switch self.coordinator.state.currentStep {
+        case .welcome:
+            WelcomeStepView(state: self.coordinator.state)
+        case .permissions:
+            PermissionsStepView(coordinator: self.coordinator)
+        case .modelExplanation:
+            ModelExplanationStepView(
+                state: self.coordinator.state
+            )
+        case .download:
+            DownloadStepView(
+                setupState: self.coordinator.state,
+                modelsState: self.coordinator.modelsState
+            )
+        case .ready:
+            ReadyStepView()
+        }
+    }
+
+    private var header: some View {
+        SetupProgressView(currentStep: self.coordinator.state.currentStep)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 16)
+            .background(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .frame(maxWidth: self.contentMaxWidth)
+            .padding(.top, 16)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 12)
+    }
+
+    private var windowBackground: some View {
+        LinearGradient(
+            colors: [
+                Color(nsColor: .windowBackgroundColor),
+                Color(nsColor: .controlBackgroundColor).opacity(0.5)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .ignoresSafeArea()
     }
 }
 
@@ -120,43 +141,43 @@ struct SetupNavigationView: View {
     @ObservedObject var coordinator: SetupCoordinator
 
     var body: some View {
-        // ModelExplanation and Download steps have their own navigation
-        if self.coordinator.state.currentStep == .modelExplanation ||
-           self.coordinator.state.currentStep == .download {
-            // These steps handle their own buttons
-            EmptyView()
-        } else {
-            HStack {
-                // Back button
-                if self.coordinator.state.currentStep.canGoBack {
-                    Button("Back") {
-                        self.coordinator.previousStep()
-                    }
-                    .keyboardShortcut(.escape, modifiers: [])
+        HStack {
+            if self.showsCancelButton {
+                Button("Cancel") {
+                    self.coordinator.cancelDownloads()
                 }
-
-                Spacer()
-
-                // Postpone (only on welcome/permissions)
-                if self.coordinator.state.currentStep == .welcome || self.coordinator.state.currentStep == .permissions {
-                    Button("Later") {
-                        self.coordinator.postponeSetup()
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.secondary)
+                .buttonStyle(.plain)
+                .foregroundColor(.secondary)
+                .keyboardShortcut(.escape, modifiers: [])
+                .disabled(self.coordinator.modelsState.overallProgress >= 1.0)
+            } else if self.coordinator.state.currentStep.canGoBack {
+                Button("Back") {
+                    self.coordinator.previousStep()
                 }
-
-                // Next/Done button
-                Button(self.nextButtonTitle) {
-                    Task {
-                        await self.coordinator.nextStep()
-                    }
-                }
-                .keyboardShortcut(.return, modifiers: [])
-                .buttonStyle(.borderedProminent)
-                .disabled(!self.canProceed)
+                .keyboardShortcut(.escape, modifiers: [])
             }
+
+            Spacer()
+
+            if self.showsLaterButton {
+                Button(self.laterButtonTitle) {
+                    self.coordinator.postponeSetup()
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.secondary)
+            }
+
+            Button(self.primaryButtonTitle) {
+                self.handlePrimaryAction()
+            }
+            .keyboardShortcut(.return, modifiers: [])
+            .buttonStyle(.borderedProminent)
+            .disabled(!self.primaryButtonEnabled)
         }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private var nextButtonTitle: String {
@@ -165,6 +186,54 @@ struct SetupNavigationView: View {
 
     private var canProceed: Bool {
         Self.canProceed(for: self.coordinator.state)
+    }
+
+    private var showsCancelButton: Bool {
+        self.coordinator.state.currentStep == .download
+    }
+
+    private var showsLaterButton: Bool {
+        switch self.coordinator.state.currentStep {
+        case .welcome, .permissions, .modelExplanation:
+            return true
+        case .download, .ready:
+            return false
+        }
+    }
+
+    private var laterButtonTitle: String {
+        self.coordinator.state.currentStep == .modelExplanation ? "Maybe Later" : "Later"
+    }
+
+    private var primaryButtonTitle: String {
+        if self.coordinator.state.currentStep == .download,
+           self.coordinator.state.downloadError != nil {
+            return "Retry Download"
+        }
+        return self.nextButtonTitle
+    }
+
+    private var primaryButtonEnabled: Bool {
+        if self.coordinator.state.currentStep == .download,
+           self.coordinator.state.downloadError != nil {
+            return true
+        }
+        return self.canProceed
+    }
+
+    private func handlePrimaryAction() {
+        switch self.coordinator.state.currentStep {
+        case .modelExplanation:
+            Task { await self.coordinator.startDownloadFromExplanation() }
+        case .download:
+            if self.coordinator.state.downloadError != nil {
+                Task { await self.coordinator.retryDownload() }
+            } else {
+                Task { await self.coordinator.nextStep() }
+            }
+        default:
+            Task { await self.coordinator.nextStep() }
+        }
     }
 
     static func nextButtonTitle(for step: SetupStep) -> String {

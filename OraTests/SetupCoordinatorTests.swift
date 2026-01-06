@@ -132,24 +132,6 @@ final class SetupStateTests: XCTestCase {
         XCTAssertEqual(state.recommendedModel, "Qwen 3 4B")
     }
 
-    // MARK: - Model Progresses
-
-    func test_modelProgresses_emptyByDefault() {
-        let state = SetupState()
-        XCTAssertTrue(state.modelProgresses.isEmpty)
-    }
-
-    func test_modelProgresses_canTrackIndividualModels() {
-        var state = SetupState()
-        state.modelProgresses[.parakeetTDT] = 0.5
-        state.modelProgresses[.qwen3_4B] = 0.25
-        state.modelProgresses[.kokoro] = 1.0
-
-        XCTAssertEqual(state.modelProgresses[.parakeetTDT], 0.5)
-        XCTAssertEqual(state.modelProgresses[.qwen3_4B], 0.25)
-        XCTAssertEqual(state.modelProgresses[.kokoro], 1.0)
-    }
-
     // MARK: - State Mutation Tests
 
     func test_stateIsSendable() {
@@ -200,116 +182,110 @@ final class SetupStateTests: XCTestCase {
         XCTAssertTrue(state.skippedOptionalPermissions)
     }
 
-    // MARK: - Enhanced Download Stats
+    // MARK: - Download Cancellation State
+    // Note: Detailed download stats (speed, ETA, bytes) are now tracked in ModelsState
 
-    func test_initialState_downloadStatsAreZero() {
+    func test_downloadWasCancelled_defaultsFalse() {
         let state = SetupState()
-        XCTAssertEqual(state.totalBytesDownloaded, 0)
-        XCTAssertEqual(state.totalBytesToDownload, 0)
-        XCTAssertEqual(state.downloadSpeedBytesPerSecond, 0)
-        XCTAssertNil(state.estimatedTimeRemainingSeconds)
-        XCTAssertFalse(state.isDownloading)
         XCTAssertFalse(state.downloadWasCancelled)
     }
 
-    func test_formattedBytesDownloaded_formatsCorrectly() {
+    func test_downloadWasCancelled_canBeSet() {
         var state = SetupState()
+        state.downloadWasCancelled = true
+        XCTAssertTrue(state.downloadWasCancelled)
+    }
 
-        state.totalBytesDownloaded = 500 * 1024 * 1024  // 500 MB
-        XCTAssertEqual(state.formattedBytesDownloaded, "500 MB")
+    // MARK: - Format Helpers (Static)
 
-        state.totalBytesDownloaded = Int64(1.5 * 1024 * 1024 * 1024)  // 1.5 GB
-        XCTAssertEqual(state.formattedBytesDownloaded, "1.5 GB")
+    func test_formatBytes_formatsCorrectly() {
+        // Test MB formatting
+        XCTAssertEqual(SetupState.formatBytes(500 * 1024 * 1024), "500 MB")
+        
+        // Test GB formatting
+        XCTAssertEqual(SetupState.formatBytes(Int64(1.5 * 1024 * 1024 * 1024)), "1.5 GB")
+        
+        // Test 0 bytes
+        XCTAssertEqual(SetupState.formatBytes(0), "0 MB")
+    }
+
+    func test_totalModelSizeDisplay_returnsExpectedValue() {
+        XCTAssertEqual(SetupState.totalModelSizeDisplay, "~3.6 GB")
+    }
+}
+
+// MARK: - ModelsState Download Tracking Tests
+// Note: Download progress/speed/ETA tracking has been moved to ModelsState (single source of truth)
+
+final class ModelsStateDownloadTrackingTests: XCTestCase {
+
+    func test_initialModelsState_hasNoDownloading() {
+        let state = ModelsState()
+        XCTAssertFalse(state.isDownloading)
+        XCTAssertEqual(state.overallDownloadSpeed, 0)
+        XCTAssertNil(state.estimatedTimeRemainingSeconds)
+        XCTAssertTrue(state.downloadProgress.isEmpty)
+    }
+
+    func test_totalBytesDownloaded_calculatesFromProgress() {
+        var state = ModelsState()
+        state.downloadProgress[.parakeetTDT] = ModelDownloadProgress(
+            identifier: .parakeetTDT,
+            bytesDownloaded: 300_000_000,
+            totalBytes: 600_000_000
+        )
+        state.downloadProgress[.qwen3_4B] = ModelDownloadProgress(
+            identifier: .qwen3_4B,
+            bytesDownloaded: 1_000_000_000,
+            totalBytes: 2_500_000_000
+        )
+
+        XCTAssertEqual(state.totalBytesDownloaded, 1_300_000_000)
+        XCTAssertEqual(state.totalBytesToDownload, 3_100_000_000)
     }
 
     func test_formattedDownloadSpeed_formatsCorrectly() {
-        var state = SetupState()
+        var state = ModelsState()
 
-        state.downloadSpeedBytesPerSecond = 12.3 * 1024 * 1024  // 12.3 MB/s
+        state.overallDownloadSpeed = 12.3 * 1024 * 1024  // 12.3 MB/s
         XCTAssertEqual(state.formattedDownloadSpeed, "12.3 MB/s")
 
-        state.downloadSpeedBytesPerSecond = 0.01 * 1024 * 1024  // Very slow
+        state.overallDownloadSpeed = 0.01 * 1024 * 1024  // Very slow
         XCTAssertEqual(state.formattedDownloadSpeed, "...")  // Shows placeholder for slow speeds
     }
 
     func test_formattedTimeRemaining_formatsSeconds() {
-        var state = SetupState()
+        var state = ModelsState()
         state.estimatedTimeRemainingSeconds = 45
         XCTAssertEqual(state.formattedTimeRemaining, "~45s left")
     }
 
     func test_formattedTimeRemaining_formatsMinutes() {
-        var state = SetupState()
+        var state = ModelsState()
         state.estimatedTimeRemainingSeconds = 120
         XCTAssertEqual(state.formattedTimeRemaining, "~2 min left")
     }
 
     func test_formattedTimeRemaining_formatsHours() {
-        var state = SetupState()
+        var state = ModelsState()
         state.estimatedTimeRemainingSeconds = 3660  // 1 hour 1 minute
         XCTAssertEqual(state.formattedTimeRemaining, "~1h 1m left")
     }
 
     func test_formattedTimeRemaining_nilForZero() {
-        var state = SetupState()
+        var state = ModelsState()
         state.estimatedTimeRemainingSeconds = 0
         XCTAssertNil(state.formattedTimeRemaining)
     }
 
-    func test_modelDownloadStates_canTrackStates() {
-        var state = SetupState()
-        state.modelDownloadStates[.parakeetTDT] = .complete
-        state.modelDownloadStates[.qwen3_4B] = .downloading(progress: 0.5, bytesDownloaded: 1250000000, totalBytes: 2500000000)
-        state.modelDownloadStates[.kokoro] = .pending
-
-        XCTAssertEqual(state.modelDownloadStates[.parakeetTDT], .complete)
-        if case .downloading(let progress, _, _) = state.modelDownloadStates[.qwen3_4B] {
-            XCTAssertEqual(progress, 0.5)
-        } else {
-            XCTFail("Expected downloading state")
-        }
-        XCTAssertEqual(state.modelDownloadStates[.kokoro], .pending)
-    }
-}
-
-// MARK: - Model Download State Tests
-
-final class ModelDownloadStateTests: XCTestCase {
-
-    func test_pending_progressIsZero() {
-        let state = ModelDownloadState.pending
-        XCTAssertEqual(state.progress, 0)
-        XCTAssertFalse(state.isComplete)
-    }
-
-    func test_downloading_reportsProgress() {
-        let state = ModelDownloadState.downloading(progress: 0.5, bytesDownloaded: 500, totalBytes: 1000)
-        XCTAssertEqual(state.progress, 0.5)
-        XCTAssertFalse(state.isComplete)
-    }
-
-    func test_verifying_progressIsOne() {
-        let state = ModelDownloadState.verifying
-        XCTAssertEqual(state.progress, 1.0)
-        XCTAssertFalse(state.isComplete)
-    }
-
-    func test_complete_isComplete() {
-        let state = ModelDownloadState.complete
-        XCTAssertEqual(state.progress, 1.0)
-        XCTAssertTrue(state.isComplete)
-    }
-
-    func test_error_progressIsZero() {
-        let state = ModelDownloadState.error("Network error")
-        XCTAssertEqual(state.progress, 0)
-        XCTAssertFalse(state.isComplete)
-    }
-
-    func test_equatable_worksBetweenCases() {
-        XCTAssertEqual(ModelDownloadState.pending, ModelDownloadState.pending)
-        XCTAssertEqual(ModelDownloadState.complete, ModelDownloadState.complete)
-        XCTAssertNotEqual(ModelDownloadState.pending, ModelDownloadState.complete)
+    func test_formattedBytesDownloaded_formatsCorrectly() {
+        var state = ModelsState()
+        state.downloadProgress[.parakeetTDT] = ModelDownloadProgress(
+            identifier: .parakeetTDT,
+            bytesDownloaded: Int64(1.5 * 1024 * 1024 * 1024),
+            totalBytes: Int64(2.0 * 1024 * 1024 * 1024)
+        )
+        XCTAssertEqual(state.formattedBytesDownloaded, "1.5 GB")
     }
 }
 
@@ -356,6 +332,15 @@ final class SetupCoordinatorTests: XCTestCase {
 
         // Primary LLM is now always Qwen 3 4B regardless of RAM
         XCTAssertEqual(coordinator.state.primaryLLM, .qwen3_4B)
+    }
+
+    // MARK: - Models State (Unified Tracking)
+
+    func test_coordinator_hasModelsState() {
+        let coordinator = SetupCoordinator.shared
+
+        // Coordinator should expose modelsState for unified download tracking
+        XCTAssertNotNil(coordinator.modelsState)
     }
 
     // MARK: - Setup Complete Detection Tests
@@ -452,6 +437,12 @@ final class SetupNotificationTests: XCTestCase {
 
         wait(for: [expectation], timeout: 1.0)
         NotificationCenter.default.removeObserver(observer)
+    }
+    
+    func test_modelStateDidChange_notificationExists() {
+        // Verify the notification name is properly defined
+        let name = Notification.Name.modelStateDidChange
+        XCTAssertEqual(name.rawValue, "com.ora.modelStateDidChange")
     }
 }
 

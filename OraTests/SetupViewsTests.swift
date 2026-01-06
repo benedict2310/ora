@@ -45,63 +45,102 @@ final class SetupViewsTests: XCTestCase {
 
     func test_modelExplanationStepView_bodyBuilds() {
         let state = SetupState()
-        let view = ModelExplanationStepView(
-            state: state,
-            onDownloadNow: {},
-            onMaybeLater: {}
-        )
+        let view = ModelExplanationStepView(state: state)
         _ = view.body
     }
 
     func test_downloadStepView_bodyBuilds_forStates() {
-        var downloadingState = SetupState()
-        downloadingState.currentStep = .download
-        downloadingState.downloadProgress = 0.35
-        downloadingState.downloadingModel = "Parakeet ASR"
-        downloadingState.modelProgresses = [
-            .parakeetTDT: 0.35,
-            .qwen3_4B: 0.1,
-            .kokoro: 0
+        // Test downloading state
+        var downloadingSetupState = SetupState()
+        downloadingSetupState.currentStep = .download
+        downloadingSetupState.downloadProgress = 0.35
+        downloadingSetupState.downloadingModel = "Parakeet ASR"
+
+        var downloadingModelsState = ModelsState()
+        downloadingModelsState.statuses = [
+            .parakeetTDT: .downloading(progress: 0.35),
+            .qwen3_4B: .notDownloaded,
+            .kokoro: .notDownloaded
         ]
-        downloadingState.modelDownloadStates = [
-            .parakeetTDT: .downloading(progress: 0.35, bytesDownloaded: 200_000_000, totalBytes: 600_000_000),
-            .qwen3_4B: .pending,
-            .kokoro: .pending
+        downloadingModelsState.downloadProgress = [
+            .parakeetTDT: ModelDownloadProgress(
+                identifier: .parakeetTDT,
+                bytesDownloaded: 200_000_000,
+                totalBytes: 600_000_000
+            )
         ]
-        let downloadingView = DownloadStepView(state: downloadingState, onRetry: {}, onCancel: {})
+        downloadingModelsState.isDownloading = true
+
+        let downloadingView = DownloadStepView(
+            setupState: downloadingSetupState,
+            modelsState: downloadingModelsState
+        )
         _ = downloadingView.body
 
-        var completeState = SetupState()
-        completeState.currentStep = .download
-        completeState.downloadProgress = 1.0
-        completeState.modelProgresses = [
-            .parakeetTDT: 1.0,
-            .qwen3_4B: 1.0,
-            .kokoro: 1.0
+        // Test complete state
+        var completeSetupState = SetupState()
+        completeSetupState.currentStep = .download
+        completeSetupState.downloadProgress = 1.0
+
+        var completeModelsState = ModelsState()
+        completeModelsState.statuses = [
+            .parakeetTDT: .ready,
+            .qwen3_4B: .ready,
+            .kokoro: .ready
         ]
-        completeState.modelDownloadStates = [
-            .parakeetTDT: .complete,
-            .qwen3_4B: .complete,
-            .kokoro: .complete
+        completeModelsState.downloadProgress = [
+            .parakeetTDT: ModelDownloadProgress(
+                identifier: .parakeetTDT,
+                bytesDownloaded: 600_000_000,
+                totalBytes: 600_000_000
+            ),
+            .qwen3_4B: ModelDownloadProgress(
+                identifier: .qwen3_4B,
+                bytesDownloaded: 2_500_000_000,
+                totalBytes: 2_500_000_000
+            ),
+            .kokoro: ModelDownloadProgress(
+                identifier: .kokoro,
+                bytesDownloaded: 500_000_000,
+                totalBytes: 500_000_000
+            )
         ]
-        let completeView = DownloadStepView(state: completeState, onRetry: {}, onCancel: {})
+
+        let completeView = DownloadStepView(
+            setupState: completeSetupState,
+            modelsState: completeModelsState
+        )
         _ = completeView.body
 
-        var errorState = SetupState()
-        errorState.currentStep = .download
-        errorState.downloadProgress = 0.6
-        errorState.downloadError = "Network error"
-        errorState.modelProgresses = [
-            .parakeetTDT: 0.6,
-            .qwen3_4B: 0.3,
-            .kokoro: 0.0
+        // Test error state
+        var errorSetupState = SetupState()
+        errorSetupState.currentStep = .download
+        errorSetupState.downloadProgress = 0.6
+        errorSetupState.downloadError = "Network error"
+
+        var errorModelsState = ModelsState()
+        errorModelsState.statuses = [
+            .parakeetTDT: .ready,
+            .qwen3_4B: .failed("Network error"),
+            .kokoro: .notDownloaded
         ]
-        errorState.modelDownloadStates = [
-            .parakeetTDT: .complete,
-            .qwen3_4B: .error("Network error"),
-            .kokoro: .pending
+        errorModelsState.downloadProgress = [
+            .parakeetTDT: ModelDownloadProgress(
+                identifier: .parakeetTDT,
+                bytesDownloaded: 600_000_000,
+                totalBytes: 600_000_000
+            ),
+            .qwen3_4B: ModelDownloadProgress(
+                identifier: .qwen3_4B,
+                bytesDownloaded: 1_500_000_000,
+                totalBytes: 2_500_000_000
+            )
         ]
-        let errorView = DownloadStepView(state: errorState, onRetry: {}, onCancel: {})
+
+        let errorView = DownloadStepView(
+            setupState: errorSetupState,
+            modelsState: errorModelsState
+        )
         _ = errorView.body
     }
 
@@ -159,29 +198,44 @@ final class SetupViewsTests: XCTestCase {
 
     func test_setupWindow_bodyBuilds_forAllSteps() {
         for step in SetupStep.allCases {
-            let coordinator = SetupCoordinator.makeForTesting(state: self.makeState(for: step))
+            let (setupState, _) = self.makeStates(for: step)
+            let coordinator = SetupCoordinator.makeForTesting(state: setupState)
             let view = SetupWindow(coordinator: coordinator)
             _ = view.body
         }
     }
 
-    private func makeState(for step: SetupStep) -> SetupState {
-        var state = SetupState()
-        state.currentStep = step
-        state.permissionsGranted = true
-        state.downloadProgress = step == .download ? 0.4 : 1.0
-        state.downloadError = nil
-        state.downloadingModel = step == .download ? "Parakeet ASR" : nil
-        state.modelProgresses = [
-            .parakeetTDT: step == .download ? 0.4 : 1.0,
-            .qwen3_4B: step == .download ? 0.2 : 1.0,
-            .kokoro: step == .download ? 0.0 : 1.0
-        ]
-        state.modelDownloadStates = [
-            .parakeetTDT: step == .download ? .downloading(progress: 0.4, bytesDownloaded: 240_000_000, totalBytes: 600_000_000) : .complete,
-            .qwen3_4B: step == .download ? .pending : .complete,
-            .kokoro: step == .download ? .pending : .complete
-        ]
-        return state
+    private func makeStates(for step: SetupStep) -> (SetupState, ModelsState) {
+        var setupState = SetupState()
+        setupState.currentStep = step
+        setupState.permissionsGranted = true
+        setupState.downloadProgress = step == .download ? 0.4 : 1.0
+        setupState.downloadError = nil
+        setupState.downloadingModel = step == .download ? "Parakeet ASR" : nil
+
+        var modelsState = ModelsState()
+        if step == .download {
+            modelsState.statuses = [
+                .parakeetTDT: .downloading(progress: 0.4),
+                .qwen3_4B: .notDownloaded,
+                .kokoro: .notDownloaded
+            ]
+            modelsState.downloadProgress = [
+                .parakeetTDT: ModelDownloadProgress(
+                    identifier: .parakeetTDT,
+                    bytesDownloaded: 240_000_000,
+                    totalBytes: 600_000_000
+                )
+            ]
+            modelsState.isDownloading = true
+        } else {
+            modelsState.statuses = [
+                .parakeetTDT: .ready,
+                .qwen3_4B: .ready,
+                .kokoro: .ready
+            ]
+        }
+
+        return (setupState, modelsState)
     }
 }
