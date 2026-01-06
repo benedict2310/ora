@@ -28,7 +28,8 @@ actor StructuredGenerator {
     /// Generate structured output with validation and retry
     func generate(
         messages: [LLMMessage],
-        retryPrompt: String? = nil
+        retryPrompt: String? = nil,
+        responseTokenHandler: (@Sendable (String) async -> Void)? = nil
     ) async throws -> LLMOutput {
         var attempts = 0
         var lastError: Error?
@@ -36,12 +37,19 @@ actor StructuredGenerator {
         
         while attempts < maxRetries {
             attempts += 1
+            var responseParser = ResponseTextStreamParser()
             
             // Collect full response
             var fullResponse = ""
             for try await delta in await llm.generate(messages: currentMessages, maxTokens: 800) {
                 if case .token(let text) = delta {
                     fullResponse += text
+                    if let handler = responseTokenHandler {
+                        let fragments = responseParser.append(text)
+                        for fragment in fragments where !fragment.isEmpty {
+                            await handler(fragment)
+                        }
+                    }
                 }
             }
             

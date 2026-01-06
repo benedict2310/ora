@@ -53,6 +53,9 @@ final class SimplePipelineController: ObservableObject {
     private var autoDismissTask: Task<Void, Never>?
     private var ttsTask: Task<Void, Never>?
     private var confirmationTask: Task<Void, Never>?
+    private var sentenceChunker: SentenceChunker?
+    private var sentenceStreamContinuation: AsyncThrowingStream<String, Error>.Continuation?
+    private var isStreamingResponse = false
     
     /// The agent loop for processing requests
     private let agentLoop: AgentLoop
@@ -84,6 +87,9 @@ final class SimplePipelineController: ObservableObject {
     private init(agentLoop: AgentLoop = AgentLoop()) {
         self.agentLoop = agentLoop
         self.setupProposalObservers()
+        Task { @MainActor in
+            self.agentLoop.setDelegate(self)
+        }
     }
     
     private func fetchConversationModeSetting() -> Bool {
@@ -145,6 +151,7 @@ final class SimplePipelineController: ObservableObject {
         // Reset state for new session
         self.currentTranscript = ""
         self.currentResponse = ""
+        self.resetStreamingResponse()
         
         // Reset overlay for new session
         OverlayWindowController.shared.model.reset()
@@ -226,6 +233,7 @@ final class SimplePipelineController: ObservableObject {
         self.ttsTask = nil
         self.confirmationTask?.cancel()
         self.confirmationTask = nil
+        self.resetStreamingResponse()
 
         // Stop audio capture and TTS playback
         Task {
@@ -343,6 +351,8 @@ final class SimplePipelineController: ObservableObject {
     private func processTranscript() async {
         self.logger.info("Processing transcript: \(self.currentTranscript.prefix(50))...")
         
+        self.currentResponse = ""
+        self.resetStreamingResponse()
         self.transition(to: .thinking)
         OverlayWindowController.shared.mode = .thinking
         
@@ -379,6 +389,12 @@ final class SimplePipelineController: ObservableObject {
         self.logger.info("Agent response: \(text.prefix(50))...")
         
         self.currentResponse = text
+
+        if self.isStreamingResponse {
+            OverlayWindowController.shared.model.addAssistantMessage(text, isPartial: false)
+            self.finishStreamingResponse()
+            return
+        }
         
         self.transition(to: .responding)
         OverlayWindowController.shared.mode = .responding
@@ -491,8 +507,89 @@ final class SimplePipelineController: ObservableObject {
             self.handleAgentError("I couldn't complete that action: \(error.localizedDescription)")
         }
     }
-    
+
+    // MARK: - Private - Streaming Response
+
+    private func handleStreamingToken(_ token: String) {
+        guard !token.isEmpty else { return }
+
+        self.beginStreamingResponseIfNeeded()
+        self.currentResponse += token
+        OverlayWindowController.shared.model.addAssistantMessage(self.currentResponse, isPartial: true)
+
+        if var chunker = self.sentenceChunker {
+            let sentences = chunker.consume(token)
+            self.sentenceChunker = chunker
+            self.enqueueSentenceChunks(sentences)
+        }
+    }
+
+    private func beginStreamingResponseIfNeeded() {
+        guard !self.isStreamingResponse else { return }
+
+        self.isStreamingResponse = true
+        self.transition(to: .responding)
+        OverlayWindowController.shared.mode = .responding
+
+        var continuation: AsyncThrowingStream<String, Error>.Continuation?
+        let stream = AsyncThrowingStream<String, Error> { streamContinuation in
+            continuation = streamContinuation
+        }
+
+        self.sentenceStreamContinuation = continuation
+        self.sentenceChunker = SentenceChunker()
+        self.startStreamingSpeech(sentenceStream: stream)
+    }
+
+    private func enqueueSentenceChunks(_ sentences: [String]) {
+        guard let continuation = self.sentenceStreamContinuation else { return }
+        for sentence in sentences {
+            let trimmed = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            continuation.yield(trimmed)
+        }
+    }
+
+    private func finishStreamingResponse() {
+        guard self.isStreamingResponse else { return }
+        self.isStreamingResponse = false
+
+        if var chunker = self.sentenceChunker {
+            let remaining = chunker.finalize()
+            self.sentenceChunker = nil
+            self.enqueueSentenceChunks(remaining)
+        }
+
+        self.sentenceStreamContinuation?.finish()
+        self.sentenceStreamContinuation = nil
+    }
+
+    private func resetStreamingResponse() {
+        self.sentenceStreamContinuation?.finish()
+        self.sentenceStreamContinuation = nil
+        self.sentenceChunker = nil
+        self.isStreamingResponse = false
+    }
+
     // MARK: - Private - TTS
+
+    private func startStreamingSpeech(sentenceStream: AsyncThrowingStream<String, Error>) {
+        self.transition(to: .speaking)
+
+        self.ttsTask = Task {
+            do {
+                let audioStream = TTSService.shared.speak(sentences: sentenceStream)
+                try await AudioPlaybackService.shared.play(chunks: audioStream)
+
+                guard !Task.isCancelled else { return }
+                self.finishSpeaking()
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.logger.error("Streaming TTS playback failed: \(error.localizedDescription)")
+                self.finishSpeaking()
+            }
+        }
+    }
     
     private func speakResponse(_ text: String) {
         self.transition(to: .speaking)
@@ -553,6 +650,7 @@ final class SimplePipelineController: ObservableObject {
         // Cancel any running session task
         self.sessionTask?.cancel()
         self.sessionTask = nil
+        self.resetStreamingResponse()
         
         // Stop audio capture to prevent resource leak
         Task {
@@ -633,4 +731,18 @@ extension StatusBarController {
         guard let appDelegate = NSApp.delegate as? AppDelegate else { return nil }
         return appDelegate.statusBarController
     }
+}
+
+// MARK: - AgentLoopDelegate
+
+extension SimplePipelineController: AgentLoopDelegate {
+    func agentLoopDidStartThinking(_ loop: AgentLoop) {}
+
+    func agentLoop(_ loop: AgentLoop, didProduceToken token: String) {
+        self.handleStreamingToken(token)
+    }
+
+    func agentLoop(_ loop: AgentLoop, didRequestConfirmation proposal: ToolProposal) {}
+
+    func agentLoop(_ loop: AgentLoop, didExecuteTool name: String, result: String) {}
 }
