@@ -9,11 +9,9 @@ import SwiftUI
 
 struct ModelExplanationStepView: View {
     let state: SetupState
-    let onDownloadNow: () -> Void
-    let onMaybeLater: () -> Void
 
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 20) {
             // Title
             Text("Ora Runs Locally")
                 .font(.largeTitle)
@@ -23,103 +21,14 @@ struct ModelExplanationStepView: View {
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
 
-            Spacer()
-                .frame(height: 8)
-
-            // Model list card
-            VStack(spacing: 0) {
-                ModelInfoRow(
-                    icon: "waveform",
-                    iconColor: .blue,
-                    name: "Speech Recognition (Parakeet)",
-                    description: "Converts your voice to text",
-                    size: "~600 MB"
-                )
-
-                Divider()
-                    .padding(.leading, 52)
-
-                ModelInfoRow(
-                    icon: "brain",
-                    iconColor: .purple,
-                    name: self.state.primaryLLM.displayName,
-                    description: "Understands requests and generates responses",
-                    size: self.llmSizeDisplay
-                )
-
-                Divider()
-                    .padding(.leading, 52)
-
-                ModelInfoRow(
-                    icon: "speaker.wave.2",
-                    iconColor: .green,
-                    name: "Text-to-Speech (Kokoro)",
-                    description: "Speaks responses back to you",
-                    size: "~500 MB"
-                )
-
-                // Total size
-                Divider()
-
-                HStack {
-                    Spacer()
-                    Text("Total download:")
-                        .foregroundColor(.secondary)
-                    Text(SetupState.totalModelSizeDisplay)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.accentColor)
+            GlassEffectContainer(spacing: 16) {
+                VStack(spacing: 16) {
+                    self.modelListCard
+                    self.privacyCard
                 }
-                .padding()
-            }
-            .background(Color(nsColor: .controlBackgroundColor))
-            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
-
-            // Privacy badge
-            HStack(spacing: 12) {
-                Image(systemName: "lock.shield.fill")
-                    .font(.title2)
-                    .foregroundColor(.green)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Your privacy is protected")
-                        .fontWeight(.medium)
-                    Text("All models run locally on your Mac. Your conversations never leave your device.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-
-                Spacer()
-            }
-            .padding()
-            .background(Color.green.opacity(0.1))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(Color.green.opacity(0.3), lineWidth: 1)
-            )
-            .cornerRadius(10)
-
-            Spacer()
-
-            // Action buttons
-            HStack {
-                Button("Maybe Later") {
-                    self.onMaybeLater()
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(.secondary)
-
-                Spacer()
-
-                Button(action: self.onDownloadNow) {
-                    HStack {
-                        Text("Download Now")
-                        Image(systemName: "arrow.down.circle.fill")
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .top)
     }
 
     private var llmSizeDisplay: String {
@@ -133,6 +42,75 @@ struct ModelExplanationStepView: View {
         default:
             return "~2.5 GB"
         }
+    }
+
+    private var modelListCard: some View {
+        VStack(spacing: 0) {
+            ModelInfoRow(
+                icon: "waveform",
+                iconColor: .blue,
+                name: "Speech Recognition (Parakeet)",
+                description: "Converts your voice to text",
+                size: "~600 MB"
+            )
+
+            Divider()
+                .padding(.leading, 52)
+
+            ModelInfoRow(
+                icon: "brain",
+                iconColor: .purple,
+                name: self.state.primaryLLM.displayName,
+                description: "Understands requests and generates responses",
+                size: self.llmSizeDisplay
+            )
+
+            Divider()
+                .padding(.leading, 52)
+
+            ModelInfoRow(
+                icon: "speaker.wave.2",
+                iconColor: .green,
+                name: "Text-to-Speech (Kokoro)",
+                description: "Speaks responses back to you",
+                size: "~500 MB"
+            )
+
+            Divider()
+
+            HStack {
+                Spacer()
+                Text("Total download:")
+                    .foregroundColor(.secondary)
+                Text(SetupState.totalModelSizeDisplay)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.accentColor)
+            }
+            .padding()
+        }
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var privacyCard: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "lock.shield.fill")
+                .font(.title2)
+                .foregroundColor(.green)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Your privacy is protected")
+                    .fontWeight(.medium)
+                Text("All models run locally on your Mac. Your conversations never leave your device.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(12)
+        .background(Color.green.opacity(0.08))
+        .glassEffect(.regular.tint(Color.green.opacity(0.2)), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 
@@ -182,9 +160,7 @@ private struct ModelInfoRow: View {
 
 #Preview {
     ModelExplanationStepView(
-        state: SetupState(),
-        onDownloadNow: {},
-        onMaybeLater: {}
+        state: SetupState()
     )
     .frame(width: 500, height: 450)
     .padding()

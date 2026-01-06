@@ -72,7 +72,7 @@ final class ModelManagerTests: XCTestCase {
 
     func test_modelPaths_path_containsStoragePath() {
         let asrPath = ModelPaths.path(for: .parakeetTDT)
-        XCTAssertTrue(asrPath.path.contains("Ora/Models/asr/parakeet-tdt-0.6b-v3-coreml"))
+        XCTAssertTrue(asrPath.path.contains("FluidAudio/Models/parakeet-tdt-0.6b-v3-coreml"))
 
         let llmPath = ModelPaths.path(for: .qwen3_4B)
         XCTAssertTrue(llmPath.path.contains("Ora/Models/llm/qwen3-4b-instruct-4bit"))

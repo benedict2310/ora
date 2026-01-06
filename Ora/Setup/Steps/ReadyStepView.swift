@@ -13,7 +13,7 @@ struct ReadyStepView: View {
     }
 
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 20) {
             // Success icon
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 80))
@@ -23,44 +23,53 @@ struct ReadyStepView: View {
                 .font(.largeTitle)
                 .fontWeight(.bold)
 
-            Spacer()
-                .frame(height: 16)
-
-            // Hotkey card
-            VStack(spacing: 20) {
-                Text("Press")
-                    .font(.title3)
-                    .foregroundColor(.secondary)
-
-                // Hotkey display in glass card
-                Text(self.hotkeyDisplayString)
-                    .font(.system(size: 32, weight: .semibold, design: .rounded))
-                    .padding(.horizontal, 32)
-                    .padding(.vertical, 16)
-                    .background(Color(nsColor: .controlBackgroundColor))
-                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
-
-                Text("and start talking")
-                    .font(.title3)
-                    .foregroundColor(.secondary)
+            GlassEffectContainer(spacing: 16) {
+                VStack(spacing: 16) {
+                    self.hotkeyCard
+                    self.detailCard
+                }
             }
+        }
+        .frame(maxWidth: .infinity, alignment: .top)
+    }
 
-            Spacer()
-                .frame(height: 8)
+    private var hotkeyCard: some View {
+        VStack(spacing: 16) {
+            Text("Press")
+                .font(.title3)
+                .foregroundColor(.secondary)
 
-            // Conversation mode description
+            Text(self.hotkeyDisplayString)
+                .font(.system(size: 32, weight: .semibold, design: .rounded))
+                .padding(.horizontal, 32)
+                .padding(.vertical, 16)
+                .background(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            Text("and start talking")
+                .font(.title3)
+                .foregroundColor(.secondary)
+        }
+        .padding(16)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var detailCard: some View {
+        VStack(spacing: 8) {
             Text("Ora will listen, respond, and keep the conversation going.")
                 .font(.body)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
 
-            Spacer()
-
-            // Tip
             Text("You can change settings anytime from the menu bar icon.")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
+        .padding(12)
+        .frame(maxWidth: .infinity)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 

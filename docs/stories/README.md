@@ -112,6 +112,9 @@ Quality, coverage, and repository hygiene.
 | ID | Title | Status |
 |:---|:------|:-------|
 | M.01 | [Test Coverage Improvements](maintenance/M.01-TEST-COVERAGE-IMPROVEMENTS.md) | 🚧 In Progress |
+| M.02 | [Unified Model Status Tracking](maintenance/M.02-UNIFIED-MODEL-STATUS-TRACKING.md) | ✅ Complete |
+| M.03 | [Response Triggering Improvements](maintenance/M.03-STT-QUALITY-IMPROVEMENTS.md) | 🚧 To Do |
+| M.04 | [Voice Processing](maintenance/M.04-VOICE-PROCESSING.md) | 🚧 To Do |
 
 ### 🎼 Orchestration (O)
 Connecting the loop: Audio → ASR → LLM → Tools → TTS.

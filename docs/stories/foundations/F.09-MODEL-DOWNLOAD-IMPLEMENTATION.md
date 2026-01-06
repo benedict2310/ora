@@ -260,6 +260,20 @@ final class DefaultModelDownloader: ModelDownloader {
 
 ---
 
+## Post-Merge Maintenance (2026-01-06)
+
+**Issue Identified:**
+1. **Parakeet ASR path mismatch:** FluidAudio caches Parakeet models in `~/Library/Application Support/FluidAudio/Models`, but Ora verified in `~/Library/Application Support/Ora/Models/...`. Setup downloads completed, yet verification failed with "Required model file missing: Encoder.mlmodelc".
+
+**Fix Applied:**
+- Updated `ModelPaths.path(for: .parakeetTDT)` to point to the FluidAudio cache root.
+- Updated model path tests to match the FluidAudio directory.
+
+**Verification:**
+- `xcodebuild test -project Ora.xcodeproj -scheme Ora -only-testing:OraTests/ModelManagerTests`
+
+---
+
 ## Code Review Findings
 
 **Reviewer:** Codex Subagent
