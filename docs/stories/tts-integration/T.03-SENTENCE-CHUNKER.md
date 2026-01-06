@@ -142,7 +142,7 @@ Chunking must respect Kokoro's token limit. If tokenization is not available at 
 - `Ora/LLM/StructuredGenerator.swift` - forward response tokens to a handler.
 - `Ora/Orchestration/AgentLoop.swift` - delegate streaming response tokens.
 - `Ora/Orchestration/SimplePipelineController.swift` - enqueue sentence chunks for TTS during streaming.
-- `Ora/TTS/TTSService.swift` - synthesize per sentence chunk and add streaming entrypoint.
+- `Ora/TTS/TTSService.swift` - synthesize per sentence chunk; add streaming entrypoint.
 - `Ora/TTS/KokoroEngine.swift` - protocol extraction for testability.
 - `OraTests/SentenceChunkerTests.swift` - chunker coverage.
 - `OraTests/TTSServiceTests.swift` - long input splitting coverage.
@@ -166,25 +166,25 @@ Chunking must respect Kokoro's token limit. If tokenization is not available at 
 ## Code Review Findings
 
 **Reviewer:** Codex Subagent
-**Date:** 2026-01-06T20:26:47Z
-**Commit reviewed:** 1096cea
-**Iteration:** 1
+**Date:** 2026-01-06T21:18:41Z
+**Commit reviewed:** c0d5a97
+**Iteration:** 2
 
 ### Summary
-- Files reviewed: 9
-- Build status: Pass
-- Tests status: Pass (825 tests, 2 skipped)
+- Files reviewed: 22
+- Build status: Fail
+- Tests status: Fail (Build failed)
 
 ### Issues Found
 
 #### P0 - Critical (Must fix)
-- [ ] None.
+- [x] `OraTests/ResponseTextStreamParserTests.swift:23` - Build error: `output.append(contentsOf: parser.append(fragment))` fails because `parser.append` returns `[String]`, while `String.append(contentsOf:)` expects a sequence of Characters. It should be `output.append(contentsOf: parser.append(fragment).joined())` or similar.
 
 #### P1 - Major (Should fix)
-- [x] `Ora/TTS/SentenceChunker.swift:47` - When a short sentence is held in `pending` and the subsequent buffer exceeds `maxChunkLength`, `splitOversizedChunk(buffer)` emits later text before the earlier `pending` content, breaking playback order (AC "Queue chunks for playback in order").
+- [x] `Ora/TTS/SentenceChunker.swift:47` - Fixed. Code now uses `joinSegments(pending, buffer)` before splitting, preserving order.
 
 #### P2 - Minor (Can defer)
-- [x] `Ora/LLM/ResponseTextStreamParser.swift:157` - Unicode `\u` decoding ignores surrogate pairs, so non‑BMP characters (e.g., emoji encoded as `\uD83D\uDE00`) are dropped from the streamed text.
+- [x] `Ora/LLM/ResponseTextStreamParser.swift:157` - Fixed. Code now correctly handles Unicode surrogate pairs via `appendUnicodeScalar`.
 
 ### Future Considerations (Out of Scope)
 - None.

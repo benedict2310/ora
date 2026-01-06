@@ -20,7 +20,7 @@ final class ResponseTextStreamParserTests: XCTestCase {
 
         var output = ""
         for fragment in fragments {
-            output.append(contentsOf: parser.append(fragment))
+            output.append(contentsOf: parser.append(fragment).joined())
         }
 
         let expected = "Hello " + String(UnicodeScalar(0x1F600)!)
