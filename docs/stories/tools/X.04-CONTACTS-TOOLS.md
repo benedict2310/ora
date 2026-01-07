@@ -1,7 +1,7 @@
 # X.04 - Contacts Tools
 
 **Epic:** Tools
-**Status:** Not Started
+**Status:** In Progress
 **Priority:** P1 (Important)
 **Estimated Effort:** 1 day
 **Dependencies:** X.01 (Tool Protocol), F.02 (Permissions)
@@ -15,136 +15,95 @@ Implement contacts search using the Contacts framework.
 
 ---
 
-## 2. Tools
+## 2. User Story
 
-| Tool | Kind | Description |
-|:-----|:-----|:------------|
-| `contacts.search` | read | Search contacts by name |
+As a user, I want to find contact information for people in my address book so that I can get their phone numbers or email addresses quickly.
 
 ---
 
-## 3. Implementation
+## 3. Scope
 
-**File:** `Ora/Tools/Contacts/ContactsSearchTool.swift`
+**In Scope:**
+- Searching contacts by name
+- Retrieving phone numbers, emails, and organization names
+- Limiting the number of results
 
-```swift
-//
-//  ContactsSearchTool.swift
-//  Ora
-//
-//  Search contacts by name
-//
-
-import Foundation
-import Contacts
-
-struct ContactsSearchTool: Tool {
-    let name = "contacts.search"
-    let kind: ToolKind = .read
-    
-    var schema: ToolSchema {
-        ToolSchema(
-            name: name,
-            description: "Search contacts by name",
-            parameters: [
-                "query": ParameterSchema(type: "string", description: "Name to search for", format: nil),
-                "limit": ParameterSchema(type: "number", description: "Maximum results (default 10)", format: nil)
-            ],
-            requiredParameters: ["query"]
-        )
-    }
-    
-    func validate(args: [String: JSONValue]) throws {
-        guard let query = args["query"]?.stringValue, !query.isEmpty else {
-            throw ToolValidationError.missingParameter("query")
-        }
-    }
-    
-    func execute(args: [String: JSONValue]) async throws -> ToolResult {
-        let store = CNContactStore()
-        
-        guard let query = args["query"]?.stringValue else {
-            throw ToolExecutionError.invalidArgument("Query required")
-        }
-        
-        let limit = Int(args["limit"]?.numberValue ?? 10)
-        
-        let keysToFetch: [CNKeyDescriptor] = [
-            CNContactGivenNameKey as NSString,
-            CNContactFamilyNameKey as NSString,
-            CNContactEmailAddressesKey as NSString,
-            CNContactPhoneNumbersKey as NSString,
-            CNContactOrganizationNameKey as NSString
-        ]
-        
-        let predicate = CNContact.predicateForContacts(matchingName: query)
-        let contacts = try store.unifiedContacts(matching: predicate, keysToFetch: keysToFetch)
-        
-        let contactData: [JSONValue] = contacts.prefix(limit).map { contact in
-            let name = [contact.givenName, contact.familyName]
-                .filter { !$0.isEmpty }
-                .joined(separator: " ")
-            
-            let emails = contact.emailAddresses.map { $0.value as String }
-            let phones = contact.phoneNumbers.map { $0.value.stringValue }
-            
-            return .object([
-                "name": .string(name),
-                "organization": .string(contact.organizationName),
-                "emails": .array(emails.map { .string($0) }),
-                "phones": .array(phones.map { .string($0) })
-            ])
-        }
-        
-        let summary: String
-        if contacts.isEmpty {
-            summary = "No contacts found matching '\(query)'."
-        } else if contacts.count == 1 {
-            let contact = contacts[0]
-            let name = [contact.givenName, contact.familyName].joined(separator: " ")
-            if let phone = contact.phoneNumbers.first?.value.stringValue {
-                summary = "\(name)'s phone number is \(phone)."
-            } else if let email = contact.emailAddresses.first?.value as String? {
-                summary = "\(name)'s email is \(email)."
-            } else {
-                summary = "Found \(name)."
-            }
-        } else {
-            summary = "Found \(contacts.count) contacts matching '\(query)'."
-        }
-        
-        return .success(.array(contactData), summary: summary)
-    }
-}
-```
+**Out of Scope:**
+- Creating or editing contacts
+- Deleting contacts
+- Searching by fields other than name
 
 ---
 
-## 4. Acceptance Criteria
+## 4. Architecture Alignment
 
-- [ ] **AC-1:** Search returns matching contacts
-- [ ] **AC-2:** Results include name, email, phone
-- [ ] **AC-3:** Limit parameter respected
-- [ ] **AC-4:** Human summary is natural for single result
-
----
-
-## 5. Implementation Checklist
-
-- [ ] Create `ContactsSearchTool.swift`
-- [ ] Register in `ToolRegistry`
-- [ ] Test with real contacts
+- **Tool Protocol:** Implements `Tool` protocol defined in `Ora/Tools/Tool.swift`.
+- **Permissions:** Uses `Permissions.swift` to ensure access to Contacts.
+- **Privacy:** Reads minimal data necessary (Name, Email, Phone, Organization).
 
 ---
 
-## 6. Implementation Notes (From X.02 Learnings)
+## 5. Implementation Plan (Draft)
 
-### Tool Result Context
+### 5.1 Files to Create
+- `Ora/Tools/Contacts/ContactsSearchTool.swift`: Implementation of the contact search logic.
+- `Ora/Tools/Contacts/ContactsToolErrors.swift`: Error types for contacts tools.
+- `OraTests/Tools/Contacts/ContactsSearchToolTests.swift`: Unit tests for parameter validation and result formatting.
 
-Contacts tools are read-only, but the same principle applies:
+### 5.2 Files to Modify
+- `Ora/Tools/ToolRegistry.swift`: Register the new tool.
+- `OraTests/Tools/Calendar/CalendarToolsTests.swift`: Update total tool count expectation.
+- `OraTests/Tools/Reminders/RemindersToolsTests.swift`: Update total tool count expectation.
 
-1. **Include identifying info in JSON:** Return enough data in `ToolResult.json` for the LLM to take follow-up actions (e.g., making a call, sending an email).
+### 5.3 Tests to Add
+- `OraTests/Tools/ContactsSearchToolTests.swift`: Unit tests for parameter validation and result formatting.
 
-2. **Compact JSON:** The AgentLoop passes `result.json.compactJSON` to the conversation, so keep the response reasonably sized (limit results, only essential fields).
+---
 
-3. **Human summary for TTS:** The `humanSummary` is spoken aloud - make it natural and useful. For single results, include the key info directly ("John's phone is 555-1234").
+## 6. Acceptance Criteria
+
+- [x] **AC-1:** Search returns matching contacts. - ✅ Verified by `ContactsSearchTool` logic and tests.
+- [x] **AC-2:** Results include name, email, phone, and organization. - ✅ Verified by `ContactsSearchTool` logic.
+- [x] **AC-3:** Limit parameter is respected. - ✅ Verified by `ContactsSearchTool` logic.
+- [x] **AC-4:** Human summary is natural for single result. - ✅ Verified by `ContactsSearchTool` logic.
+- [x] **AC-5:** Appropriate error handling when permission is denied or parameters are missing. - ✅ Verified by `ContactsSearchTool` logic and tests.
+
+---
+
+## 7. Verification Plan
+
+### Automated Tests
+- Run `ContactsSearchToolTests` to verify validation and execution logic.
+- Run `CalendarToolsTests` and `RemindersToolsTests` to verify registry integrity.
+
+### Manual Tests
+1. Run `./build.sh run`
+2. Grant contacts permission.
+3. Ask: "What is [Name]'s phone number?"
+4. Verify the assistant responds with the correct number.
+5. Ask: "Find contacts named [Name]"
+6. Verify multiple results are handled.
+
+---
+
+## 8. Implementation Summary
+**Date:** 2026-01-07
+**Branch:** `feat/X.04-contacts-tools`
+**Commits:** 2
+
+### Files Changed
+- `Ora/Tools/Contacts/ContactsSearchTool.swift` - Refactored for testability
+- `Ora/Tools/Contacts/ContactsToolErrors.swift` - Created
+- `Ora/Tools/ToolRegistry.swift` - Modified (registered tool)
+- `OraTests/Tools/Contacts/ContactsSearchToolTests.swift` - Added execution logic tests
+- `OraTests/Tools/Calendar/CalendarToolsTests.swift` - Modified (updated tests)
+- `OraTests/Tools/Reminders/RemindersToolsTests.swift` - Modified (updated tests)
+
+### Code Review Findings (Iteration 1)
+- [x] `OraTests/Tools/Contacts/ContactsSearchToolTests.swift` - Added tests for `contactToJSON` and `summary` helpers.
+- [x] `Ora/Tools/Contacts/ContactsSearchTool.swift` - Extracted formatting logic to static helpers.
+
+### Ready for Review
+- [x] All acceptance criteria verified
+- [x] Tests passing
+- [x] Working tree clean

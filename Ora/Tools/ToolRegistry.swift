@@ -67,6 +67,9 @@ actor ToolRegistry {
         register(RemindersCompleteTool())
         register(RemindersEditTool())
 
+        // Contacts tools
+        register(ContactsSearchTool())
+
         logger.info("Registered \(self.tools.count) tools")
     }
     
