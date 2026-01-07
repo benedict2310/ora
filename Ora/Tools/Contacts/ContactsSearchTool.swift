@@ -58,42 +58,51 @@ struct ContactsSearchTool: Tool {
         
         // Execute synchronously (CNContactStore is thread-safe)
         let contacts = try store.unifiedContacts(matching: predicate, keysToFetch: keysToFetch)
+        let limitedContacts = Array(contacts.prefix(limit))
         
-        let contactData: [JSONValue] = contacts.prefix(limit).map { contact in
+        let contactData: [JSONValue] = limitedContacts.map { Self.contactToJSON($0) }
+        let summary = Self.summary(for: limitedContacts, query: query)
+        
+        return .success(.array(contactData), summary: summary)
+    }
+
+    // MARK: - Helpers
+
+    static func contactToJSON(_ contact: CNContact) -> JSONValue {
+        let name = [contact.givenName, contact.familyName]
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        
+        let emails = contact.emailAddresses.map { $0.value as String }
+        let phones = contact.phoneNumbers.map { $0.value.stringValue }
+        
+        return .object([
+            "name": .string(name),
+            "organization": .string(contact.organizationName),
+            "emails": .array(emails.map { .string($0) }),
+            "phones": .array(phones.map { .string($0) })
+        ])
+    }
+
+    static func summary(for contacts: [CNContact], query: String) -> String {
+        if contacts.isEmpty {
+            return "No contacts found matching '\(query)'."
+        } else if contacts.count == 1 {
+            let contact = contacts[0]
             let name = [contact.givenName, contact.familyName]
                 .filter { !$0.isEmpty }
                 .joined(separator: " ")
             
-            let emails = contact.emailAddresses.map { $0.value as String }
-            let phones = contact.phoneNumbers.map { $0.value.stringValue }
-            
-            return .object([
-                "name": .string(name),
-                "organization": .string(contact.organizationName),
-                "emails": .array(emails.map { .string($0) }),
-                "phones": .array(phones.map { .string($0) })
-            ])
-        }
-        
-        let summary: String
-        if contacts.isEmpty {
-            summary = "No contacts found matching '\(query)'."
-        } else if contacts.count == 1 {
-            let contact = contacts[0]
-            let name = [contact.givenName, contact.familyName].joined(separator: " ")
-            
             // Try to find a phone or email for the summary
             if let phone = contact.phoneNumbers.first?.value.stringValue {
-                summary = "\(name)'s phone number is \(phone)."
+                return "\(name)'s phone number is \(phone)."
             } else if let email = contact.emailAddresses.first?.value as String? {
-                summary = "\(name)'s email is \(email)."
+                return "\(name)'s email is \(email)."
             } else {
-                summary = "Found \(name)."
+                return "Found \(name)."
             }
         } else {
-            summary = "Found \(contacts.count) contacts matching '\(query)'."
+            return "Found \(contacts.count) contacts matching '\(query)'."
         }
-        
-        return .success(.array(contactData), summary: summary)
     }
 }

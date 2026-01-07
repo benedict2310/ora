@@ -89,15 +89,19 @@ As a user, I want to find contact information for people in my address book so t
 ## 8. Implementation Summary
 **Date:** 2026-01-07
 **Branch:** `feat/X.04-contacts-tools`
-**Commits:** 1 (WIP)
+**Commits:** 2
 
 ### Files Changed
-- `Ora/Tools/Contacts/ContactsSearchTool.swift` - Created
+- `Ora/Tools/Contacts/ContactsSearchTool.swift` - Refactored for testability
 - `Ora/Tools/Contacts/ContactsToolErrors.swift` - Created
 - `Ora/Tools/ToolRegistry.swift` - Modified (registered tool)
-- `OraTests/Tools/Contacts/ContactsSearchToolTests.swift` - Created
+- `OraTests/Tools/Contacts/ContactsSearchToolTests.swift` - Added execution logic tests
 - `OraTests/Tools/Calendar/CalendarToolsTests.swift` - Modified (updated tests)
 - `OraTests/Tools/Reminders/RemindersToolsTests.swift` - Modified (updated tests)
+
+### Code Review Findings (Iteration 1)
+- [x] `OraTests/Tools/Contacts/ContactsSearchToolTests.swift` - Added tests for `contactToJSON` and `summary` helpers.
+- [x] `Ora/Tools/Contacts/ContactsSearchTool.swift` - Extracted formatting logic to static helpers.
 
 ### Ready for Review
 - [x] All acceptance criteria verified
