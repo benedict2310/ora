@@ -70,6 +70,18 @@ actor ToolRegistry {
         // Contacts tools
         register(ContactsSearchTool())
 
+        // System tools
+        register(SystemOpenAppTool())
+        register(SystemOpenURLTool())
+        register(SystemOpenPathTool())
+        register(SystemRevealInFinderTool())
+        register(SystemOpenFolderSpecialTool())
+        register(SystemOpenSettingsTool())
+        register(SystemSearchFilesTool())
+        register(SystemSearchAppsTool())
+        register(SystemRunShortcutTool())
+        register(SystemListShortcutsTool())
+
         logger.info("Registered \(self.tools.count) tools")
     }
     
