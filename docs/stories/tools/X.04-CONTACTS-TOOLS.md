@@ -1,7 +1,7 @@
 # X.04 - Contacts Tools
 
 **Epic:** Tools
-**Status:** Complete
+**Status:** In Progress
 **Priority:** P1 (Important)
 **Estimated Effort:** 1 day
 **Dependencies:** X.01 (Tool Protocol), F.02 (Permissions)
@@ -86,9 +86,57 @@ As a user, I want to find contact information for people in my address book so t
 
 ---
 
-## 8. Completion Status
-- [x] Implementation complete
-- [x] Code review passed (2 iterations)
-- [x] PR merged: #55
-- [x] Merged to main
-- [x] Date: 2026-01-07
+## 8. Implementation Summary
+**Date:** 2026-01-07
+**Branch:** `feat/X.04-contacts-tools`
+**Commits:** 2
+
+### Files Changed
+- `Ora/Tools/Contacts/ContactsSearchTool.swift` - Refactored for testability
+- `Ora/Tools/Contacts/ContactsToolErrors.swift` - Created
+- `Ora/Tools/ToolRegistry.swift` - Modified (registered tool)
+- `OraTests/Tools/Contacts/ContactsSearchToolTests.swift` - Added execution logic tests
+- `OraTests/Tools/Calendar/CalendarToolsTests.swift` - Modified (updated tests)
+- `OraTests/Tools/Reminders/RemindersToolsTests.swift` - Modified (updated tests)
+
+### Code Review Findings (Iteration 1)
+- [x] `OraTests/Tools/Contacts/ContactsSearchToolTests.swift` - Added tests for `contactToJSON` and `summary` helpers.
+- [x] `Ora/Tools/Contacts/ContactsSearchTool.swift` - Extracted formatting logic to static helpers.
+
+### Ready for Review
+- [x] All acceptance criteria verified
+- [x] Tests passing
+- [x] Working tree clean
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-01-07T16:01:00Z
+**Commit reviewed:** 5488fa6
+**Iteration:** 2
+
+### Summary
+- Files reviewed: 7
+- Build status: Pass
+- Tests status: Pass (838 tests)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+None.
+
+#### P1 - Major (Should fix)
+None.
+
+#### P2 - Minor (Can defer)
+None.
+
+### Future Considerations (Out of Scope)
+- `ContactsSearchTool.swift` - `execute` method interacts directly with `CNContactStore`. Future refactoring could introduce a `ContactStoreProtocol` to allow mocking the store interaction in unit tests, improving coverage of the `execute` flow specifically. Current tests cover the transformation logic well.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
