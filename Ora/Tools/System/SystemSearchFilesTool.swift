@@ -66,12 +66,18 @@ struct SystemSearchFilesTool: Tool {
                 NSMetadataQueryLocalComputerScope
             ]
             
+            // Guard against double-resume (race between notification and timeout)
+            var hasResumed = false
+            
             var observer: NSObjectProtocol?
             observer = NotificationCenter.default.addObserver(
                 forName: .NSMetadataQueryDidFinishGathering,
                 object: metadataQuery,
                 queue: .main
             ) { _ in
+                guard !hasResumed else { return }
+                hasResumed = true
+                
                 metadataQuery.stop()
                 
                 var results: [(name: String, path: String)] = []
@@ -96,13 +102,14 @@ struct SystemSearchFilesTool: Tool {
             
             // Timeout after 5 seconds
             DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                if metadataQuery.isGathering {
-                    metadataQuery.stop()
-                    if let observer = observer {
-                        NotificationCenter.default.removeObserver(observer)
-                    }
-                    continuation.resume(returning: [])
+                guard !hasResumed else { return }
+                hasResumed = true
+                
+                metadataQuery.stop()
+                if let observer = observer {
+                    NotificationCenter.default.removeObserver(observer)
                 }
+                continuation.resume(returning: [])
             }
         }
     }

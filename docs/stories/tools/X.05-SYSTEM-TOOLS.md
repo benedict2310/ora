@@ -1231,3 +1231,36 @@ This keeps the agent loop deterministic while maintaining natural UX.
 - [x] All acceptance criteria verified
 - [x] Tests passing (26 new tests, all tests pass)
 - [x] Working tree clean
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-01-07T19:20:00Z
+**Commit reviewed:** 709325f
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 18
+- Build status: Pass
+- Tests status: Pass (864 tests, 1 skipped)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+None.
+
+#### P1 - Major (Should fix)
+- [ ] `SystemSearchFilesTool.swift:56-99` - **Potential double-resume of continuation**: The `searchWithSpotlight` function has a race condition between the notification observer completing and the timeout firing. If the query finishes just as the timeout fires, both code paths could attempt to resume the continuation, causing a crash. The `isGathering` check is not atomic with the continuation resume. **Fix:** Use a flag (`hasResumed`) protected by proper synchronization (since this runs on MainActor, a simple boolean flag checked before each resume would work) to ensure the continuation is only resumed once.
+
+#### P2 - Minor (Can defer)
+- [ ] `SystemOpenSettingsTool.swift:48-55` - If an unknown pane is provided (e.g., `"foobar"`), the tool silently falls back to opening System Settings root instead of informing the user that the pane was not recognized. Consider returning a message indicating the pane was unknown and falling back to root. This is minor as the current behavior is still functional.
+
+### Future Considerations (Out of Scope)
+- `SystemRunShortcutTool.swift` - Uses `Process.waitUntilExit()` which is blocking. For long-running shortcuts, this could block the execution indefinitely. A future improvement could add a timeout or run the process asynchronously with proper cancellation support.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [ ] All P1 issues resolved
+- [ ] Ready for merge

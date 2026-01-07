@@ -58,14 +58,22 @@ struct SystemOpenSettingsTool: Tool {
             }
         }
         
-        // Open System Settings root
+        // Open System Settings root (with message if unknown pane was requested)
         let settingsURL = URL(fileURLWithPath: "/System/Applications/System Settings.app")
         let config = NSWorkspace.OpenConfiguration()
         try await NSWorkspace.shared.openApplication(at: settingsURL, configuration: config)
         
+        let summary: String
+        if let pane = pane, !pane.isEmpty {
+            let availablePanes = Self.paneMap.keys.sorted().joined(separator: ", ")
+            summary = "Unknown pane '\(pane)'. Opened System Settings. Available panes: \(availablePanes)."
+        } else {
+            summary = "System Settings is open."
+        }
+        
         return .success(
             .object(["opened": .bool(true), "pane": .null]),
-            summary: "System Settings is open."
+            summary: summary
         )
     }
 }
