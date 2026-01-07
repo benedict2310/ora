@@ -1,7 +1,7 @@
 # T.03 - Sentence Chunker
 
 **Epic:** TTS Integration
-**Status:** Not Started
+**Status:** ✅ Complete
 **Priority:** P2 (Nice to Have)
 **Estimated Effort:** 0.5 days
 **Dependencies:** T.01, T.02, O.03
@@ -11,205 +11,186 @@
 
 ## 1. Objective
 
-Split streaming LLM text into sentences for early TTS start, enabling voice output before the full response is generated.
+Split streaming LLM text into sentences for early TTS start, enabling voice output before the full response is generated. Also prevent Kokoro failures on long text by keeping each chunk under Kokoro's token limits.
 
 ---
 
-## 2. Current State (Post O.03)
+## 2. User Story
 
-As of O.03, TTS is integrated but works in a **batch mode**:
-1. LLM streams tokens → `currentResponse` accumulates in `SimplePipelineController`
-2. LLM finishes → `handleCompletion()` → `speakResponse(currentResponse)`  
-3. TTS speaks the **entire response at once**
-
-This means TTS doesn't start until the LLM has finished generating the complete response.
-
-### Why Sentence Chunking Helps
-
-For longer responses, the user waits for the full LLM generation before hearing anything. With sentence chunking:
-- TTS can start speaking the first sentence while the LLM is still generating
-- Perceived latency is reduced (first audio ~500ms after first sentence completes)
-- More natural conversational feel
-
-### When This Matters Less
-
-- Short responses (1-2 sentences): Minimal benefit since LLM finishes quickly
-- AgentLoop responses: StructuredGenerator produces full response, no token streaming
-- Current implementation is fine for MVP
+As a user, I want Ora to start speaking responses quickly and clearly, even for longer answers, so I don’t have to wait for the entire response to finish or hear fallback voices.
 
 ---
 
-## 3. Implementation
+## 3. Scope
 
-**File:** `Ora/TTS/SentenceChunker.swift`
+### In Scope
+- Chunk streaming text into sentence-sized pieces.
+- Enforce safe chunk sizes to avoid Kokoro token overflow.
+- Queue chunks for playback in order.
+- Keep overall response text visible in the UI as it streams.
 
-```swift
-//
-//  SentenceChunker.swift
-//  Ora
-//
-//  Splits streaming text into sentences for early TTS
-//
+### Out of Scope
+- Full prosody control or voice style selection.
+- Parallel TTS for multiple responses.
+- Alternate TTS engines beyond Kokoro + AVSpeech fallback.
 
-import Foundation
-import NaturalLanguage
+### Current State (Post O.03)
+- LLM streams tokens into `currentResponse` in `SimplePipelineController`.
+- TTS starts only after the full response completes.
+- `KokoroEngine.synthesize(...)` receives the full response as one batch and yields a single audio chunk.
 
-/// Chunks streaming text into sentences
-struct SentenceChunker: Sendable {
-    
-    private let minSentenceLength = 10  // Avoid tiny fragments
-    
-    /// Process streaming tokens into sentence chunks
-    func chunk(tokens: AsyncThrowingStream<String, Error>) -> AsyncThrowingStream<String, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                var buffer = ""
-                
-                do {
-                    for try await token in tokens {
-                        buffer += token
-                        
-                        // Check for sentence boundaries
-                        let sentences = extractCompleteSentences(from: &buffer)
-                        for sentence in sentences {
-                            continuation.yield(sentence)
-                        }
-                    }
-                    
-                    // Yield any remaining text
-                    let trimmed = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !trimmed.isEmpty {
-                        continuation.yield(trimmed)
-                    }
-                    
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-        }
-    }
-    
-    /// Extract complete sentences from buffer, leaving incomplete text
-    private func extractCompleteSentences(from buffer: inout String) -> [String] {
-        var sentences: [String] = []
-        
-        let tokenizer = NLTokenizer(unit: .sentence)
-        tokenizer.string = buffer
-        
-        var lastEnd: String.Index = buffer.startIndex
-        
-        tokenizer.enumerateTokens(in: buffer.startIndex..<buffer.endIndex) { range, _ in
-            let sentence = String(buffer[range])
-            
-            // Check if this looks like a complete sentence
-            if isCompleteSentence(sentence) && sentence.count >= minSentenceLength {
-                sentences.append(sentence.trimmingCharacters(in: .whitespacesAndNewlines))
-                lastEnd = range.upperBound
-            }
-            
-            return true
-        }
-        
-        // Remove processed text from buffer
-        if lastEnd > buffer.startIndex {
-            buffer = String(buffer[lastEnd...])
-        }
-        
-        return sentences
-    }
-    
-    private func isCompleteSentence(_ text: String) -> Bool {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
-        
-        // Check for sentence-ending punctuation
-        let endings = [".", "!", "?", "。", "！", "？"]
-        return endings.contains { trimmed.hasSuffix($0) }
-    }
-}
-```
+### Newly Observed Limitation (2026-01-06)
+KokoroSwift enforces a hard input token limit:
+- `KokoroTTS.Constants.maxTokenCount = 510`
+- Throws `KokoroTTSError.tooManyTokens` when exceeded
+
+Long responses can exceed this limit, causing Kokoro to fail and fall back to AVSpeechSynthesizer.
 
 ---
 
-## 4. Acceptance Criteria
+## 4. Architecture Alignment
 
-- [ ] **AC-1:** Sentences extracted as they complete
-- [ ] **AC-2:** Remaining text flushed at end
-- [ ] **AC-3:** Handles streaming token input
-- [ ] **AC-4:** Uses NaturalLanguage for proper sentence detection
-- [ ] **AC-5:** Minimum sentence length filter
-- [ ] **AC-6:** Integration with SimplePipelineController (speakSentence during LLM streaming)
+- **Pipeline:** `SimplePipelineController` streams LLM output and should emit sentence chunks for TTS as they complete.
+- **TTS:** `TTSService` routes to `KokoroEngine` when available; fallback is AVSpeechSynthesizer.
+- **Chunking:** New `SentenceChunker` lives in `Ora/TTS/SentenceChunker.swift` and enforces a safe chunk size.
+- **Limit awareness:** Chunking must keep text under Kokoro’s 510-token limit (use conservative character caps if tokenization is not available at this layer).
 
 ---
 
-## 5. Integration with SimplePipelineController
+## 5. Implementation Plan
 
-To integrate sentence chunking, modify `processTranscript()` to start TTS per-sentence:
+### 5.1 Files to Create
+- `Ora/TTS/SentenceChunker.swift` - streaming sentence chunker with size caps.
+- `Ora/LLM/ResponseTextStreamParser.swift` - extract response text while JSON streams.
+- `OraTests/SentenceChunkerTests.swift` - sentence boundaries and size limit coverage.
 
-```swift
-// In processTranscript(), replace the token accumulation loop:
+### 5.2 Files to Modify
+- `Ora/Orchestration/SimplePipelineController.swift` - stream response tokens into chunker, enqueue TTS.
+- `Ora/Orchestration/AgentLoop.swift` - forward response tokens to delegate.
+- `Ora/LLM/StructuredGenerator.swift` - optional token handler while generating.
+- `Ora/TTS/TTSService.swift` - synthesize per sentence chunk; add streaming entrypoint.
+- `Ora/TTS/KokoroEngine.swift` - protocol extraction for testability.
+- `OraTests/TTSServiceTests.swift` - long input split coverage.
 
-var fullResponse = ""
-var sentenceBuffer = ""
-let chunker = SentenceChunker()
-
-for try await delta in await LLMService.shared.generate(messages: messages, maxTokens: 500) {
-    guard !Task.isCancelled else { return }
-    
-    if case .token(let text) = delta {
-        fullResponse += text
-        sentenceBuffer += text
-        self.currentResponse = fullResponse
-        OverlayWindowController.shared.model.addAssistantMessage(fullResponse, isPartial: true)
-        
-        // Check for complete sentences
-        let sentences = chunker.extractCompleteSentences(from: &sentenceBuffer)
-        for sentence in sentences {
-            // Queue sentence for TTS (don't await - let it play in background)
-            self.queueSentenceForSpeaking(sentence)
-        }
-    }
-}
-
-// Speak any remaining text
-if !sentenceBuffer.isEmpty {
-    self.queueSentenceForSpeaking(sentenceBuffer)
-}
-```
-
-**Note:** This requires changes to the TTS queueing to handle multiple sentences in flight. Consider deferring to a future optimization pass.
+### 5.3 Tests to Add
+- `OraTests/SentenceChunkerTests.swift`
+- `OraTests/TTSServiceTests.swift` (long input splitting and chunk size cap)
 
 ---
 
-## 6. Implementation Checklist
+## 6. Acceptance Criteria
 
-- [ ] Create `SentenceChunker.swift`
-- [ ] Add synchronous `extractCompleteSentences(from:)` method for in-line use
-- [ ] Test with streaming input
-- [ ] Test edge cases (abbreviations, URLs, "Dr.", "Mr.", numbers like "3.5")
-- [ ] Update SimplePipelineController to use chunker during LLM streaming
-- [ ] Add sentence queue to AudioPlaybackService (or SimplePipelineController)
-- [ ] Ensure TTS playback order is preserved
+- [x] **AC-1:** Sentences extracted as they complete. ✅ Verified in `Ora/TTS/SentenceChunker.swift`.
+- [x] **AC-2:** Remaining text flushed at end. ✅ Verified in `Ora/TTS/SentenceChunker.swift`.
+- [x] **AC-3:** Handles streaming token input. ✅ Verified in `Ora/TTS/SentenceChunker.swift` and `Ora/Orchestration/SimplePipelineController.swift`.
+- [x] **AC-4:** Uses NaturalLanguage for proper sentence detection. ✅ Verified in `Ora/TTS/SentenceChunker.swift`.
+- [x] **AC-5:** Minimum sentence length filter to avoid tiny fragments. ✅ Verified in `Ora/TTS/SentenceChunker.swift`.
+- [x] **AC-6:** Chunks stay under Kokoro token limit (no `KokoroTTSError.tooManyTokens`). ✅ Verified by `OraTests/SentenceChunkerTests.swift` and `OraTests/TTSServiceTests.swift`.
+- [x] **AC-7:** Integration with `SimplePipelineController` (speak sentence chunks during LLM streaming). ✅ Verified in `Ora/Orchestration/SimplePipelineController.swift`, `Ora/Orchestration/AgentLoop.swift`, and `Ora/LLM/StructuredGenerator.swift`.
 
 ---
 
-## 7. Risks & Mitigations
+## 7. Verification Plan
+
+### Automated Tests
+- `SentenceChunkerTests` for sentence boundaries and chunk size caps.
+- `TTSServiceTests` for long input splitting and Kokoro error avoidance.
+
+### Manual Tests
+- Stream a long LLM response (3+ paragraphs) and confirm Kokoro plays without fallback.
+- Verify first audio starts after the first sentence completes (before full response finishes).
+
+---
+
+## 8. Implementation Notes
+
+Chunking must respect Kokoro's token limit. If tokenization is not available at this layer, use a conservative cap (example: 240 characters) and split long sentences by punctuation or whitespace. This avoids the KokoroSwift hard error while retaining readability.
+
+---
+
+## 9. Risks & Mitigations
 
 | Risk | Mitigation |
 |------|------------|
 | Sentence detection false positives (e.g., "Dr. Smith") | Use NLTokenizer which handles common abbreviations |
 | Audio playback gaps between sentences | Use jitter buffer in AudioPlaybackService |
-| Complexity vs. benefit | Defer until user feedback indicates latency is an issue |
+| Kokoro token overflow on long sentences | Apply conservative chunk size caps and split on whitespace/punctuation |
+| Complexity vs. benefit | Defer unless user feedback indicates latency or long-response failures |
 
 ---
 
-## 8. Decision: Defer for MVP
+## 10. Decision: Defer for MVP
 
-**Recommendation:** Mark as P2 and defer until after O.06 (AgentLoop Integration).
+**Recommendation:** Keep as P2 unless long-response failures are frequent.
 
 **Rationale:**
-1. O.06 uses `StructuredGenerator` which produces full responses (no streaming)
-2. Current batch TTS works well for typical response lengths
-3. Focus on core tool execution flow first
-4. Can revisit if user feedback indicates perceived latency is problematic
+1. O.06 uses `StructuredGenerator` which produces full responses (no streaming).
+2. Current batch TTS works well for typical response lengths.
+3. Chunking adds non-trivial coordination for playback order and buffering.
+4. The new token limit finding makes this more valuable, but still optional until user impact warrants prioritization.
+
+---
+
+## Implementation Summary
+**Date:** 2026-01-06
+**Branch:** `feat/X.03-reminders-tools`
+**Commits:** 3
+
+### Files Changed
+- `Ora/TTS/SentenceChunker.swift` - add streaming sentence chunking with size caps.
+- `Ora/LLM/ResponseTextStreamParser.swift` - stream response text out of JSON output.
+- `Ora/LLM/StructuredGenerator.swift` - forward response tokens to a handler.
+- `Ora/Orchestration/AgentLoop.swift` - delegate streaming response tokens.
+- `Ora/Orchestration/SimplePipelineController.swift` - enqueue sentence chunks for TTS during streaming.
+- `Ora/TTS/TTSService.swift` - synthesize per sentence chunk; add streaming entrypoint.
+- `Ora/TTS/KokoroEngine.swift` - protocol extraction for testability.
+- `OraTests/SentenceChunkerTests.swift` - chunker coverage.
+- `OraTests/TTSServiceTests.swift` - long input splitting coverage.
+- `OraTests/ResponseTextStreamParserTests.swift` - response parser streaming coverage.
+- `docs/stories/tts-integration/T.03-SENTENCE-CHUNKER.md` - plan + acceptance updates.
+- `docs/stories/README.md` - mark story complete.
+
+### Ready for Review
+- [x] All acceptance criteria verified
+- [x] Tests passing (`./build.sh`, `xcodebuild test -project Ora.xcodeproj -scheme Ora -only-testing OraTests/SentenceChunkerTests -only-testing OraTests/TTSServiceTests -only-testing OraTests/ResponseTextStreamParserTests`)
+- [x] Working tree clean
+
+## Completion Status
+- [x] Implementation complete
+- [x] Code review passed (3 iterations)
+- [ ] PR merged: N/A
+- [ ] Merged to main: N/A
+- [x] Date: 2026-01-06
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-01-06T21:25:00Z
+**Commit reviewed:** c75d08b
+**Iteration:** 3
+
+### Summary
+- Files reviewed: 11
+- Build status: Pass
+- Tests status: Pass (18 tests)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [x] All P0 issues resolved.
+
+#### P1 - Major (Should fix)
+- [x] All P1 issues resolved.
+
+#### P2 - Minor (Can defer)
+- [x] All P2 issues resolved.
+
+### Future Considerations (Out of Scope)
+- None.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge

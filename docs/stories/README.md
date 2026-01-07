@@ -93,7 +93,7 @@ Text-to-speech using Kokoro MLX.
 |:---|:------|:-------|
 | T.01 | [TTS Service](tts-integration/T.01-TTS-SERVICE.md) | ✅ Complete |
 | T.02 | [Audio Playback](tts-integration/T.02-AUDIO-PLAYBACK.md) | ✅ Complete |
-| T.03 | [Sentence Chunker](tts-integration/T.03-SENTENCE-CHUNKER.md) | 📋 Deferred |
+| T.03 | [Sentence Chunker](tts-integration/T.03-SENTENCE-CHUNKER.md) | ✅ Complete |
 
 ### 🛠 Tools (X)
 Agentic tools for system integration.

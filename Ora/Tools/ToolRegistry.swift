@@ -60,7 +60,13 @@ actor ToolRegistry {
         register(CalendarCreateEventTool())
         register(CalendarEditEventTool())
         register(CalendarDeleteEventTool())
-        
+
+        // Reminders tools
+        register(RemindersListTool())
+        register(RemindersCreateTool())
+        register(RemindersCompleteTool())
+        register(RemindersEditTool())
+
         logger.info("Registered \(self.tools.count) tools")
     }
     

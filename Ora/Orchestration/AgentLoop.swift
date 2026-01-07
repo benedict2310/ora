@@ -237,7 +237,12 @@ actor AgentLoop {
         logger.info("Generating follow-up response")
         
         let messages = await conversationManager.getMessagesForLLM()
-        let output = try await structuredGenerator.generate(messages: messages)
+        let output = try await structuredGenerator.generate(
+            messages: messages,
+            responseTokenHandler: { token in
+                await self.notifyDelegateToken(token)
+            }
+        )
         
         if case .response(let text) = output {
             await conversationManager.addAssistantMessage(text)
@@ -271,7 +276,12 @@ actor AgentLoop {
             // Generate structured response
             let output: LLMOutput
             do {
-                output = try await structuredGenerator.generate(messages: messages)
+                output = try await structuredGenerator.generate(
+                    messages: messages,
+                    responseTokenHandler: { token in
+                        await self.notifyDelegateToken(token)
+                    }
+                )
             } catch {
                 logger.error("Generation failed: \(error.localizedDescription)")
                 return .error("I had trouble understanding that. Could you try again?")
@@ -341,6 +351,12 @@ actor AgentLoop {
     private func notifyDelegateThinkingStarted() async {
         await MainActor.run {
             self._delegate?.agentLoopDidStartThinking(self)
+        }
+    }
+
+    private func notifyDelegateToken(_ token: String) async {
+        await MainActor.run {
+            self._delegate?.agentLoop(self, didProduceToken: token)
         }
     }
     

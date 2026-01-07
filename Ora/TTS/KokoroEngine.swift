@@ -10,9 +10,13 @@ import KokoroSwift
 import MLX
 import os
 
+protocol KokoroEngining: Actor {
+    func synthesize(text: String) -> AsyncThrowingStream<[Float], Error>
+}
+
 /// Wrapper for Kokoro MLX TTS engine
 /// Provides local text-to-speech synthesis using the Kokoro model
-public actor KokoroEngine {
+public actor KokoroEngine: KokoroEngining {
 
     // MARK: - Properties
 
@@ -142,8 +146,7 @@ public actor KokoroEngine {
                 text: text
             )
 
-            // Yield the audio samples as a single chunk
-            // Future enhancement: implement sentence chunking for early playback (T.03)
+            // Yield the audio samples as a single chunk (sentence chunking happens upstream).
             continuation.yield(audioBuffer)
             continuation.finish()
 

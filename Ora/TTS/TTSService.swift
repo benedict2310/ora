@@ -20,7 +20,7 @@ public actor TTSService: TTSServicing {
 
     private let logger = Logger(subsystem: "com.ora.app", category: "TTSService")
 
-    private var kokoroEngine: KokoroEngine?
+    private var kokoroEngine: KokoroEngining?
     private var isKokoroReady = false
     private var isSpeaking = false
     private var currentTask: Task<Void, Never>?
@@ -37,7 +37,7 @@ public actor TTSService: TTSServicing {
 
     /// Create with custom Kokoro engine (for testing)
     /// - Note: This initializer is internal for testing via @testable import
-    init(kokoroEngine: KokoroEngine?) {
+    init(kokoroEngine: KokoroEngining?) {
         self.kokoroEngine = kokoroEngine
         self.isKokoroReady = kokoroEngine != nil
     }
@@ -77,6 +77,29 @@ public actor TTSService: TTSServicing {
                 // Store reference to this task for cancellation support
                 let synthesisTask = Task {
                     await self.runSynthesis(text: text, continuation: continuation)
+                }
+                await self.setCurrentTask(synthesisTask)
+                await synthesisTask.value
+            }
+
+            continuation.onTermination = { @Sendable _ in
+                Task {
+                    await self.stop()
+                }
+            }
+        }
+    }
+
+    /// Generate speech from streaming sentence chunks
+    /// - Parameter sentences: Stream of sentence-sized text chunks
+    /// - Returns: Async stream of audio chunks
+    nonisolated public func speak(
+        sentences: AsyncThrowingStream<String, Error>
+    ) -> AsyncThrowingStream<AudioChunk, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                let synthesisTask = Task {
+                    await self.runStreamingSynthesis(sentences: sentences, continuation: continuation)
                 }
                 await self.setCurrentTask(synthesisTask)
                 await synthesisTask.value
@@ -134,34 +157,108 @@ public actor TTSService: TTSServicing {
         let engine = self.kokoroEngine
 
         if useKokoro, let engine = engine {
-            await self.runKokoroSynthesis(text: text, engine: engine, continuation: continuation)
+            let chunks = SentenceChunker.chunk(text: text)
+            await self.runKokoroSynthesis(
+                chunks: chunks,
+                engine: engine,
+                originalText: text,
+                continuation: continuation
+            )
         } else {
             await self.runFallbackSynthesis(text: text, continuation: continuation)
         }
     }
 
+    private func runStreamingSynthesis(
+        sentences: AsyncThrowingStream<String, Error>,
+        continuation: AsyncThrowingStream<AudioChunk, Error>.Continuation
+    ) async {
+        self.isSpeaking = true
+        defer {
+            self.isSpeaking = false
+            self.currentTask = nil
+        }
+
+        let useKokoro = self.isKokoroReady
+        let engine = self.kokoroEngine
+
+        if useKokoro, let engine = engine {
+            do {
+                for try await sentence in sentences {
+                    try Task.checkCancellation()
+
+                    let trimmed = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { continue }
+
+                    let chunks = SentenceChunker.chunk(text: trimmed)
+                    try await self.synthesizeKokoroChunks(
+                        chunks: chunks,
+                        engine: engine,
+                        continuation: continuation
+                    )
+                }
+                continuation.finish()
+            } catch is CancellationError {
+                continuation.finish()
+            } catch {
+                self.logger.error("Streaming Kokoro synthesis failed: \(error.localizedDescription)")
+                continuation.finish(throwing: error)
+            }
+        } else {
+            var combinedText = ""
+            do {
+                for try await sentence in sentences {
+                    combinedText = self.joinTextSegments(combinedText, sentence)
+                }
+            } catch {
+                continuation.finish(throwing: error)
+                return
+            }
+
+            let trimmed = combinedText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                continuation.finish()
+                return
+            }
+            await self.runFallbackSynthesis(text: trimmed, continuation: continuation)
+        }
+    }
+
     private func runKokoroSynthesis(
-        text: String,
-        engine: KokoroEngine,
+        chunks: [String],
+        engine: KokoroEngining,
+        originalText: String,
         continuation: AsyncThrowingStream<AudioChunk, Error>.Continuation
     ) async {
         do {
-            // Get the stream from the actor
-            let stream = await engine.synthesize(text: text)
-            
-            for try await samples in stream {
-                try Task.checkCancellation()
-
-                let chunk = AudioChunk(samples: samples, sampleRate: Self.kokoroSampleRate)
-                continuation.yield(chunk)
-            }
+            try await self.synthesizeKokoroChunks(
+                chunks: chunks,
+                engine: engine,
+                continuation: continuation
+            )
             continuation.finish()
         } catch is CancellationError {
             continuation.finish()
         } catch {
             self.logger.error("Kokoro synthesis failed: \(error.localizedDescription)")
             // Fall back to system TTS
-            await self.runFallbackSynthesis(text: text, continuation: continuation)
+            await self.runFallbackSynthesis(text: originalText, continuation: continuation)
+        }
+    }
+
+    private func synthesizeKokoroChunks(
+        chunks: [String],
+        engine: KokoroEngining,
+        continuation: AsyncThrowingStream<AudioChunk, Error>.Continuation
+    ) async throws {
+        for chunk in chunks {
+            let stream = await engine.synthesize(text: chunk)
+            for try await samples in stream {
+                try Task.checkCancellation()
+
+                let audioChunk = AudioChunk(samples: samples, sampleRate: Self.kokoroSampleRate)
+                continuation.yield(audioChunk)
+            }
         }
     }
 
@@ -192,6 +289,16 @@ public actor TTSService: TTSServicing {
 
         self.fallbackSynthesizerHolder = nil
         continuation.finish()
+    }
+
+    private func joinTextSegments(_ left: String, _ right: String) -> String {
+        let trimmedRight = right.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedRight.isEmpty else { return left }
+        guard !left.isEmpty else { return trimmedRight }
+        if left.hasSuffix(" ") {
+            return left + trimmedRight
+        }
+        return left + " " + trimmedRight
     }
 }
 
@@ -276,4 +383,3 @@ private final class FallbackSynthesizerDelegate: NSObject, AVSpeechSynthesizerDe
         }
     }
 }
-

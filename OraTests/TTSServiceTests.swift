@@ -112,6 +112,22 @@ final class TTSServiceTests: XCTestCase {
         XCTAssertFalse(available)
     }
 
+    func test_speakSplitsLongTextForKokoro() async throws {
+        // Given
+        let engine = MockKokoroEngine()
+        let service = TTSService(kokoroEngine: engine)
+        let longText = String(repeating: "a", count: SentenceChunker.defaultMaxChunkLength * 3)
+
+        // When
+        let stream = service.speak(longText)
+        for try await _ in stream {}
+
+        // Then
+        let inputs = await engine.receivedTexts()
+        XCTAssertGreaterThan(inputs.count, 1)
+        XCTAssertTrue(inputs.allSatisfy { $0.count <= SentenceChunker.defaultMaxChunkLength })
+    }
+
     // MARK: - KokoroEngine Tests
 
     func test_kokoroEngineThrows_whenModelNotFound() async {
@@ -163,5 +179,22 @@ final class TTSServiceTests: XCTestCase {
         XCTAssertNotNil(TTSError.initializationFailed("test").errorDescription)
         XCTAssertNotNil(TTSError.synthesisFailed("test").errorDescription)
         XCTAssertNotNil(TTSError.cancelled.errorDescription)
+    }
+}
+
+private actor MockKokoroEngine: KokoroEngining {
+    private var received: [String] = []
+
+    func synthesize(text: String) -> AsyncThrowingStream<[Float], Error> {
+        received.append(text)
+
+        return AsyncThrowingStream { continuation in
+            continuation.yield([Float](repeating: 0.0, count: 240))
+            continuation.finish()
+        }
+    }
+
+    func receivedTexts() -> [String] {
+        received
     }
 }
