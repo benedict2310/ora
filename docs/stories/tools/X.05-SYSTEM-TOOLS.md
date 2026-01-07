@@ -1,7 +1,7 @@
 # X.05 — System Tools & Navigation
 
 **Epic:** Tools  
-**Status:** Not Started  
+**Status:** Complete  
 **Priority:** P1 (Important)  
 **Estimated Effort:** 1.5–2.5 days  
 **Dependencies:** X.01 (Tool Protocol)  
@@ -1252,15 +1252,59 @@ This keeps the agent loop deterministic while maintaining natural UX.
 None.
 
 #### P1 - Major (Should fix)
-- [ ] `SystemSearchFilesTool.swift:56-99` - **Potential double-resume of continuation**: The `searchWithSpotlight` function has a race condition between the notification observer completing and the timeout firing. If the query finishes just as the timeout fires, both code paths could attempt to resume the continuation, causing a crash. The `isGathering` check is not atomic with the continuation resume. **Fix:** Use a flag (`hasResumed`) protected by proper synchronization (since this runs on MainActor, a simple boolean flag checked before each resume would work) to ensure the continuation is only resumed once.
+- [x] `SystemSearchFilesTool.swift:56-99` - **Potential double-resume of continuation**: The `searchWithSpotlight` function has a race condition between the notification observer completing and the timeout firing. If the query finishes just as the timeout fires, both code paths could attempt to resume the continuation, causing a crash. The `isGathering` check is not atomic with the continuation resume. **Fix:** Use a flag (`hasResumed`) protected by proper synchronization (since this runs on MainActor, a simple boolean flag checked before each resume would work) to ensure the continuation is only resumed once. ✅ Fixed in 4865b5f
 
 #### P2 - Minor (Can defer)
-- [ ] `SystemOpenSettingsTool.swift:48-55` - If an unknown pane is provided (e.g., `"foobar"`), the tool silently falls back to opening System Settings root instead of informing the user that the pane was not recognized. Consider returning a message indicating the pane was unknown and falling back to root. This is minor as the current behavior is still functional.
+- [x] `SystemOpenSettingsTool.swift:48-55` - If an unknown pane is provided (e.g., `"foobar"`), the tool silently falls back to opening System Settings root instead of informing the user that the pane was not recognized. Consider returning a message indicating the pane was unknown and falling back to root. This is minor as the current behavior is still functional. ✅ Fixed in 4865b5f
 
 ### Future Considerations (Out of Scope)
 - `SystemRunShortcutTool.swift` - Uses `Process.waitUntilExit()` which is blocking. For long-running shortcuts, this could block the execution indefinitely. A future improvement could add a timeout or run the process asynchronously with proper cancellation support.
 
 ### Approval Status
 - [x] All P0 issues resolved
-- [ ] All P1 issues resolved
-- [ ] Ready for merge
+- [x] All P1 issues resolved
+- [x] Ready for merge
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-01-07T19:23:35Z
+**Commit reviewed:** 4865b5f
+**Iteration:** 2
+
+### Summary
+- Files reviewed: 3 (diff from 709325f to 4865b5f)
+- Build status: Pass
+- Tests status: Pass (864 tests, 1 skipped)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+None.
+
+#### P1 - Major (Should fix)
+None.
+
+#### P2 - Minor (Can defer)
+None.
+
+### Verification of Iteration 1 Fixes
+
+1. **`SystemSearchFilesTool.swift` - Double-resume race condition**: ✅ Fixed
+   - Added `var hasResumed = false` flag at line 67
+   - Both the notification callback (line 73) and timeout (line 98) check `guard !hasResumed else { return }` before resuming
+   - Since this runs on MainActor, the simple boolean flag is sufficient
+
+2. **`SystemOpenSettingsTool.swift` - Unknown pane feedback**: ✅ Fixed
+   - Lines 64-67 now provide a helpful summary when an unknown pane is requested
+   - Lists all available panes in the message: `"Unknown pane 'foobar'. Opened System Settings. Available panes: ..."`
+
+### Future Considerations (Out of Scope)
+- `SystemRunShortcutTool.swift` - Uses `Process.waitUntilExit()` which is blocking. For long-running shortcuts, this could block the execution indefinitely. A future improvement could add a timeout or run the process asynchronously with proper cancellation support.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
