@@ -207,6 +207,10 @@ actor LLMService: LLMServicing {
                     return .more
                 }
             )
+            
+            // Synchronize GPU to ensure all Metal work is complete before returning
+            // This prevents race conditions when starting a new generation immediately after
+            Stream.gpu.synchronize()
         }
         
         continuation.yield(.completed(totalTokens: 0))
