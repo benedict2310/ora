@@ -139,7 +139,12 @@ final class DefaultModelDownloader: ModelDownloader, @unchecked Sendable {
 
     func exists(model: ModelIdentifier, at directory: URL) -> Bool {
         let fm = FileManager.default
-        guard fm.fileExists(atPath: directory.path) else { return false }
+
+        // Check directory exists
+        guard fm.fileExists(atPath: directory.path) else {
+            self.logger.debug("exists(\(model.displayName)): directory missing at \(directory.path)")
+            return false
+        }
 
         // Check ALL required files to ensure model is complete
         // Use minimum reasonable sizes rather than exact expected sizes
@@ -149,13 +154,15 @@ final class DefaultModelDownloader: ModelDownloader, @unchecked Sendable {
             if file.hasSuffix(".mlmodelc") {
                 var isDir: ObjCBool = false
                 if !fm.fileExists(atPath: path.path, isDirectory: &isDir) || !isDir.boolValue {
+                    self.logger.debug("exists(\(model.displayName)): mlmodelc missing or not directory: \(file)")
                     return false
                 }
             } else {
                 if !fm.fileExists(atPath: path.path) {
+                    self.logger.debug("exists(\(model.displayName)): required file missing: \(file)")
                     return false
                 }
-                
+
                 // Check file has minimum reasonable size (not truncated/empty)
                 do {
                     let attrs = try fm.attributesOfItem(atPath: path.path)
@@ -163,14 +170,17 @@ final class DefaultModelDownloader: ModelDownloader, @unchecked Sendable {
                     let minimumSize = self.minimumReasonableSize(for: file)
                     if actualSize < minimumSize {
                         // File is too small - likely corrupted or incomplete
+                        self.logger.warning("exists(\(model.displayName)): file \(file) too small: \(actualSize) < \(minimumSize) bytes")
                         return false
                     }
                 } catch {
+                    self.logger.warning("exists(\(model.displayName)): failed to read attributes for \(file): \(error.localizedDescription)")
                     return false
                 }
             }
         }
 
+        self.logger.debug("exists(\(model.displayName)): all checks passed")
         return true
     }
     

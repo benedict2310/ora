@@ -139,12 +139,19 @@ public actor KokoroEngine: KokoroEngining {
         do {
             self.logger.debug("Synthesizing: \(text.prefix(50))...")
 
+            // Synchronize GPU to prevent race conditions with LLM (also on Metal)
+            // This prevents MTLReleaseAssertionFailure when both engines use the default stream concurrently
+            Stream.gpu.synchronize()
+
             // Generate audio - KokoroTTS generates all audio at once (no streaming)
             let (audioBuffer, _) = try tts.generateAudio(
                 voice: voice,
                 language: Language.enUS,
                 text: text
             )
+
+            // Synchronize again to ensure TTS work is done before releasing resources
+            Stream.gpu.synchronize()
 
             // Yield the audio samples as a single chunk (sentence chunking happens upstream).
             continuation.yield(audioBuffer)

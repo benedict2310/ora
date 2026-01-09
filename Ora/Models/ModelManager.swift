@@ -57,9 +57,10 @@ actor ModelManager {
     }
 
     /// Wait for initialization to complete (metadata loaded, statuses refreshed)
-    /// Call this before setPrimaryLLM to ensure metadata is loaded first
+    /// Call this before accessing state or setPrimaryLLM to ensure full initialization
     func ensureInitialized() async {
         await self.loadMetadataIfNeeded()
+        await self.refreshStatuses()
     }
     
     private func loadMetadataIfNeeded() async {
@@ -74,21 +75,44 @@ actor ModelManager {
     func refreshStatuses() async {
         self.logger.debug("Refreshing model statuses...")
 
+        var readyCount = 0
+        var missingCount = 0
+
         for model in ModelIdentifier.allCases {
             let path = ModelPaths.path(for: model)
             if self.downloader.exists(model: model, at: path) {
                 _state.statuses[model] = .ready
+                readyCount += 1
             } else {
                 _state.statuses[model] = .notDownloaded
+                missingCount += 1
             }
         }
 
+        self.logger.debug("Status refresh complete: \(readyCount) ready, \(missingCount) not downloaded")
         await self.postStateChange()
     }
 
     /// Check if required models are available
+    /// Includes a single retry with delay for transient filesystem failures (e.g., after app re-signing)
     func requiredModelsAvailable() async -> Bool {
         await self.refreshStatuses()
+
+        if _state.requiredModelsReady {
+            return true
+        }
+
+        // If models appear missing, wait briefly and retry once
+        // This handles transient filesystem access delays after app re-signing
+        // when macOS may still be verifying code signatures
+        self.logger.debug("Models not ready on first check, retrying after delay...")
+        try? await Task.sleep(for: .milliseconds(500))
+        await self.refreshStatuses()
+
+        if !_state.requiredModelsReady {
+            self.logger.warning("Models still not ready after retry")
+        }
+
         return _state.requiredModelsReady
     }
 
@@ -171,6 +195,10 @@ actor ModelManager {
 
             try await group.waitForAll()
         }
+
+        // Save metadata once after all downloads complete to ensure atomic persistence
+        // This guards against any race conditions from individual saves during parallel downloads
+        await self.saveMetadata()
 
         await self.refreshStatuses()
         self.logger.info("All required models downloaded successfully")
