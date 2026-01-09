@@ -198,6 +198,41 @@ defaults delete com.ora.app "com.ora.hotkeyConfiguration"
 - If a stale branch is discovered, document it (story note or report), reopen the story if needed, and retire the branch.
 - After merge, delete local and remote branches to avoid stale branch drift.
 
+### Branch Completion Rules (CRITICAL - PREVENTS LOST WORK)
+
+**NEVER leave a branch unmerged after completing work:**
+
+1. **Immediate PR after fix:** When a bug fix or feature is complete and tested, create a PR immediately.
+2. **Merge before context switch:** Before starting new work, ensure all completed branches are merged to main.
+3. **No orphan branches:** A branch with working code that isn't merged is lost work waiting to happen.
+
+**Before ending a session, verify:**
+```bash
+# Check for unmerged branches with your work
+git branch --no-merged main
+
+# If branches exist, either:
+# 1. Create PRs and merge them
+# 2. Document why they're intentionally unmerged (e.g., WIP, blocked)
+```
+
+**Orphan branch audit (run periodically):**
+```bash
+# List all branches not in main
+git branch -a --no-merged main
+
+# For each branch, decide:
+# - Merge it (if work is complete)
+# - Document and delete (if superseded)
+# - Keep with documented reason (if intentionally WIP)
+```
+
+**If you discover orphan branches with completed work:**
+1. Check if the work is still needed (may have been reimplemented)
+2. If needed: cherry-pick or re-apply the fix to current main
+3. Document the orphan in `docs/stories/bugs/` if it contains valuable alternative approaches
+4. Delete the orphan branch after preserving any valuable code/docs
+
 ### Bug Fixes (Non-Story Work)
 
 - Use the same branch hygiene as above even when not using the implement-story skill.
