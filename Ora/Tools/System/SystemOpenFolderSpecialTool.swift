@@ -45,7 +45,7 @@ struct SystemOpenFolderSpecialTool: Tool {
         guard let folder = args["folder"]?.stringValue?.lowercased() else {
             throw SystemToolError.invalidArgument("Folder name required")
         }
-        
+
         let path: String
         if folder == "home" {
             path = NSHomeDirectory()
@@ -55,10 +55,12 @@ struct SystemOpenFolderSpecialTool: Tool {
         } else {
             throw SystemToolError.notFound("Unknown folder: \(folder)")
         }
-        
+
         let url = URL(fileURLWithPath: path)
-        let success = NSWorkspace.shared.open(url)
-        
+        let success = await ExternalFocusTracker.shared.withExternalOperation {
+            NSWorkspace.shared.open(url)
+        }
+
         if success {
             return .success(
                 .object(["opened": .bool(true), "path": .string(path)]),

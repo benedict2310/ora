@@ -245,6 +245,10 @@ final class OverlayWindowController {
             self.logger.debug("App deactivated during permission prompt; keeping overlay")
             return
         }
+        guard !ExternalFocusTracker.shared.isExternalOperationActive else {
+            self.logger.debug("App deactivated during external focus operation; keeping overlay")
+            return
+        }
 
         self.logger.info("App deactivated; cancelling session")
         self.cancelHandler()

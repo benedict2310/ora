@@ -34,19 +34,21 @@ struct SystemOpenURLTool: Tool {
         guard let urlString = args["url"]?.stringValue else {
             throw SystemToolError.invalidArgument("URL required")
         }
-        
+
         // Normalize URL - add https:// if no scheme
         var normalizedURLString = urlString
         if !urlString.contains("://") {
             normalizedURLString = "https://\(urlString)"
         }
-        
+
         guard let url = URL(string: normalizedURLString) else {
             throw SystemToolError.invalidArgument("Invalid URL: \(urlString)")
         }
-        
-        let success = NSWorkspace.shared.open(url)
-        
+
+        let success = await ExternalFocusTracker.shared.withExternalOperation {
+            NSWorkspace.shared.open(url)
+        }
+
         if success {
             return .success(
                 .object(["opened": .bool(true), "url": .string(url.absoluteString)]),

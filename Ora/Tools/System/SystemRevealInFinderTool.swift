@@ -34,16 +34,18 @@ struct SystemRevealInFinderTool: Tool {
         guard let path = args["path"]?.stringValue else {
             throw SystemToolError.invalidArgument("Path required")
         }
-        
+
         let expandedPath = NSString(string: path).expandingTildeInPath
         let url = URL(fileURLWithPath: expandedPath)
-        
+
         guard FileManager.default.fileExists(atPath: expandedPath) else {
             throw SystemToolError.notFound("File '\(path)'")
         }
-        
-        NSWorkspace.shared.activateFileViewerSelecting([url])
-        
+
+        await ExternalFocusTracker.shared.withExternalOperation {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
+
         let name = url.lastPathComponent
         return .success(
             .object(["revealed": .bool(true), "path": .string(expandedPath)]),

@@ -45,24 +45,28 @@ struct SystemOpenSettingsTool: Tool {
     
     func execute(args: [String: JSONValue]) async throws -> ToolResult {
         let pane = args["pane"]?.stringValue?.lowercased()
-        
+
         if let pane = pane, let paneId = Self.paneMap[pane] {
             // Open specific pane
             let urlString = "x-apple.systempreferences:\(paneId)"
             if let url = URL(string: urlString) {
-                NSWorkspace.shared.open(url)
+                await ExternalFocusTracker.shared.withExternalOperation {
+                    NSWorkspace.shared.open(url)
+                }
                 return .success(
                     .object(["opened": .bool(true), "pane": .string(pane)]),
                     summary: "\(pane.capitalized) settings are open."
                 )
             }
         }
-        
+
         // Open System Settings root (with message if unknown pane was requested)
         let settingsURL = URL(fileURLWithPath: "/System/Applications/System Settings.app")
         let config = NSWorkspace.OpenConfiguration()
-        try await NSWorkspace.shared.openApplication(at: settingsURL, configuration: config)
-        
+        try await ExternalFocusTracker.shared.withExternalOperation {
+            try await NSWorkspace.shared.openApplication(at: settingsURL, configuration: config)
+        }
+
         let summary: String
         if let pane = pane, !pane.isEmpty {
             let availablePanes = Self.paneMap.keys.sorted().joined(separator: ", ")
@@ -70,7 +74,7 @@ struct SystemOpenSettingsTool: Tool {
         } else {
             summary = "System Settings is open."
         }
-        
+
         return .success(
             .object(["opened": .bool(true), "pane": .null]),
             summary: summary

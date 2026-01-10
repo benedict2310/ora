@@ -34,16 +34,18 @@ struct SystemOpenPathTool: Tool {
         guard let path = args["path"]?.stringValue else {
             throw SystemToolError.invalidArgument("Path required")
         }
-        
+
         let expandedPath = NSString(string: path).expandingTildeInPath
         let url = URL(fileURLWithPath: expandedPath)
-        
+
         guard FileManager.default.fileExists(atPath: expandedPath) else {
             throw SystemToolError.notFound("Path '\(path)'")
         }
-        
-        let success = NSWorkspace.shared.open(url)
-        
+
+        let success = await ExternalFocusTracker.shared.withExternalOperation {
+            NSWorkspace.shared.open(url)
+        }
+
         if success {
             let name = url.lastPathComponent
             return .success(

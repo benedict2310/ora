@@ -36,13 +36,15 @@ struct SystemOpenAppTool: Tool {
     
     func execute(args: [String: JSONValue]) async throws -> ToolResult {
         let workspace = NSWorkspace.shared
-        
+
         // Try bundle ID first
         if let bundleId = args["bundle_id"]?.stringValue, !bundleId.isEmpty {
             if let appURL = workspace.urlForApplication(withBundleIdentifier: bundleId) {
                 let alreadyRunning = workspace.runningApplications.contains { $0.bundleIdentifier == bundleId }
                 let config = NSWorkspace.OpenConfiguration()
-                try await workspace.openApplication(at: appURL, configuration: config)
+                try await ExternalFocusTracker.shared.withExternalOperation {
+                    try await workspace.openApplication(at: appURL, configuration: config)
+                }
                 return .success(
                     .object([
                         "opened": .bool(true),
@@ -54,7 +56,7 @@ struct SystemOpenAppTool: Tool {
                 )
             }
         }
-        
+
         // Try app name
         if let appName = args["app_name"]?.stringValue, !appName.isEmpty {
             if let appURL = findAppByName(appName) {
@@ -62,9 +64,11 @@ struct SystemOpenAppTool: Tool {
                 let alreadyRunning = bundleId.map { id in
                     workspace.runningApplications.contains { $0.bundleIdentifier == id }
                 } ?? false
-                
+
                 let config = NSWorkspace.OpenConfiguration()
-                try await workspace.openApplication(at: appURL, configuration: config)
+                try await ExternalFocusTracker.shared.withExternalOperation {
+                    try await workspace.openApplication(at: appURL, configuration: config)
+                }
                 return .success(
                     .object([
                         "opened": .bool(true),
@@ -75,10 +79,10 @@ struct SystemOpenAppTool: Tool {
                     summary: "Opened \(appName)."
                 )
             }
-            
+
             throw SystemToolError.notFound("Application '\(appName)'")
         }
-        
+
         throw SystemToolError.invalidArgument("Bundle ID or app name required")
     }
     
