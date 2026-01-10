@@ -140,12 +140,12 @@ final class DefaultModelDownloader: ModelDownloader, @unchecked Sendable {
     func exists(model: ModelIdentifier, at directory: URL) -> Bool {
         let fm = FileManager.default
 
-        // DIAGNOSTIC: Log the exact path being checked (use info level to persist in Console)
-        self.logger.info("exists(\(model.displayName)): checking path \(directory.path, privacy: .public)")
+        // DIAGNOSTIC: Log to file since os_log info level doesn't persist
+        self.logDiagnostic("exists(\(model.displayName)): checking path \(directory.path)")
 
         // Check directory exists
         guard fm.fileExists(atPath: directory.path) else {
-            self.logger.warning("exists(\(model.displayName)): FAIL - directory missing at \(directory.path, privacy: .public)")
+            self.logDiagnostic("exists(\(model.displayName)): FAIL - directory missing at \(directory.path)")
             return false
         }
 
@@ -157,12 +157,12 @@ final class DefaultModelDownloader: ModelDownloader, @unchecked Sendable {
             if file.hasSuffix(".mlmodelc") {
                 var isDir: ObjCBool = false
                 if !fm.fileExists(atPath: path.path, isDirectory: &isDir) || !isDir.boolValue {
-                    self.logger.warning("exists(\(model.displayName)): FAIL - mlmodelc missing or not directory: \(file, privacy: .public)")
+                    self.logDiagnostic("exists(\(model.displayName)): FAIL - mlmodelc missing or not directory: \(file)")
                     return false
                 }
             } else {
                 if !fm.fileExists(atPath: path.path) {
-                    self.logger.warning("exists(\(model.displayName)): FAIL - required file missing: \(file, privacy: .public) at \(path.path, privacy: .public)")
+                    self.logDiagnostic("exists(\(model.displayName)): FAIL - required file missing: \(file) at \(path.path)")
                     return false
                 }
 
@@ -173,17 +173,17 @@ final class DefaultModelDownloader: ModelDownloader, @unchecked Sendable {
                     let minimumSize = self.minimumReasonableSize(for: file)
                     if actualSize < minimumSize {
                         // File is too small - likely corrupted or incomplete
-                        self.logger.warning("exists(\(model.displayName)): FAIL - file \(file, privacy: .public) too small: \(actualSize) < \(minimumSize) bytes")
+                        self.logDiagnostic("exists(\(model.displayName)): FAIL - file \(file) too small: \(actualSize) < \(minimumSize) bytes")
                         return false
                     }
                 } catch {
-                    self.logger.warning("exists(\(model.displayName)): FAIL - failed to read attributes for \(file, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                    self.logDiagnostic("exists(\(model.displayName)): FAIL - failed to read attributes for \(file): \(error.localizedDescription)")
                     return false
                 }
             }
         }
 
-        self.logger.info("exists(\(model.displayName)): PASS - all checks passed")
+        self.logDiagnostic("exists(\(model.displayName)): PASS - all checks passed")
         return true
     }
     
@@ -204,6 +204,41 @@ final class DefaultModelDownloader: ModelDownloader, @unchecked Sendable {
         } else {
             // Other files - at least 10 bytes
             return 10
+        }
+    }
+
+    /// Log diagnostic messages to file (os_log info level doesn't persist)
+    /// Writes to ~/Library/Application Support/Ora/model-diagnostic.log
+    private func logDiagnostic(_ message: String) {
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let line = "[\(timestamp)] \(message)\n"
+
+        // Also log to os_log at warning level so it might persist
+        self.logger.warning("\(message, privacy: .public)")
+
+        // Write to file for guaranteed persistence
+        let fm = FileManager.default
+        guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return
+        }
+
+        let oraDir = appSupport.appendingPathComponent("Ora")
+        let logFile = oraDir.appendingPathComponent("model-diagnostic.log")
+
+        // Create directory if needed
+        try? fm.createDirectory(at: oraDir, withIntermediateDirectories: true)
+
+        // Append to log file
+        if fm.fileExists(atPath: logFile.path) {
+            if let handle = try? FileHandle(forWritingTo: logFile) {
+                handle.seekToEndOfFile()
+                if let data = line.data(using: .utf8) {
+                    handle.write(data)
+                }
+                try? handle.close()
+            }
+        } else {
+            try? line.write(to: logFile, atomically: true, encoding: .utf8)
         }
     }
 
