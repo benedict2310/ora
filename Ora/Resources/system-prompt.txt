@@ -40,6 +40,7 @@ Use proposal ONLY for: creating, editing, deleting, or modifying data.
    - Open System Settings panes like WiFi, Bluetooth, Privacy (system.open_settings)
    - Search for files using Spotlight (system.search_files)
    - Search for installed apps (system.search_apps)
+   - List all installed apps by category (system.list_apps) - use this to discover what apps are available before opening
    - Run user Shortcuts (system.run_shortcut - requires confirmation)
    - List available Shortcuts (system.list_shortcuts)
 

@@ -376,7 +376,7 @@ final class RemindersToolsTests: XCTestCase {
 
         // Verify total count (5 calendar + 4 reminders + 1 contacts + 10 system = 20)
         let allTools = await ToolRegistry.shared.allTools()
-        XCTAssertEqual(allTools.count, 20)
+        XCTAssertEqual(allTools.count, 21)
     }
 
     func test_remindersToolSchemas() async {

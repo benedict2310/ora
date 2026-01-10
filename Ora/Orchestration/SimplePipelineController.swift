@@ -493,12 +493,17 @@ final class SimplePipelineController: ObservableObject {
             guard !Task.isCancelled else { return }
             
             self.currentResponse = followUpText
-            
+
             // Add follow-up message to overlay
             OverlayWindowController.shared.model.addAssistantMessage(followUpText, isPartial: false)
-            
+
             // Speak the follow-up response (AC-10)
-            self.speakResponse(followUpText)
+            // Check if streaming TTS already started (via delegate tokens)
+            if self.isStreamingResponse {
+                self.finishStreamingResponse()
+            } else {
+                self.speakResponse(followUpText)
+            }
             
         } catch {
             guard !Task.isCancelled else { return }

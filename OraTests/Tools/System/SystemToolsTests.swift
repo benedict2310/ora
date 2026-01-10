@@ -274,6 +274,130 @@ final class SystemToolsTests: XCTestCase {
         XCTAssertNoThrow(try tool.validate(args: [:]))
     }
     
+    // MARK: - SystemListAppsTool Tests
+    
+    func test_listAppsTool_hasCorrectMetadata() async throws {
+        let tool = SystemListAppsTool()
+        XCTAssertEqual(tool.name, "system.list_apps")
+        XCTAssertEqual(tool.kind, .read)
+        XCTAssertFalse(tool.requiresConfirmation)
+    }
+    
+    func test_listAppsTool_validateAcceptsValidCategories() async throws {
+        let tool = SystemListAppsTool()
+        
+        // No category is valid (defaults to "all")
+        XCTAssertNoThrow(try tool.validate(args: [:]))
+        
+        // All valid categories should pass
+        XCTAssertNoThrow(try tool.validate(args: ["category": .string("user")]))
+        XCTAssertNoThrow(try tool.validate(args: ["category": .string("system")]))
+        XCTAssertNoThrow(try tool.validate(args: ["category": .string("utility")]))
+        XCTAssertNoThrow(try tool.validate(args: ["category": .string("all")]))
+        
+        // Case insensitive
+        XCTAssertNoThrow(try tool.validate(args: ["category": .string("USER")]))
+        XCTAssertNoThrow(try tool.validate(args: ["category": .string("All")]))
+    }
+    
+    func test_listAppsTool_validateRejectsInvalidCategory() async throws {
+        let tool = SystemListAppsTool()
+        
+        XCTAssertThrowsError(try tool.validate(args: ["category": .string("invalid")])) { error in
+            XCTAssertTrue(error.localizedDescription.contains("user, system, utility, all"))
+        }
+    }
+    
+    func test_listAppsTool_returnsAllCategories() async throws {
+        let tool = SystemListAppsTool()
+        let result = try await tool.execute(args: [:])
+        
+        // Check the JSON structure
+        if case .object(let dict) = result.json {
+            // Should have all three categories
+            XCTAssertNotNil(dict["user"], "Should have user category")
+            XCTAssertNotNil(dict["system"], "Should have system category")
+            XCTAssertNotNil(dict["utility"], "Should have utility category")
+            XCTAssertNotNil(dict["total"], "Should have total count")
+            
+            // Total should be a number
+            if case .number(let total) = dict["total"] {
+                XCTAssertGreaterThan(total, 0, "Should find at least some apps")
+            } else {
+                XCTFail("Total should be a number")
+            }
+        } else {
+            XCTFail("Result should be an object")
+        }
+        
+        // Summary should mention all categories
+        XCTAssertTrue(result.humanSummary.contains("Found"))
+        XCTAssertTrue(result.humanSummary.contains("user"))
+        XCTAssertTrue(result.humanSummary.contains("system"))
+        XCTAssertTrue(result.humanSummary.contains("utilities"))
+    }
+    
+    func test_listAppsTool_filterByCategory() async throws {
+        let tool = SystemListAppsTool()
+        
+        // Filter by user
+        let userResult = try await tool.execute(args: ["category": .string("user")])
+        if case .object(let dict) = userResult.json {
+            XCTAssertNotNil(dict["user"], "Should have user category")
+            XCTAssertNil(dict["system"], "Should not have system category when filtered")
+            XCTAssertNil(dict["utility"], "Should not have utility category when filtered")
+        }
+        XCTAssertTrue(userResult.humanSummary.contains("user apps"))
+        
+        // Filter by system
+        let systemResult = try await tool.execute(args: ["category": .string("system")])
+        if case .object(let dict) = systemResult.json {
+            XCTAssertNotNil(dict["system"], "Should have system category")
+            XCTAssertNil(dict["user"], "Should not have user category when filtered")
+            XCTAssertNil(dict["utility"], "Should not have utility category when filtered")
+        }
+        XCTAssertTrue(systemResult.humanSummary.contains("system apps"))
+        
+        // Filter by utility
+        let utilityResult = try await tool.execute(args: ["category": .string("utility")])
+        if case .object(let dict) = utilityResult.json {
+            XCTAssertNotNil(dict["utility"], "Should have utility category")
+            XCTAssertNil(dict["user"], "Should not have user category when filtered")
+            XCTAssertNil(dict["system"], "Should not have system category when filtered")
+        }
+        XCTAssertTrue(utilityResult.humanSummary.contains("utility apps"))
+    }
+    
+    func test_listAppsTool_appsSortedAlphabetically() async throws {
+        let tool = SystemListAppsTool()
+        let result = try await tool.execute(args: [:])
+        
+        if case .object(let dict) = result.json {
+            // Check each category is sorted
+            for category in ["user", "system", "utility"] {
+                if case .array(let apps) = dict[category] {
+                    let appNames = apps.compactMap { $0.stringValue }
+                    let sortedNames = appNames.sorted { $0.lowercased() < $1.lowercased() }
+                    XCTAssertEqual(appNames, sortedNames, "\(category) apps should be sorted alphabetically")
+                }
+            }
+        }
+    }
+    
+    func test_listAppsTool_findsSystemApps() async throws {
+        let tool = SystemListAppsTool()
+        let result = try await tool.execute(args: ["category": .string("system")])
+        
+        if case .object(let dict) = result.json,
+           case .array(let apps) = dict["system"] {
+            let appNames = apps.compactMap { $0.stringValue }
+            // Calendar should always be present in system apps
+            XCTAssertTrue(appNames.contains("Calendar"), "Calendar should be in system apps")
+        } else {
+            XCTFail("Expected system apps array")
+        }
+    }
+    
     // MARK: - Tool Registry Integration
     
     func test_allSystemToolsRegistered() async throws {
@@ -290,6 +414,7 @@ final class SystemToolsTests: XCTestCase {
             "system.open_settings",
             "system.search_files",
             "system.search_apps",
+            "system.list_apps",
             "system.run_shortcut",
             "system.list_shortcuts"
         ]
