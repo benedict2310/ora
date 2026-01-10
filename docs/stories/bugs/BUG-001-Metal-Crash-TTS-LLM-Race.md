@@ -3,12 +3,12 @@
 ## 1. Overview
 
 **ID:** BUG-001
-**Status:** Fixed (re-applied 2026-01-09)
+**Status:** Superseded by BUG-002
 **Date:** 2026-01-08
 **Component:** TTS / MLX Engine
 **Severity:** Critical (App Crash)
 
-> **Note (2026-01-09):** Original fix commits (`f9c5579`, `be9a3ae`) were on orphaned branches that were never merged to main. Fix re-applied to current branch.
+> **Update (2026-01-09):** The simple `Stream.gpu.synchronize()` approach documented here was **insufficient for streaming TTS**. The fix has been superseded by **BUG-002** which implements `MLXMetalGate` to properly serialize GPU access between LLM and TTS.
 
 ### Description
 The application crashes intermittently when the Assistant performs an action that involves both speaking (TTS) and reasoning (LLM) or tool execution. Specifically observed when "Opening an app" or "Searching".

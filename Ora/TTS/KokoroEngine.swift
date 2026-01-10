@@ -139,8 +139,12 @@ public actor KokoroEngine: KokoroEngining {
         do {
             self.logger.debug("Synthesizing: \(text.prefix(50))...")
 
-            // Synchronize GPU to prevent race conditions with LLM (also on Metal)
-            // This prevents MTLReleaseAssertionFailure when both engines use the default stream concurrently
+            // Acquire exclusive access to MLX Metal to prevent race conditions with LLM
+            // This serializes GPU access between TTS and LLM which share the same Metal stream
+            await MLXMetalGate.shared.acquire()
+            defer { Task { await MLXMetalGate.shared.release() } }
+
+            // Synchronize GPU before starting TTS work
             Stream.gpu.synchronize()
 
             // Generate audio - KokoroTTS generates all audio at once (no streaming)
@@ -150,7 +154,7 @@ public actor KokoroEngine: KokoroEngining {
                 text: text
             )
 
-            // Synchronize again to ensure TTS work is done before releasing resources
+            // Synchronize to ensure TTS work is done before releasing the gate
             Stream.gpu.synchronize()
 
             // Yield the audio samples as a single chunk (sentence chunking happens upstream).

@@ -166,6 +166,10 @@ actor LLMService: LLMServicing {
         )
         
         // Use the new perform API with ModelContext
+        // Wrap in MLXMetalGate to serialize GPU access with TTS
+        await MLXMetalGate.shared.acquire()
+        defer { Task { await MLXMetalGate.shared.release() } }
+
         try await container.perform { context in
             // Use applyChatTemplate to properly encode special tokens
             // This ensures <|im_start|> becomes token 151644 (not multiple text tokens)

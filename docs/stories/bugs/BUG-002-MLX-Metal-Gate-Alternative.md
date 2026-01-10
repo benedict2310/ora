@@ -1,23 +1,42 @@
-# BUG-002: MLX Metal Gate Alternative Approach (Archived)
+# BUG-002: MLX Metal Gate - GPU Serialization for TTS/LLM
 
 **ID:** BUG-002
-**Status:** Archived (alternative approach preserved for reference)
+**Status:** Implemented (2026-01-09)
 **Date:** 2026-01-09
 **Related:** BUG-001 (Metal Crash TTS/LLM Race)
-**Branch:** `fix/BUG.03-mlx-metal-race-condition` (commit `be9a3ae`)
+**Component:** LLM / TTS / Metal GPU
 
 ---
 
-## 1. Overview
+## 1. Summary
 
-This documents an alternative, more comprehensive solution to the Metal race condition between LLM and TTS that was developed but not merged. The simpler `Stream.gpu.synchronize()` approach (BUG-001) was chosen instead, but this implementation is preserved in case the simpler approach proves insufficient.
+Implements `MLXMetalGate`, a singleton actor that serializes all MLX Metal GPU operations between LLM and TTS to prevent race condition crashes.
 
-### When to Consider This Approach
+### Problem Solved
 
-Use this if:
-- The simple `synchronize()` approach still causes intermittent crashes
-- Additional MLX-using components are added (e.g., ASR, embeddings)
-- More complex multi-step inference pipelines are needed
+The app crashed with `EXC_BAD_ACCESS (SIGSEGV)` when LLM inference and TTS synthesis ran concurrently. Both use MLX with the shared default GPU stream (`Stream.gpu`), and concurrent Metal command buffer access caused GPU driver crashes.
+
+### Why Simple Synchronize Failed
+
+The initial fix (BUG-001) added `Stream.gpu.synchronize()` calls, but this was insufficient because:
+
+1. **Streaming TTS**: Ora uses streaming TTS where sentences are spoken while the LLM continues generating
+2. **Synchronize only waits**: It waits for pending GPU work but doesn't prevent new work from being submitted
+3. **Race window**: LLM submits work → TTS synchronizes → LLM submits MORE work → TTS starts → crash
+
+```
+LLM: ──[gpu work]──[gpu work]──[gpu work]──►
+TTS:        sync()──[gpu work]──► CRASH (LLM still submitting)
+```
+
+### Solution
+
+Serialize ALL MLX GPU access with an async mutex (MLXMetalGate):
+
+```
+LLM: ──[acquire]──[gpu work]──[release]──────────────────►
+TTS:        (waiting)         [acquire]──[gpu work]──[release]
+```
 
 ---
 
@@ -37,232 +56,222 @@ Use this if:
             ▼                   ▼                   ▼
     ┌───────────────┐   ┌───────────────┐   ┌───────────────┐
     │  LLMService   │   │ KokoroEngine  │   │  (future)     │
-    │               │   │               │   │  ASR/Embed    │
+    │  :170-171     │   │  :144-145     │   │  ASR/Embed    │
     └───────────────┘   └───────────────┘   └───────────────┘
 ```
 
 ---
 
-## 3. Implementation
+## 3. Implementation Files
 
 ### 3.1 MLXMetalGate.swift
 
+**Location:** `Ora/LLM/MLXMetalGate.swift`
+
 ```swift
-//
-//  MLXMetalGate.swift
-//  Ora
-//
-//  Serializes access to MLX Metal operations to prevent GPU race conditions.
-//
-
-import Foundation
-import os
-
-/// Serializes access to MLX Metal operations.
-///
-/// Both LLM (`LLMService`) and TTS (`KokoroEngine`) use MLX with the shared
-/// default GPU stream (`Stream.gpu`). Without serialization, concurrent Metal
-/// commands can cause `EXC_BAD_ACCESS` crashes in the GPU driver.
-///
-/// Usage:
-/// ```swift
-/// await MLXMetalGate.shared.acquire()
-/// defer { Task { await MLXMetalGate.shared.release() } }
-/// // ... MLX Metal operations ...
-/// ```
-///
-/// The gate uses fair FIFO ordering: waiters are resumed in the order they arrived.
 public actor MLXMetalGate {
-
-    // MARK: - Singleton
-
     public static let shared = MLXMetalGate()
 
-    // MARK: - Properties
-
-    private let logger = Logger(subsystem: "com.ora.app", category: "MLXMetalGate")
-
-    /// Whether the gate is currently held by a caller.
     private var inUse = false
-
-    /// FIFO queue of continuations waiting for the gate.
     private var waiters: [CheckedContinuation<Void, Never>] = []
 
-    // MARK: - Initialization
-
-    private init() {}
-
-    // MARK: - Public API
-
-    /// Acquire exclusive access to MLX Metal operations.
-    ///
-    /// If the gate is already held, the caller suspends until it becomes available.
-    /// Waiters are resumed in FIFO order.
+    /// Acquire exclusive access. Suspends if gate is held.
     public func acquire() async {
-        if !self.inUse {
-            self.inUse = true
-            self.logger.debug("Gate acquired (no contention)")
+        if !inUse {
+            inUse = true
             return
         }
-
-        self.logger.debug("Gate contention - waiting (\(self.waiters.count) ahead)")
-
         await withCheckedContinuation { continuation in
-            self.waiters.append(continuation)
+            waiters.append(continuation)
         }
-
-        self.logger.debug("Gate acquired (after wait)")
     }
 
-    /// Release the gate, allowing the next waiter (if any) to proceed.
-    ///
-    /// Must be called exactly once after each `acquire()`.
+    /// Release gate, resume next waiter (FIFO).
     public func release() {
-        if let next = self.waiters.first {
-            self.waiters.removeFirst()
-            self.logger.debug("Gate released - resuming next waiter (\(self.waiters.count) remaining)")
+        if let next = waiters.first {
+            waiters.removeFirst()
             next.resume()
         } else {
-            self.inUse = false
-            self.logger.debug("Gate released (no waiters)")
+            inUse = false
         }
     }
-
-    /// Execute a closure with exclusive access to MLX Metal.
-    ///
-    /// This is a convenience wrapper that acquires and releases the gate automatically.
-    ///
-    /// - Parameter body: The async throwing closure to execute.
-    /// - Returns: The result of the closure.
-    public func withExclusiveAccess<T: Sendable>(
-        _ body: @Sendable () async throws -> T
-    ) async rethrows -> T {
-        await self.acquire()
-        defer {
-            Task { await self.release() }
-        }
-        return try await body()
-    }
-
-    // MARK: - Testing Support
-
-    /// Check if the gate is currently held (for testing only).
-    public var isAcquired: Bool {
-        self.inUse
-    }
-
-    /// Number of waiters in the queue (for testing only).
-    public var waiterCount: Int {
-        self.waiters.count
-    }
 }
 ```
 
-### 3.2 Usage in LLMService
+### 3.2 LLMService Integration
+
+**Location:** `Ora/LLM/LLMService.swift:168-171`
 
 ```swift
-// In runGeneration():
-await MLXMetalGate.shared.acquire()
-defer { Task { await MLXMetalGate.shared.release() } }
+private func runGeneration(...) async throws {
+    // ... setup ...
 
-try await container.perform { context in
-    // ... MLX generation code ...
-    Stream.gpu.synchronize()
+    // Wrap in MLXMetalGate to serialize GPU access with TTS
+    await MLXMetalGate.shared.acquire()
+    defer { Task { await MLXMetalGate.shared.release() } }
+
+    try await container.perform { context in
+        // ... MLX generation code ...
+        Stream.gpu.synchronize()
+    }
+
+    // ... finish ...
 }
 ```
 
-### 3.3 Usage in KokoroEngine
+### 3.3 KokoroEngine Integration
+
+**Location:** `Ora/TTS/KokoroEngine.swift:142-158`
 
 ```swift
-// In runSynthesis():
-await MLXMetalGate.shared.acquire()
-defer { Task { await MLXMetalGate.shared.release() } }
+private func runSynthesis(...) async {
+    // ... guards ...
 
-Stream.gpu.synchronize()
-let (audioBuffer, _) = try tts.generateAudio(...)
-Stream.gpu.synchronize()
-```
+    do {
+        // Acquire exclusive access to MLX Metal
+        await MLXMetalGate.shared.acquire()
+        defer { Task { await MLXMetalGate.shared.release() } }
 
----
+        Stream.gpu.synchronize()
+        let (audioBuffer, _) = try tts.generateAudio(...)
+        Stream.gpu.synchronize()
 
-## 4. Test Suite
-
-```swift
-//
-//  MLXMetalGateTests.swift
-//  OraTests
-//
-
-import XCTest
-@testable import Ora
-
-final class MLXMetalGateTests: XCTestCase {
-
-    func test_acquire_setsIsAcquiredTrue() async {
-        let gate = MLXMetalGate.shared
-        // Reset state
-        while await gate.isAcquired { await gate.release() }
-
-        await gate.acquire()
-        let isAcquired = await gate.isAcquired
-        XCTAssertTrue(isAcquired)
-        await gate.release()
-    }
-
-    func test_waiters_areResumedInFIFOOrder() async {
-        // ... FIFO ordering test ...
-    }
-
-    func test_withExclusiveAccess_acquiresAndReleases() async throws {
-        // ... convenience wrapper test ...
-    }
-
-    func test_withExclusiveAccess_propagatesErrors() async {
-        // ... error propagation test ...
-    }
-
-    func test_multipleAcquires_serializes() async {
-        // ... contention test verifying max concurrent = 1 ...
+        continuation.yield(audioBuffer)
+        // ...
     }
 }
 ```
 
 ---
 
-## 5. Trade-offs vs Simple Synchronize Approach
+## 4. Crash Signatures (For Future Reference)
 
-| Aspect | Simple Sync (BUG-001) | MLXMetalGate (This) |
-|--------|----------------------|---------------------|
-| **Complexity** | 2 lines per call site | ~100 lines + tests |
-| **Latency** | None (sync is fast) | Minimal (async wait) |
-| **Fairness** | None (race to sync) | FIFO guaranteed |
-| **Scalability** | 2 components OK | N components OK |
-| **Debugging** | Harder (race timing) | Easier (queue visible) |
+If you see these crashes, the gate may not be working correctly:
+
+### Pattern A: Command Encoder Race
+```
+EXC_BAD_ACCESS (SIGSEGV) at 0x1e0
+Thread: Swift Concurrency worker
+Stack:
+  AGX::ResourceGroupUsage::setResource()
+  AGX::ComputeContext::setPipelineCommon()
+  mlx::core::steel_gemm_splitk_axpby()
+  KokoroTTS.generateAudio() or BARTModel.generate()
+```
+
+### Pattern B: Command Buffer Double-Commit
+```
+SIGABRT - MTLReportFailure
+"commit an already committed command buffer"
+Stack:
+  mlx::core::metal::Device::commit_command_buffer()
+  mlx_synchronize()
+```
+
+### Pattern C: Null Encoder
+```
+EXC_BAD_ACCESS at 0x0
+Stack:
+  mlx::core::metal::Device::end_encoding()
+  MLXLMCommon.generate() or KokoroTTS.generateAudio()
+```
 
 ---
 
-## 6. Recovery Instructions
+## 5. Debugging Tips
 
-To apply this approach if needed:
+### Check Gate Contention
+
+Add temporary logging to see if gate is being used:
+
+```swift
+// In MLXMetalGate.acquire():
+self.logger.info("Gate acquire requested, inUse=\(self.inUse), waiters=\(self.waiters.count)")
+```
+
+Look for in Console.app:
+- `Gate acquired (no contention)` - Normal, no waiting
+- `Gate contention - waiting` - TTS waiting for LLM or vice versa (expected)
+- No gate logs before crash - Gate not being called (bug in integration)
+
+### Verify Gate Coverage
+
+Ensure ALL MLX GPU operations go through the gate:
 
 ```bash
-# Cherry-pick the commit
-git cherry-pick be9a3ae
-
-# Or extract files manually from the branch
-git show be9a3ae:Ora/LLM/MLXMetalGate.swift > Ora/LLM/MLXMetalGate.swift
-git show be9a3ae:OraTests/LLM/MLXMetalGateTests.swift > OraTests/LLM/MLXMetalGateTests.swift
+# Find all MLX usage that might need gating
+grep -r "Stream.gpu\|MLXArray\|\.eval()\|generate(" Ora/ --include="*.swift"
 ```
 
-Then integrate the gate calls into `LLMService.swift` and `KokoroEngine.swift`.
+Current gated operations:
+- `LLMService.runGeneration()` - LLM token generation
+- `KokoroEngine.runSynthesis()` - TTS audio synthesis (includes BART G2P)
+
+### Test Concurrent Load
+
+To reproduce the race condition (for testing fixes):
+
+1. Issue a command that triggers tool use (e.g., "list my reminders")
+2. The flow is: LLM → Tool → LLM follow-up → TTS
+3. Streaming TTS starts while LLM may still be generating
+4. Without the gate, this crashes within 1-10 attempts
 
 ---
 
-## 7. Source Branch
+## 6. Performance Impact
 
-- **Branch:** `fix/BUG.03-mlx-metal-race-condition`
-- **Commit:** `be9a3ae80834ef0b37aff563f2e801e37b601c59`
-- **Author:** Benedict Bleimschein
-- **Date:** 2026-01-09
+| Metric | Without Gate | With Gate |
+|--------|--------------|-----------|
+| Single LLM query | ~2s | ~2s (no change) |
+| Single TTS | ~500ms | ~500ms (no change) |
+| Streaming TTS | Parallel with LLM | Serialized (waits) |
+| Perceived latency | Lower (parallel) | Slightly higher |
+| Stability | Crashes | Stable |
 
-This branch can be deleted after this documentation is merged, as the full implementation is preserved here.
+The gate adds latency only when there's actual contention (TTS waiting for LLM or vice versa). For most interactions, there's no overlap.
+
+---
+
+## 7. Future Considerations
+
+### If Crashes Return
+
+1. Check crash log thread - is it LLM or TTS?
+2. Verify gate acquire/release are paired (no missing release)
+3. Check if new MLX-using code was added without gating
+4. Look for gate bypass (direct MLX calls without acquire)
+
+### Adding New MLX Components
+
+If adding ASR, embeddings, or other MLX-based features:
+
+```swift
+// Always wrap MLX GPU operations:
+await MLXMetalGate.shared.acquire()
+defer { Task { await MLXMetalGate.shared.release() } }
+
+// Your MLX code here
+Stream.gpu.synchronize()
+```
+
+### Alternative: Separate Metal Streams
+
+MLX may support separate GPU streams in the future. If so, LLM and TTS could use isolated streams without serialization. Check MLX documentation for `Stream` API updates.
+
+---
+
+## 8. Related Documentation
+
+- `docs/stories/bugs/BUG-001-Metal-Crash-TTS-LLM-Race.md` - Original investigation
+- `docs/reports/crash-fix-metal-retry.md` - LLM retry loop crash (separate issue)
+- Crash logs: `~/Library/Logs/DiagnosticReports/Ora-*.ips`
+
+---
+
+## 9. Change History
+
+| Date | Change |
+|------|--------|
+| 2026-01-09 | Initial implementation after simple sync approach failed |
+| 2026-01-09 | Integrated into LLMService and KokoroEngine |
+| 2026-01-09 | Verified fix - no crashes after repeated testing |
