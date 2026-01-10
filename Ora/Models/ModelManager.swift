@@ -73,10 +73,11 @@ actor ModelManager {
 
     /// Refresh status of all models
     func refreshStatuses() async {
-        self.logger.debug("Refreshing model statuses...")
+        self.logger.info("Refreshing model statuses...")
 
         var readyCount = 0
         var missingCount = 0
+        var missingModels: [String] = []
 
         for model in ModelIdentifier.allCases {
             let path = ModelPaths.path(for: model)
@@ -86,33 +87,51 @@ actor ModelManager {
             } else {
                 _state.statuses[model] = .notDownloaded
                 missingCount += 1
+                missingModels.append(model.displayName)
             }
         }
 
-        self.logger.debug("Status refresh complete: \(readyCount) ready, \(missingCount) not downloaded")
+        self.logger.info("Status refresh complete: \(readyCount) ready, \(missingCount) not downloaded")
+        if !missingModels.isEmpty {
+            self.logger.warning("Missing models: \(missingModels.joined(separator: ", "), privacy: .public)")
+        }
+        
+        // Log the required models specifically
+        let asrReady = _state.statuses[.parakeetTDT]?.isReady ?? false
+        let ttsReady = _state.statuses[.kokoro]?.isReady ?? false
+        let primaryLLM = _state.primaryLLM
+        let llmReady = _state.statuses[primaryLLM]?.isReady ?? false
+        self.logger.info("Required models: ASR=\(asrReady), TTS=\(ttsReady), LLM(\(primaryLLM.displayName, privacy: .public))=\(llmReady)")
         await self.postStateChange()
     }
 
     /// Check if required models are available
-    /// Includes a single retry with delay for transient filesystem failures (e.g., after app re-signing)
+    /// Includes multiple retries with increasing delays for transient filesystem failures (e.g., after app re-signing)
     func requiredModelsAvailable() async -> Bool {
+        // First attempt
         await self.refreshStatuses()
 
         if _state.requiredModelsReady {
+            self.logger.info("Required models available on first check")
             return true
         }
 
-        // If models appear missing, wait briefly and retry once
-        // This handles transient filesystem access delays after app re-signing
-        // when macOS may still be verifying code signatures
-        self.logger.debug("Models not ready on first check, retrying after delay...")
-        try? await Task.sleep(for: .milliseconds(500))
-        await self.refreshStatuses()
-
-        if !_state.requiredModelsReady {
-            self.logger.warning("Models still not ready after retry")
+        // Retry with increasing delays to handle transient filesystem access issues
+        // This handles delays after app re-signing when macOS may still be verifying code signatures
+        let retryDelays: [Duration] = [.milliseconds(500), .milliseconds(1000)]
+        
+        for (index, delay) in retryDelays.enumerated() {
+            self.logger.warning("Models not ready (attempt \(index + 1)), retrying after \(delay)...")
+            try? await Task.sleep(for: delay)
+            await self.refreshStatuses()
+            
+            if _state.requiredModelsReady {
+                self.logger.info("Models available after retry \(index + 1)")
+                return true
+            }
         }
 
+        self.logger.error("Models still not ready after \(retryDelays.count) retries - will prompt for re-download")
         return _state.requiredModelsReady
     }
 

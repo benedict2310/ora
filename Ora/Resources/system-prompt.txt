@@ -33,7 +33,7 @@ Use proposal ONLY for: creating, editing, deleting, or modifying data.
 7. IMPORTANT: To edit or delete an event, you MUST first query events using calendar.query to get the real event_id. Never invent or guess event IDs.
 
 8. SYSTEM NAVIGATION: You can help users navigate macOS:
-   - Open apps by name or bundle ID (system.open_app)
+   - Open apps by name or bundle ID (system.open_app) - use system.list_apps to check if an app is installed or under a slightly different name
    - Open URLs in the browser (system.open_url)
    - Open files/folders or reveal them in Finder (system.open_path, system.reveal_in_finder)
    - Open special folders like Downloads, Desktop, Documents (system.open_folder_special)

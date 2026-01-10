@@ -140,9 +140,12 @@ final class DefaultModelDownloader: ModelDownloader, @unchecked Sendable {
     func exists(model: ModelIdentifier, at directory: URL) -> Bool {
         let fm = FileManager.default
 
+        // DIAGNOSTIC: Log the exact path being checked (use info level to persist in Console)
+        self.logger.info("exists(\(model.displayName)): checking path \(directory.path, privacy: .public)")
+
         // Check directory exists
         guard fm.fileExists(atPath: directory.path) else {
-            self.logger.debug("exists(\(model.displayName)): directory missing at \(directory.path)")
+            self.logger.warning("exists(\(model.displayName)): FAIL - directory missing at \(directory.path, privacy: .public)")
             return false
         }
 
@@ -154,12 +157,12 @@ final class DefaultModelDownloader: ModelDownloader, @unchecked Sendable {
             if file.hasSuffix(".mlmodelc") {
                 var isDir: ObjCBool = false
                 if !fm.fileExists(atPath: path.path, isDirectory: &isDir) || !isDir.boolValue {
-                    self.logger.debug("exists(\(model.displayName)): mlmodelc missing or not directory: \(file)")
+                    self.logger.warning("exists(\(model.displayName)): FAIL - mlmodelc missing or not directory: \(file, privacy: .public)")
                     return false
                 }
             } else {
                 if !fm.fileExists(atPath: path.path) {
-                    self.logger.debug("exists(\(model.displayName)): required file missing: \(file)")
+                    self.logger.warning("exists(\(model.displayName)): FAIL - required file missing: \(file, privacy: .public) at \(path.path, privacy: .public)")
                     return false
                 }
 
@@ -170,17 +173,17 @@ final class DefaultModelDownloader: ModelDownloader, @unchecked Sendable {
                     let minimumSize = self.minimumReasonableSize(for: file)
                     if actualSize < minimumSize {
                         // File is too small - likely corrupted or incomplete
-                        self.logger.warning("exists(\(model.displayName)): file \(file) too small: \(actualSize) < \(minimumSize) bytes")
+                        self.logger.warning("exists(\(model.displayName)): FAIL - file \(file, privacy: .public) too small: \(actualSize) < \(minimumSize) bytes")
                         return false
                     }
                 } catch {
-                    self.logger.warning("exists(\(model.displayName)): failed to read attributes for \(file): \(error.localizedDescription)")
+                    self.logger.warning("exists(\(model.displayName)): FAIL - failed to read attributes for \(file, privacy: .public): \(error.localizedDescription, privacy: .public)")
                     return false
                 }
             }
         }
 
-        self.logger.debug("exists(\(model.displayName)): all checks passed")
+        self.logger.info("exists(\(model.displayName)): PASS - all checks passed")
         return true
     }
     
