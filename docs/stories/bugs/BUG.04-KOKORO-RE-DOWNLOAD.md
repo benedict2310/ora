@@ -1,10 +1,11 @@
 # BUG.04: Kokoro TTS Re-Downloaded After Rebuild
 
 **Epic:** Maintenance
-**Status:** Fixed (Pending Verification)
+**Status:** Under Investigation (Root Cause Found)
 **Priority:** P1 (High)
 **Severity:** Major
 **Discovered:** 2026-01-09
+**Updated:** 2026-01-10
 **Reporter:** User / Development session
 
 ---
@@ -446,7 +447,59 @@ Added summary logging to `refreshStatuses()` showing ready/not-downloaded counts
 
 ---
 
-## 13. Verification Checklist
+## 13. New Findings (2026-01-10)
+
+### Diagnostic Log Evidence
+
+File-based diagnostic logging was added since os_log info level doesn't persist. Log file: `~/Library/Application Support/Ora/model-diagnostic.log`
+
+**Critical Finding:** The bug occurred again at 19:52:03 and the diagnostic log captured:
+
+```
+[2026-01-10T19:51:57Z] exists(Kokoro TTS): checking path .../tts/kokoro
+[2026-01-10T19:51:57Z] exists(Kokoro TTS): PASS - all checks passed
+[2026-01-10T19:52:03Z] exists(Kokoro TTS): checking path .../tts/kokoro
+[2026-01-10T19:52:03Z] exists(Kokoro TTS): FAIL - required file missing: config.json at .../tts/kokoro/config.json
+```
+
+**The config.json file ACTUALLY DISAPPEARED between 19:51:57 and 19:52:03 (6 seconds).**
+
+### Suspected Root Cause
+
+The downloader deletes files before writing new ones in `HuggingFaceDownloader.prepareFileForWriting()`:
+
+```swift
+// When NOT resuming (server returned 200 instead of 206):
+if fm.fileExists(atPath: url.path) {
+    try fm.removeItem(at: url)  // DELETES existing file
+}
+guard fm.createFile(atPath: url.path, contents: nil) else { ... }
+```
+
+If something triggers a download of Kokoro (even though it already exists), and then:
+1. `config.json` is deleted during `prepareFileForWriting()`
+2. The download fails or is interrupted
+3. `config.json` is now missing
+
+**Why would a download be triggered?** The `ModelManager.downloadModel()` checks `exists()` before downloading. But something must be bypassing this check or there's a race condition.
+
+### Next Steps
+
+1. ✅ Added "DOWNLOAD TRIGGERED" logging to capture when downloads start
+2. Wait for next occurrence to see if a download is being triggered spuriously
+3. If download IS triggered, investigate what code path is calling it
+4. If download is NOT triggered, something else is deleting the file
+
+### Current Diagnostic Coverage
+
+The log file now captures:
+- All `exists()` checks with PASS/FAIL status
+- All file paths and which specific check failed
+- "DOWNLOAD TRIGGERED for X" when any model download starts
+
+---
+
+## 14. Verification Checklist
 
 After merging, verify:
 
