@@ -291,14 +291,16 @@ actor ModelManager {
         if self.downloader.exists(model: model, at: path) {
             self.logger.debug("\(model.rawValue) already exists, skipping download")
             _state.statuses[model] = .ready
-            
+
             // Notify listener that we are effectively 100% done
             progress?(ModelDownloadProgress(identifier: model, progress: 1.0))
-            
+
             await self.postStateChange()
             return
         }
 
+        // DIAGNOSTIC: Log download trigger to file (BUG.04 investigation)
+        self.logDiagnostic("DOWNLOAD TRIGGERED for \(model.displayName) - model did not exist at \(path.path)")
         self.logger.info("Downloading \(model.displayName)...")
         _state.statuses[model] = .downloading(progress: 0)
         await self.postStateChange()
@@ -510,6 +512,37 @@ actor ModelManager {
                 object: nil,
                 userInfo: ["model": model, "progress": progress]
             )
+        }
+    }
+
+    // MARK: - Diagnostic Logging
+
+    /// Log diagnostic messages to file (os_log info level doesn't persist)
+    /// Writes to ~/Library/Application Support/Ora/model-diagnostic.log
+    private nonisolated func logDiagnostic(_ message: String) {
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let line = "[\(timestamp)] \(message)\n"
+
+        let fm = FileManager.default
+        guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return
+        }
+
+        let oraDir = appSupport.appendingPathComponent("Ora")
+        let logFile = oraDir.appendingPathComponent("model-diagnostic.log")
+
+        try? fm.createDirectory(at: oraDir, withIntermediateDirectories: true)
+
+        if fm.fileExists(atPath: logFile.path) {
+            if let handle = try? FileHandle(forWritingTo: logFile) {
+                handle.seekToEndOfFile()
+                if let data = line.data(using: .utf8) {
+                    handle.write(data)
+                }
+                try? handle.close()
+            }
+        } else {
+            try? line.write(to: logFile, atomically: true, encoding: .utf8)
         }
     }
 }
