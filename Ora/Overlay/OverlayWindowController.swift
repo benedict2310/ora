@@ -26,7 +26,9 @@ final class OverlayWindowController {
 
     private var escapeMonitor: Any?
     private var appDeactivationObserver: NSObjectProtocol?
+    private var appActivationObserver: NSObjectProtocol?
     private var permissionPromptEndObserver: NSObjectProtocol?
+    private var externalFocusEndObserver: NSObjectProtocol?
 
     /// Default cancel action (override in tests)
     var cancelHandler: (() -> Void) = {
@@ -213,12 +215,28 @@ final class OverlayWindowController {
             self?.handleAppDeactivated()
         }
 
+        self.appActivationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleAppActivated()
+        }
+
         self.permissionPromptEndObserver = NotificationCenter.default.addObserver(
             forName: .permissionPromptDidEnd,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             self?.handlePermissionPromptEnded()
+        }
+
+        self.externalFocusEndObserver = NotificationCenter.default.addObserver(
+            forName: .externalFocusOperationDidEnd,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleExternalFocusEnded()
         }
     }
 
@@ -233,9 +251,19 @@ final class OverlayWindowController {
             self.appDeactivationObserver = nil
         }
 
+        if let observer = self.appActivationObserver {
+            NotificationCenter.default.removeObserver(observer)
+            self.appActivationObserver = nil
+        }
+
         if let observer = self.permissionPromptEndObserver {
             NotificationCenter.default.removeObserver(observer)
             self.permissionPromptEndObserver = nil
+        }
+
+        if let observer = self.externalFocusEndObserver {
+            NotificationCenter.default.removeObserver(observer)
+            self.externalFocusEndObserver = nil
         }
     }
 
@@ -258,6 +286,22 @@ final class OverlayWindowController {
         guard SimplePipelineController.shared.isSessionActive else { return }
         self.logger.debug("Permission prompt ended; restoring overlay focus")
         self.show()
+    }
+
+    private func handleAppActivated() {
+        // When app becomes active again, restore overlay if session is still active
+        // This handles cases where permission dialogs or external app focus
+        // didn't trigger the specific end notifications
+        guard SimplePipelineController.shared.isSessionActive else { return }
+        guard !self.isVisible || self.panel?.alphaValue == 0 else { return }
+        self.logger.debug("App activated with active session; restoring overlay")
+        self.show()
+    }
+
+    private func handleExternalFocusEnded() {
+        // External focus operation completed - no need to restore focus
+        // since user intentionally opened another app/folder
+        self.logger.debug("External focus operation ended")
     }
 }
 

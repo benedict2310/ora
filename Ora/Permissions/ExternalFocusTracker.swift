@@ -57,9 +57,16 @@ final class ExternalFocusTracker {
 
     /// Execute an async operation that may cause focus loss, with proper tracking.
     /// The operation is wrapped in begin/end calls automatically.
+    ///
+    /// Note: Includes a small delay after the operation to account for async focus
+    /// changes that occur after NSWorkspace operations return.
     func withExternalOperation<T>(_ operation: () async throws -> T) async rethrows -> T {
         self.beginExternalOperation()
-        defer { self.endExternalOperation() }
-        return try await operation()
+        let result = try await operation()
+        // Add delay to keep tracking active while focus change propagates
+        // NSWorkspace.open() returns immediately but focus changes async
+        try? await Task.sleep(for: .milliseconds(500))
+        self.endExternalOperation()
+        return result
     }
 }
