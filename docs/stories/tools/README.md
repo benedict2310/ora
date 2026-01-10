@@ -23,6 +23,7 @@ This epic provides the tools that Ora can execute on behalf of the user:
 | **X.03** | [Reminders Tools](X.03-REMINDERS-TOOLS.md) | EventKit integration for reminders | X.01, F.02 |
 | **X.04** | [Contacts Tools](X.04-CONTACTS-TOOLS.md) | Contacts framework integration | X.01, F.02 |
 | **X.05** | [System Tools](X.05-SYSTEM-TOOLS.md) | App launching, URL opening | X.01 |
+| **X.06** | [List Apps Tool](X.06-LIST-APPS-TOOL.md) | List installed applications | X.05 |
 
 ## Dependency Graph
 
@@ -36,6 +37,8 @@ F.02 (Permissions) ──► X.01 (Tool Protocol)
                             ├──► X.04 (Contacts)
                             │
                             └──► X.05 (System)
+                                      │
+                                      └──► X.06 (List Apps)
 ```
 
 ## Architecture Alignment

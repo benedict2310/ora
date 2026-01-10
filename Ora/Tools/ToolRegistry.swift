@@ -79,6 +79,7 @@ actor ToolRegistry {
         register(SystemOpenSettingsTool())
         register(SystemSearchFilesTool())
         register(SystemSearchAppsTool())
+        register(SystemListAppsTool())
         register(SystemRunShortcutTool())
         register(SystemListShortcutsTool())
 
