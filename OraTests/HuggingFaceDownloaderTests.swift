@@ -410,11 +410,15 @@ final class HuggingFaceDownloaderTests: XCTestCase {
         // Ensure parent directory exists
         try FileManager.default.createDirectory(at: tempDir.deletingLastPathComponent(), withIntermediateDirectories: true)
         
-        defer { try? FileManager.default.removeItem(at: tempDir) }
+        defer { 
+            try? FileManager.default.removeItem(at: tempDir) 
+            try? FileManager.default.removeItem(at: tempDir.appendingPathExtension("tmp"))
+        }
 
-        // Create existing file with content to simulate "already downloaded"
-        // This triggers existingBytes > 0, which adds the Range header
-        try "existing content".write(to: tempDir, atomically: true, encoding: .utf8)
+        // Create existing .tmp file with content to simulate "partial download that's actually complete"
+        // The atomic download logic now uses .tmp files for resume
+        let tmpFile = tempDir.appendingPathExtension("tmp")
+        try "existing content".write(to: tmpFile, atomically: true, encoding: .utf8)
 
         MockURLProtocol.requestHandler = { request in
             // Verify Range header was sent
@@ -437,6 +441,9 @@ final class HuggingFaceDownloaderTests: XCTestCase {
         } else {
             XCTFail("No progress reported")
         }
+        
+        // The .tmp file should have been atomically moved to destination
+        XCTAssertTrue(FileManager.default.fileExists(atPath: tempDir.path), "Destination should exist after 416 handling")
     }
 
     func test_downloadError_descriptions() {
