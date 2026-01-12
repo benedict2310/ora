@@ -1,11 +1,11 @@
 # BUG.04: Kokoro TTS Re-Downloaded After Rebuild
 
 **Epic:** Maintenance
-**Status:** Under Investigation (Root Cause Found)
+**Status:** Root Cause Confirmed - Fix Pending
 **Priority:** P1 (High)
 **Severity:** Major
 **Discovered:** 2026-01-09
-**Updated:** 2026-01-10
+**Updated:** 2026-01-12
 **Reporter:** User / Development session
 
 ---
@@ -499,7 +499,83 @@ The log file now captures:
 
 ---
 
-## 14. Verification Checklist
+## 14. New Findings (2026-01-12) - ROOT CAUSE CONFIRMED
+
+### Critical Discovery
+
+Investigation revealed the exact mechanism of file deletion. The diagnostic log captured:
+
+```
+[2026-01-12T19:22:02Z] exists(Kokoro TTS): PASS - all checks passed
+[2026-01-12T19:22:04Z] DOWNLOAD TRIGGERED for Kokoro TTS - model did not exist at /Users/.../Ora/Models/tts/kokoro
+[2026-01-12T19:22:04Z] DOWNLOAD TRIGGERED for Kokoro TTS - model did not exist at /var/folders/.../ora-tests-.../Ora/Models/tts/kokoro
+[2026-01-12T19:22:05Z] DOWNLOAD TRIGGERED for Kokoro TTS - model did not exist at /Users/.../Ora/Models/tts/kokoro
+... (multiple more entries)
+[2026-01-12T19:22:08Z] exists(Kokoro TTS): FAIL - required file missing: config.json
+```
+
+**Key observations:**
+1. At `19:22:02Z`, Kokoro files existed and passed all checks
+2. At `19:22:04Z`, multiple "DOWNLOAD TRIGGERED" entries appear for BOTH:
+   - Real path (`/Users/.../Ora/Models/tts/kokoro`) 
+   - Test temp path (`/var/folders/.../ora-tests-.../`)
+3. At `19:22:08Z`, `config.json` is now missing
+
+### Environment Analysis
+
+During the incident:
+- **Ora.app was running** in the background (confirmed via `ps aux`)
+- **Multiple KokoroTTSPreview processes** were running (from `agent-tools/`)
+- **Unit tests were being executed** (shown by temp path in logs)
+
+### Root Cause Confirmed
+
+The file deletion is caused by `HuggingFaceDownloader.prepareFileForWriting()`:
+
+```swift
+// Line 272 in HuggingFaceDownloader.swift
+if !isResuming && fm.fileExists(atPath: url.path) {
+    try fm.removeItem(at: url)  // <-- DELETES THE FILE
+}
+```
+
+**Trigger sequence:**
+1. The running Ora.app triggers `downloadRequiredModels()` (via setup wizard or state check)
+2. For some reason, `exists()` returns `false` at that moment (possibly transient)
+3. `downloadModel()` proceeds and calls the real `HuggingFaceDownloader`
+4. The downloader **DELETES** `config.json` before writing the new version
+5. The download is interrupted (perhaps due to parallel test activity or network issue)
+6. `config.json` is now missing, and subsequent checks fail
+
+### Why `exists()` intermittently returns false
+
+Possible causes (not yet definitively confirmed):
+1. **Transient filesystem caching** after app re-signing
+2. **Race condition** between tests and app accessing `ModelManager.shared`
+3. **Gatekeeper/code signature verification delay** affecting file access
+
+### Proposed Fix: Atomic Downloads
+
+**The core issue is destructive download behavior.** The downloader deletes files BEFORE successfully downloading replacements. 
+
+**Fix approach:** Download to a temporary file first, then atomically move to the destination:
+
+```swift
+// In HuggingFaceDownloader.download():
+// 1. Download to temp file: destination.path + ".download"
+// 2. Verify downloaded file is complete
+// 3. Atomically move temp file to destination (FileManager.moveItem)
+// This ensures the original file is never deleted until the new file is ready
+```
+
+**Benefits:**
+- Original files are never deleted until replacement is verified
+- Interrupted downloads leave original files intact
+- Resume logic still works (check for .download file)
+
+---
+
+## 15. Verification Checklist
 
 After merging, verify:
 

@@ -153,8 +153,26 @@ final class HuggingFaceDownloader: NSObject, FileDownloader, @unchecked Sendable
         existingBytes: Int64,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws {
+        // Use a temporary file for downloads to avoid deleting the original until we're sure
+        // the new download is complete. This prevents data loss if download is interrupted.
+        // BUG.04 FIX: Atomic downloads to prevent file deletion on interrupted downloads
+        let tempDestination = destination.appendingPathExtension("tmp")
+        
+        // Check for existing partial download in temp file
+        let tempExistingBytes = self.existingFileSize(at: tempDestination)
+        
+        // Use temp file's existing bytes for resume logic (not the destination file)
+        let resumeBytes = tempExistingBytes
+        
+        // Build request with range header for resume from temp file
+        var resumeRequest = request
+        if resumeBytes > 0 {
+            resumeRequest.setValue("bytes=\(resumeBytes)-", forHTTPHeaderField: "Range")
+            self.logger.info("Resuming from byte \(resumeBytes) (temp file)")
+        }
+        
         // Use bytes async sequence for streaming download with progress
-        let (asyncBytes, response) = try await self.urlSession.bytes(for: request)
+        let (asyncBytes, response) = try await self.urlSession.bytes(for: resumeRequest)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw DownloadError.httpError(statusCode: 0)
@@ -162,8 +180,10 @@ final class HuggingFaceDownloader: NSObject, FileDownloader, @unchecked Sendable
 
         // Special handling for 416 (Range Not Satisfiable)
         // This happens if we have the full file already and requested a range past the end
-        if httpResponse.statusCode == 416 && existingBytes > 0 {
-            self.logger.warning("Received 416 Range Not Satisfiable. Assuming file is complete at \(existingBytes) bytes.")
+        if httpResponse.statusCode == 416 && resumeBytes > 0 {
+            self.logger.warning("Received 416 Range Not Satisfiable. Temp file may be complete at \(resumeBytes) bytes.")
+            // Atomically move temp file to destination
+            try self.atomicMove(from: tempDestination, to: destination)
             progress(1.0)
             return
         }
@@ -181,23 +201,24 @@ final class HuggingFaceDownloader: NSObject, FileDownloader, @unchecked Sendable
         // Calculate total bytes for progress
         let totalBytes: Int64
         if isResuming {
-            totalBytes = existingBytes + (contentLength > 0 ? contentLength : 0)
+            totalBytes = resumeBytes + (contentLength > 0 ? contentLength : 0)
         } else {
             totalBytes = contentLength > 0 ? contentLength : 0
-            // If server returned 200 (not 206), we need to start fresh
-            if existingBytes > 0 && !isResuming {
-                try? FileManager.default.removeItem(at: destination)
+            // If server returned 200 (not 206), we need to start fresh - remove temp file only
+            // NEVER delete the destination file - it contains valid data we don't want to lose
+            if resumeBytes > 0 && !isResuming {
+                try? FileManager.default.removeItem(at: tempDestination)
             }
         }
 
         self.logger.debug("Response: \(httpResponse.statusCode), content-length: \(contentLength), total: \(totalBytes)")
 
-        // Prepare file for writing
-        let startBytes: Int64 = isResuming ? existingBytes : 0
-        try self.prepareFileForWriting(at: destination, isResuming: isResuming)
+        // Prepare temp file for writing (NOT the destination)
+        let startBytes: Int64 = isResuming ? resumeBytes : 0
+        try self.prepareFileForWriting(at: tempDestination, isResuming: isResuming)
 
-        guard let fileHandle = try? FileHandle(forWritingTo: destination) else {
-            throw DownloadError.fileSystemError("Cannot open file for writing: \(destination.path)")
+        guard let fileHandle = try? FileHandle(forWritingTo: tempDestination) else {
+            throw DownloadError.fileSystemError("Cannot open temp file for writing: \(tempDestination.path)")
         }
 
         defer {
@@ -247,10 +268,14 @@ final class HuggingFaceDownloader: NSObject, FileDownloader, @unchecked Sendable
         // If we expected a specific number of bytes (Content-Length header), verify we got them all
         if totalBytes > 0 && bytesWritten < totalBytes {
             self.logger.error("Download incomplete: expected \(totalBytes) bytes, got \(bytesWritten) bytes")
-            // Clean up the partial file
-            try? FileManager.default.removeItem(at: destination)
+            // Clean up the partial TEMP file (never delete destination - it has valid data)
+            try? FileManager.default.removeItem(at: tempDestination)
             throw DownloadError.incompleteDownload(expected: totalBytes, actual: bytesWritten)
         }
+
+        // Atomically move temp file to destination
+        // This is the key fix for BUG.04 - we only replace the destination after successful download
+        try self.atomicMove(from: tempDestination, to: destination)
 
         // Final progress
         progress(1.0)
@@ -275,6 +300,22 @@ final class HuggingFaceDownloader: NSObject, FileDownloader, @unchecked Sendable
                 throw DownloadError.fileSystemError("Cannot create file: \(url.path)")
             }
         }
+    }
+    
+    /// Atomically move a file from source to destination, replacing destination if it exists
+    /// This ensures the destination is never in a partial/corrupted state
+    private func atomicMove(from source: URL, to destination: URL) throws {
+        let fm = FileManager.default
+        
+        // Remove destination if it exists (atomic replacement)
+        if fm.fileExists(atPath: destination.path) {
+            try fm.removeItem(at: destination)
+        }
+        
+        // Move temp file to destination
+        try fm.moveItem(at: source, to: destination)
+        
+        self.logger.debug("Atomically moved \(source.lastPathComponent) to \(destination.lastPathComponent)")
     }
 }
 
