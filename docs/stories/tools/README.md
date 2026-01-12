@@ -24,6 +24,10 @@ This epic provides the tools that Ora can execute on behalf of the user:
 | **X.04** | [Contacts Tools](X.04-CONTACTS-TOOLS.md) | Contacts framework integration | X.01, F.02 |
 | **X.05** | [System Tools](X.05-SYSTEM-TOOLS.md) | App launching, URL opening | X.01 |
 | **X.06** | [List Apps Tool](X.06-LIST-APPS-TOOL.md) | List installed applications | X.05 |
+| **X.07A** | [Mail: Compose](X.07A-MAIL-COMPOSE.md) | Create and send emails | X.00 |
+| **X.07B** | [Mail: Search & Open](X.07B-MAIL-SEARCH.md) | Search emails and open in Mail.app | X.07A |
+| **X.07B** | [Mail: Search & Open](X.07B-MAIL-SEARCH.md) | Search emails and open in Mail app | X.07A |
+| **X.07C** | [Mail: Triage](X.07C-MAIL-TRIAGE.md) | Mark read, flag, and move emails | X.07B |
 
 ## Dependency Graph
 

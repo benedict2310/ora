@@ -57,6 +57,7 @@ Core application structure, UI, and state management.
 | F.09 | [Model Download Implementation](foundations/F.09-MODEL-DOWNLOAD-IMPLEMENTATION.md) | ✅ Complete |
 | F.10 | [Liquid Glass Overlay Refresh](foundations/F.10-LIQUID-GLASS-OVERLAY-REFRESH.md) | 📋 Deferred |
 | F.11 | [Setup Wizard Polish](foundations/F.11-SETUP-WIZARD-POLISH.md) | 🚧 To Do |
+| F.13 | [Sparkle Auto-Updates](foundations/F.13-SPARKLE-AUTO-UPDATES.md) | 🚧 To Do |
 
 #### Bug Fixes
 
@@ -105,6 +106,7 @@ Agentic tools for system integration.
 | X.03 | [Reminders Tools](tools/X.03-REMINDERS-TOOLS.md) | 🚧 To Do |
 | X.04 | [Contacts Tools](tools/X.04-CONTACTS-TOOLS.md) | 🚧 To Do |
 | X.05 | [System Tools](tools/X.05-SYSTEM-TOOLS.md) | 🚧 To Do |
+| X.07A | [Mail: Compose](tools/X.07A-MAIL-COMPOSE.md) | 🚧 To Do |
 
 ### 🧹 Maintenance (M)
 Quality, coverage, and repository hygiene.
