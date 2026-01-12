@@ -127,7 +127,43 @@ As a developer, I want a unified way to execute AppleScripts and parse their out
 
 ## Code Review Findings
 
-(TBD by review agent.)
+**Reviewer:** Codex Subagent
+**Date:** 2026-01-12T20:35:00Z
+**Commit reviewed:** 81eddaf
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 4
+- Build status: Pass
+- Tests status: Pass (914 tests, 0 failures)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+
+None.
+
+#### P1 - Major (Should fix)
+
+- [x] `AppleScriptRunner.swift:168-178` - The `canControlApp(bundleId:)` method directly interpolates `bundleId` into the AppleScript string without escaping. A malicious bundle ID like `Notes" & return & do shell script "rm -rf /"` could execute arbitrary commands. Use `AppleScriptUtils.escapeForAppleScript()` to sanitize the bundle ID. **FIXED:** Commit 6d97ec7 - Added escaping and tests.
+
+#### P2 - Minor (Can defer)
+
+- [x] `AppleScriptRunner.swift:168-178` - `canControlApp(bundleId:)` is not covered by tests. Consider adding a unit test (e.g., test with a non-existent app returns false). **FIXED:** Added `test_canControlApp_nonExistentApp_returnsFalse` and `test_canControlApp_sanitizesInput`.
+- [x] `AppleScriptUtils.swift:124-139` - `buildScript(for:commands:wrapInJSON:)` does not escape the `app` or `commands` parameters. Document that callers are responsible for sanitization, or add escaping. **FIXED:** Added documentation warning about caller responsibility.
+- [ ] `AppleScriptRunnerTests.swift:385-409` - `test_cancelAll_terminatesRunningScripts` doesn't actually assert that the script was cancelled; it just verifies the method doesn't crash. Consider asserting the task throws `AppleScriptError.cancelled`. (Deferred - complex test coordination required)
+
+### Future Considerations (Out of Scope)
+
+- The story mentions optional integration with `ToolRegistry.swift` but this was not implemented. This is fine as it was marked optional.
+- No mapping from `AppleScriptError` to `ToolError` yet; this will likely be needed when specific tools (Notes, Mail) are implemented.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
+
+**Note:** All critical and major issues have been addressed. One P2 issue deferred (test assertion for cancellation).
 
 ## Completion Status
 
