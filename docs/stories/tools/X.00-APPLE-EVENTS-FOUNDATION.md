@@ -1,7 +1,7 @@
 # X.00 - Apple Events Automation Foundation
 
 **Epic:** Tools
-**Status:** Not Started
+**Status:** In Progress
 **Priority:** P0 (Critical Path)
 **Estimated Effort:** 2 days
 **Dependencies:** X.01
@@ -62,12 +62,12 @@ As a developer, I want a unified way to execute AppleScripts and parse their out
 
 ## 6. Acceptance Criteria
 
-- [ ] AC-1: Runner executes an AppleScript and returns stdout.
-- [ ] AC-2: Runner can parse and return JSON payloads from a standard envelope.
-- [ ] AC-3: Runner supports timeout and returns specific `timeout` error.
-- [ ] AC-4: Permission errors normalize to `permission_denied` with remediation guidance.
-- [ ] AC-5: Error messages include debug metadata (error number, raw message).
-- [ ] AC-6: Safe cancellation behavior (no runaway loops).
+- [x] AC-1: Runner executes an AppleScript and returns stdout. - Verified in `AppleScriptRunner.swift:43-96`, tested by `test_execute_simpleScript_returnsOutput`
+- [x] AC-2: Runner can parse and return JSON payloads from a standard envelope. - Verified in `AppleScriptUtils.swift:52-71`, tested by `test_parseJSONEnvelope_validJSON_returnsValue`
+- [x] AC-3: Runner supports timeout and returns specific `timeout` error. - Verified in `AppleScriptRunner.swift:173-212`, tested by `test_execute_timeout_throwsTimeoutError`
+- [x] AC-4: Permission errors normalize to `permission_denied` with remediation guidance. - Verified in `AppleScriptError.swift:21-32,101-134`, tested by `test_parse_recognizesPermissionErrorCode_1744`
+- [x] AC-5: Error messages include debug metadata (error number, raw message). - Verified in `AppleScriptError.swift:54-82`, tested by `test_permissionDeniedError_debugInfo_includesAllFields`
+- [x] AC-6: Safe cancellation behavior (no runaway loops). - Verified in `AppleScriptRunner.swift:158-172`, tested by `test_cancelAll_terminatesRunningScripts`
 
 ## 7. Verification Plan
 
@@ -100,7 +100,30 @@ As a developer, I want a unified way to execute AppleScripts and parse their out
 
 ## Implementation Summary
 
-(TBD after implementation.)
+**Date:** 2026-01-12
+**Branch:** `feat/X.00-apple-events-foundation`
+**Commits:** 1
+
+### Files Created
+
+- `Ora/Tools/Automation/AppleScriptError.swift` - Categorized error types with parsing from osascript stderr
+- `Ora/Tools/Automation/AppleScriptRunner.swift` - Actor-based runner with timeout and cancellation support
+- `Ora/Tools/Automation/AppleScriptUtils.swift` - JSON envelope parsing and script building utilities
+- `OraTests/Tools/Automation/AppleScriptRunnerTests.swift` - 43 unit and integration tests
+
+### Key Implementation Details
+
+1. **Error Types:** `AppleScriptError` enum with 6 categories (`permissionDenied`, `timeout`, `executionFailed`, `invalidOutput`, `processStartFailed`, `cancelled`)
+2. **Permission Detection:** Recognizes error codes -1744, -1743, -10004, -600, -10006 plus keyword-based detection
+3. **JSON Parsing:** Uses JSONSerialization with manual conversion to JSONValue for reliable parsing
+4. **Timeout Mechanism:** Uses task group with racing timeout task, terminates process on timeout
+5. **Actor Isolation:** Thread-safe execution via Swift actor
+
+### Ready for Review
+
+- [x] All acceptance criteria verified
+- [x] Tests passing (914 total, 43 new)
+- [x] Build succeeds
 
 ## Code Review Findings
 
