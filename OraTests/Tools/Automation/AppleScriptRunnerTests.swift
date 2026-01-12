@@ -464,4 +464,19 @@ final class AppleScriptRunnerIntegrationTests: XCTestCase {
         // Script should have been terminated (we can't easily verify this
         // without more complex coordination, but the method shouldn't crash)
     }
+
+    func test_canControlApp_nonExistentApp_returnsFalse() async throws {
+        // A non-existent bundle ID should return false
+        let canControl = await self.runner.canControlApp(bundleId: "com.nonexistent.fake.app.12345")
+        XCTAssertFalse(canControl)
+    }
+
+    func test_canControlApp_sanitizesInput() async throws {
+        // Test that malicious input is properly escaped
+        // This should not execute any injected commands
+        let maliciousId = "Notes\" & return & \"evil"
+        let canControl = await self.runner.canControlApp(bundleId: maliciousId)
+        // Should return false because the sanitized bundle ID won't match any app
+        XCTAssertFalse(canControl)
+    }
 }

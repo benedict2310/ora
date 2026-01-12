@@ -172,8 +172,10 @@ actor AppleScriptRunner {
     /// - Parameter bundleId: The bundle identifier of the app
     /// - Returns: true if the app can be controlled
     func canControlApp(bundleId: String) async -> Bool {
+        // Sanitize bundleId to prevent injection attacks
+        let sanitizedBundleId = AppleScriptUtils.escapeForAppleScript(bundleId)
         let script = """
-        tell application id "\(bundleId)"
+        tell application id "\(sanitizedBundleId)"
             return true
         end tell
         """

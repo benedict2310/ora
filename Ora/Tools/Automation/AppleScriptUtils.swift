@@ -115,9 +115,14 @@ enum AppleScriptUtils {
     }
 
     /// Build an AppleScript that returns JSON
+    ///
+    /// - Important: The `app` and `commands` parameters are NOT automatically escaped.
+    ///   Callers must use `escapeForAppleScript()` on any user-provided values before
+    ///   passing them to this function to prevent injection attacks.
+    ///
     /// - Parameters:
-    ///   - app: Target application name
-    ///   - commands: AppleScript commands to execute within tell block
+    ///   - app: Target application name (must be sanitized by caller)
+    ///   - commands: AppleScript commands to execute within tell block (must be sanitized by caller)
     ///   - wrapInJSON: Whether to wrap result in JSON envelope
     /// - Returns: Complete AppleScript source
     static func buildScript(
