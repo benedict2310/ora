@@ -84,8 +84,12 @@ struct HuggingFaceStrategy: ModelDownloadStrategy, Sendable {
         let verificationPassed = await self.verifyDownload(model: model, at: directory, expectedSizes: expectedSizes)
         if !verificationPassed {
             self.logger.error("Download verification failed for \(model.displayName)")
-            // Clean up partial/corrupted download
-            try? FileManager.default.removeItem(at: directory)
+            // BUG.04 FIX: Do NOT delete the directory on verification failure.
+            // The atomic download pattern in HuggingFaceDownloader uses .tmp files,
+            // so original files are preserved. Deleting the directory here would
+            // destroy valid files if multiple downloads race each other.
+            // Leave any existing files intact - they may still be usable.
+            self.logger.warning("Leaving existing files intact at \(directory.path)")
             throw ModelError.downloadFailed(model, "Download verification failed - files may be corrupted or incomplete")
         }
 

@@ -575,6 +575,118 @@ Possible causes (not yet definitively confirmed):
 
 ---
 
+## 16. New Findings (2026-01-13) - DIRECTORY DELETION BUG
+
+### Diagnostic Log Evidence
+
+The bug occurred again at 18:50:28Z. The diagnostic log captured:
+
+```
+[2026-01-13T18:50:26Z] exists(Kokoro TTS): PASS - all checks passed
+[2026-01-13T18:50:28Z] DOWNLOAD TRIGGERED for Kokoro TTS - model did not exist at /Users/.../Ora/Models/tts/kokoro
+[2026-01-13T18:50:28Z] DOWNLOAD TRIGGERED for Kokoro TTS - model did not exist at /var/folders/.../ora-tests-.../Ora/Models/tts/kokoro
+[2026-01-13T18:50:28Z] DOWNLOAD TRIGGERED for Kokoro TTS - model did not exist at /Users/.../Ora/Models/tts/kokoro
+... (8 total triggers - 7 to real path, 1 to test path)
+[2026-01-13T18:50:35Z] exists(Kokoro TTS): FAIL - required file missing: config.json
+```
+
+### Root Cause: Two Issues Found
+
+#### Issue 1: HuggingFaceStrategy Deletes Entire Directory on Verification Failure
+
+**Location:** `Ora/Models/Strategies/HuggingFaceStrategy.swift:88`
+
+```swift
+// Clean up partial/corrupted download
+try? FileManager.default.removeItem(at: directory)  // DELETES ENTIRE DIRECTORY!
+```
+
+The atomic download fix in `HuggingFaceDownloader` works correctly (downloads to `.tmp` files). **But the strategy layer still deletes the whole directory when verification fails!**
+
+#### Issue 2: No Locking Prevents Concurrent Downloads of Same Model
+
+**Location:** `Ora/Models/ModelManager.swift:280-300`
+
+The `downloadModel()` function attempts to cancel existing downloads:
+```swift
+downloadTasks[model]?.cancel()
+downloadTasks[model] = nil
+```
+
+But this is NOT atomic. When 8 download requests arrive simultaneously:
+1. All 8 check `exists()` → some return true, some return false (race)
+2. Multiple downloads start for the same model
+3. They interfere with each other during verification
+4. One fails verification → **entire directory deleted**
+5. All files now gone
+
+### The Race Condition Sequence
+
+1. **18:50:26** - Kokoro files exist, all checks pass
+2. **18:50:28** - 8 simultaneous `downloadModel()` calls (7 from app, 1 from tests)
+3. Multiple downloads race, interfering with each other
+4. Verification fails for at least one download
+5. `HuggingFaceStrategy` deletes the ENTIRE kokoro directory
+6. **18:50:35** - `config.json` now missing
+
+### Proposed Fixes
+
+#### Fix 1: Remove Directory Deletion from HuggingFaceStrategy
+
+```swift
+// BEFORE (dangerous):
+try? FileManager.default.removeItem(at: directory)
+
+// AFTER (safe - only clean up temp files):
+// Don't delete the directory - the atomic download already handles temp file cleanup
+// If verification fails, leave the original files intact
+self.logger.warning("Verification failed for \(model.displayName) - leaving existing files intact")
+```
+
+#### Fix 2: Add Download Locking to ModelManager
+
+Add a Set to track models currently being downloaded, with proper actor isolation:
+
+```swift
+private var activeDownloads: Set<ModelIdentifier> = []
+
+func downloadModel(_ model: ModelIdentifier, ...) async throws {
+    // Check if already downloading
+    guard !activeDownloads.contains(model) else {
+        self.logger.info("\(model.displayName) download already in progress, skipping")
+        return
+    }
+
+    activeDownloads.insert(model)
+    defer { activeDownloads.remove(model) }
+
+    // ... rest of download logic
+}
+```
+
+---
+
+## 17. Implementation (2026-01-13)
+
+### Branch: `fix/BUG.04-directory-deletion-race`
+### PR: https://github.com/benedict2310/ora/pull/63
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `Ora/Models/Strategies/HuggingFaceStrategy.swift` | Removed `removeItem(at: directory)` on verification failure |
+| `Ora/Models/ModelManager.swift` | Added `activeDownloads` set to prevent concurrent downloads of same model |
+
+### Verification Checklist
+
+- [x] Build succeeds
+- [x] All 919 tests pass
+- [ ] Manual test: Run app + tests simultaneously, verify no file deletion
+- [ ] Manual test: Trigger multiple downloads of same model, verify only one runs
+
+---
+
 ## 15. Verification Checklist
 
 After merging, verify:
@@ -582,4 +694,4 @@ After merging, verify:
 - [ ] Fresh setup downloads all models and metadata contains all 3 entries
 - [ ] Rebuild with re-signing (`./build.sh run` showing "Signing Identity" messages) does NOT trigger setup wizard
 - [ ] Console.app shows diagnostic logs during startup (filter by "ModelManager" or "ModelDownloader")
-- [ ] All 864 tests pass
+- [ ] All tests pass
