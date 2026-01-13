@@ -78,10 +78,16 @@ final class OverlayWindowController {
         // Note: NSAnimationContext.runAnimationGroup was unreliable in Release builds
         // Reset alpha to 1 in case it was animating to 0
         panel.alphaValue = 1
+
+        // Use orderFrontRegardless for more aggressive window ordering
+        // This helps when coming back from system dialogs (e.g., permission prompts)
+        panel.orderFrontRegardless()
         panel.makeKeyAndOrderFront(nil)
-        
+
         // Ensure app is active to receive input (required for accessory apps)
+        // Use the newer API which works better with accessory apps
         NSApp.activate(ignoringOtherApps: true)
+        NSRunningApplication.current.activate(options: [.activateIgnoringOtherApps])
 
         // Add dismiss monitors
         self.addDismissMonitors()

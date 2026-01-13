@@ -842,7 +842,50 @@ final class AssistantViewModel: ObservableObject {
 |:-----------|:---------------|
 | All inference runs locally | No data uploaded; network only for downloads |
 | Encrypted on-device audit log | `Storage/AuditStore.swift` |
-| Redaction toggles + "Delete session" button | `UI/PrivacySettings.swift` |
+| Redaction toggles + "Delete session" button | `UI/PrivacySettings.swift`
+
+#### Focus Recovery During External Operations
+
+When system permission dialogs or tool-initiated operations (opening apps, URLs, Finder) steal focus from Ora, the overlay must remain visible and not cancel the session. This is handled by two tracking systems:
+
+| System | Purpose | Files |
+|:-------|:--------|:------|
+| `PermissionPromptTracker` | Tracks active permission dialogs | `Permissions/PermissionPromptTracker.swift` |
+| `ExternalFocusTracker` | Tracks tool operations that steal focus | `Permissions/ExternalFocusTracker.swift` |
+
+**CRITICAL: Permission Request Architecture**
+
+Permission tracking is handled at **two levels** - do NOT add tracker calls in both:
+
+1. **Central tracking via `PermissionsManager.request()`** - Used by setup wizard, AudioService, and other high-level code. `PermissionsManager` wraps all permission requests with tracker calls automatically.
+
+2. **Tool-level tracking via providers** - `EventStoreProvider` and `RemindersStoreProvider` have their own tracker calls for when tools need permissions directly (bypassing `PermissionsManager`).
+
+**DO NOT add tracker calls to individual permission files** (`MicrophonePermission`, `EventKitPermission`, `ContactsPermission`). These are called by `PermissionsManager` which already tracks - adding tracker calls there causes double tracking, which breaks focus recovery (the inner `endPrompt` clears the state before the outer wrapper finishes).
+
+```swift
+// PermissionsManager.request() - ALREADY has tracking
+func request(_ type: PermissionType) async -> PermissionStatus {
+    let shouldTrackPrompt = client.checkStatus(for: type) == .notDetermined
+    if shouldTrackPrompt {
+        await PermissionPromptTracker.shared.beginPrompt(for: type)
+    }
+    let status = await client.request(type)  // Calls MicrophonePermission.request(), etc.
+    if shouldTrackPrompt {
+        await PermissionPromptTracker.shared.endPrompt(for: type)
+    }
+    return status
+}
+```
+
+**Supported permission types:** `.microphone`, `.calendar`, `.reminders`, `.contacts`
+
+**Reference implementations:**
+- `PermissionsManager.request()` - Central tracking for all permissions
+- `EventStoreProvider.ensureCalendarAccess()` - Tool-level calendar tracking
+- `RemindersStoreProvider.ensureRemindersAccess()` - Tool-level reminders tracking
+
+The `OverlayWindowController.handleAppDeactivated()` method checks both trackers before deciding to cancel a session.
 
 ---
 

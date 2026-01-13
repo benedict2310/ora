@@ -116,6 +116,7 @@ defaults delete com.ora.app "com.ora.hotkeyConfiguration"
 - Permission checks must update shared state and post notifications.
 - Implement required/optional permission requests as specified; keep docs and code aligned.
 - Cover request flows and settings opening in tests; record manual E2E checklists for permission/menu flows.
+- **Permission prompt tracking (CRITICAL):** Permission requests MUST go through `PermissionsManager.shared.request()` which handles `PermissionPromptTracker` calls centrally. Do NOT add tracker calls to individual permission files (`MicrophonePermission`, `EventKitPermission`, `ContactsPermission`) - this causes double tracking which breaks focus recovery. The tool-level providers (`EventStoreProvider`, `RemindersStoreProvider`) have their own tracker calls for when tools bypass `PermissionsManager`.
 
 ### Commit & PR Guidelines
 - Commit messages: short imperative clauses (e.g., "Add calendar tool", "Fix ASR latency"); keep commits scoped.
