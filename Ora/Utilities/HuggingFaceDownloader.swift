@@ -306,16 +306,53 @@ final class HuggingFaceDownloader: NSObject, FileDownloader, @unchecked Sendable
     /// This ensures the destination is never in a partial/corrupted state
     private func atomicMove(from source: URL, to destination: URL) throws {
         let fm = FileManager.default
-        
-        // Remove destination if it exists (atomic replacement)
-        if fm.fileExists(atPath: destination.path) {
-            try fm.removeItem(at: destination)
+
+        // Verify source file exists before attempting move
+        guard fm.fileExists(atPath: source.path) else {
+            self.logger.error("Cannot atomicMove: source file does not exist: \(source.path)")
+            throw DownloadError.fileSystemError("Source file does not exist: \(source.path)")
         }
-        
-        // Move temp file to destination
-        try fm.moveItem(at: source, to: destination)
-        
-        self.logger.debug("Atomically moved \(source.lastPathComponent) to \(destination.lastPathComponent)")
+
+        // Use replaceItemAt for truly atomic replacement if destination exists
+        // This is the only way to guarantee atomicity on macOS/iOS
+        if fm.fileExists(atPath: destination.path) {
+            // Create a backup URL in case replaceItemAt fails
+            let backupURL = destination.appendingPathExtension("backup")
+
+            do {
+                // First, try the atomic replace
+                _ = try fm.replaceItemAt(destination, withItemAt: source, backupItemName: nil, options: [])
+                self.logger.debug("Atomically replaced \(destination.lastPathComponent)")
+            } catch {
+                // replaceItemAt failed - fall back to manual but safer approach:
+                // 1. Move destination to backup
+                // 2. Move source to destination
+                // 3. Delete backup (or restore on failure)
+                self.logger.warning("replaceItemAt failed, using fallback: \(error.localizedDescription)")
+
+                // Move existing file to backup
+                if fm.fileExists(atPath: backupURL.path) {
+                    try? fm.removeItem(at: backupURL)
+                }
+                try fm.moveItem(at: destination, to: backupURL)
+
+                do {
+                    // Move source to destination
+                    try fm.moveItem(at: source, to: destination)
+                    // Success - remove backup
+                    try? fm.removeItem(at: backupURL)
+                    self.logger.debug("Fallback move succeeded for \(destination.lastPathComponent)")
+                } catch {
+                    // Move failed - restore backup
+                    try? fm.moveItem(at: backupURL, to: destination)
+                    throw error
+                }
+            }
+        } else {
+            // No existing file - simple move
+            try fm.moveItem(at: source, to: destination)
+            self.logger.debug("Moved \(source.lastPathComponent) to \(destination.lastPathComponent)")
+        }
     }
 }
 
