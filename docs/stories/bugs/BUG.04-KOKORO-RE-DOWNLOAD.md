@@ -677,6 +677,24 @@ func downloadModel(_ model: ModelIdentifier, ...) async throws {
 |------|--------|
 | `Ora/Models/Strategies/HuggingFaceStrategy.swift` | Removed `removeItem(at: directory)` on verification failure |
 | `Ora/Models/ModelManager.swift` | Added `activeDownloads` set to prevent concurrent downloads of same model |
+| `Ora/Utilities/HuggingFaceDownloader.swift` | Fixed `atomicMove()` to use `replaceItemAt` for truly atomic replacement |
+
+### Issue 3: atomicMove() Was Not Actually Atomic (Found 2026-01-13 20:20)
+
+**Location:** `Ora/Utilities/HuggingFaceDownloader.swift:307-319`
+
+The previous implementation deleted the destination BEFORE moving:
+```swift
+// BEFORE (broken):
+if fm.fileExists(atPath: destination.path) {
+    try fm.removeItem(at: destination)  // Deletes first!
+}
+try fm.moveItem(at: source, to: destination)  // If this fails, file is gone!
+```
+
+If the move failed (e.g., source doesn't exist due to race condition), the destination was already deleted.
+
+**Fix:** Use `FileManager.replaceItemAt()` which is truly atomic on macOS. Falls back to backup-move-restore pattern if that fails. Also verify source exists before attempting any operation.
 
 ### Verification Checklist
 
@@ -695,3 +713,61 @@ After merging, verify:
 - [ ] Rebuild with re-signing (`./build.sh run` showing "Signing Identity" messages) does NOT trigger setup wizard
 - [ ] Console.app shows diagnostic logs during startup (filter by "ModelManager" or "ModelDownloader")
 - [ ] All tests pass
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-01-13T20:14:00Z
+**Commit reviewed:** 9cf51e67a356a15924a200b6d5f8222c4ca1d86a
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 3 (ModelManager.swift, HuggingFaceStrategy.swift, BUG.04-KOKORO-RE-DOWNLOAD.md)
+- Build status: Pass
+- Tests: 919 passed, 0 failures
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+None.
+
+#### P1 - Major (Should fix)
+None.
+
+#### P2 - Minor (Can defer)
+None.
+
+### Review Notes
+
+The implementation correctly addresses both root causes identified in the bug analysis:
+
+1. **HuggingFaceStrategy.swift (line 87-93):** The dangerous `removeItem(at: directory)` call has been replaced with a warning log. This prevents the directory deletion that was destroying valid files when multiple downloads raced each other. The comment clearly explains the rationale.
+
+2. **ModelManager.swift (line 25-28):** The `activeDownloads` set is properly declared within the actor, ensuring thread-safe access. The set correctly tracks in-progress downloads.
+
+3. **ModelManager.swift (line 288-292):** The guard statement properly prevents concurrent downloads of the same model by checking `activeDownloads.contains(model)` before proceeding. The logging is informative.
+
+4. **ModelManager.swift (line 313-314):** The `activeDownloads.insert(model)` with `defer { activeDownloads.remove(model) }` pattern is correctly placed AFTER the existence check but BEFORE the actual download starts, ensuring proper lifecycle tracking.
+
+**Implementation correctness:**
+- Actor isolation ensures thread safety for `activeDownloads` set operations
+- The guard-return pattern correctly handles duplicate requests by logging and returning early
+- The defer block ensures cleanup even if the download throws an error
+- The existing `downloadTasks` cancellation is retained as "belt and suspenders"
+
+**Acceptance criteria verification:**
+- AC-1 ✓: Logging already implemented (in prior fix)
+- AC-2 ✓: Metadata persistence already implemented (in prior fix)
+- AC-3: Pending manual verification after merge
+- AC-4 ✓: Diagnostic logging already implemented (in prior fix)
+
+### Future Considerations (Out of Scope)
+- Consider adding unit tests specifically for concurrent download prevention (new test that tries to call `downloadModel` multiple times concurrently for the same model)
+- The unused `overallProgress` warning in HuggingFaceStrategy.swift:69 is pre-existing and unrelated to this PR
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
