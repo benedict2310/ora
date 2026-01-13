@@ -157,6 +157,9 @@ public actor KokoroEngine: KokoroEngining {
                 // Synchronize to ensure TTS work is done before releasing the gate
                 Stream.gpu.synchronize()
                 
+                // Clear GPU cache to release TTS buffers (BUG-005)
+                GPU.clearCache()
+                
                 // Release gate before yielding (synchronous release within actor context)
                 await MLXMetalGate.shared.release()
 

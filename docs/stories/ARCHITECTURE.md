@@ -304,6 +304,31 @@ For v1, we use a simple PTT model:
 - Model format: MLX safetensors (not GGUF)
 - Requires macOS 14+ (we target macOS 26+)
 
+### MLX GPU Memory Management (CRITICAL)
+
+**Problem:** MLX caches Metal GPU buffers for reuse, but without limits this cache grows unbounded—15GB+ has been observed after just one conversation.
+
+**Solution:** Two required practices:
+
+1. **Set cache limit on model load:**
+   ```swift
+   GPU.set(cacheLimit: 512 * 1024 * 1024)  // 512MB
+   ```
+
+2. **Clear cache after each generation:**
+   ```swift
+   GPU.clearCache()
+   ```
+
+**Why 512MB?** Large enough for effective buffer reuse (performance), small enough to prevent runaway growth. The cache limit only affects *reusable* buffers, not active model weights.
+
+**Implementation locations:**
+- `LLMService.prepare()` - Sets cache limit
+- `LLMService.runGeneration()` - Clears cache after each generation
+- `KokoroEngine.runSynthesis()` - Clears cache after each TTS synthesis
+
+**Monitoring:** Use `footprint -p $(pgrep -x Ora)` to check GPU memory. Look for `IOAccelerator (graphics)` line—should stay under 1-2GB during normal use.
+
 ### LLM Model: Qwen 2.5
 
 **Primary Model:** Qwen 2.5 7B (4-bit quantized)
