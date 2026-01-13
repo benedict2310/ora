@@ -229,8 +229,49 @@ MLX.GPU.clearCache()  // If available in MLX API
 - [ ] Memory stays under 5GB during 30 min idle
 - [ ] Memory returns to baseline after conversation ends
 - [ ] No leaks detected in Instruments Leaks template
-- [ ] MLXMetalGate async release bug fixed
-- [ ] SwiftData cleanup implemented
+- [x] MLXMetalGate async release bug fixed
+- [x] SwiftData cleanup implemented
+
+---
+
+## Implementation Summary
+
+**Date:** 2026-01-13
+**Branch:** `fix/bug-005-memory-leak`
+**Commits:** 1
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `Ora/LLM/MLXMetalGate.swift` | Fixed `withExclusiveAccess` to properly release before return (no more `Task { await... }` in do/catch) |
+| `Ora/LLM/LLMService.swift` | Uses fixed `withExclusiveAccess` |
+| `Ora/TTS/KokoroEngine.swift` | Uses manual acquire/release pattern (avoids Sendable constraints) |
+| `Ora/Persistence/PersistenceManager.swift` | Added `cleanupOldData()` and `resetContext()` methods |
+| `Ora/Orchestration/AgentLoop.swift` | `endSession()` now clears conversation memory |
+| `OraTests/PersistenceTests.swift` | Added tests for cleanup methods |
+
+### What Was Fixed
+
+1. **MLXMetalGate async defer bug** - The gate now properly releases before function returns
+2. **SwiftData cleanup** - Added infrastructure for periodic cleanup of old audit entries and sessions
+3. **AgentLoop session cleanup** - Sessions now clear conversation memory on end
+
+### What Remains
+
+The code fixes address known issues, but the 30GB memory growth likely requires Instruments profiling to identify the root cause, which is probably in:
+- MLX Swift framework memory management
+- Metal GPU memory (KV cache, tensors)
+- Vendor libraries (Parakeet, Kokoro)
+
+### Verification Checklist
+
+- [x] Build succeeds
+- [x] All existing tests pass
+- [x] New cleanup tests pass
+- [x] MLXMetalGate properly releases (code review verified)
+- [ ] Manual test: Run app for 30 min, verify memory stays reasonable
+- [ ] Instruments profiling to find remaining leak source
 
 ---
 
