@@ -22,6 +22,10 @@ actor ModelManager {
     private var _state = ModelsState()
     private var downloadTasks: [ModelIdentifier: Task<Void, Error>] = [:]
     private var hasLoadedMetadata = false
+
+    /// BUG.04 FIX: Track models currently being downloaded to prevent concurrent downloads
+    /// of the same model, which can cause race conditions and file corruption.
+    private var activeDownloads: Set<ModelIdentifier> = []
     
     // MARK: - Speed Tracking
     
@@ -281,7 +285,14 @@ actor ModelManager {
         _ model: ModelIdentifier,
         progress: (@Sendable (ModelDownloadProgress) -> Void)? = nil
     ) async throws {
-        // Cancel any existing download for this model
+        // BUG.04 FIX: Check if this model is already being downloaded
+        // This prevents race conditions when multiple callers try to download the same model
+        guard !self.activeDownloads.contains(model) else {
+            self.logger.info("\(model.displayName) download already in progress, skipping duplicate request")
+            return
+        }
+
+        // Cancel any existing download task for this model (belt and suspenders)
         downloadTasks[model]?.cancel()
         downloadTasks[model] = nil
 
@@ -298,6 +309,10 @@ actor ModelManager {
             await self.postStateChange()
             return
         }
+
+        // Mark this model as being downloaded (prevents concurrent downloads)
+        self.activeDownloads.insert(model)
+        defer { self.activeDownloads.remove(model) }
 
         // DIAGNOSTIC: Log download trigger to file (BUG.04 investigation)
         self.logDiagnostic("DOWNLOAD TRIGGERED for \(model.displayName) - model did not exist at \(path.path)")
