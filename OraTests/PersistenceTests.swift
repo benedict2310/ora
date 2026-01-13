@@ -466,4 +466,70 @@ final class PersistenceManagerAPITests: XCTestCase {
         // Then
         XCTAssertEqual(manager.settings.voiceOutputEnabled, !originalValue)
     }
+
+    // MARK: - Cleanup API Tests
+
+    func test_persistenceManager_cleanupOldData_deletesExcessAuditEntries() {
+        // Given - Create more entries than the limit
+        let maxEntries = 5
+        for i in 0..<10 {
+            _ = manager.recordToolExecution(
+                toolName: "cleanupTest\(i)",
+                action: "test",
+                category: .toolExecution,
+                summary: "cleanupTest\(i).test",
+                parameters: [:],
+                userConfirmed: false,
+                sessionID: nil
+            )
+        }
+
+        // When
+        let result = manager.cleanupOldData(maxAuditEntries: maxEntries, sessionRetentionDays: 30)
+
+        // Then
+        XCTAssertEqual(result.auditEntriesDeleted, 5)  // 10 - 5 = 5 deleted
+        let remaining = manager.recentAuditEntries(limit: 100)
+        XCTAssertEqual(remaining.count, maxEntries)
+    }
+
+    func test_persistenceManager_cleanupOldData_keepsRecentAuditEntries() {
+        // Given - Create fewer entries than the limit
+        for i in 0..<3 {
+            _ = manager.recordToolExecution(
+                toolName: "keepTest\(i)",
+                action: "test",
+                category: .toolExecution,
+                summary: "keepTest\(i).test",
+                parameters: [:],
+                userConfirmed: false,
+                sessionID: nil
+            )
+        }
+
+        // When
+        let result = manager.cleanupOldData(maxAuditEntries: 10, sessionRetentionDays: 30)
+
+        // Then
+        XCTAssertEqual(result.auditEntriesDeleted, 0)  // Nothing to delete
+        let remaining = manager.recentAuditEntries(limit: 100)
+        XCTAssertEqual(remaining.count, 3)
+    }
+
+    func test_persistenceManager_resetContext_doesNotCrash() {
+        // Given
+        _ = manager.createSession()
+        _ = manager.recordToolExecution(
+            toolName: "resetTest",
+            action: "test",
+            category: .toolExecution,
+            summary: "resetTest.test",
+            parameters: [:],
+            userConfirmed: false,
+            sessionID: nil
+        )
+
+        // When / Then - Should not crash
+        manager.resetContext()
+    }
 }

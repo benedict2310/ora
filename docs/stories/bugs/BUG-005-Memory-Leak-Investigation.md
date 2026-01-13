@@ -1,0 +1,241 @@
+# BUG-005: Severe Memory Leak (30GB+ Growth)
+
+**Status:** Open
+**Severity:** Critical
+**Reported:** 2026-01-12
+**Component:** Multiple (MLX, SwiftData, possibly vendor libs)
+
+---
+
+## Symptom
+
+Memory footprint grows to **30GB+** when Ora is running in the background, even without active use. This indicates a severe memory leak that makes the app unusable for extended sessions.
+
+---
+
+## Initial Investigation
+
+### What Is NOT The Primary Cause
+
+**ConversationManager message accumulation** was initially suspected but ruled out:
+
+- `AgentLoop.startSession()` calls `conversationManager.startConversation()` which clears messages (`ConversationManager.swift:53`)
+- Token trimming at 6000 tokens (~20KB) limits per-session growth
+- Text data cannot account for 30GB - maximum realistic accumulation is ~50MB even with poor hygiene
+
+### Primary Suspects (Require Instruments Profiling)
+
+#### 1. MLX/Metal Memory Management (HIGH LIKELIHOOD)
+
+**Evidence:**
+- MLX manages GPU memory via its own allocator
+- KV cache grows with context length during generation
+- Intermediate tensors may not be freed between generations
+- `Stream.gpu.synchronize()` is called but may not fully release memory
+
+**Locations:**
+- `LLMService.swift:173-218` - Generation with MLX
+- `KokoroEngine.swift:139-169` - TTS synthesis with MLX
+
+#### 2. MLXMetalGate Async Release Bug (CONFIRMED CODE ISSUE)
+
+**The Bug:**
+```swift
+// LLMService.swift:170-171 and KokoroEngine.swift:144-145
+await MLXMetalGate.shared.acquire()
+defer { Task { await MLXMetalGate.shared.release() } }  // BUG: Async in defer!
+```
+
+The comment says "synchronous release" but `Task { await ... }` is **not synchronous**. The defer block completes and the function returns BEFORE `release()` executes. This causes:
+- Gate release happens after caller assumes it's done
+- Potential for multiple operations to overlap
+- Resource contention if next operation starts before release
+
+**Also in `withExclusiveAccess()` (MLXMetalGate.swift:88-98):**
+```swift
+public func withExclusiveAccess<T: Sendable>(...) async rethrows -> T {
+    await self.acquire()
+    defer {
+        Task { await self.release() }  // Same bug
+    }
+    return try await body()
+}
+```
+
+#### 3. SwiftData Context Accumulation (MEDIUM LIKELIHOOD)
+
+**Evidence:**
+- `PersistenceManager.context` returns `container.mainContext` which never clears
+- All fetched models stay in the context's object graph
+- Audit log entries accumulate without cleanup
+- No `context.reset()` or periodic cleanup
+
+**Locations:**
+- `PersistenceManager.swift:24-26` - Context never reset
+- `PersistenceManager.swift:184-191` - Audit entries fetched repeatedly
+
+#### 4. Vendor Library Memory (UNKNOWN)
+
+- **Parakeet ASR** (`ParakeetEngine.swift`) - Native ASR engine may hold buffers
+- **Kokoro TTS** (KokoroSwift) - TTS engine memory management unknown
+- **MLX Swift** - Framework-level memory management
+
+---
+
+## Code Issues Found
+
+### Issue A: MLXMetalGate Async Defer (Definite Bug)
+
+**Current:**
+```swift
+defer { Task { await MLXMetalGate.shared.release() } }
+```
+
+**Should Be:**
+The release must happen before the function returns. Options:
+1. Don't use defer - manually call release before return
+2. Use a different synchronization pattern
+3. Make `withExclusiveAccess` properly handle the lifecycle
+
+### Issue B: SwiftData No Cleanup
+
+**Current:** No cleanup of old audit entries or sessions
+
+**Should Add:**
+- Periodic cleanup of audit log (keep last N entries)
+- Clear stale sessions
+- Consider `context.reset()` periodically
+
+### Issue C: AgentLoop.endSession() Could Be More Thorough
+
+**Current (AgentLoop.swift:136-141):**
+```swift
+func endSession() {
+    self.sessionActive = false
+    self.pendingProposal = nil
+    self.currentSessionID = nil
+    logger.debug("Agent session ended")
+}
+```
+
+While not the 30GB cause, this could call `conversationManager.clear()` for hygiene.
+
+---
+
+## Investigation Steps Required
+
+### Step 1: Instruments Memory Profile
+
+Run with Instruments using "Allocations" and "Leaks" templates:
+
+```bash
+# Build for profiling
+xcodebuild -project Ora.xcodeproj -scheme Ora -configuration Release
+
+# Open Instruments
+open -a Instruments
+```
+
+1. Select "Allocations" template
+2. Run app and leave idle for 30 minutes
+3. Look for:
+   - Growing allocation categories
+   - Large persistent allocations
+   - Leaked objects
+
+### Step 2: Memory Graph Debugger
+
+In Xcode while running:
+1. Debug > Debug Memory Graph
+2. Look for:
+   - Unexpected retain cycles
+   - Large object clusters
+   - Growing collections
+
+### Step 3: Metal GPU Memory
+
+Check Metal memory specifically:
+1. Instruments > Metal System Trace
+2. Monitor GPU memory allocation over time
+3. Look for unreleased command buffers or textures
+
+### Step 4: Isolate Components
+
+Test each component in isolation:
+1. **LLM only:** Run generations without TTS/ASR
+2. **TTS only:** Run synthesis without LLM
+3. **ASR only:** Run transcription without LLM/TTS
+4. **Idle:** Run with no activity at all
+
+---
+
+## Potential Quick Fixes (Before Root Cause Found)
+
+### Fix 1: MLXMetalGate Proper Release
+
+```swift
+// Instead of defer with async Task, ensure synchronous release
+public func withExclusiveAccess<T: Sendable>(
+    _ body: @Sendable () async throws -> T
+) async rethrows -> T {
+    await self.acquire()
+    do {
+        let result = try await body()
+        await self.release()  // Release before return
+        return result
+    } catch {
+        await self.release()  // Release on error too
+        throw error
+    }
+}
+```
+
+### Fix 2: SwiftData Periodic Cleanup
+
+Add to PersistenceManager:
+```swift
+func cleanupOldData() {
+    // Keep only last 500 audit entries
+    // Delete sessions older than 30 days
+    // Call context.reset() if needed
+}
+```
+
+### Fix 3: Explicit MLX Memory Clear
+
+After each generation/synthesis:
+```swift
+MLX.GPU.clearCache()  // If available in MLX API
+```
+
+---
+
+## Related Files
+
+| File | Relevance |
+|------|-----------|
+| `Ora/LLM/LLMService.swift` | MLX generation, Metal gate usage |
+| `Ora/LLM/MLXMetalGate.swift` | GPU serialization (async bug) |
+| `Ora/TTS/KokoroEngine.swift` | MLX TTS synthesis |
+| `Ora/Persistence/PersistenceManager.swift` | SwiftData context |
+| `Ora/ASR/ParakeetEngine.swift` | ASR engine |
+| `Ora/Orchestration/SimplePipelineController.swift` | Overall lifecycle |
+
+---
+
+## Resolution Criteria
+
+- [ ] Root cause identified via Instruments
+- [ ] Memory stays under 5GB during 30 min idle
+- [ ] Memory returns to baseline after conversation ends
+- [ ] No leaks detected in Instruments Leaks template
+- [ ] MLXMetalGate async release bug fixed
+- [ ] SwiftData cleanup implemented
+
+---
+
+## Notes
+
+- 30GB suggests the leak is in native/GPU memory, not Swift heap
+- The MLXMetalGate async defer is a real bug regardless of whether it causes this specific leak
+- Profiling is required - code review alone cannot identify the root cause with certainty

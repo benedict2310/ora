@@ -201,6 +201,82 @@ final class PersistenceManager {
         }
     }
 
+    // MARK: - Cleanup (Memory Management)
+
+    /// Clean up old data to prevent memory growth
+    ///
+    /// This should be called periodically to remove old audit entries and sessions.
+    /// Default retention: 500 audit entries, sessions older than 30 days.
+    ///
+    /// - Parameters:
+    ///   - maxAuditEntries: Maximum number of audit entries to keep (default: 500)
+    ///   - sessionRetentionDays: Days to retain completed sessions (default: 30)
+    /// - Returns: Count of deleted items (audit entries, sessions)
+    @discardableResult
+    func cleanupOldData(
+        maxAuditEntries: Int = 500,
+        sessionRetentionDays: Int = 30
+    ) -> (auditEntriesDeleted: Int, sessionsDeleted: Int) {
+        var auditDeleted = 0
+        var sessionsDeleted = 0
+
+        // Clean up audit entries beyond the limit
+        do {
+            let allEntriesDescriptor = FetchDescriptor<AuditLogEntryModel>(
+                sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+            )
+            let allEntries = try context.fetch(allEntriesDescriptor)
+
+            if allEntries.count > maxAuditEntries {
+                let entriesToDelete = Array(allEntries.dropFirst(maxAuditEntries))
+                for entry in entriesToDelete {
+                    context.delete(entry)
+                    auditDeleted += 1
+                }
+                self.logger.info("Cleaned up \(auditDeleted) old audit entries")
+            }
+        } catch {
+            self.logger.error("Failed to clean up audit entries: \(error.localizedDescription)")
+        }
+
+        // Clean up old completed sessions
+        let cutoffDate = Calendar.current.date(byAdding: .day, value: -sessionRetentionDays, to: Date()) ?? Date()
+        do {
+            let oldSessionsDescriptor = FetchDescriptor<Session>(
+                predicate: #Predicate { session in
+                    session.isComplete && session.updatedAt < cutoffDate
+                }
+            )
+            let oldSessions = try context.fetch(oldSessionsDescriptor)
+
+            for session in oldSessions {
+                context.delete(session)
+                sessionsDeleted += 1
+            }
+
+            if sessionsDeleted > 0 {
+                self.logger.info("Cleaned up \(sessionsDeleted) old sessions")
+            }
+        } catch {
+            self.logger.error("Failed to clean up old sessions: \(error.localizedDescription)")
+        }
+
+        if auditDeleted > 0 || sessionsDeleted > 0 {
+            self.saveContext()
+        }
+
+        return (auditDeleted, sessionsDeleted)
+    }
+
+    /// Reset the SwiftData context to release cached objects
+    ///
+    /// This clears the in-memory object graph, which can help reduce memory usage
+    /// after processing many objects. Pending changes are lost.
+    func resetContext() {
+        context.rollback()
+        self.logger.debug("Context reset (in-memory objects released)")
+    }
+
     // MARK: - App Settings
 
     /// Get or create app settings

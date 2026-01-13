@@ -82,6 +82,7 @@ public actor MLXMetalGate {
     /// Execute a closure with exclusive access to MLX Metal.
     ///
     /// This is a convenience wrapper that acquires and releases the gate automatically.
+    /// The release is guaranteed to happen before this function returns.
     ///
     /// - Parameter body: The async throwing closure to execute.
     /// - Returns: The result of the closure.
@@ -89,12 +90,14 @@ public actor MLXMetalGate {
         _ body: @Sendable () async throws -> T
     ) async rethrows -> T {
         await self.acquire()
-        defer {
-            // Use a synchronous release to ensure it happens immediately
-            // The actor will serialize the release call
-            Task { await self.release() }
+        do {
+            let result = try await body()
+            self.release()  // Release before return (synchronous within actor)
+            return result
+        } catch {
+            self.release()  // Release on error too
+            throw error
         }
-        return try await body()
     }
 
     // MARK: - Testing Support
