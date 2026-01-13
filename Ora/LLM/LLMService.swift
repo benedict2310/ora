@@ -167,54 +167,53 @@ actor LLMService: LLMServicing {
         
         // Use the new perform API with ModelContext
         // Wrap in MLXMetalGate to serialize GPU access with TTS
-        await MLXMetalGate.shared.acquire()
-        defer { Task { await MLXMetalGate.shared.release() } }
-
-        try await container.perform { context in
-            // Use applyChatTemplate to properly encode special tokens
-            // This ensures <|im_start|> becomes token 151644 (not multiple text tokens)
-            let inputTokens: [Int]
-            do {
-                inputTokens = try context.tokenizer.applyChatTemplate(messages: chatMessages)
-            } catch {
-                // Fallback to manual encoding if chat template fails
-                // This shouldn't happen with Qwen models but provides safety
-                // Note: fallbackPrompt is pre-computed above to avoid actor isolation issues
-                inputTokens = context.tokenizer.encode(text: fallbackPrompt)
-            }
-            
-            var count = 0
-            
-            // Propagate errors from MLX
-            let _ = try MLXLMCommon.generate(
-                promptTokens: inputTokens,  // [Int] as expected by generate
-                parameters: parameters,
-                model: context.model,
-                tokenizer: context.tokenizer,
-                didGenerate: { tokens in
-                    if Task.isCancelled { return .stop }
-                    
-                    if tokens.count > count {
-                        let newTokens = Array(tokens[count...])
-                        let text = context.tokenizer.decode(tokens: newTokens)
-                        continuation.yield(.token(text))
-                        count = tokens.count
-                        
-                        // Stop on end-of-turn tokens (Qwen 2.5 and Qwen 3 compatible)
-                        // Qwen 3 also uses </tool_call> for tool call completion
-                        if text.contains("<|im_end|>") || 
-                           text.contains("<|endoftext|>") ||
-                           text.contains("</tool_call>") {
-                            return .stop
-                        }
-                    }
-                    return .more
+        try await MLXMetalGate.shared.withExclusiveAccess {
+            try await container.perform { context in
+                // Use applyChatTemplate to properly encode special tokens
+                // This ensures <|im_start|> becomes token 151644 (not multiple text tokens)
+                let inputTokens: [Int]
+                do {
+                    inputTokens = try context.tokenizer.applyChatTemplate(messages: chatMessages)
+                } catch {
+                    // Fallback to manual encoding if chat template fails
+                    // This shouldn't happen with Qwen models but provides safety
+                    // Note: fallbackPrompt is pre-computed above to avoid actor isolation issues
+                    inputTokens = context.tokenizer.encode(text: fallbackPrompt)
                 }
-            )
-            
-            // Synchronize GPU to ensure all Metal work is complete before returning
-            // This prevents race conditions when starting a new generation immediately after
-            Stream.gpu.synchronize()
+                
+                var count = 0
+                
+                // Propagate errors from MLX
+                let _ = try MLXLMCommon.generate(
+                    promptTokens: inputTokens,  // [Int] as expected by generate
+                    parameters: parameters,
+                    model: context.model,
+                    tokenizer: context.tokenizer,
+                    didGenerate: { tokens in
+                        if Task.isCancelled { return .stop }
+                        
+                        if tokens.count > count {
+                            let newTokens = Array(tokens[count...])
+                            let text = context.tokenizer.decode(tokens: newTokens)
+                            continuation.yield(.token(text))
+                            count = tokens.count
+                            
+                            // Stop on end-of-turn tokens (Qwen 2.5 and Qwen 3 compatible)
+                            // Qwen 3 also uses </tool_call> for tool call completion
+                            if text.contains("<|im_end|>") || 
+                               text.contains("<|endoftext|>") ||
+                               text.contains("</tool_call>") {
+                                return .stop
+                            }
+                        }
+                        return .more
+                    }
+                )
+                
+                // Synchronize GPU to ensure all Metal work is complete before returning
+                // This prevents race conditions when starting a new generation immediately after
+                Stream.gpu.synchronize()
+            }
         }
         
         continuation.yield(.completed(totalTokens: 0))

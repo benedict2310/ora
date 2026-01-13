@@ -133,10 +133,16 @@ actor AgentLoop {
     }
     
     /// End the current session
-    func endSession() {
+    ///
+    /// Clears all session state and conversation history to free memory.
+    func endSession() async {
         self.sessionActive = false
         self.pendingProposal = nil
         self.currentSessionID = nil
+        
+        // Clear conversation to free memory
+        await conversationManager.clear()
+        
         logger.debug("Agent session ended")
     }
     

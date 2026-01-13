@@ -142,27 +142,34 @@ public actor KokoroEngine: KokoroEngining {
             // Acquire exclusive access to MLX Metal to prevent race conditions with LLM
             // This serializes GPU access between TTS and LLM which share the same Metal stream
             await MLXMetalGate.shared.acquire()
-            defer { Task { await MLXMetalGate.shared.release() } }
+            
+            do {
+                // Synchronize GPU before starting TTS work
+                Stream.gpu.synchronize()
 
-            // Synchronize GPU before starting TTS work
-            Stream.gpu.synchronize()
+                // Generate audio - KokoroTTS generates all audio at once (no streaming)
+                let (audioBuffer, _) = try tts.generateAudio(
+                    voice: voice,
+                    language: Language.enUS,
+                    text: text
+                )
 
-            // Generate audio - KokoroTTS generates all audio at once (no streaming)
-            let (audioBuffer, _) = try tts.generateAudio(
-                voice: voice,
-                language: Language.enUS,
-                text: text
-            )
+                // Synchronize to ensure TTS work is done before releasing the gate
+                Stream.gpu.synchronize()
+                
+                // Release gate before yielding (synchronous release within actor context)
+                await MLXMetalGate.shared.release()
 
-            // Synchronize to ensure TTS work is done before releasing the gate
-            Stream.gpu.synchronize()
+                // Yield the audio samples as a single chunk (sentence chunking happens upstream).
+                continuation.yield(audioBuffer)
+                continuation.finish()
 
-            // Yield the audio samples as a single chunk (sentence chunking happens upstream).
-            continuation.yield(audioBuffer)
-            continuation.finish()
-
-            self.logger.debug("Synthesis complete: \(audioBuffer.count) samples")
-
+                self.logger.debug("Synthesis complete: \(audioBuffer.count) samples")
+            } catch {
+                // Release gate on error before rethrowing
+                await MLXMetalGate.shared.release()
+                throw error
+            }
         } catch {
             self.logger.error("Synthesis failed: \(error.localizedDescription)")
             continuation.finish(throwing: TTSError.synthesisFailed(error.localizedDescription))
