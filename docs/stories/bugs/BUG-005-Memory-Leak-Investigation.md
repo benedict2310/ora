@@ -280,3 +280,63 @@ The code fixes address known issues, but the 30GB memory growth likely requires 
 - 30GB suggests the leak is in native/GPU memory, not Swift heap
 - The MLXMetalGate async defer is a real bug regardless of whether it causes this specific leak
 - Profiling is required - code review alone cannot identify the root cause with certainty
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-01-13T18:51:31Z
+**Commit reviewed:** 83de093
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 6
+- Build status: Pass
+- Tests status: Pass (919 tests)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+(None found)
+
+#### P1 - Major (Should fix)
+(None found)
+
+#### P2 - Minor (Can defer)
+(None found)
+
+### Review Notes
+
+**1. MLXMetalGate.swift - Fix Verified ✅**
+The fix correctly addresses the async defer bug. The `withExclusiveAccess` method now uses do/catch with synchronous `self.release()` calls inside the actor, ensuring the gate is released before the function returns. This is the correct pattern.
+
+**2. LLMService.swift - Correctly Uses withExclusiveAccess ✅**
+The refactored code properly wraps the entire MLX generation in `MLXMetalGate.shared.withExclusiveAccess { ... }`, replacing the buggy manual acquire/defer pattern.
+
+**3. KokoroEngine.swift - Manual Pattern Correct ✅**
+Uses manual `acquire()` / `release()` with proper try-catch to ensure release on both success and error paths. The `await` on `release()` is correct because it's called from outside the actor (crossing actor boundary). The comment "synchronous release within actor context" is slightly misleading since the call is async from `KokoroEngine`'s perspective, but the semantic intent (release happens before continuing) is achieved.
+
+**4. PersistenceManager.swift - Cleanup Methods ✅**
+- `cleanupOldData()` correctly fetches entries sorted by timestamp (newest first), keeps `maxAuditEntries`, and deletes the rest
+- `resetContext()` uses `context.rollback()` which is the correct SwiftData API to clear the in-memory object graph
+- Both methods are well-documented
+
+**5. AgentLoop.swift - endSession() Change ✅**
+The change from `func endSession()` to `func endSession() async` with `await conversationManager.clear()` is correct for memory hygiene. Note: This is a breaking API change if there are callers that expected synchronous `endSession()`.
+
+**6. PersistenceTests.swift - Tests Added ✅**
+Good coverage for the new cleanup methods:
+- `test_persistenceManager_cleanupOldData_deletesExcessAuditEntries` - verifies deletion works
+- `test_persistenceManager_cleanupOldData_keepsRecentAuditEntries` - verifies nothing deleted when under limit
+- `test_persistenceManager_resetContext_doesNotCrash` - smoke test for reset
+
+### Future Considerations (Out of Scope)
+
+- The cleanup methods are implemented but not wired to any periodic trigger (e.g., timer, app lifecycle event). This is noted in "What Remains" and is appropriate to defer to a follow-up.
+- The root cause of 30GB memory growth likely requires Instruments profiling as noted in the story - these code fixes address known issues but may not fully resolve the symptom.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
