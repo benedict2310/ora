@@ -1,9 +1,10 @@
 # BUG-005: Severe Memory Leak (30GB+ Growth)
 
-**Status:** Open
+**Status:** Resolved
 **Severity:** Critical
 **Reported:** 2026-01-12
-**Component:** Multiple (MLX, SwiftData, possibly vendor libs)
+**Resolved:** 2026-01-13
+**Component:** MLX GPU Cache
 
 ---
 
@@ -225,12 +226,16 @@ MLX.GPU.clearCache()  // If available in MLX API
 
 ## Resolution Criteria
 
-- [ ] Root cause identified via Instruments
-- [ ] Memory stays under 5GB during 30 min idle
-- [ ] Memory returns to baseline after conversation ends
-- [ ] No leaks detected in Instruments Leaks template
+- [x] Root cause identified via Instruments
+- [x] Memory stays under 5GB during 30 min idle
+- [x] Memory returns to baseline after conversation ends
+- [x] No leaks detected in Instruments Leaks template
 - [x] MLXMetalGate async release bug fixed
 - [x] SwiftData cleanup implemented
+
+**Root Cause:** MLX GPU buffer cache growing unbounded (15GB in `IOAccelerator (graphics)`).
+
+**Fix:** Set `GPU.set(cacheLimit: 512MB)` and call `GPU.clearCache()` after each generation.
 
 ---
 

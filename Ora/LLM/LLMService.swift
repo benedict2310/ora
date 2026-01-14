@@ -67,6 +67,12 @@ actor LLMService: LLMServicing {
         self.modelContainer = container
         self.isReady = true
         
+        // Limit GPU cache to prevent unbounded memory growth (BUG-005)
+        // MLX caches Metal buffers for reuse, but without a limit this can grow to 15GB+
+        // 512MB is generous for buffer reuse while preventing excessive accumulation
+        GPU.set(cacheLimit: 512 * 1024 * 1024)
+        logger.info("GPU cache limit set to 512MB")
+        
         logger.info("LLM model loaded: \(primaryLLM.displayName)")
     }
     
@@ -215,6 +221,10 @@ actor LLMService: LLMServicing {
                 Stream.gpu.synchronize()
             }
         }
+        
+        // Clear GPU cache to release intermediate buffers (BUG-005)
+        // This prevents memory accumulation across multiple generations
+        GPU.clearCache()
         
         continuation.yield(.completed(totalTokens: 0))
         continuation.finish()
