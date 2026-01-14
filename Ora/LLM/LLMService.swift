@@ -144,8 +144,10 @@ actor LLMService: LLMServicing {
         
         logger.info("Unloading LLM model...")
         
-        // Clear KV cache first
-        kvCache = nil
+        // Clear KV cache first, wrapped in MLXMetalGate to prevent race with runGeneration
+        await MLXMetalGate.shared.withExclusiveAccess {
+            self.kvCache = nil
+        }
         
         modelContainer = nil
         isReady = false
@@ -162,12 +164,15 @@ actor LLMService: LLMServicing {
     /// Clear the KV cache to start fresh for a new session
     /// Call this when ending a session or starting a new conversation
     func clearCache() async {
-        if kvCache != nil {
-            logger.info("Clearing KV cache")
-            kvCache = nil
-            // Clear GPU cache to actually release the memory
-            GPU.clearCache()
+        // Wrap in MLXMetalGate to prevent race with runGeneration
+        await MLXMetalGate.shared.withExclusiveAccess {
+            if self.kvCache != nil {
+                self.logger.info("Clearing KV cache")
+                self.kvCache = nil
+            }
         }
+        // Clear GPU cache to actually release the memory (safe to do outside the lock)
+        GPU.clearCache()
     }
     
     // MARK: - Private
