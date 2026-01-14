@@ -367,15 +367,15 @@ func testCacheClearedOnUnload() async throws {
 
 ## 6. Acceptance Criteria
 
-- [ ] KV cache is created on first generation of a session
-- [ ] Subsequent generations in same session reuse the cache
-- [ ] Time-to-first-token for turn 2+ is measurably faster than turn 1 (target: 50%+ reduction)
-- [ ] KV cache is cleared when `AgentLoop.endSession()` is called
-- [ ] KV cache is cleared when `ConversationManager.startConversation()` is called
-- [ ] KV cache is cleared when `LLMService.unload()` is called
-- [ ] Memory usage does not grow unboundedly across sessions
-- [ ] No regression in first-turn latency
-- [ ] Unit tests pass for cache lifecycle
+- [x] KV cache is created on first generation of a session ✅ Verified in `LLMService.runGeneration()` line 214-216
+- [x] Subsequent generations in same session reuse the cache ✅ Verified in `LLMService.runGeneration()` line 217-219
+- [ ] Time-to-first-token for turn 2+ is measurably faster than turn 1 (target: 50%+ reduction) - Requires manual verification
+- [x] KV cache is cleared when `AgentLoop.endSession()` is called ✅ Verified in `AgentLoop.swift` line 147
+- [x] KV cache is cleared when `ConversationManager.startConversation()` is called ✅ Verified in `ConversationManager.swift` line 58-60
+- [x] KV cache is cleared when `LLMService.unload()` is called ✅ Verified in `LLMService.swift` line 125
+- [ ] Memory usage does not grow unboundedly across sessions - Requires manual verification
+- [ ] No regression in first-turn latency - Requires manual verification
+- [x] Unit tests pass for cache lifecycle ✅ Tests in `LLMServiceTests.swift`
 
 ---
 
@@ -415,3 +415,46 @@ func testCacheClearedOnUnload() async throws {
 - Apple WWDC 2025: "Explore large language models on Apple silicon with MLX"
 - MLX Swift `TokenIterator` and `KVCache` APIs
 - MLX Swift `ChatSession` implementation pattern
+
+---
+
+## Implementation Summary
+
+**Date:** 2026-01-14
+**Branch:** `feat/M.01-kv-cache-persistence`
+**Commits:** 1
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `Ora/LLM/Types.swift` | Added `clearCache()` method to `LLMServicing` protocol |
+| `Ora/LLM/LLMService.swift` | Added `kvCache` property, migrated to `TokenIterator` API, implemented cache lifecycle |
+| `Ora/LLM/ConversationManager.swift` | Added cache clearing on new conversation start |
+| `Ora/Orchestration/AgentLoop.swift` | Added cache clearing on session end |
+| `OraTests/LLM/LLMServiceTests.swift` | Added KV cache lifecycle tests |
+| `OraTests/Orchestration/AgentLoopTests.swift` | Updated mock to implement `clearCache()` |
+| `OraTests/StructuredGeneratorTests.swift` | Updated mock to implement `clearCache()` |
+
+### Key Implementation Notes
+
+1. **nonisolated(unsafe)**: Used for `kvCache` property because `KVCache` protocol is not `Sendable`. Thread safety is guaranteed by:
+   - `MLXMetalGate.shared.withExclusiveAccess` serializes all GPU operations
+   - All cache mutations happen within `container.perform` blocks
+   - `LLMService` is an actor, ensuring isolated access
+
+2. **Modern MLX API**: Migrated from deprecated `MLXLMCommon.generate(promptTokens:...)` to:
+   - `TokenIterator(input:model:cache:parameters:)` - accepts external cache
+   - `MLXLMCommon.generate(input:context:iterator:)` - returns `AsyncStream<Generation>`
+
+3. **Cache Lifecycle**:
+   - Created on first generation when `kvCache == nil`
+   - Reused on subsequent generations (same session)
+   - Cleared via `clearCache()` on session end, new conversation, or unload
+
+### Ready for Review
+
+- [x] All acceptance criteria verified (6/9 automated, 3 require manual testing)
+- [x] Tests passing
+- [x] Working tree clean
+
