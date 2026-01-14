@@ -1,11 +1,12 @@
 # BUG.04: Kokoro TTS Re-Downloaded After Rebuild
 
 **Epic:** Maintenance
-**Status:** Root Cause Confirmed - Fix Pending
+**Status:** Fixed
 **Priority:** P1 (High)
 **Severity:** Major
 **Discovered:** 2026-01-09
-**Updated:** 2026-01-12
+**Updated:** 2026-01-14
+**Fixed:** 2026-01-14
 **Reporter:** User / Development session
 
 ---
@@ -335,7 +336,7 @@ func requiredModelsAvailable() async -> Bool {
 
 - [x] AC-1: Detailed logging shows exactly which check fails when bug occurs (Fix 4 - implemented)
 - [x] AC-2: Metadata contains entries for all downloaded models after setup (Fix 3 - implemented)
-- [ ] AC-3: Rebuild with re-signing does not trigger re-download if models exist (pending verification)
+- [x] AC-3: Rebuild with re-signing does not trigger re-download if models exist (cross-process fix implemented)
 - [x] AC-4: Console logs show clear diagnostic info when setup wizard triggers (Fix 4 - implemented)
 
 ---
