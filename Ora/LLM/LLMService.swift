@@ -203,10 +203,13 @@ actor LLMService: LLMServicing {
             topP: topP
         )
         
+        // Track timing for TTFT measurement
+        let generationStart = CFAbsoluteTimeGetCurrent()
+        
         // Use the new perform API with ModelContext
         // Wrap in MLXMetalGate to serialize GPU access with TTS
-        try await MLXMetalGate.shared.withExclusiveAccess {
-            try await container.perform { context in
+        let (tokenCount, isNewCache, promptTokenCount) = try await MLXMetalGate.shared.withExclusiveAccess {
+            try await container.perform { context -> (Int, Bool, Int) in
                 // Use applyChatTemplate to properly encode special tokens
                 // This ensures <|im_start|> becomes token 151644 (not multiple text tokens)
                 let inputTokens: [Int]
@@ -220,14 +223,18 @@ actor LLMService: LLMServicing {
                 }
                 
                 let input = LMInput(tokens: MLXArray(inputTokens))
+                let promptTokenCount = inputTokens.count
                 
                 // Initialize cache on first generation, reuse on subsequent
+                let isNewCache: Bool
                 if self.kvCache == nil {
                     self.logger.info("Creating new KV cache for session")
                     self.kvCache = context.model.newCache(parameters: parameters)
+                    isNewCache = true
                 } else {
                     let offset = self.kvCache?.first?.offset ?? 0
                     self.logger.debug("Reusing existing KV cache (offset: \(offset))")
+                    isNewCache = false
                 }
                 
                 // Create iterator with persistent cache
@@ -238,6 +245,10 @@ actor LLMService: LLMServicing {
                     parameters: parameters
                 )
                 
+                // Track tokens and TTFT
+                var tokenCount = 0
+                var ttftLogged = false
+                
                 // Stream tokens using the modern async API
                 for await generation in MLXLMCommon.generate(
                     input: input,
@@ -247,6 +258,15 @@ actor LLMService: LLMServicing {
                     if Task.isCancelled { break }
                     
                     if let chunk = generation.chunk {
+                        // Log TTFT on first token
+                        if !ttftLogged {
+                            let ttft = (CFAbsoluteTimeGetCurrent() - generationStart) * 1000
+                            let cacheStatus = isNewCache ? "new cache" : "cached"
+                            self.logger.info("⏱️ TTFT: \(String(format: "%.1f", ttft))ms (\(cacheStatus), \(promptTokenCount) prompt tokens)")
+                            ttftLogged = true
+                        }
+                        
+                        tokenCount += 1
                         continuation.yield(.token(chunk))
                         
                         // Stop on end-of-turn tokens (Qwen 2.5 and Qwen 3 compatible)
@@ -262,17 +282,22 @@ actor LLMService: LLMServicing {
                 // Synchronize GPU to ensure all Metal work is complete before returning
                 // This prevents race conditions when starting a new generation immediately after
                 Stream.gpu.synchronize()
+                
+                return (tokenCount, isNewCache, promptTokenCount)
             }
         }
+        
+        // Log generation stats
+        let totalTime = (CFAbsoluteTimeGetCurrent() - generationStart) * 1000
+        let tokensPerSec = tokenCount > 0 ? Double(tokenCount) / (totalTime / 1000) : 0
+        self.logger.info("⏱️ Generation complete: \(tokenCount) tokens in \(String(format: "%.1f", totalTime))ms (\(String(format: "%.1f", tokensPerSec)) tok/s)")
         
         // Clear GPU buffer cache to release intermediate buffers (BUG-005)
         // Note: This does NOT clear the KV cache - that persists for the session
         GPU.clearCache()
         
-        continuation.yield(.completed(totalTokens: 0))
+        continuation.yield(.completed(totalTokens: tokenCount))
         continuation.finish()
-        
-        self.logger.debug("Generation complete")
     }
     
     /// Legacy message formatting - only used as fallback if applyChatTemplate fails
