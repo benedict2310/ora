@@ -56,6 +56,10 @@ Voice → (FluidAudio Parakeet) → (MLX + Qwen 2.5) → (Kokoro TTS) → Voice/
 | `./build.sh run` | Build and launch (kills old instance first) |
 | `./build.sh clean` | Fresh start (removes DerivedData) |
 | `./build.sh reset-perms` | Reset TCC permissions (Accessibility, Calendar, Reminders, Contacts) |
+| `./build.sh test` | Run tests with token-optimized output |
+| `./build.sh test-tsan` | Run tests with Thread Sanitizer enabled |
+| `./build.sh logs` | Tail unified logs (`--category <name>` to filter) |
+| `./build.sh open-results` | Open `.xcresult` bundle in Xcode |
 
 **Common workflows:**
 
@@ -89,8 +93,17 @@ defaults delete com.ora.app "com.ora.hotkeyConfiguration"
 ```
 
 **Other commands:**
-- **Run tests:** `xcodebuild test -project Ora.xcodeproj -scheme Ora` or `Cmd+U` in Xcode.
+- **Run tests:** `./build.sh test` (preferred) or `xcodebuild test -project Ora.xcodeproj -scheme Ora`.
 - **Restart app manually:** `killall Ora 2>/dev/null || true; open -n build/Build/Products/Release/Ora.app`.
+
+### Test Output Policy (Token Optimization)
+
+When running tests, report results minimally:
+- **Pass:** Only report the summary line (e.g., `✅ Tests: 42/42 passed`)
+- **Fail:** Report summary + failure list + artifact paths (`.artifacts/TestResults.xcresult`, `.artifacts/xcodebuild.test.log`)
+- **Never paste** full xcodebuild logs or large JSON blobs into chat
+
+For detailed triage workflows, load the `ora-testing` skill.
 
 ### Coding Style & Naming
 - Favor small, typed structs/enums; maintain existing `MARK` organization.
@@ -103,10 +116,9 @@ defaults delete com.ora.app "com.ora.hotkeyConfiguration"
 - Add/extend XCTest cases under `Ora/OraTests/*Tests.swift` (`FeatureNameTests` with `test_caseDescription` methods).
 - Always run tests before handoff; add fixtures for new parsing/formatting scenarios.
 - After any code change, rebuild and test before declaring completion.
-- **Thread Sanitizer:** Use the `Ora-TSan` scheme to run tests with Thread Sanitizer enabled:
-  ```bash
-  xcodebuild test -project Ora.xcodeproj -scheme Ora-TSan
-  ```
+- **Preferred test command:** `./build.sh test` (token-optimized output, saves artifacts to `.artifacts/`)
+- **Thread Sanitizer:** `./build.sh test-tsan` or use the `Ora-TSan` scheme directly.
+- **Debugging failures:** `./build.sh open-results` to inspect `.xcresult` bundle.
 
 ### Review Learnings (Keep Concise)
 - Keep action handlers alive; do not `weak` the only instance (menu actions must execute).

@@ -1,13 +1,16 @@
 #!/bin/bash
 #
 # Ora Build Script
-# Builds and optionally launches the Ora app
+# Builds, tests, and launches the Ora app
 #
 # Usage:
 #   ./build.sh              # Build only
 #   ./build.sh run          # Build and launch
 #   ./build.sh clean        # Clean build
 #   ./build.sh reset-perms  # Reset TCC permissions (after rebuild)
+#   ./build.sh test         # Run tests with token-optimized output
+#   ./build.sh test-tsan    # Run tests with Thread Sanitizer
+#   ./build.sh logs         # Tail unified logs for Ora
 #
 
 set -e
@@ -17,8 +20,14 @@ cd "$PROJECT_DIR"
 
 CONFIGURATION="Release"
 SCHEME="Ora"
+SCHEME_TSAN="Ora-TSan"
 ARCH="arm64"
 BUNDLE_ID="com.ora.app"
+
+# Artifacts directory for test results and logs
+ARTIFACTS_DIR=".artifacts"
+RESULT_BUNDLE="$ARTIFACTS_DIR/TestResults.xcresult"
+RAW_LOG="$ARTIFACTS_DIR/xcodebuild.test.log"
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -47,12 +56,60 @@ generate_project() {
   fi
 }
 
+# Run tests with token-optimized output
+run_tests() {
+  local test_scheme="$1"
+  
+  check_xcodegen
+  generate_project
+  
+  mkdir -p "$ARTIFACTS_DIR"
+  rm -rf "$RESULT_BUNDLE"
+  : > "$RAW_LOG"
+  
+  echo -e "${BLUE}Running tests (${test_scheme})...${NC}"
+  
+  set +e
+  xcodebuild \
+    -project Ora.xcodeproj \
+    -scheme "$test_scheme" \
+    -derivedDataPath build \
+    -resultBundlePath "$RESULT_BUNDLE" \
+    -destination "platform=macOS" \
+    -quiet \
+    test \
+    2>&1 | tee "$RAW_LOG"
+  local status=${PIPESTATUS[0]}
+  set -e
+  
+  # Token-optimized summary
+  if [ -f "scripts/xcresult_summary.py" ]; then
+    python3 scripts/xcresult_summary.py "$RESULT_BUNDLE" || true
+  else
+    # Fallback if script not available
+    if [ $status -eq 0 ]; then
+      echo -e "${GREEN}✅ Tests passed${NC}"
+    else
+      echo -e "${RED}❌ Tests failed${NC}"
+    fi
+  fi
+  
+  if [ $status -ne 0 ]; then
+    echo ""
+    echo -e "${YELLOW}Artifacts:${NC}"
+    echo "  Raw log:       $RAW_LOG"
+    echo "  Result bundle: $RESULT_BUNDLE"
+    exit $status
+  fi
+}
+
 # Handle command
 case "${1:-build}" in
   clean)
     echo -e "${YELLOW}Cleaning build artifacts...${NC}"
     rm -rf ~/Library/Developer/Xcode/DerivedData/Ora-*
     rm -rf build
+    rm -rf "$ARTIFACTS_DIR"
     rm -rf Ora.xcodeproj
     echo -e "${GREEN}Clean complete${NC}"
     exit 0
@@ -125,14 +182,57 @@ case "${1:-build}" in
     fi
     ;;
 
+  test)
+    run_tests "$SCHEME"
+    ;;
+
+  test-tsan)
+    run_tests "$SCHEME_TSAN"
+    ;;
+
+  logs)
+    # Unified Logging tail for the app
+    # NOTE: This command streams continuously until interrupted with Ctrl+C
+    shift || true
+    
+    echo -e "${YELLOW}Streaming logs (Ctrl+C to stop)...${NC}"
+    
+    # Default: stream all logs for com.ora.app subsystem
+    if [ "${1:-}" = "--predicate" ]; then
+      shift
+      PRED="$1"; shift
+      log stream --style json --predicate "$PRED" "$@"
+    elif [ "${1:-}" = "--category" ]; then
+      shift
+      CAT="$1"; shift
+      log stream --style json --predicate "subsystem == \"$BUNDLE_ID\" && category == \"$CAT\"" "$@"
+    else
+      log stream --style json --predicate "subsystem == \"$BUNDLE_ID\"" "$@"
+    fi
+    ;;
+
+  open-results)
+    if [ -d "$RESULT_BUNDLE" ]; then
+      open "$RESULT_BUNDLE"
+    else
+      echo -e "${RED}No test results found at $RESULT_BUNDLE${NC}"
+      echo "Run './build.sh test' first."
+      exit 1
+    fi
+    ;;
+
   *)
-    echo "Usage: $0 {build|run|clean|reset-perms}"
+    echo "Usage: $0 {build|run|clean|reset-perms|test|test-tsan|logs|open-results}"
     echo ""
     echo "Commands:"
-    echo "  build        Build the app (default)"
-    echo "  run          Build and launch the app"
-    echo "  clean        Remove build artifacts and generated project"
-    echo "  reset-perms  Reset TCC permissions (use after rebuild)"
+    echo "  build         Build the app (default)"
+    echo "  run           Build and launch the app"
+    echo "  clean         Remove build artifacts and generated project"
+    echo "  reset-perms   Reset TCC permissions (use after rebuild)"
+    echo "  test          Run tests with token-optimized output"
+    echo "  test-tsan     Run tests with Thread Sanitizer enabled"
+    echo "  logs          Tail unified logs (Ctrl+C to stop; --category <name> or --predicate <expr>)"
+    echo "  open-results  Open the .xcresult bundle in Xcode"
     exit 1
     ;;
 esac
