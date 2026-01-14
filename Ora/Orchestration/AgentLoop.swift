@@ -143,6 +143,9 @@ actor AgentLoop {
         // Clear conversation to free memory
         await conversationManager.clear()
         
+        // Clear KV cache to free GPU memory
+        await LLMService.shared.clearCache()
+        
         logger.debug("Agent session ended")
     }
     

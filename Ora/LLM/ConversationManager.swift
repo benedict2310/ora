@@ -51,6 +51,13 @@ actor ConversationManager {
     func startConversation(systemPrompt: String) {
         self.systemPrompt = systemPrompt
         self.messages = []
+        
+        // Clear KV cache when starting a new conversation
+        // This ensures the LLM doesn't reuse stale cached state
+        Task {
+            await LLMService.shared.clearCache()
+        }
+        
         logger.debug("Started new conversation with system prompt (\(systemPrompt.count) chars)")
     }
     

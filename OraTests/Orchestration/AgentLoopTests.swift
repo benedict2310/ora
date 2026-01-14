@@ -41,6 +41,10 @@ actor AgentLoopMockLLMService: LLMServicing {
     func unload() async {
         // No-op
     }
+    
+    func clearCache() async {
+        // No-op for testing
+    }
 }
 
 // MARK: - Mock Tool

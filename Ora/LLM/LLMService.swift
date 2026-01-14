@@ -28,6 +28,16 @@ actor LLMService: LLMServicing {
     private var isReady = false
     private var isWarmedUp = false
     
+    /// Persistent KV cache for multi-turn conversations
+    /// Created on first generation, reused across turns, cleared on session end
+    /// 
+    /// Note: Using nonisolated(unsafe) because KVCache is not Sendable, but we ensure
+    /// thread-safe access via:
+    /// 1. MLXMetalGate.shared.withExclusiveAccess serializes all GPU operations
+    /// 2. All cache mutations happen within container.perform blocks
+    /// 3. Cache is only accessed from within this actor
+    nonisolated(unsafe) private var kvCache: [KVCache]?
+    
     // Configuration
     private let temperature: Float = 0.7
     private let topP: Float = 0.9
@@ -134,13 +144,35 @@ actor LLMService: LLMServicing {
         
         logger.info("Unloading LLM model...")
         
+        // Clear KV cache first, wrapped in MLXMetalGate to prevent race with runGeneration
+        await MLXMetalGate.shared.withExclusiveAccess {
+            self.kvCache = nil
+        }
+        
         modelContainer = nil
         isReady = false
         isWarmedUp = false
         
+        // Clear GPU cache to release memory
+        GPU.clearCache()
+        
         logger.info("LLM model unloaded")
         
         NotificationCenter.default.post(name: Notification.Name("LLMModelUnloaded"), object: nil)
+    }
+    
+    /// Clear the KV cache to start fresh for a new session
+    /// Call this when ending a session or starting a new conversation
+    func clearCache() async {
+        // Wrap in MLXMetalGate to prevent race with runGeneration
+        await MLXMetalGate.shared.withExclusiveAccess {
+            if self.kvCache != nil {
+                self.logger.info("Clearing KV cache")
+                self.kvCache = nil
+            }
+        }
+        // Clear GPU cache to actually release the memory (safe to do outside the lock)
+        GPU.clearCache()
     }
     
     // MARK: - Private
@@ -187,34 +219,45 @@ actor LLMService: LLMServicing {
                     inputTokens = context.tokenizer.encode(text: fallbackPrompt)
                 }
                 
-                var count = 0
+                let input = LMInput(tokens: MLXArray(inputTokens))
                 
-                // Propagate errors from MLX
-                let _ = try MLXLMCommon.generate(
-                    promptTokens: inputTokens,  // [Int] as expected by generate
-                    parameters: parameters,
+                // Initialize cache on first generation, reuse on subsequent
+                if self.kvCache == nil {
+                    self.logger.info("Creating new KV cache for session")
+                    self.kvCache = context.model.newCache(parameters: parameters)
+                } else {
+                    let offset = self.kvCache?.first?.offset ?? 0
+                    self.logger.debug("Reusing existing KV cache (offset: \(offset))")
+                }
+                
+                // Create iterator with persistent cache
+                let iterator = try TokenIterator(
+                    input: input,
                     model: context.model,
-                    tokenizer: context.tokenizer,
-                    didGenerate: { tokens in
-                        if Task.isCancelled { return .stop }
-                        
-                        if tokens.count > count {
-                            let newTokens = Array(tokens[count...])
-                            let text = context.tokenizer.decode(tokens: newTokens)
-                            continuation.yield(.token(text))
-                            count = tokens.count
-                            
-                            // Stop on end-of-turn tokens (Qwen 2.5 and Qwen 3 compatible)
-                            // Qwen 3 also uses </tool_call> for tool call completion
-                            if text.contains("<|im_end|>") || 
-                               text.contains("<|endoftext|>") ||
-                               text.contains("</tool_call>") {
-                                return .stop
-                            }
-                        }
-                        return .more
-                    }
+                    cache: self.kvCache,
+                    parameters: parameters
                 )
+                
+                // Stream tokens using the modern async API
+                for await generation in MLXLMCommon.generate(
+                    input: input,
+                    context: context,
+                    iterator: iterator
+                ) {
+                    if Task.isCancelled { break }
+                    
+                    if let chunk = generation.chunk {
+                        continuation.yield(.token(chunk))
+                        
+                        // Stop on end-of-turn tokens (Qwen 2.5 and Qwen 3 compatible)
+                        // Qwen 3 also uses </tool_call> for tool call completion
+                        if chunk.contains("<|im_end|>") || 
+                           chunk.contains("<|endoftext|>") ||
+                           chunk.contains("</tool_call>") {
+                            break
+                        }
+                    }
+                }
                 
                 // Synchronize GPU to ensure all Metal work is complete before returning
                 // This prevents race conditions when starting a new generation immediately after
@@ -222,8 +265,8 @@ actor LLMService: LLMServicing {
             }
         }
         
-        // Clear GPU cache to release intermediate buffers (BUG-005)
-        // This prevents memory accumulation across multiple generations
+        // Clear GPU buffer cache to release intermediate buffers (BUG-005)
+        // Note: This does NOT clear the KV cache - that persists for the session
         GPU.clearCache()
         
         continuation.yield(.completed(totalTokens: 0))
