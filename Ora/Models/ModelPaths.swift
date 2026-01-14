@@ -92,10 +92,44 @@ enum ModelPaths {
     }
 
     /// Remove model directory
+    /// - Warning: This deletes the ENTIRE model directory. Only call when you're sure
+    ///   you want to remove all files for this model (e.g., user-initiated delete).
     static func removeModel(_ model: ModelIdentifier) throws {
         let path = self.path(for: model)
         if FileManager.default.fileExists(atPath: path.path) {
+            // BUG.04 FIX: Log when model directories are deleted to help diagnose issues
+            Self.logDiagnostic("MODEL DELETION: Removing entire directory for \(model.displayName) at \(path.path)")
             try FileManager.default.removeItem(at: path)
+        }
+    }
+
+    // MARK: - Diagnostic Logging
+
+    /// Log diagnostic messages to file for debugging model management issues
+    private static func logDiagnostic(_ message: String) {
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let line = "[\(timestamp)] \(message)\n"
+
+        let fm = FileManager.default
+        guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return
+        }
+
+        let oraDir = appSupport.appendingPathComponent("Ora")
+        let logFile = oraDir.appendingPathComponent("model-diagnostic.log")
+
+        try? fm.createDirectory(at: oraDir, withIntermediateDirectories: true)
+
+        if fm.fileExists(atPath: logFile.path) {
+            if let handle = try? FileHandle(forWritingTo: logFile) {
+                handle.seekToEndOfFile()
+                if let data = line.data(using: .utf8) {
+                    handle.write(data)
+                }
+                try? handle.close()
+            }
+        } else {
+            try? line.write(to: logFile, atomically: true, encoding: .utf8)
         }
     }
 }

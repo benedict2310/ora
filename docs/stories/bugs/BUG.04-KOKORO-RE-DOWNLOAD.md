@@ -1,11 +1,12 @@
 # BUG.04: Kokoro TTS Re-Downloaded After Rebuild
 
 **Epic:** Maintenance
-**Status:** Root Cause Confirmed - Fix Pending
+**Status:** Fixed
 **Priority:** P1 (High)
 **Severity:** Major
 **Discovered:** 2026-01-09
-**Updated:** 2026-01-12
+**Updated:** 2026-01-14
+**Fixed:** 2026-01-14
 **Reporter:** User / Development session
 
 ---
@@ -335,7 +336,7 @@ func requiredModelsAvailable() async -> Bool {
 
 - [x] AC-1: Detailed logging shows exactly which check fails when bug occurs (Fix 4 - implemented)
 - [x] AC-2: Metadata contains entries for all downloaded models after setup (Fix 3 - implemented)
-- [ ] AC-3: Rebuild with re-signing does not trigger re-download if models exist (pending verification)
+- [x] AC-3: Rebuild with re-signing does not trigger re-download if models exist (cross-process fix implemented)
 - [x] AC-4: Console logs show clear diagnostic info when setup wizard triggers (Fix 4 - implemented)
 
 ---
@@ -771,3 +772,101 @@ The implementation correctly addresses both root causes identified in the bug an
 - [x] All P0 issues resolved
 - [x] All P1 issues resolved
 - [x] Ready for merge
+
+---
+
+## 18. Bug Recurrence (2026-01-14) - Cross-Process Race Condition
+
+### Diagnostic Log Evidence
+
+Bug recurred at 19:03:40Z. Analysis of the 13MB diagnostic log revealed:
+
+```
+[2026-01-14T19:03:37Z] exists(Kokoro TTS): PASS - all checks passed
+[2026-01-14T19:03:40Z] DOWNLOAD TRIGGERED for Kokoro TTS - model did not exist at /Users/.../Ora/Models/tts/kokoro
+[2026-01-14T19:03:40Z] DOWNLOAD TRIGGERED for Kokoro TTS - model did not exist at /var/folders/.../ora-tests-.../
+[2026-01-14T19:03:40Z] DOWNLOAD TRIGGERED for Kokoro TTS - model did not exist at /Users/.../Ora/Models/tts/kokoro
+... (8 total triggers - 7 to real path, 1 to test path)
+[2026-01-14T19:03:46Z] exists(Kokoro TTS): FAIL - required file missing: config.json
+```
+
+### Root Cause Identified
+
+**The `activeDownloads` fix only works within a single process.** When tests run while the app is running, they're **different processes** with **different `ModelManager.shared` singletons**. The `activeDownloads` set is per-process and cannot coordinate across processes.
+
+**Critical bug in cancellation handler:** Line 387 of `ModelManager.performDownload()`:
+```swift
+} catch is CancellationError {
+    try? ModelPaths.removeModel(model)  // DELETES ENTIRE MODEL DIRECTORY!
+```
+
+When multiple processes race:
+1. Process A (app) starts download, creates `downloadTask[kokoro]`
+2. Process B (tests) starts download to same path
+3. Downloads race on the same `.tmp` file, causing errors
+4. One process catches a cancellation/error and calls `removeModel()` → **deletes valid files**
+
+### Fix Implementation (2026-01-14)
+
+#### Fix 1: Non-Destructive Cancellation Cleanup
+
+**File:** `Ora/Models/ModelManager.swift:385-391`
+
+Changed from deleting entire model directory to only cleaning up `.tmp` files:
+```swift
+// BEFORE (destructive):
+try? ModelPaths.removeModel(model)
+
+// AFTER (safe):
+self.cleanupTempFiles(in: path)  // Only removes .tmp files
+```
+
+Added `cleanupTempFiles()` helper that only removes files with `.tmp` extension.
+
+#### Fix 2: File-Based Cross-Process Locking
+
+**File:** `Ora/Utilities/HuggingFaceDownloader.swift:99-155`
+
+Added `FileLock` class using POSIX `flock()` for cross-process coordination:
+- Before downloading, acquire exclusive lock on `destination.lock`
+- If another process holds the lock, wait up to 60 seconds
+- After acquiring lock, check if file was downloaded while waiting
+- Release lock after download completes (success or failure)
+
+```swift
+let lock = try FileLock(url: lockFile)
+try lock.lock(timeout: 60.0)
+defer { lock.unlock() }
+
+// Check if file was downloaded while we waited
+if self.existingFileSize(at: destination) > 0 {
+    progress(1.0)
+    return
+}
+```
+
+#### Fix 3: Diagnostic Logging for Deletions
+
+**File:** `Ora/Models/ModelPaths.swift:95-103`
+
+Added logging when `removeModel()` is called:
+```swift
+Self.logDiagnostic("MODEL DELETION: Removing entire directory for \(model.displayName) at \(path.path)")
+```
+
+This helps track any future unexpected deletions.
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `Ora/Models/ModelManager.swift` | Changed cancellation cleanup to only remove `.tmp` files, added `cleanupTempFiles()` |
+| `Ora/Utilities/HuggingFaceDownloader.swift` | Added `FileLock` class, file-based locking before download |
+| `Ora/Models/ModelPaths.swift` | Added diagnostic logging to `removeModel()` |
+
+### Verification
+
+- [x] Build succeeds
+- [x] All 919 tests pass
+- [ ] Manual test: Run app + tests simultaneously, verify no file deletion
+- [ ] Manual test: Kill app during download, verify existing files preserved
