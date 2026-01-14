@@ -107,26 +107,48 @@ final class HuggingFaceDownloader: NSObject, FileDownloader, @unchecked Sendable
         let parentDir = destination.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true)
 
-        // Check for existing partial download
-        let existingBytes = self.existingFileSize(at: destination)
+        // BUG.04 FIX: Acquire file-based lock to prevent cross-process races
+        // This ensures only one process can download a specific file at a time
+        let lockFile = destination.appendingPathExtension("lock")
+        let lock = try FileLock(url: lockFile)
 
-        // Build request with range header for resume
-        var request = URLRequest(url: url)
-        request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
-
-        if existingBytes > 0 {
-            request.setValue("bytes=\(existingBytes)-", forHTTPHeaderField: "Range")
-            self.logger.info("Resuming from byte \(existingBytes)")
-        }
-
-        // Perform download with data task for progress tracking
         do {
+            // Try to acquire exclusive lock with timeout
+            // If another process is downloading, this will wait
+            try lock.lock(timeout: 60.0) // Wait up to 60 seconds
+
+            defer { lock.unlock() }
+
+            // Check if file was downloaded while we waited for lock
+            // (another process may have completed the download)
+            if self.existingFileSize(at: destination) > 0 {
+                self.logger.info("File already exists after acquiring lock, skipping download: \(destination.lastPathComponent, privacy: .public)")
+                progress(1.0)
+                return
+            }
+
+            // Build request with range header for resume
+            var request = URLRequest(url: url)
+            request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
+
+            // Check for existing partial download in temp file
+            let tempDestination = destination.appendingPathExtension("tmp")
+            let existingBytes = self.existingFileSize(at: tempDestination)
+            if existingBytes > 0 {
+                request.setValue("bytes=\(existingBytes)-", forHTTPHeaderField: "Range")
+                self.logger.info("Resuming from byte \(existingBytes)")
+            }
+
+            // Perform download with data task for progress tracking
             try await self.performDownload(
                 request: request,
                 destination: destination,
                 existingBytes: existingBytes,
                 progress: progress
             )
+        } catch let error as FileLock.LockError {
+            self.logger.warning("Could not acquire lock for \(destination.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            throw DownloadError.fileSystemError("Could not acquire download lock: \(error.localizedDescription)")
         } catch {
             self.logger.error("Download failed for \(url.absoluteString, privacy: .public): \(error.localizedDescription, privacy: .public)")
             throw error
@@ -477,6 +499,114 @@ final class MockFileDownloader: FileDownloader, @unchecked Sendable {
             try fileHandle.close()
         } else {
             try Data("mock content".utf8).write(to: destination)
+        }
+    }
+}
+
+// MARK: - FileLock
+
+/// Cross-process file-based lock using POSIX flock()
+/// BUG.04 FIX: Ensures only one process can download a specific file at a time
+final class FileLock: @unchecked Sendable {
+
+    enum LockError: LocalizedError {
+        case cannotCreateLockFile(String)
+        case cannotOpenLockFile(String)
+        case lockTimedOut(String)
+        case lockFailed(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .cannotCreateLockFile(let path):
+                return "Cannot create lock file: \(path)"
+            case .cannotOpenLockFile(let path):
+                return "Cannot open lock file: \(path)"
+            case .lockTimedOut(let path):
+                return "Lock timed out waiting for: \(path)"
+            case .lockFailed(let reason):
+                return "Lock failed: \(reason)"
+            }
+        }
+    }
+
+    private let lockURL: URL
+    private var fileDescriptor: Int32 = -1
+    private let logger = Logger(subsystem: "com.ora.app", category: "FileLock")
+
+    init(url: URL) throws {
+        self.lockURL = url
+
+        // Create parent directory if needed
+        let parentDir = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true)
+
+        // Create lock file if it doesn't exist
+        if !FileManager.default.fileExists(atPath: url.path) {
+            guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
+                throw LockError.cannotCreateLockFile(url.path)
+            }
+        }
+
+        // Open the file for locking
+        self.fileDescriptor = open(url.path, O_RDWR)
+        guard self.fileDescriptor >= 0 else {
+            throw LockError.cannotOpenLockFile(url.path)
+        }
+    }
+
+    deinit {
+        if self.fileDescriptor >= 0 {
+            close(self.fileDescriptor)
+        }
+    }
+
+    /// Acquire an exclusive lock with timeout
+    /// - Parameter timeout: Maximum time to wait in seconds
+    /// - Throws: LockError if lock cannot be acquired within timeout
+    func lock(timeout: TimeInterval) throws {
+        guard self.fileDescriptor >= 0 else {
+            throw LockError.cannotOpenLockFile(self.lockURL.path)
+        }
+
+        let startTime = Date()
+        let pollInterval: useconds_t = 100_000 // 100ms
+
+        while true {
+            // Try non-blocking lock
+            let result = flock(self.fileDescriptor, LOCK_EX | LOCK_NB)
+
+            if result == 0 {
+                // Lock acquired
+                self.logger.debug("Acquired lock: \(self.lockURL.lastPathComponent, privacy: .public)")
+                return
+            }
+
+            if errno != EWOULDBLOCK {
+                // Unexpected error
+                throw LockError.lockFailed(String(cString: strerror(errno)))
+            }
+
+            // Check timeout
+            let elapsed = Date().timeIntervalSince(startTime)
+            if elapsed >= timeout {
+                self.logger.warning("Lock timed out after \(elapsed)s: \(self.lockURL.lastPathComponent, privacy: .public)")
+                throw LockError.lockTimedOut(self.lockURL.path)
+            }
+
+            // Wait and retry
+            usleep(pollInterval)
+        }
+    }
+
+    /// Release the lock
+    func unlock() {
+        guard self.fileDescriptor >= 0 else { return }
+
+        let result = flock(self.fileDescriptor, LOCK_UN)
+        if result == 0 {
+            self.logger.debug("Released lock: \(self.lockURL.lastPathComponent, privacy: .public)")
+        } else {
+            self.logger.warning("Failed to release lock: \(self.lockURL.lastPathComponent, privacy: .public)")
         }
     }
 }

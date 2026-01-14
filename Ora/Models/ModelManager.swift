@@ -383,8 +383,11 @@ actor ModelManager {
             await self.postStateChange()
 
         } catch is CancellationError {
-            // Clean up partial download on cancellation
-            try? ModelPaths.removeModel(model)
+            // BUG.04 FIX: DO NOT delete the entire model directory on cancellation!
+            // The directory may contain valid files from a previous successful download.
+            // The atomic download pattern in HuggingFaceDownloader uses .tmp files,
+            // so we only need to clean up orphaned .tmp files, not the whole directory.
+            self.cleanupTempFiles(in: path)
             _state.statuses[model] = .notDownloaded
             await self.postStateChange()
             self.logger.info("Download cancelled for \(model.displayName)")
@@ -527,6 +530,30 @@ actor ModelManager {
                 object: nil,
                 userInfo: ["model": model, "progress": progress]
             )
+        }
+    }
+
+    // MARK: - Cleanup Helpers
+
+    /// Clean up only temporary (.tmp) files created during download, NOT valid model files
+    /// BUG.04 FIX: This is the safe cleanup method that doesn't destroy existing valid files
+    private nonisolated func cleanupTempFiles(in directory: URL) {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: directory.path) else { return }
+
+        // Get all files in the directory (non-recursive for safety)
+        guard let enumerator = fm.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+
+        for case let fileURL as URL in enumerator {
+            // Only clean up .tmp files (download in progress files)
+            if fileURL.pathExtension == "tmp" {
+                self.logDiagnostic("CLEANUP: Removing temp file \(fileURL.lastPathComponent)")
+                try? fm.removeItem(at: fileURL)
+            }
         }
     }
 
