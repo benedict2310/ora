@@ -1,9 +1,10 @@
 # BUG-006: Microphone Permission Dialog Breaks Overlay Focus
 
-**Status:** In Progress
+**Status:** Complete
 **Priority:** P1 (Critical - First-run UX broken)
 **Created:** 2026-01-14
 **Last Updated:** 2026-01-14
+**Fixed:** 2026-01-14
 
 ---
 
@@ -74,18 +75,32 @@ if needsMicPermission {
 
 This ensures `beginPrompt()` is called **before** any code that might trigger the permission dialog.
 
-### 2.4 Current State: Tracking Works, But Overlay Still Not Visible
+### 2.4 Second Issue: Window Ordering After Dialog Dismisses (FIXED)
 
-After the fix, debug logs show the tracking now works correctly:
+After fixing the race condition, debug logs showed the session was no longer being cancelled, but the overlay still wasn't visible:
 
 ```
-[11:27:53Z] beginPrompt called for: microphone - isPromptActive now: true
-[11:27:53Z] handleAppDeactivated - isPromptActive: true  ← CORRECT!
-[11:27:53Z] handleAppDeactivated - keeping overlay (permission prompt active)  ← NOT CANCELLING
-[11:27:55Z] endPrompt called for: microphone
+[19:00:08Z] handlePermissionPromptEnded called - isSessionActive: true
+[19:00:08Z] show() completed - isVisible=true, alpha=1.0, isKeyWindow=false  ← PROBLEM
 ```
 
-**The session is no longer being cancelled**, but the overlay still isn't visible to the user.
+**Root cause:** When the permission dialog dismisses, the window system doesn't properly return focus to our app. The panel reports `isVisible=true` but is actually behind other windows. `makeKeyAndOrderFront` fails because the app isn't properly active (`isKeyWindow=false`).
+
+### 2.5 Final Fix: Delayed Restoration with Window Level Bump
+
+Added `restoreAfterExternalDialog()` method in `OverlayWindowController.swift`:
+
+1. **Delay before restoration:** Wait 100ms for window system to settle after permission dialog dismisses
+2. **Activate app first:** Call `NSRunningApplication.current.activate(options: [.activateIgnoringOtherApps])`
+3. **Temporarily bump window level:** Set to `.popUpMenu` (higher than system dialogs)
+4. **Force window ordering:** `orderFrontRegardless()` + `makeKeyAndOrderFront(nil)`
+5. **Restore original level:** After 50ms, restore to `.floating`
+
+After the fix:
+```
+[19:00:08Z] restoreAfterExternalDialog - isAppActive: false, panelVisible: true
+[19:00:08Z] restoreAfterExternalDialog - restored level, isKeyWindow: true  ← SUCCESS
+```
 
 ---
 
@@ -259,20 +274,20 @@ cat /tmp/ora-overlay-debug.log
 
 ## 9. Test Checklist
 
-- [ ] Fresh install: `./build.sh reset-perms && ./build.sh run`
-- [ ] Press hotkey
-- [ ] Microphone permission dialog appears
-- [ ] Grant permission
-- [ ] Overlay should be visible with listening state
-- [ ] Audio should be captured
-- [ ] LLM should process and respond
-- [ ] Verify with logs: `cat /tmp/ora-overlay-debug.log`
+- [x] Fresh install: `./build.sh reset-perms && ./build.sh run`
+- [x] Press hotkey
+- [x] Microphone permission dialog appears
+- [x] Grant permission
+- [x] Overlay should be visible with listening state
+- [x] Audio should be captured
+- [x] LLM should process and respond
+- [x] All 919 tests pass
 
 ---
 
 ## 10. Session Notes
 
-### 2026-01-14 Session
+### 2026-01-14 Session 1 (Investigation)
 
 1. Started investigating issue where overlay disappears during microphone permission
 2. Initially thought it was double-tracking issue - removed tracker calls from individual permission files
@@ -283,4 +298,19 @@ cat /tmp/ora-overlay-debug.log
 7. Race condition fixed - logs show session is no longer being cancelled
 8. BUT: Overlay still not visible even though session continues
 9. **Hypothesis:** Issue is now with overlay restoration, not session cancellation
-10. **Next:** Add logging to handlePermissionPromptEnded() and show() to trace restoration flow
+
+### 2026-01-14 Session 2 (Fix)
+
+1. Added logging to `handlePermissionPromptEnded()` and `show()` to trace restoration flow
+2. Discovered panel reports `isVisible=true, isKeyWindow=false` - window ordering issue
+3. Root cause: After permission dialog dismisses, window system doesn't return focus to Ora
+4. Implemented `restoreAfterExternalDialog()` with:
+   - 100ms delay to let window system settle
+   - Activate app first
+   - Temporarily bump window level to `.popUpMenu`
+   - Force window ordering
+   - Restore original level after 50ms
+5. Tested and verified fix works
+6. Cleaned up debug logging (removed file-based logging, kept OS Logger)
+7. All 919 tests pass
+8. **Bug fixed and verified**
