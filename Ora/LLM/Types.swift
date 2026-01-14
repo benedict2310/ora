@@ -37,6 +37,9 @@ public protocol LLMServicing: Sendable {
     func warmup() async throws
     func prepare() async throws
     func unload() async
+    
+    /// Clear the KV cache to free memory and start fresh for a new session
+    func clearCache() async
 }
 
 /// Errors specific to LLM Service

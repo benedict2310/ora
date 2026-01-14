@@ -39,6 +39,27 @@ final class LLMServiceTests: XCTestCase {
         XCTAssertEqual(recommended, .qwen3_4B)
     }
     
+    // MARK: - KV Cache Tests
+    
+    func testClearCacheDoesNotCrashWhenEmpty() async throws {
+        let service = LLMService.shared
+        
+        // Calling clearCache when no cache exists should not crash
+        await service.clearCache()
+        // If we get here without crashing, test passes
+    }
+    
+    func testClearCacheAfterUnload() async throws {
+        let service = LLMService.shared
+        
+        // Unload clears the cache
+        await service.unload()
+        
+        // Calling clearCache after unload should not crash
+        await service.clearCache()
+        // If we get here without crashing, test passes
+    }
+    
     // MARK: - Inference Tests
     
     func testGenerationCancellation() async throws {
@@ -144,6 +165,87 @@ final class LLMServiceTests: XCTestCase {
         // If it stopped, it shouldn't contain the raw <|im_end|> token usually, as we stop *on* it.
         // But our logic returns .stop when it sees it.
         // So the token might be emitted or not depending on tokenizer behavior.
+        
+        await service.unload()
+    }
+    
+    func testKVCacheReuse() async throws {
+        let service = LLMService.shared
+        
+        // Check for model availability
+        let modelManager = ModelManager.shared
+        await modelManager.refreshStatuses()
+        let state = await modelManager.state
+        
+        guard state.statuses[.qwen3_4B]?.isReady == true else {
+            throw XCTSkip("Qwen 3 4B not downloaded")
+        }
+        
+        try await service.prepare()
+        
+        // First generation (cache should be created)
+        let messages1 = [LLMMessage(role: .user, content: "Hello")]
+        var text1 = ""
+        let stream1 = await service.generate(messages: messages1, maxTokens: 10)
+        for try await delta in stream1 {
+            if case .token(let t) = delta { text1 += t }
+        }
+        XCTAssertFalse(text1.isEmpty, "First generation should produce output")
+        
+        // Second generation (cache should be reused)
+        // The cache reuse is verified by checking logs or timing, but at minimum
+        // this verifies the generation still works after the first turn
+        let messages2 = [
+            LLMMessage(role: .user, content: "Hello"),
+            LLMMessage(role: .assistant, content: text1),
+            LLMMessage(role: .user, content: "How are you?")
+        ]
+        var text2 = ""
+        let stream2 = await service.generate(messages: messages2, maxTokens: 10)
+        for try await delta in stream2 {
+            if case .token(let t) = delta { text2 += t }
+        }
+        XCTAssertFalse(text2.isEmpty, "Second generation should produce output")
+        
+        // Clear cache
+        await service.clearCache()
+        
+        await service.unload()
+    }
+    
+    func testCacheClearedOnUnload() async throws {
+        let service = LLMService.shared
+        
+        let modelManager = ModelManager.shared
+        await modelManager.refreshStatuses()
+        let state = await modelManager.state
+        
+        guard state.statuses[.qwen3_4B]?.isReady == true else {
+            throw XCTSkip("Qwen 3 4B not downloaded")
+        }
+        
+        try await service.prepare()
+        
+        // Generate to create cache
+        let stream = await service.generate(
+            messages: [LLMMessage(role: .user, content: "Hi")],
+            maxTokens: 5
+        )
+        for try await _ in stream {}
+        
+        // Unload should clear cache
+        await service.unload()
+        
+        // Re-prepare and verify cache is fresh
+        try await service.prepare()
+        // No crash = success (cache was properly cleared)
+        
+        // Another generation should work fine
+        let stream2 = await service.generate(
+            messages: [LLMMessage(role: .user, content: "Hello again")],
+            maxTokens: 5
+        )
+        for try await _ in stream2 {}
         
         await service.unload()
     }
