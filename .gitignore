@@ -86,6 +86,7 @@ Vendor/Kokoro/
 *.profdata
 coverage/
 test-results/
+.artifacts/
 
 # Temporary files
 *.tmp

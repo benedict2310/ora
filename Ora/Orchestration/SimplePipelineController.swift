@@ -287,8 +287,31 @@ final class SimplePipelineController: ObservableObject {
             // Set up silence detection for conversation mode (AC-1, AC-7)
             self.setupSilenceDetector()
 
-            // Start audio capture
-            let audioStream = try await AudioService.shared.start()
+            // Pre-emptively track permission prompt if microphone permission is not determined
+            // This prevents a race condition where the system permission dialog appears
+            // before PermissionsManager has a chance to set up the tracker
+            let micStatus = await PermissionsManager.shared.check(.microphone)
+            let needsMicPermission = micStatus == .notDetermined
+            if needsMicPermission {
+                await PermissionPromptTracker.shared.beginPrompt(for: .microphone)
+            }
+
+            // Start audio capture (may trigger permission dialog)
+            let audioStream: AsyncStream<AudioFrame>
+            do {
+                audioStream = try await AudioService.shared.start()
+            } catch {
+                // Clean up tracker if we set it up
+                if needsMicPermission {
+                    await PermissionPromptTracker.shared.endPrompt(for: .microphone)
+                }
+                throw error
+            }
+
+            // Clean up pre-emptive tracker - PermissionsManager handles its own tracking
+            if needsMicPermission {
+                await PermissionPromptTracker.shared.endPrompt(for: .microphone)
+            }
 
             // Start transcription with VAD callback for faster silence detection
             let asrStream = await ASRService.shared.transcribe(

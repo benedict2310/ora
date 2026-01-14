@@ -73,7 +73,7 @@ final class OverlayWindowController {
 
         // Position the panel
         self.positionPanel()
-        
+
         // Show the window - set alpha directly to ensure visibility
         // Note: NSAnimationContext.runAnimationGroup was unreliable in Release builds
         // Reset alpha to 1 in case it was animating to 0
@@ -274,12 +274,16 @@ final class OverlayWindowController {
     }
 
     private func handleAppDeactivated() {
-        guard self.isVisible else { return }
-        guard !PermissionPromptTracker.shared.isPromptActive else {
+        let isVisible = self.isVisible
+        let isPromptActive = PermissionPromptTracker.shared.isPromptActive
+        let isExternalOp = ExternalFocusTracker.shared.isExternalOperationActive
+
+        guard isVisible else { return }
+        guard !isPromptActive else {
             self.logger.debug("App deactivated during permission prompt; keeping overlay")
             return
         }
-        guard !ExternalFocusTracker.shared.isExternalOperationActive else {
+        guard !isExternalOp else {
             self.logger.debug("App deactivated during external focus operation; keeping overlay")
             return
         }
@@ -288,10 +292,51 @@ final class OverlayWindowController {
         self.cancelHandler()
     }
 
+    // MARK: - Focus Recovery
+
     private func handlePermissionPromptEnded() {
         guard SimplePipelineController.shared.isSessionActive else { return }
         self.logger.debug("Permission prompt ended; restoring overlay focus")
-        self.show()
+
+        // Delay restoration to let the window system settle after the permission dialog dismisses.
+        // Without this delay, the window ordering commands execute before the system has finished
+        // cleaning up the permission dialog, causing our panel to appear "visible" but actually
+        // hidden behind other windows (BUG-006).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self = self else { return }
+            guard SimplePipelineController.shared.isSessionActive else { return }
+            self.restoreAfterExternalDialog()
+        }
+    }
+
+    /// Restore the overlay after an external dialog (like permission prompts) has dismissed.
+    /// This uses more aggressive window ordering to ensure the panel becomes visible.
+    private func restoreAfterExternalDialog() {
+        guard let panel = self.panel else {
+            self.show()
+            return
+        }
+
+        // First, ensure the app is active
+        NSRunningApplication.current.activate(options: [.activateIgnoringOtherApps])
+
+        // Bump window level temporarily to get above any lingering system dialogs.
+        // This is necessary because after a system permission dialog dismisses,
+        // the window ordering state may not have fully settled.
+        let originalLevel = panel.level
+        panel.level = .popUpMenu
+
+        // Force the panel to front
+        panel.alphaValue = 1
+        panel.orderFrontRegardless()
+        panel.makeKeyAndOrderFront(nil)
+
+        // Restore original level after a brief moment
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            panel.level = originalLevel
+        }
+
+        self.logger.debug("Overlay restored after external dialog")
     }
 
     private func handleAppActivated() {
@@ -299,9 +344,13 @@ final class OverlayWindowController {
         // This handles cases where permission dialogs or external app focus
         // didn't trigger the specific end notifications
         guard SimplePipelineController.shared.isSessionActive else { return }
-        guard !self.isVisible || self.panel?.alphaValue == 0 else { return }
+
+        // Check if overlay needs restoration (hidden or nearly invisible)
+        let needsRestoration = !self.isVisible || (self.panel?.alphaValue ?? 0) < 0.5
+        guard needsRestoration else { return }
+
         self.logger.debug("App activated with active session; restoring overlay")
-        self.show()
+        self.restoreAfterExternalDialog()
     }
 
     private func handleExternalFocusEnded() {
