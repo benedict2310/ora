@@ -65,11 +65,11 @@ final class OverlayLayoutTests: XCTestCase {
 
     func test_containerSpacing_exactValue() {
         // Verify the exact value to catch unintentional changes
-        XCTAssertEqual(OverlayLayout.containerSpacing, 10, "Container spacing should be 10")
+        XCTAssertEqual(OverlayLayout.containerSpacing, 4, "Container spacing should be 4")
     }
 
     func test_rowSpacing_exactValue() {
         // Verify the exact value to catch unintentional changes
-        XCTAssertEqual(OverlayLayout.rowSpacing, 16, "Row spacing should be 16")
+        XCTAssertEqual(OverlayLayout.rowSpacing, 20, "Row spacing should be 20")
     }
 }

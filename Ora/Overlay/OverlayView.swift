@@ -23,7 +23,7 @@ struct OverlayView: View {
 
     var body: some View {
         GlassEffectContainer(spacing: OverlayLayout.containerSpacing) {
-            VStack(alignment: .leading, spacing: OverlayLayout.rowSpacing) {
+            VStack(alignment: .leading, spacing: OverlayLayout.containerSpacing) {
                 VoiceInputControlView(
                     state: self.voiceInputState,
                     reduceMotion: self.reduceMotion,

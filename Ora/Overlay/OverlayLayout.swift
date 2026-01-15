@@ -21,7 +21,8 @@ enum OverlayLayout {
     ///
     /// Must be **less than** `rowSpacing` to prevent glass shapes from blending at rest.
     /// This spacing controls when adjacent glass effects merge during transitions.
-    static let containerSpacing: CGFloat = 10
+    /// Reduced to minimize glass sampling interference between separate bubbles.
+    static let containerSpacing: CGFloat = 4
 
     // MARK: - Row Spacing
 
@@ -29,7 +30,7 @@ enum OverlayLayout {
     ///
     /// This spacing separates consecutive messages, tool blocks, and follow-up prompts.
     /// Must be **greater than** `containerSpacing` to prevent glass blending at rest.
-    static let rowSpacing: CGFloat = 16
+    static let rowSpacing: CGFloat = 20
 
     // MARK: - Bubble Padding
 
