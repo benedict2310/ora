@@ -3,7 +3,7 @@
 **Status:** Open
 **Priority:** P1 - High
 **Epic:** Performance Optimization
-**Dependencies:** None (can be done in parallel with M.01)
+**Dependencies:** None
 **Target:** Ora 1.1
 
 ---
@@ -57,13 +57,24 @@ As a user, I want Ora to respond as quickly as possible during a conversation, w
 - None required
 
 ### 5.2 Files to Modify
-- `Ora/LLM/LLMService.swift` - Remove per-generation `GPU.clearCache()` call
-- `Ora/TTS/KokoroEngine.swift` - Remove per-synthesis `GPU.clearCache()` call
-- `Ora/Orchestration/AgentLoop.swift` - Add `GPU.clearCache()` in `endSession()`
-- `Ora/AppDelegate.swift` - Add `GPU.clearCache()` on `applicationDidResignActive` or background
+
+**`Ora/LLM/LLMService.swift`** (line ~297):
+- Remove `GPU.clearCache()` call at the end of `runGeneration()` method
+- Keep the `GPU.clearCache()` in `clearCache()` method (line ~189) - this is called at session end
+- Keep the `GPU.clearCache()` in `unload()` method (line ~175) - this is called when unloading model
+
+**`Ora/TTS/KokoroEngine.swift`** (line ~161):
+- Remove `GPU.clearCache()` call inside `runSynthesis()` method
+
+**`Ora/Orchestration/AgentLoop.swift`**:
+- No changes needed - `endSession()` already calls `LLMService.shared.clearCache()` which calls `GPU.clearCache()`
+
+**`Ora/AppDelegate.swift`**:
+- Add `applicationDidResignActive(_:)` method to clear GPU cache when app backgrounds
+- Import MLX to access `GPU.clearCache()`
 
 ### 5.3 Tests to Add
-- Integration test: Verify memory stays within bounds after 10 generations without per-call clearing
+- Manual benchmarking test comparing TTFT before/after changes
 
 ---
 
@@ -91,11 +102,13 @@ As a user, I want Ora to respond as quickly as possible during a conversation, w
 - [ ] Compare response latency with old vs new clearing strategy
 
 ### Benchmarks
+Benchmarks will be recorded during implementation verification.
+
 | Metric | Before (per-call clear) | After (session-end clear) |
 |--------|-------------------------|---------------------------|
-| Turn 2 TTFT | TBD | TBD (target: 10-20% faster) |
-| Turn 3 TTFT | TBD | TBD |
-| Peak memory (5 turns) | TBD | TBD (should be similar) |
+| Turn 2 TTFT | (record during impl) | (target: 10-20% faster) |
+| Turn 3 TTFT | (record during impl) | (record during impl) |
+| Peak memory (5 turns) | (record during impl) | (should be similar) |
 
 ---
 

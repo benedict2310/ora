@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import MLX
 import os
 
 @MainActor
@@ -139,6 +140,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let observer = self.hotkeyPressObserver {
             NotificationCenter.default.removeObserver(observer)
         }
+    }
+
+    func applicationDidResignActive(_ notification: Notification) {
+        // Clear GPU cache when app goes to background (M.02 optimization)
+        // This frees Metal buffers while the app isn't being used,
+        // reducing memory footprint during background.
+        self.logger.debug("App resigned active - clearing GPU cache")
+        GPU.clearCache()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
