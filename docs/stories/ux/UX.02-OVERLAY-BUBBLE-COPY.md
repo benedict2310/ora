@@ -1,0 +1,89 @@
+# UX.02 - Overlay Bubble Copy Action
+
+**Epic:** UX
+**Status:** Open
+**Priority:** P2 (Medium)
+**Estimated Effort:** 1 day
+**Dependencies:** F.10
+**Target:** macOS 26 (Tahoe)
+**Design Reference:** F.10 Liquid Glass Overlay Refresh
+
+---
+
+## 1. Objective
+
+Allow users to copy any bubble text from the overlay via a hover affordance.
+
+## 2. User Story
+
+As a user, I want a quick way to copy text from the overlay so I can paste responses into other apps without retyping.
+
+## 3. Scope
+
+### In Scope
+
+- Show a small copy icon on hover or focus for text bubbles (user, assistant, and tool text).
+- Copy the bubble content to the macOS clipboard.
+- Provide a brief visual confirmation (icon swap or subtle label).
+- Respect Reduce Motion and Reduce Transparency.
+
+### Out of Scope
+
+- Rich formatting in the clipboard (plain text only).
+- Copy actions for tool blocks without primary text.
+- Global "copy transcript" actions.
+
+## 4. Architecture Alignment
+
+- Interaction lives in `ChatBubbleView` and does not mutate pipeline state.
+- Uses `NSPasteboard.general` for clipboard writes via a small abstraction to enable tests.
+- Focus and hover are handled at the bubble level to keep behavior local.
+
+## 5. Implementation Plan
+
+### 5.1 Files to Modify
+
+- `Ora/Overlay/ChatBubbleView.swift`: add hover/focus-driven copy affordance and action.
+- `Ora/Overlay/OverlayView.swift`: ensure bubble action hit-testing does not block scroll.
+
+### 5.2 UX Details
+
+- Only show copy affordance when `text` is non-empty.
+- Hover shows a small icon button in the top-right corner of the bubble.
+- Keyboard focus also reveals the button for accessibility.
+- After click, swap icon to a checkmark for ~1 second.
+- Respect Reduce Motion (no springy transitions).
+
+### 5.3 Tests
+
+- `OraTests/Overlay/ChatBubbleCopyTests.swift`: unit-test the copy handler using an injected pasteboard abstraction.
+
+## 6. Acceptance Criteria
+
+- AC-1: Hovering a text bubble reveals a copy icon (user, assistant, tool text).
+- AC-2: Clicking the icon copies the bubble text to the clipboard.
+- AC-3: A "copied" visual state appears briefly after the action.
+- AC-4: Tool state blocks or empty bubbles do not show the copy affordance.
+- AC-5: The copy affordance is keyboard accessible.
+
+## 7. Verification Plan
+
+### Automated
+
+- Run `./build.sh test`.
+
+### Manual
+
+- Hover user, assistant, and tool text bubbles; confirm icon appears.
+- Click icon; paste into TextEdit and confirm content.
+- Verify partial bubbles copy the current text snapshot.
+- Toggle Reduce Motion/Transparency.
+
+## 8. Risks & Mitigations
+
+- Risk: Hover button interferes with scrolling. Mitigation: keep the button small and avoid full-width overlays.
+- Risk: Clipboard writes leak sensitive data. Mitigation: follow explicit user action only.
+
+## 9. Open Questions
+
+- Should we also add a `contextMenu` fallback for non-pointer users?
