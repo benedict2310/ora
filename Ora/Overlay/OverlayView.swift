@@ -44,9 +44,7 @@ struct OverlayView: View {
     }
 
     private var chatScrollView: some View {
-        let containerShape = RoundedRectangle(cornerRadius: 12, style: .continuous)
-
-        return ScrollViewReader { proxy in
+        ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: OverlayLayout.rowSpacing) {
                     ForEach(self.visibleMessages) { message in
@@ -111,9 +109,6 @@ struct OverlayView: View {
                 .padding(.bottom, 4)
             }
             .scrollIndicators(.hidden)
-            // Unified glass sampling region for entire chat content
-            // Individual bubbles use translucent backgrounds on top of this
-            .unifiedGlass(enabled: !self.reduceTransparency, in: containerShape)
             .onChange(of: self.viewModel.messages.count) { _, _ in
                 self.scrollToBottom(proxy)
             }
@@ -237,28 +232,8 @@ struct FollowUpPromptView: View {
                 .background(shape.fill(Color(nsColor: .controlBackgroundColor).opacity(0.94)))
                 .overlay(shape.stroke(Color.white.opacity(0.08), lineWidth: 0.6))
         } else {
-            // Per-bubble styling via tinted background on unified glass region
-            // (Container applies .glassEffect() - see chatScrollView)
             base
-                .background(shape.fill(Color.white.opacity(0.08)))
-        }
-    }
-}
-
-// MARK: - Unified Glass Modifier
-
-private extension View {
-    /// Applies a unified glass effect when enabled, allowing child views to use
-    /// translucent backgrounds on top of a single glass sampling region.
-    ///
-    /// This prevents "glass sampling glass" artifacts that occur when multiple
-    /// adjacent views each apply their own `.glassEffect()`.
-    @ViewBuilder
-    func unifiedGlass<S: Shape>(enabled: Bool, in shape: S) -> some View {
-        if enabled {
-            self.glassEffect(.regular, in: shape)
-        } else {
-            self
+                .glassEffect(.regular.tint(.white.opacity(0.08)), in: shape)
         }
     }
 }

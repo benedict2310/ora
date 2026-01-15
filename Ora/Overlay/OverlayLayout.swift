@@ -9,32 +9,19 @@ import Foundation
 
 /// Shared layout constants for the overlay UI
 ///
-/// These constants ensure consistent spacing across all overlay components.
+/// These constants ensure consistent spacing across all overlay components
+/// and prevent Liquid Glass blending artifacts by maintaining proper spacing relationships.
 ///
-/// ## Unified Glass Architecture
-///
-/// The chat scroll view uses a **single unified glass sampling region** rather than
-/// per-bubble glass effects. This eliminates black outline artifacts between bubbles
-/// that occur when "glass samples glass" (per Apple's Liquid Glass guidance).
-///
-/// **Architecture:**
-/// ```
-/// GlassEffectContainer
-/// ├── VoiceInputControlView     → .glassEffect() (separate for morphing)
-/// └── ScrollView                → .glassEffect() (ONE unified region)
-///     ├── ChatBubbleView        → .background(tintedShape) (no glass)
-///     ├── ToolStateView         → .background(tintedShape) (no glass)
-///     └── FollowUpPromptView    → .background(tintedShape) (no glass)
-/// ```
-///
-/// Per-bubble styling is achieved via translucent background fills on top of the
-/// unified blur, not via individual `.glassEffect()` calls.
+/// **Critical constraint:** `containerSpacing` must be less than `rowSpacing` to prevent
+/// glass shapes from blending at rest (per Apple's Liquid Glass guidance).
 enum OverlayLayout {
     // MARK: - Container Spacing
 
     /// Spacing for the outer `GlassEffectContainer`
     ///
-    /// Controls separation between VoiceInputControlView and the chat scroll view.
+    /// Must be **less than** `rowSpacing` to prevent glass shapes from blending at rest.
+    /// This spacing controls when adjacent glass effects merge during transitions.
+    /// Reduced to minimize glass sampling interference between separate bubbles.
     static let containerSpacing: CGFloat = 4
 
     // MARK: - Row Spacing
@@ -42,6 +29,7 @@ enum OverlayLayout {
     /// Vertical spacing between rows in the main chat scroll view (LazyVStack)
     ///
     /// This spacing separates consecutive messages, tool blocks, and follow-up prompts.
+    /// Must be **greater than** `containerSpacing` to prevent glass blending at rest.
     static let rowSpacing: CGFloat = 20
 
     // MARK: - Bubble Padding

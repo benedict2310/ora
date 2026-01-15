@@ -59,10 +59,9 @@ struct ToolStateView: View {
                 .background(shape.fill(Color(nsColor: .controlBackgroundColor).opacity(0.94)))
                 .overlay(shape.stroke(Color.white.opacity(0.08), lineWidth: 0.6))
         } else {
-            // Per-bubble styling via tinted background on unified glass region
-            // (Container applies .glassEffect() - see OverlayView)
+            // Use .regular variant for full background adaptivity (light/dark)
             base
-                .background(shape.fill(Color.white.opacity(0.12)))
+                .glassEffect(.regular.tint(.white.opacity(0.08)), in: shape)
         }
     }
 

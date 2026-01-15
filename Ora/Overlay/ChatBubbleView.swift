@@ -66,14 +66,13 @@ struct ChatBubbleView: View {
                 .background(shape.fill(self.baseFillColor(for: self.role)))
                 .overlay(shape.stroke(Color.white.opacity(0.08), lineWidth: 0.6))
         } else {
-            // Per-bubble styling via tinted background on unified glass region
-            // (Container applies .glassEffect() - see OverlayView)
+            // Fix B: glassEffect must be LAST to avoid black outline artifacts
             base
                 .userChromaOverlay(
                     enabled: self.role == .user,
                     shape: shape
                 )
-                .background(shape.fill(self.bubbleBackgroundColor(for: self.role)))
+                .glassEffect(self.glassStyle(for: self.role), in: shape)
         }
     }
 
@@ -94,22 +93,19 @@ struct ChatBubbleView: View {
         }
     }
 
-    /// Translucent background color for per-bubble styling on top of unified glass
-    ///
-    /// These colors render on top of the container's `.glassEffect()` to create
-    /// visually distinct bubbles without separate glass sampling regions.
-    private func bubbleBackgroundColor(for role: Role) -> Color {
+    private func glassStyle(for role: Role) -> Glass {
+        // Use .regular variant for full background adaptivity (light/dark)
+        // Keep tint opacity low to allow system adaptation to work
         switch role {
         case .user:
-            return Color(red: 0.12, green: 0.55, blue: 0.95).opacity(0.25)
+            return .regular.tint(Color(red: 0.12, green: 0.55, blue: 0.95).opacity(0.4))
         case .assistant:
-            return Color.white.opacity(0.08)
+            return .regular.tint(.white.opacity(0.06))
         case .tool:
-            return Color.white.opacity(0.10)
+            return .regular.tint(.white.opacity(0.08))
         }
     }
 
-    /// Background color for `reduceTransparency` accessibility mode (solid fills)
     private func baseFillColor(for role: Role) -> Color {
         switch role {
         case .user:
