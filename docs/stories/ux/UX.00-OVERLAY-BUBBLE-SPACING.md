@@ -169,4 +169,8 @@ As a user, I want the overlay bubbles to feel clean and cohesive so glass effect
 
 ## Completion Status
 
-(TBD after merge.)
+- [x] Implementation complete
+- [x] Code review passed (1 iteration, no issues)
+- [x] PR merged: https://github.com/benedict2310/ora/pull/70
+- [x] Merged to main: dc98389
+- [x] Date: 2026-01-15
