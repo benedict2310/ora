@@ -42,7 +42,7 @@ struct ChatBubbleView: View {
     @ViewBuilder
     private var bubbleContent: some View {
         let shape = self.bubbleShape(for: self.role)
-        let base = VStack(alignment: self.role == .user ? .leading : .trailing, spacing: 8) {
+        let base = VStack(alignment: self.role == .user ? .leading : .trailing, spacing: OverlayLayout.bubbleContentSpacing) {
             if let state = self.state {
                 self.stateRow(state, alignRight: self.role != .user)
             }
@@ -53,8 +53,8 @@ struct ChatBubbleView: View {
                     .foregroundStyle(.primary)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, OverlayLayout.bubblePaddingHorizontal)
+        .padding(.vertical, OverlayLayout.bubblePaddingVertical)
         .opacity(self.isPartial ? 0.8 : 1.0)
 
         if self.reduceTransparency {

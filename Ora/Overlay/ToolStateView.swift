@@ -43,7 +43,7 @@ struct ToolStateView: View {
     @ViewBuilder
     private var content: some View {
         let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
-        let base = VStack(alignment: .leading, spacing: 12) {
+        let base = VStack(alignment: .leading, spacing: OverlayLayout.toolContentSpacing) {
             switch self.mode {
             case .proposal(let proposal):
                 self.proposalContent(proposal: proposal)
@@ -51,8 +51,8 @@ struct ToolStateView: View {
                 self.executingContent(label: label)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, OverlayLayout.bubblePaddingHorizontal)
+        .padding(.vertical, OverlayLayout.bubblePaddingVertical)
 
         if self.reduceTransparency {
             base
@@ -66,7 +66,7 @@ struct ToolStateView: View {
     }
 
     private func proposalContent(proposal: ToolProposal) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: OverlayLayout.toolContentSpacing) {
             HStack {
                 Image(systemName: Self.iconForTool(proposal.toolName))
                     .foregroundColor(Self.colorForTool(proposal.toolName))
