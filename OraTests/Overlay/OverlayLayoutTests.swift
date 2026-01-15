@@ -70,6 +70,6 @@ final class OverlayLayoutTests: XCTestCase {
 
     func test_rowSpacing_exactValue() {
         // Verify the exact value to catch unintentional changes
-        XCTAssertEqual(OverlayLayout.rowSpacing, 12, "Row spacing should be 12")
+        XCTAssertEqual(OverlayLayout.rowSpacing, 16, "Row spacing should be 16")
     }
 }

@@ -29,7 +29,7 @@ enum OverlayLayout {
     ///
     /// This spacing separates consecutive messages, tool blocks, and follow-up prompts.
     /// Must be **greater than** `containerSpacing` to prevent glass blending at rest.
-    static let rowSpacing: CGFloat = 12
+    static let rowSpacing: CGFloat = 16
 
     // MARK: - Bubble Padding
 
