@@ -65,6 +65,16 @@ Core application structure, UI, and state management.
 |:---|:------|:-------|
 | BUG.01 | [Model Download Verification](foundations/BUG.01-MODEL-DOWNLOAD-VERIFICATION.md) | ✅ Fixed |
 
+### 🎨 UX (UX)
+User experience improvements for overlay clarity and interaction.
+
+| ID | Title | Status |
+|:---|:------|:-------|
+| UX.00 | [Overlay Bubble Spacing](ux/UX.00-OVERLAY-BUBBLE-SPACING.md) | 🚧 To Do |
+| UX.01 | [Agent Transparency Status](ux/UX.01-AGENT-TRANSPARENCY-STATUS.md) | 🚧 To Do |
+| UX.02 | [Overlay Bubble Copy Action](ux/UX.02-OVERLAY-BUBBLE-COPY.md) | 🚧 To Do |
+| UX.03 | [Overlay Visual Polish](ux/UX.03-OVERLAY-VISUAL-POLISH.md) | 🚧 To Do |
+
 ### 🎙 ASR Integration (A)
 Speech-to-text pipeline using FluidAudio Parakeet.
 
