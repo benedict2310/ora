@@ -22,7 +22,7 @@ struct OverlayView: View {
     private let scrollAnchorID = "overlayScrollAnchor"
 
     var body: some View {
-        GlassEffectContainer(spacing: 12) {
+        GlassEffectContainer(spacing: OverlayLayout.containerSpacing) {
             VStack(alignment: .leading, spacing: 10) {
                 VoiceInputControlView(
                     state: self.voiceInputState,
@@ -46,7 +46,7 @@ struct OverlayView: View {
     private var chatScrollView: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
+                LazyVStack(alignment: .leading, spacing: OverlayLayout.rowSpacing) {
                     ForEach(self.visibleMessages) { message in
                         ChatBubbleView(
                             text: message.content,
@@ -224,8 +224,8 @@ struct FollowUpPromptView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, OverlayLayout.bubblePaddingHorizontal)
+        .padding(.vertical, OverlayLayout.bubblePaddingVertical)
 
         if self.reduceTransparency {
             base
