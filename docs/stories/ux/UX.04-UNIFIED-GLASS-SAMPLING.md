@@ -276,7 +276,34 @@ private func bubbleBackgroundColor(for role: Role) -> Color {
 
 ## Implementation Summary
 
-(TBD after implementation.)
+**Date:** 2026-01-15
+**Branch:** `feat/UX.04-unified-glass`
+**Commits:** 1
+
+### Files Changed
+
+- `Ora/Overlay/ChatBubbleView.swift` - Added `bubbleBackgroundColor(for:)` method, replaced `.glassEffect()` with `.background(shape.fill(color))` for non-reduceTransparency path
+- `Ora/Overlay/ToolStateView.swift` - Replaced `.glassEffect()` with `.background(shape.fill(Color.white.opacity(0.12)))` for non-reduceTransparency path
+- `Ora/Overlay/OverlayView.swift` - Added `.unifiedGlass(enabled:in:)` modifier to apply unified glass to chat scroll view; updated FollowUpPromptView similarly
+- `Ora/Overlay/OverlayLayout.swift` - Updated documentation to describe unified glass architecture
+- `OraTests/OverlayViewsTests.swift` - Added tests for both background color paths (unified glass and reduceTransparency)
+
+### Key Design Decisions
+
+1. **Container glass shape:** `RoundedRectangle(cornerRadius: 12, style: .continuous)` applied to scroll view
+2. **Glass style:** `.regular` with no tint - per-bubble backgrounds provide visual differentiation
+3. **Background colors:**
+   - User: `Color(red: 0.12, green: 0.55, blue: 0.95).opacity(0.25)` (blue tint)
+   - Assistant: `Color.white.opacity(0.08)` (subtle white)
+   - Tool: `Color.white.opacity(0.10)` (slightly more visible white)
+   - ToolStateView: `Color.white.opacity(0.12)`
+   - FollowUpPromptView: `Color.white.opacity(0.08)`
+
+### Ready for Review
+
+- [x] All acceptance criteria code paths implemented
+- [x] Tests passing (935/935)
+- [x] Working tree clean
 
 ## Code Review Findings
 
