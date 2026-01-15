@@ -1,6 +1,6 @@
 # M.02 - Optimize GPU Cache Clearing Strategy
 
-**Status:** Open
+**Status:** In Progress
 **Priority:** P1 - High
 **Epic:** Performance Optimization
 **Dependencies:** None
@@ -84,8 +84,8 @@ As a user, I want Ora to respond as quickly as possible during a conversation, w
 - [x] `GPU.clearCache()` is NOT called after each TTS synthesis - ✅ Removed from `KokoroEngine.runSynthesis()`
 - [x] `GPU.clearCache()` IS called when session ends - ✅ Already implemented via `AgentLoop.endSession()` → `LLMService.clearCache()`
 - [x] `GPU.clearCache()` IS called when app goes to background - ✅ Added `applicationDidResignActive()` in `AppDelegate.swift`
-- [ ] Memory stays under 4GB after 10 back-to-back conversations (with 512MB cache limit)
-- [ ] Latency benchmark shows improvement over per-call clearing (target: 10-20% faster TTFT on turn 2+)
+- [ ] Memory stays under 4GB after 10 back-to-back conversations (with 512MB cache limit) - Requires manual verification
+- [ ] Latency benchmark shows improvement over per-call clearing (target: 10-20% faster TTFT on turn 2+) - Requires manual verification
 
 ---
 
@@ -124,7 +124,7 @@ Benchmarks will be recorded during implementation verification.
 
 **Date:** 2025-01-14
 **Branch:** `feat/M.02-cache-clearing-strategy`
-**Commits:** 1
+**Commits:** 3
 
 ### Files Changed
 - `Ora/LLM/LLMService.swift` - Removed per-generation `GPU.clearCache()` call
@@ -139,5 +139,34 @@ Benchmarks will be recorded during implementation verification.
 ### Ready for Review
 - [x] All code acceptance criteria verified
 - [x] Tests passing (564/564, 0 failures)
-- [ ] Manual benchmarking pending
+- [ ] Manual benchmarking pending (requires user verification)
 - [x] Working tree clean
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-01-15
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 5 (AppDelegate, LLMService, KokoroEngine, M.02 story, .gitignore)
+- Build status: Pass
+- Tests: 564/564 passing
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- None
+
+#### P1 - Major (Should fix)
+- [ ] Memory and latency acceptance criteria require manual verification by user (cannot be automated)
+
+#### P2 - Minor (Can defer)
+- None
+
+### Approval Status
+- [x] All P0 issues resolved
+- [ ] All P1 issues resolved (pending user verification)
+- [ ] Ready for merge

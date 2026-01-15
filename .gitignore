@@ -100,3 +100,4 @@ docs/review-logs
 
 # Local agent tools (never commit)
 agent-tools/
+scripts/__pycache__/
