@@ -80,10 +80,10 @@ As a user, I want Ora to respond as quickly as possible during a conversation, w
 
 ## 6. Acceptance Criteria
 
-- [ ] `GPU.clearCache()` is NOT called after each LLM generation
-- [ ] `GPU.clearCache()` is NOT called after each TTS synthesis
-- [ ] `GPU.clearCache()` IS called when session ends
-- [ ] `GPU.clearCache()` IS called when app goes to background
+- [x] `GPU.clearCache()` is NOT called after each LLM generation - ✅ Removed from `LLMService.runGeneration()`
+- [x] `GPU.clearCache()` is NOT called after each TTS synthesis - ✅ Removed from `KokoroEngine.runSynthesis()`
+- [x] `GPU.clearCache()` IS called when session ends - ✅ Already implemented via `AgentLoop.endSession()` → `LLMService.clearCache()`
+- [x] `GPU.clearCache()` IS called when app goes to background - ✅ Added `applicationDidResignActive()` in `AppDelegate.swift`
 - [ ] Memory stays under 4GB after 10 back-to-back conversations (with 512MB cache limit)
 - [ ] Latency benchmark shows improvement over per-call clearing (target: 10-20% faster TTFT on turn 2+)
 
@@ -117,3 +117,27 @@ Benchmarks will be recorded during implementation verification.
 - MLX GitHub Issue #66: GPU cache limit discussion
 - Community: "Periodic clearing can be done as a safety valve – e.g. every N generations or when switching to a very different task/model"
 - Midgar Corp Blog: Uses 512MB cache without per-call clearing
+
+---
+
+## Implementation Summary
+
+**Date:** 2025-01-14
+**Branch:** `feat/M.02-cache-clearing-strategy`
+**Commits:** 1
+
+### Files Changed
+- `Ora/LLM/LLMService.swift` - Removed per-generation `GPU.clearCache()` call
+- `Ora/TTS/KokoroEngine.swift` - Removed per-synthesis `GPU.clearCache()` call  
+- `Ora/AppDelegate.swift` - Added `applicationDidResignActive()` with `GPU.clearCache()`
+
+### Key Design Decisions
+1. **No change to AgentLoop** - `endSession()` already calls `LLMService.clearCache()` which internally calls `GPU.clearCache()`
+2. **Cache limit remains at 512MB** - This bounds memory usage while allowing buffer reuse
+3. **Background clearing** - `applicationDidResignActive` ensures cache is freed when user switches apps
+
+### Ready for Review
+- [x] All code acceptance criteria verified
+- [x] Tests passing (564/564, 0 failures)
+- [ ] Manual benchmarking pending
+- [x] Working tree clean
