@@ -157,8 +157,9 @@ public actor KokoroEngine: KokoroEngining {
                 // Synchronize to ensure TTS work is done before releasing the gate
                 Stream.gpu.synchronize()
                 
-                // Clear GPU cache to release TTS buffers (BUG-005)
-                GPU.clearCache()
+                // Note: GPU.clearCache() is intentionally NOT called here (M.02 optimization)
+                // The 512MB cache limit allows buffer reuse for faster inference.
+                // Cache is cleared at session end and when app backgrounds.
                 
                 // Release gate before yielding (synchronous release within actor context)
                 await MLXMetalGate.shared.release()

@@ -292,9 +292,9 @@ actor LLMService: LLMServicing {
         let tokensPerSec = tokenCount > 0 ? Double(tokenCount) / (totalTime / 1000) : 0
         self.logger.info("⏱️ Generation complete: \(tokenCount) tokens in \(String(format: "%.1f", totalTime))ms (\(String(format: "%.1f", tokensPerSec)) tok/s)")
         
-        // Clear GPU buffer cache to release intermediate buffers (BUG-005)
-        // Note: This does NOT clear the KV cache - that persists for the session
-        GPU.clearCache()
+        // Note: GPU.clearCache() is intentionally NOT called here (M.02 optimization)
+        // The 512MB cache limit allows buffer reuse across generations for faster TTFT.
+        // Cache is cleared at session end via clearCache() and when app backgrounds.
         
         continuation.yield(.completed(totalTokens: tokenCount))
         continuation.finish()
