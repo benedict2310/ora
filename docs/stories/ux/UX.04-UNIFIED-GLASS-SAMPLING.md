@@ -1,7 +1,7 @@
 # UX.04 - Unified Glass Sampling Region for Chat Overlay
 
 **Epic:** UX
-**Status:** Open
+**Status:** ❌ Rejected
 **Priority:** P0 (Critical - Visual Bug)
 **Estimated Effort:** 2-3 days
 **Dependencies:** F.07
@@ -10,7 +10,30 @@
 
 ---
 
-## 1. Objective
+## ⚠️ REJECTION NOTICE
+
+**Date:** 2026-01-15
+**Reason:** This approach does not work as designed.
+
+Applying `.glassEffect()` to the ScrollView container creates an **opaque glass panel** instead of
+individual floating glass bubbles. The implementation was attempted, merged, and immediately reverted
+because it fundamentally broke the overlay's visual appearance:
+
+- Created a solid dark rectangular background behind all bubbles
+- Lost the individual floating glass bubble aesthetic
+- Made the UI look significantly worse than the original
+
+**The core assumption was wrong:** "Unified glass sampling region" via container-level `.glassEffect()`
+does not produce floating bubbles with shared sampling—it produces a single opaque glass panel.
+
+**Alternative:** See **UX.05-GLASS-ARTIFACT-MITIGATION.md** for approaches that preserve the
+individual floating bubble design while mitigating black outline artifacts.
+
+**Reverted in:** Commit `13dd98a` on main
+
+---
+
+## 1. Objective (Original - DO NOT IMPLEMENT)
 
 Eliminate black outline artifacts between chat bubbles by refactoring the overlay to use a **single unified glass sampling region** instead of per-bubble glass effects. This follows Apple's Liquid Glass guidance: "Glass cannot sample other glass."
 
