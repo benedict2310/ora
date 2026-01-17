@@ -35,13 +35,17 @@ This section maps architecture components to their implementation stories. See [
 | **Structured Output** | L.02 (Structured Output) | ✅ Complete |
 | **ConversationManager** | L.03 (Conversation Manager) | ✅ Complete |
 | **System Prompt** | L.04 (System Prompt) | ✅ Complete |
-| **Simple ASR→LLM Pipeline** | O.01 (ASR-LLM Pipeline) | 🚧 To Do |
-| **AgentLoop** | O.02 (Agent Loop) | 🚧 To Do |
-| **ConversationOrchestrator** | O.03 (Conversation Orchestrator) | 🚧 To Do |
+| **Simple ASR→LLM Pipeline** | O.01 (ASR-LLM Pipeline) | ✅ Complete |
+| **AgentLoop** | O.02 (Agent Loop) | ✅ Complete |
+| **ConversationOrchestrator** | O.03 (Conversation Orchestrator) | ✅ Complete |
+| **Agent Loop Integration** | O.06 (Agent Loop Integration) | ✅ Complete |
+| **Conversation Mode** | O.07 (Conversation Mode) | ✅ Complete |
 | **ConfirmationGate** | O.04 (Confirmation Flow) | 🚧 To Do |
-| **ToolHost + Tools** | X.01-X.05 | 🚧 To Do |
-| **TTSEngine** | T.01 (TTS Service) | 🚧 To Do |
-| **AudioPlayback** | T.02 (Audio Playback) | 🚧 To Do |
+| **ToolHost + Calendar** | X.01, X.02 | ✅ Complete |
+| **Reminders, Contacts, System Tools** | X.03-X.05 | 🚧 To Do |
+| **TTSEngine** | T.01 (TTS Service) | ✅ Complete |
+| **AudioPlayback** | T.02 (Audio Playback) | ✅ Complete |
+| **Agent Transparency** | UX.01 (Agent Transparency Status) | ✅ Complete |
 
 ### Implementation Order
 
@@ -49,17 +53,17 @@ This section maps architecture components to their implementation stories. See [
 Phase 1-2: ✅ Complete
   F.* (Foundations) → A.* (ASR) → L.* (LLM)
 
-Phase 3: 🚧 Current
-  O.01 (ASR-LLM Pipeline) ← Simple wiring for testing
+Phase 3: ✅ Complete
+  O.01 (ASR-LLM Pipeline) → O.05 (Hotkey Flow)
 
-Phase 4: Next
-  X.01 (Tool Protocol) → X.02-X.05 (Tools) → O.02 (Agent Loop)
+Phase 4: ✅ Complete
+  X.01 (Tool Protocol) → X.02 (Calendar) → O.02 (Agent Loop) → O.06 (Integration)
 
-Phase 5: TTS
-  T.01 → T.02 → T.03
+Phase 5: ✅ Complete
+  T.01 → T.02 → O.03 (Full Orchestrator) → O.07 (Conversation Mode)
 
-Phase 6: Full Orchestration
-  O.03 (Full Orchestrator) → O.04 (Confirmation Flow)
+Phase 6: 🚧 Current
+  X.03-X.05 (More Tools) → O.04 (Confirmation Flow) → UX.* (Polish)
 ```
 
 ---
