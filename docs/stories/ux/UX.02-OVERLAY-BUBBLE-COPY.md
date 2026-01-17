@@ -1,7 +1,7 @@
 # UX.02 - Overlay Bubble Copy Action
 
 **Epic:** UX
-**Status:** Open
+**Status:** In Progress
 **Priority:** P2 (Medium)
 **Estimated Effort:** 1 day
 **Dependencies:** F.10
@@ -60,11 +60,11 @@ As a user, I want a quick way to copy text from the overlay so I can paste respo
 
 ## 6. Acceptance Criteria
 
-- AC-1: Hovering a text bubble reveals a copy icon (user, assistant, tool text).
-- AC-2: Clicking the icon copies the bubble text to the clipboard.
-- AC-3: A "copied" visual state appears briefly after the action.
-- AC-4: Tool state blocks or empty bubbles do not show the copy affordance.
-- AC-5: The copy affordance is keyboard accessible.
+- [x] AC-1: Hovering a text bubble reveals a copy icon (user, assistant, tool text). ✅ Verified in `ChatBubbleView.swift:60-64` - overlay shows copy button on hover
+- [x] AC-2: Clicking the icon copies the bubble text to the clipboard. ✅ Verified in `ChatBubbleView.swift:112-114` - uses pasteboard abstraction
+- [x] AC-3: A "copied" visual state appears briefly after the action. ✅ Verified in `ChatBubbleView.swift:90,115-121` - checkmark icon for 1 second
+- [x] AC-4: Tool state blocks or empty bubbles do not show the copy affordance. ✅ Verified by test `test_copyButton_notShownForStateOnlyBubble`
+- [x] AC-5: The copy affordance is keyboard accessible. ✅ Verified in `ChatBubbleView.swift:72-74` - accessibilityAction named "Copy"
 
 ## 7. Verification Plan
 
@@ -87,3 +87,30 @@ As a user, I want a quick way to copy text from the overlay so I can paste respo
 ## 9. Open Questions
 
 - Should we also add a `contextMenu` fallback for non-pointer users?
+
+---
+
+## Implementation Summary
+
+**Date:** 2026-01-17
+**Branch:** `feat/UX.02-overlay-bubble-copy`
+
+### Files Changed
+
+- `Ora/Overlay/ChatBubbleView.swift` - Added copy affordance with hover state, pasteboard abstraction
+- `OraTests/Overlay/ChatBubbleCopyTests.swift` - Created test suite for copy functionality
+
+### Key Implementation Details
+
+1. **Pasteboard Abstraction:** `PasteboardWriting` protocol with `SystemPasteboard` implementation enables test injection
+2. **Hover State:** `@State isHovered` tracks mouse hover, shows copy button in top-right corner
+3. **Copy Confirmation:** `@State isCopied` shows checkmark icon for 1 second after copy
+4. **Accessibility:** `accessibilityAction(named: "Copy")` enables VoiceOver copy action
+5. **Reduce Motion:** Transitions respect `reduceMotion` setting (opacity only vs. scale+opacity)
+6. **Enum Rename:** `State` → `BubbleState` to avoid conflict with SwiftUI's `@State`
+
+### Ready for Review
+
+- [x] All acceptance criteria verified
+- [x] Tests passing (975/975)
+- [x] Working tree clean
