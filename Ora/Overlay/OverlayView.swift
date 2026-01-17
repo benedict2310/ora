@@ -232,8 +232,9 @@ struct FollowUpPromptView: View {
                 .background(shape.fill(Color(nsColor: .controlBackgroundColor).opacity(0.94)))
                 .overlay(shape.stroke(Color.white.opacity(0.08), lineWidth: 0.6))
         } else {
+            // Tint opacity lowered to reduce black outline artifacts
             base
-                .glassEffect(.regular.tint(.white.opacity(0.08)), in: shape)
+                .glassEffect(.regular.tint(.white.opacity(0.04)), in: shape)
         }
     }
 }

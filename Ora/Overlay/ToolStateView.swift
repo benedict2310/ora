@@ -60,8 +60,9 @@ struct ToolStateView: View {
                 .overlay(shape.stroke(Color.white.opacity(0.08), lineWidth: 0.6))
         } else {
             // Use .regular variant for full background adaptivity (light/dark)
+            // Tint opacity lowered to reduce black outline artifacts
             base
-                .glassEffect(.regular.tint(.white.opacity(0.08)), in: shape)
+                .glassEffect(.regular.tint(.white.opacity(0.04)), in: shape)
         }
     }
 
