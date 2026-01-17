@@ -114,3 +114,67 @@ As a user, I want a quick way to copy text from the overlay so I can paste respo
 - [x] All acceptance criteria verified
 - [x] Tests passing (975/975)
 - [x] Working tree clean
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-01-17T19:54:00Z
+**Commit reviewed:** 4def033
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 2
+- Build status: Pass
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- None
+
+#### P1 - Major (Should fix)
+- None
+
+#### P2 - Minor (Can defer)
+- [ ] `Ora/Overlay/ChatBubbleView.swift:80-81` - Redundant logic in `shouldShowCopyButton`. The check `if self.state != nil && self.text == nil` is unreachable because the `guard let text = self.text` at line 79 already returns false if `text` is nil.
+
+### Future Considerations (Out of Scope)
+- None
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-01-17T19:58:00Z
+**Commit reviewed:** c0e5f17
+**Iteration:** 2
+
+### Summary
+- Files reviewed: 7
+- Build status: Pass
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- None
+
+#### P1 - Major (Should fix)
+- None
+
+#### P2 - Minor (Can defer)
+- None
+
+### Future Considerations (Out of Scope)
+- None
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
