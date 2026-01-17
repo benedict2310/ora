@@ -424,7 +424,7 @@ actor AgentLoop {
     private func notifyDelegateActivity(_ activity: AgentActivity) async {
         if currentActivity == activity { return }
         currentActivity = activity
-        
+
         await MainActor.run {
             self._delegate?.agentLoop(self, didUpdateActivity: activity)
         }

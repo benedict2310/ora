@@ -15,7 +15,9 @@ struct ChatBubbleView: View {
     }
 
     enum State: Equatable {
-        case thinking
+        /// Thinking/planning state with optional dynamic label
+        case thinking(String?)
+        /// Tool operation state with description
         case tool(String)
     }
 
@@ -135,14 +137,14 @@ struct ChatBubbleView: View {
 
         return HStack(spacing: 6) {
             switch state {
-            case .thinking:
+            case .thinking(let label):
                 if self.reduceMotion {
                     Image(systemName: "ellipsis")
                 } else {
                     ProgressView()
                         .controlSize(.small)
                 }
-                Text("Thinking")
+                Text(label ?? "Thinking")
             case .tool(let label):
                 Image(systemName: "gearshape")
                     .font(.caption)

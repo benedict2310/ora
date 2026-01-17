@@ -63,11 +63,23 @@ struct OverlayView: View {
                         ChatBubbleView(
                             text: nil,
                             role: .assistant,
-                            state: .thinking,
+                            state: .thinking(self.thinkingBubbleLabel),
                             isPartial: false,
                             reduceTransparency: self.reduceTransparency,
                             reduceMotion: self.reduceMotion
                         )
+                    }
+
+                    if self.shouldShowToolBubble {
+                        ChatBubbleView(
+                            text: nil,
+                            role: .tool,
+                            state: .tool(self.viewModel.activity.displayLabel),
+                            isPartial: false,
+                            reduceTransparency: self.reduceTransparency,
+                            reduceMotion: self.reduceMotion
+                        )
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                     }
 
                     if self.shouldShowExecutingBubble {
@@ -166,7 +178,30 @@ struct OverlayView: View {
 
     private var shouldShowThinkingBubble: Bool {
         if case .thinking = self.viewModel.mode {
-            return true
+            // Don't show thinking bubble if we're showing a tool bubble
+            return !self.viewModel.activity.isToolOperation
+        }
+        return false
+    }
+
+    /// Label for the thinking bubble based on current activity
+    private var thinkingBubbleLabel: String? {
+        switch self.viewModel.activity {
+        case .planning:
+            return "Planning response"
+        case .composing:
+            return "Composing response"
+        case .none, .listening, .speaking, .waiting:
+            return nil  // Use default "Thinking"
+        case .toolCall, .toolResult:
+            return nil  // Shouldn't reach here due to shouldShowThinkingBubble guard
+        }
+    }
+
+    /// Whether to show a tool operation bubble
+    private var shouldShowToolBubble: Bool {
+        if case .thinking = self.viewModel.mode {
+            return self.viewModel.activity.isToolOperation
         }
         return false
     }

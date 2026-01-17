@@ -72,6 +72,16 @@ enum OverlayActivity: Equatable, Sendable {
             return "Tool"
         }
     }
+
+    /// Whether this activity represents a tool operation
+    var isToolOperation: Bool {
+        switch self {
+        case .toolCall, .toolResult:
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 // MARK: - Overlay Mode
@@ -132,6 +142,18 @@ final class OverlayViewModel: ObservableObject {
     @Published var currentProposal: ToolProposal?
     @Published var activity: OverlayActivity = .none
 
+    /// Minimum time a tool activity should be visible (seconds)
+    private let toolActivityMinDuration: TimeInterval = 0.6
+
+    /// When the current tool activity started
+    private var toolActivityStartTime: Date?
+
+    /// Pending activity to apply after minimum duration
+    private var pendingActivity: OverlayActivity?
+
+    /// Task for delayed activity update
+    private var activityDelayTask: Task<Void, Never>?
+
     // MARK: - User Messages
 
     /// Add a user message (from ASR)
@@ -170,15 +192,54 @@ final class OverlayViewModel: ObservableObject {
 
     // MARK: - Activity
 
-    /// Update the current activity status
-    func setActivity(_ activity: OverlayActivity) {
-        self.activity = activity
+    /// Update the current activity status with minimum display duration for tool activities
+    func setActivity(_ newActivity: OverlayActivity) {
+        // Cancel any pending delayed update
+        self.activityDelayTask?.cancel()
+        self.activityDelayTask = nil
+        self.pendingActivity = nil
+
+        // If new activity is a tool operation, track start time and apply immediately
+        if newActivity.isToolOperation {
+            self.toolActivityStartTime = Date()
+            self.activity = newActivity
+            return
+        }
+
+        // If current activity is a tool operation, ensure minimum display duration
+        if self.activity.isToolOperation, let startTime = self.toolActivityStartTime {
+            let elapsed = Date().timeIntervalSince(startTime)
+            let remaining = self.toolActivityMinDuration - elapsed
+
+            if remaining > 0 {
+                // Delay the new activity
+                self.pendingActivity = newActivity
+                self.activityDelayTask = Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .seconds(remaining))
+                    guard let self = self, !Task.isCancelled else { return }
+                    if let pending = self.pendingActivity {
+                        self.toolActivityStartTime = nil
+                        self.pendingActivity = nil
+                        self.activity = pending
+                    }
+                }
+                return
+            }
+        }
+
+        // Apply immediately
+        self.toolActivityStartTime = nil
+        self.activity = newActivity
     }
 
     // MARK: - Reset
 
     /// Clear conversation for new session
     func reset() {
+        self.activityDelayTask?.cancel()
+        self.activityDelayTask = nil
+        self.pendingActivity = nil
+        self.toolActivityStartTime = nil
         self.messages.removeAll()
         self.currentProposal = nil
         self.mode = .hidden

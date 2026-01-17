@@ -34,7 +34,7 @@ final class OverlayViewsTests: XCTestCase {
         let userThinking = ChatBubbleView(
             text: "Hello",
             role: .user,
-            state: .thinking,
+            state: .thinking(nil),
             isPartial: true,
             reduceTransparency: true,
             reduceMotion: true
@@ -44,7 +44,7 @@ final class OverlayViewsTests: XCTestCase {
         let assistantThinking = ChatBubbleView(
             text: "Thinking",
             role: .assistant,
-            state: .thinking,
+            state: .thinking("Planning response"),
             isPartial: false,
             reduceTransparency: false,
             reduceMotion: false
