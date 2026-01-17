@@ -83,6 +83,9 @@ actor AgentLoop {
     /// Pending proposal awaiting user confirmation
     private var pendingProposal: PendingProposal?
     
+    /// Current activity state to prevent duplicate updates
+    private var currentActivity: AgentActivity?
+    
     // Dependencies (injectable for testing)
     private let structuredGenerator: StructuredGenerator
     private let toolHost: ToolHost
@@ -276,6 +279,7 @@ actor AgentLoop {
         let output = try await structuredGenerator.generate(
             messages: messages,
             responseTokenHandler: { token in
+                await self.notifyDelegateActivity(.composing)
                 await self.notifyDelegateToken(token)
             }
         )
@@ -318,6 +322,7 @@ actor AgentLoop {
                 output = try await structuredGenerator.generate(
                     messages: messages,
                     responseTokenHandler: { token in
+                        await self.notifyDelegateActivity(.composing)
                         await self.notifyDelegateToken(token)
                     }
                 )
@@ -417,6 +422,9 @@ actor AgentLoop {
     }
 
     private func notifyDelegateActivity(_ activity: AgentActivity) async {
+        if currentActivity == activity { return }
+        currentActivity = activity
+        
         await MainActor.run {
             self._delegate?.agentLoop(self, didUpdateActivity: activity)
         }
