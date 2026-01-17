@@ -74,11 +74,9 @@ struct ChatBubbleView: View {
         }
     }
 
-    /// Whether to show the copy button (only for non-empty text, not state-only bubbles)
+    /// Whether to show the copy button (only for non-empty text bubbles on hover)
     private var shouldShowCopyButton: Bool {
         guard let text = self.text, !text.isEmpty else { return false }
-        // Don't show copy button on state-only bubbles (thinking/tool states without text)
-        if self.state != nil && self.text == nil { return false }
         return self.isHovered
     }
 
