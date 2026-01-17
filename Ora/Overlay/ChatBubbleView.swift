@@ -5,7 +5,25 @@
 //  Liquid-glass chat bubbles for the overlay
 //
 
+import AppKit
 import SwiftUI
+
+// MARK: - Pasteboard Abstraction
+
+/// Protocol for pasteboard writing, enabling test injection
+protocol PasteboardWriting: Sendable {
+    @MainActor func setString(_ string: String)
+}
+
+/// Default implementation using the system pasteboard
+struct SystemPasteboard: PasteboardWriting {
+    @MainActor func setString(_ string: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(string, forType: .string)
+    }
+}
+
+// MARK: - Chat Bubble View
 
 struct ChatBubbleView: View {
     enum Role {
@@ -14,7 +32,7 @@ struct ChatBubbleView: View {
         case tool
     }
 
-    enum State: Equatable {
+    enum BubbleState: Equatable {
         /// Thinking/planning state with optional dynamic label
         case thinking(String?)
         /// Tool operation state with description
@@ -23,10 +41,14 @@ struct ChatBubbleView: View {
 
     let text: String?
     let role: Role
-    let state: State?
+    let state: BubbleState?
     let isPartial: Bool
     let reduceTransparency: Bool
     let reduceMotion: Bool
+    var pasteboard: PasteboardWriting = SystemPasteboard()
+
+    @State private var isHovered: Bool = false
+    @State private var isCopied: Bool = false
 
     private let maxBubbleWidth: CGFloat = 360
     private let bubbleInset: CGFloat = 24
@@ -35,10 +57,68 @@ struct ChatBubbleView: View {
         let alignment = self.role == .user ? BubbleAlignment.leading : BubbleAlignment.trailing
         return self.bubbleRow(alignment: alignment) {
             self.bubbleContent
+                .overlay(alignment: .topTrailing) {
+                    if self.shouldShowCopyButton {
+                        self.copyButton
+                    }
+                }
+        }
+        .onHover { hovering in
+            self.isHovered = hovering
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(self.accessibilityLabel)
         .accessibilityHint(self.accessibilityHint)
+        .accessibilityAction(named: "Copy") {
+            self.copyToClipboard()
+        }
+    }
+
+    /// Whether to show the copy button (only for non-empty text, not state-only bubbles)
+    private var shouldShowCopyButton: Bool {
+        guard let text = self.text, !text.isEmpty else { return false }
+        // Don't show copy button on state-only bubbles (thinking/tool states without text)
+        if self.state != nil && self.text == nil { return false }
+        return self.isHovered
+    }
+
+    @ViewBuilder
+    private var copyButton: some View {
+        Button {
+            self.copyToClipboard()
+        } label: {
+            Image(systemName: self.isCopied ? "checkmark" : "doc.on.doc")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(self.isCopied ? .green : .secondary)
+                .frame(width: 24, height: 24)
+                .background {
+                    if self.reduceTransparency {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color(nsColor: .controlBackgroundColor).opacity(0.9))
+                    } else {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .padding(6)
+        .transition(self.reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.8)))
+        .animation(self.reduceMotion ? nil : .easeOut(duration: 0.15), value: self.isHovered)
+        .accessibilityLabel(self.isCopied ? "Copied" : "Copy to clipboard")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    private func copyToClipboard() {
+        guard let text = self.text, !text.isEmpty else { return }
+        self.pasteboard.setString(text)
+        self.isCopied = true
+
+        // Reset copied state after delay
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1))
+            self.isCopied = false
+        }
     }
 
     @ViewBuilder
@@ -126,7 +206,7 @@ struct ChatBubbleView: View {
         return AnyShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
-    private func stateRow(_ state: State, alignRight: Bool) -> some View {
+    private func stateRow(_ state: BubbleState, alignRight: Bool) -> some View {
         let textFont: Font
         switch state {
         case .thinking:
@@ -185,6 +265,24 @@ struct ChatBubbleView: View {
         case .tool:
             return "Ora tool"
         }
+    }
+
+    // MARK: - Test Helpers
+
+    /// Whether the bubble has text content that can be copied
+    var hasCopyableContent: Bool {
+        guard let text = self.text, !text.isEmpty else { return false }
+        return true
+    }
+
+    /// Perform the copy action (for testing)
+    func performCopy() {
+        self.copyToClipboard()
+    }
+
+    /// Get the accessibility label for the copy button (for testing)
+    func copyButtonAccessibilityLabel(copied: Bool) -> String {
+        copied ? "Copied" : "Copy to clipboard"
     }
 }
 
