@@ -1,7 +1,7 @@
 # UX.02 - Overlay Bubble Copy Action
 
 **Epic:** UX
-**Status:** In Progress
+**Status:** Complete
 **Priority:** P2 (Medium)
 **Estimated Effort:** 1 day
 **Dependencies:** F.10
@@ -178,3 +178,13 @@ As a user, I want a quick way to copy text from the overlay so I can paste respo
 - [x] All P0 issues resolved
 - [x] All P1 issues resolved
 - [x] Ready for merge
+
+---
+
+## Completion Status
+
+- [x] Implementation complete
+- [x] Code review passed (2 iterations)
+- [x] PR merged: https://github.com/benedict2310/ora/pull/75
+- [x] Merged to main: c0440a65898a092de3da1617ba54f01fd177ae00
+- [x] Date: 2026-01-17
