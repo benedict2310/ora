@@ -44,7 +44,7 @@ final class OverlayViewsTests: XCTestCase {
         let assistantThinking = ChatBubbleView(
             text: "Thinking",
             role: .assistant,
-            state: .thinking("Planning response"),
+            state: .thinking("Thinking"),
             isPartial: false,
             reduceTransparency: false,
             reduceMotion: false

@@ -89,7 +89,7 @@ Dynamic agent states are shown inside chat bubbles, not in separate status areas
 ChatBubbleView(
     text: nil,
     role: .assistant,
-    state: .thinking("Planning response"),  // Dynamic label
+    state: .thinking("Thinking"),  // Dynamic label
     ...
 )
 
@@ -116,6 +116,11 @@ private func notifyDelegateActivity(_ activity: AgentActivity) async {
     await MainActor.run { ... }
 }
 ```
+
+### Tool Activity Reveal
+
+Tool call/result bubbles only appear if the tool activity persists beyond a short delay (200ms).
+This avoids "flash" bubbles for fast operations without delaying normal activity updates.
 
 ### Tool Label Mapping
 

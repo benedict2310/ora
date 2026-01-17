@@ -56,6 +56,8 @@ final class SimplePipelineController: ObservableObject {
     private var sentenceChunker: SentenceChunker?
     private var sentenceStreamContinuation: AsyncThrowingStream<String, Error>.Continuation?
     private var isStreamingResponse = false
+    // Keep TTS full-response while UI streams.
+    private let usesStreamingTTS = false
     
     /// The agent loop for processing requests
     private let agentLoop: AgentLoop
@@ -419,6 +421,9 @@ final class SimplePipelineController: ObservableObject {
         if self.isStreamingResponse {
             OverlayWindowController.shared.model.addAssistantMessage(text, isPartial: false)
             self.finishStreamingResponse()
+            if !self.usesStreamingTTS {
+                self.speakResponse(text)
+            }
             return
         }
         
@@ -529,6 +534,9 @@ final class SimplePipelineController: ObservableObject {
             // Check if streaming TTS already started (via delegate tokens)
             if self.isStreamingResponse {
                 self.finishStreamingResponse()
+                if !self.usesStreamingTTS {
+                    self.speakResponse(followUpText)
+                }
             } else {
                 self.speakResponse(followUpText)
             }
@@ -550,7 +558,7 @@ final class SimplePipelineController: ObservableObject {
         self.currentResponse += token
         OverlayWindowController.shared.model.addAssistantMessage(self.currentResponse, isPartial: true)
 
-        if var chunker = self.sentenceChunker {
+        if self.usesStreamingTTS, var chunker = self.sentenceChunker {
             let sentences = chunker.consume(token)
             self.sentenceChunker = chunker
             self.enqueueSentenceChunks(sentences)
@@ -563,6 +571,8 @@ final class SimplePipelineController: ObservableObject {
         self.isStreamingResponse = true
         self.transition(to: .responding)
         OverlayWindowController.shared.mode = .responding
+
+        guard self.usesStreamingTTS else { return }
 
         var continuation: AsyncThrowingStream<String, Error>.Continuation?
         let stream = AsyncThrowingStream<String, Error> { streamContinuation in
@@ -587,14 +597,19 @@ final class SimplePipelineController: ObservableObject {
         guard self.isStreamingResponse else { return }
         self.isStreamingResponse = false
 
-        if var chunker = self.sentenceChunker {
-            let remaining = chunker.finalize()
-            self.sentenceChunker = nil
-            self.enqueueSentenceChunks(remaining)
-        }
+        if self.usesStreamingTTS {
+            if var chunker = self.sentenceChunker {
+                let remaining = chunker.finalize()
+                self.sentenceChunker = nil
+                self.enqueueSentenceChunks(remaining)
+            }
 
-        self.sentenceStreamContinuation?.finish()
-        self.sentenceStreamContinuation = nil
+            self.sentenceStreamContinuation?.finish()
+            self.sentenceStreamContinuation = nil
+        } else {
+            self.sentenceChunker = nil
+            self.sentenceStreamContinuation = nil
+        }
     }
 
     private func resetStreamingResponse() {

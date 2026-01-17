@@ -69,7 +69,7 @@ As a power or accessibility user, I want the overlay to explain what Ora is doin
 ### 5.3 UI Mapping
 
 - Listening: "Listening"
-- Thinking/planning: "Planning response"
+- Thinking/planning: "Thinking"
 - Tool call: "Calling <Tool Name>"
 - Tool result: "Processing <Tool Name> result"
 - Responding: "Composing response"
@@ -107,14 +107,14 @@ Tool label mapping:
 ### Manual
 
 - Hotkey press shows "Listening".
-- Submit transcript shows "Planning response" then "Composing response".
+- Submit transcript shows "Thinking" then "Composing response".
 - Tool flow shows "Calling <Tool>" and "Processing <Tool> result".
 - Speaking shows "Speaking", then "Waiting for your reply".
 - Toggle Reduce Motion/Transparency.
 
 ## 8. Risks & Mitigations
 
-- Risk: Rapid updates cause flicker. Mitigation: debounce activity changes and keep labels short.
+- Risk: Rapid updates cause flicker. Mitigation: deduplicate activity changes and delay tool bubble reveal (~200ms).
 - Risk: Tool names are too technical. Mitigation: add a friendly mapping table.
 
 ## 9. Open Questions
@@ -149,6 +149,15 @@ Tool label mapping:
 - Tool labels are mapped from technical names (e.g., `calendar.query`) to user-friendly names (e.g., "Calendar")
 - Activity is cleared on overlay reset and cancel operations
 - `currentActivity` property deduplicates updates to prevent redundant UI refreshes
+
+### Follow-up Adjustments
+
+**Date:** 2026-01-17
+**Branch:** `fix/ux01-activity-display`
+
+- Restored the preferred "Thinking" label for planning states.
+- Delayed tool activity bubbles by ~200ms to avoid flicker on fast tool calls.
+- Kept UI token streaming while TTS waits for the full response.
 
 ---
 

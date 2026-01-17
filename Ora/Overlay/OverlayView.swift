@@ -188,7 +188,7 @@ struct OverlayView: View {
     private var thinkingBubbleLabel: String? {
         switch self.viewModel.activity {
         case .planning:
-            return "Planning response"
+            return nil
         case .composing:
             return "Composing response"
         case .none, .listening, .speaking, .waiting:

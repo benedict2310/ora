@@ -19,7 +19,7 @@ final class OverlayActivityTests: XCTestCase {
 
     func test_planning_displayLabel() {
         let activity = OverlayActivity.planning
-        XCTAssertEqual(activity.displayLabel, "Planning response")
+        XCTAssertEqual(activity.displayLabel, "Thinking")
     }
 
     func test_toolCall_displayLabel() {
@@ -137,7 +137,7 @@ final class OverlayActivityTests: XCTestCase {
     }
 
     @MainActor
-    func test_viewModel_setActivity_updatesActivity() {
+    func test_viewModel_setActivity_updatesActivity() async {
         let viewModel = OverlayViewModel()
 
         viewModel.setActivity(.listening)
@@ -147,7 +147,22 @@ final class OverlayActivityTests: XCTestCase {
         XCTAssertEqual(viewModel.activity, .planning)
 
         viewModel.setActivity(.toolCall(label: "Calendar"))
+        XCTAssertEqual(viewModel.activity, .planning)
+
+        try? await Task.sleep(for: .milliseconds(250))
         XCTAssertEqual(viewModel.activity, .toolCall(label: "Calendar"))
+    }
+
+    @MainActor
+    func test_viewModel_toolActivity_isSuppressedWhenShortLived() async {
+        let viewModel = OverlayViewModel()
+
+        viewModel.setActivity(.planning)
+        viewModel.setActivity(.toolCall(label: "Calendar"))
+        viewModel.setActivity(.composing)
+
+        try? await Task.sleep(for: .milliseconds(250))
+        XCTAssertEqual(viewModel.activity, .composing)
     }
 
     @MainActor
