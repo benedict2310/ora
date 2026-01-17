@@ -1,7 +1,7 @@
 # F.10 - Liquid Glass Overlay Refresh
 
 **Epic:** Foundations
-**Status:** Open
+**Status:** Complete
 **Priority:** P1 (High)
 **Estimated Effort:** 3-4 days
 **Dependencies:** F.07
