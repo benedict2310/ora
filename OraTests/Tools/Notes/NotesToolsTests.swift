@@ -1,0 +1,226 @@
+//
+//  NotesToolsTests.swift
+//  OraTests
+//
+//  Tests for Notes tools
+//
+
+import XCTest
+@testable import Ora
+
+final class NotesToolsTests: XCTestCase {
+
+    func test_createTool_schema() {
+        let tool = NotesCreateTool()
+        XCTAssertEqual(tool.name, "notes.create_note")
+        XCTAssertEqual(tool.kind, .mutate)
+        XCTAssertTrue(tool.requiresConfirmation)
+        XCTAssertEqual(tool.schema.requiredParameters, ["body"])
+        XCTAssertNotNil(tool.schema.parameters["body"])
+        XCTAssertNotNil(tool.schema.parameters["title"])
+        XCTAssertNotNil(tool.schema.parameters["folder"])
+        XCTAssertNotNil(tool.schema.parameters["account"])
+    }
+
+    func test_searchTool_schema() {
+        let tool = NotesSearchTool()
+        XCTAssertEqual(tool.name, "notes.search_notes")
+        XCTAssertEqual(tool.kind, .read)
+        XCTAssertFalse(tool.requiresConfirmation)
+        XCTAssertEqual(tool.schema.requiredParameters, ["query"])
+        XCTAssertNotNil(tool.schema.parameters["query"])
+        XCTAssertNotNil(tool.schema.parameters["limit"])
+    }
+
+    func test_openTool_schema() {
+        let tool = NotesOpenTool()
+        XCTAssertEqual(tool.name, "notes.open_note")
+        XCTAssertEqual(tool.kind, .read)
+        XCTAssertFalse(tool.requiresConfirmation)
+        XCTAssertEqual(tool.schema.requiredParameters, ["note_id"])
+        XCTAssertNotNil(tool.schema.parameters["note_id"])
+    }
+
+    func test_listFoldersTool_schema() {
+        let tool = NotesListFoldersTool()
+        XCTAssertEqual(tool.name, "notes.list_folders")
+        XCTAssertEqual(tool.kind, .read)
+        XCTAssertFalse(tool.requiresConfirmation)
+        XCTAssertTrue(tool.schema.requiredParameters.isEmpty)
+        XCTAssertNotNil(tool.schema.parameters["account"])
+    }
+
+    func test_notesToolsRegistered() async {
+        await ToolRegistry.shared.clear()
+        await ToolRegistry.shared.registerDefaultTools()
+
+        let create = await ToolRegistry.shared.tool(named: "notes.create_note")
+        let search = await ToolRegistry.shared.tool(named: "notes.search_notes")
+        let open = await ToolRegistry.shared.tool(named: "notes.open_note")
+        let list = await ToolRegistry.shared.tool(named: "notes.list_folders")
+
+        XCTAssertNotNil(create)
+        XCTAssertNotNil(search)
+        XCTAssertNotNil(open)
+        XCTAssertNotNil(list)
+    }
+
+    func test_createTool_validate_requiresBody() {
+        let tool = NotesCreateTool()
+        XCTAssertThrowsError(try tool.validate(args: [:])) { error in
+            XCTAssertTrue(error is ToolHostError)
+        }
+    }
+
+    func test_searchTool_validate_requiresQuery() {
+        let tool = NotesSearchTool()
+        XCTAssertThrowsError(try tool.validate(args: [:])) { error in
+            XCTAssertTrue(error is ToolHostError)
+        }
+    }
+
+    func test_openTool_validate_requiresNoteId() {
+        let tool = NotesOpenTool()
+        XCTAssertThrowsError(try tool.validate(args: [:])) { error in
+            XCTAssertTrue(error is ToolHostError)
+        }
+    }
+
+    func test_createNote_execute_parsesEnvelope() async throws {
+        let stdout = """
+        {"success": true, "data": {"note_id": "note-123", "title": "Greeting", "folder": "Work", "account": "iCloud"}}
+        """
+        let runner = MockAppleScriptRunner(result: .success(Self.makeResult(stdout: stdout)))
+        let tool = NotesCreateTool(runner: runner)
+
+        let result = try await tool.execute(args: [
+            "body": .string("Hello world"),
+            "title": .string("Greeting"),
+            "folder": .string("Work"),
+            "account": .string("iCloud")
+        ])
+
+        XCTAssertEqual(result.humanSummary, "Created note 'Greeting' in Work.")
+
+        if case .object(let dict) = result.json {
+            XCTAssertEqual(dict["note_id"]?.stringValue, "note-123")
+            XCTAssertEqual(dict["title"]?.stringValue, "Greeting")
+            XCTAssertEqual(dict["folder"]?.stringValue, "Work")
+            XCTAssertEqual(dict["account"]?.stringValue, "iCloud")
+        } else {
+            XCTFail("Expected object result")
+        }
+
+        let script = await runner.lastScript
+        XCTAssertTrue(script?.contains("set accountName to \"iCloud\"") ?? false)
+        XCTAssertTrue(script?.contains("set folderName to \"Work\"") ?? false)
+        XCTAssertTrue(script?.contains("make new note") ?? false)
+
+        let config = await runner.lastConfig
+        XCTAssertTrue(config?.expectsJSON ?? false)
+    }
+
+    func test_searchNotes_execute_returnsSummary() async throws {
+        let stdout = """
+        {"success": true, "data": [{"note_id": "n1", "title": "Alpha", "folder": "Notes", "account": "iCloud"}]}
+        """
+        let runner = MockAppleScriptRunner(result: .success(Self.makeResult(stdout: stdout)))
+        let tool = NotesSearchTool(runner: runner)
+
+        let result = try await tool.execute(args: [
+            "query": .string("Alpha"),
+            "limit": .number(5)
+        ])
+
+        XCTAssertEqual(result.humanSummary, "Found 1 note matching 'Alpha'.")
+
+        let script = await runner.lastScript
+        XCTAssertTrue(script?.contains("set queryText to \"Alpha\"") ?? false)
+        XCTAssertTrue(script?.contains("set limitCount to 5") ?? false)
+    }
+
+    func test_openNote_execute_returnsSummary() async throws {
+        let stdout = """
+        {"success": true, "data": {"note_id": "note-xyz", "title": "Meeting Notes"}}
+        """
+        let runner = MockAppleScriptRunner(result: .success(Self.makeResult(stdout: stdout)))
+        let tool = NotesOpenTool(runner: runner)
+
+        let result = try await tool.execute(args: [
+            "note_id": .string("note-xyz")
+        ])
+
+        XCTAssertEqual(result.humanSummary, "Opened note 'Meeting Notes'.")
+
+        let script = await runner.lastScript
+        XCTAssertTrue(script?.contains("set noteId to \"note-xyz\"") ?? false)
+    }
+
+    func test_listFolders_execute_usesAccountFilter() async throws {
+        let stdout = """
+        {"success": true, "data": [{"name": "Inbox", "account": "iCloud"}]}
+        """
+        let runner = MockAppleScriptRunner(result: .success(Self.makeResult(stdout: stdout)))
+        let tool = NotesListFoldersTool(runner: runner)
+
+        let result = try await tool.execute(args: [
+            "account": .string("iCloud")
+        ])
+
+        XCTAssertEqual(result.humanSummary, "Found 1 folder in iCloud.")
+
+        let script = await runner.lastScript
+        XCTAssertTrue(script?.contains("set accountName to \"iCloud\"") ?? false)
+    }
+
+    func test_parseEnvelope_mapsFolderNotFound() {
+        let stdout = """
+        {"success": false, "error": "Folder not found: Work", "code": 1002}
+        """
+        let result = Self.makeResult(stdout: stdout)
+
+        XCTAssertThrowsError(try NotesAppleScript.parseEnvelope(result)) { error in
+            XCTAssertEqual(error as? NotesToolError, .folderNotFound("Work"))
+        }
+    }
+
+    func test_parseEnvelope_mapsPermissionDenied() {
+        let stdout = """
+        {"success": false, "error": "Not authorized to send Apple events to Notes.", "code": -1743}
+        """
+        let result = Self.makeResult(stdout: stdout)
+
+        XCTAssertThrowsError(try NotesAppleScript.parseEnvelope(result)) { error in
+            XCTAssertEqual(error as? NotesToolError, .permissionDenied)
+        }
+    }
+
+    func test_permissionDeniedError_hasRemediation() {
+        let description = NotesToolError.permissionDenied.localizedDescription
+        XCTAssertTrue(description.contains("System Settings"))
+        XCTAssertTrue(description.contains("Automation"))
+    }
+
+    private static func makeResult(stdout: String) -> AppleScriptResult {
+        AppleScriptResult(stdout: stdout, json: nil, duration: 0)
+    }
+}
+
+// MARK: - Mock AppleScriptRunner
+
+actor MockAppleScriptRunner: AppleScriptRunning {
+    private(set) var lastScript: String?
+    private(set) var lastConfig: AppleScriptConfig?
+
+    private let result: Result<AppleScriptResult, Error>
+
+    init(result: Result<AppleScriptResult, Error>) {
+        self.result = result
+    }
+
+    func execute(script: String, config: AppleScriptConfig) async throws -> AppleScriptResult {
+        self.lastScript = script
+        self.lastConfig = config
+        return try result.get()
+    }
+}

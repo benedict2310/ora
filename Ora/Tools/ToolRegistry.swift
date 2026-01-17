@@ -70,6 +70,12 @@ actor ToolRegistry {
         // Contacts tools
         register(ContactsSearchTool())
 
+        // Notes tools
+        register(NotesCreateTool())
+        register(NotesSearchTool())
+        register(NotesOpenTool())
+        register(NotesListFoldersTool())
+
         // System tools
         register(SystemOpenAppTool())
         register(SystemOpenURLTool())

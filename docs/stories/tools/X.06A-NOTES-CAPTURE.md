@@ -4,7 +4,7 @@
 **Status:** Not Started
 **Priority:** P1 (Important)
 **Estimated Effort:** 1–2 days
-**Dependencies:** X.0A, X.05
+**Dependencies:** X.00, X.05
 **Target:** macOS 26 (Tahoe)
 **Design Reference:** None
 
@@ -36,7 +36,7 @@ As a user, I want to create and find notes via voice command so that I can captu
 ## 4. Architecture Alignment
 
 - **Component:** `Ora/Tools/Notes`
-- **Foundation:** Uses `AppleScriptRunner` (X.0A).
+- **Foundation:** Uses `AppleScriptRunner` (X.00).
 - **Permissions:** Must handle `permission_denied` gracefully.
 
 ## 5. Implementation Plan (Draft)
@@ -44,6 +44,7 @@ As a user, I want to create and find notes via voice command so that I can captu
 ### 5.1 Files to Create
 
 - `Ora/Tools/Notes/NotesToolError.swift`
+- `Ora/Tools/Notes/NotesAppleScript.swift`
 - `Ora/Tools/Notes/NotesCreateTool.swift`
 - `Ora/Tools/Notes/NotesSearchTool.swift`
 - `Ora/Tools/Notes/NotesOpenTool.swift`
@@ -52,6 +53,7 @@ As a user, I want to create and find notes via voice command so that I can captu
 ### 5.2 Files to Modify
 
 - `Ora/Tools/ToolRegistry.swift`
+- `Ora/Tools/Automation/AppleScriptRunner.swift`
 
 ### 5.3 Tests to Add
 
@@ -63,12 +65,12 @@ As a user, I want to create and find notes via voice command so that I can captu
 
 ## 6. Acceptance Criteria
 
-- [ ] AC-1: `notes.create_note` creates a note in the default folder.
-- [ ] AC-2: `notes.create_note` respects the specified folder (if it exists).
-- [ ] AC-3: `notes.search_notes` returns top results with stable IDs, titles, and folder names.
-- [ ] AC-4: `notes.open_note` opens the correct note by ID.
-- [ ] AC-5: `notes.list_folders` returns available folders.
-- [ ] AC-6: Permission denied errors return actionable remediation instructions.
+- [x] AC-1: `notes.create_note` creates a note in the default folder. - ✅ Verified in `Ora/Tools/Notes/NotesCreateTool.swift`.
+- [x] AC-2: `notes.create_note` respects the specified folder (if it exists). - ✅ Verified in `Ora/Tools/Notes/NotesAppleScript.swift`.
+- [x] AC-3: `notes.search_notes` returns top results with stable IDs, titles, and folder names. - ✅ Verified in `Ora/Tools/Notes/NotesSearchTool.swift` and `OraTests/Tools/Notes/NotesToolsTests.swift`.
+- [x] AC-4: `notes.open_note` opens the correct note by ID. - ✅ Verified in `Ora/Tools/Notes/NotesOpenTool.swift` and `OraTests/Tools/Notes/NotesToolsTests.swift`.
+- [x] AC-5: `notes.list_folders` returns available folders. - ✅ Verified in `Ora/Tools/Notes/NotesListFoldersTool.swift`.
+- [x] AC-6: Permission denied errors return actionable remediation instructions. - ✅ Verified in `Ora/Tools/Notes/NotesToolError.swift` and `OraTests/Tools/Notes/NotesToolsTests.swift`.
 
 ## 7. Verification Plan
 
