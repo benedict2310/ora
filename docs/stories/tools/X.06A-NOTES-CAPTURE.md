@@ -101,7 +101,7 @@ As a user, I want to create and find notes via voice command so that I can captu
 ## Implementation Summary
 **Date:** 2026-01-17
 **Branch:** `feat/X.06A-notes-capture`
-**Commits:** 2
+**Commits:** 3
 
 ### Files Changed
 - `Ora/Tools/Automation/AppleScriptRunner.swift` - Added AppleScript runner protocol for mocking.
@@ -112,6 +112,7 @@ As a user, I want to create and find notes via voice command so that I can captu
 - `Ora/Tools/Notes/NotesOpenTool.swift` - Implemented `notes.open_note`.
 - `Ora/Tools/Notes/NotesListFoldersTool.swift` - Implemented `notes.list_folders`.
 - `Ora/Tools/ToolRegistry.swift` - Registered Notes tools.
+- `Ora/Resources/system-prompt.txt` - Documented Notes tool usage and open_note lookup.
 - `OraTests/Tools/Notes/NotesToolsTests.swift` - Added Notes tool tests with mock runner.
 - `OraTests/Tools/Calendar/CalendarToolsTests.swift` - Updated default tool count.
 - `OraTests/Tools/Reminders/RemindersToolsTests.swift` - Updated default tool count.
