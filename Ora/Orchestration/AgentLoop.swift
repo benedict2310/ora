@@ -9,6 +9,20 @@
 import Foundation
 import os
 
+/// Agent activity for transparency status updates
+enum AgentActivity: Equatable, Sendable {
+    /// Planning/reasoning before tool calls or response
+    case planning
+    /// About to call a tool
+    case toolCall(name: String)
+    /// Processing tool result
+    case toolResult(name: String)
+    /// Generating response text
+    case composing
+    /// Waiting for user follow-up
+    case waiting
+}
+
 /// Result of an agent turn
 enum AgentResult: Sendable {
     /// Direct response text
@@ -28,6 +42,7 @@ protocol AgentLoopDelegate: AnyObject, Sendable {
     func agentLoop(_ loop: AgentLoop, didProduceToken token: String)
     func agentLoop(_ loop: AgentLoop, didRequestConfirmation proposal: ToolProposal)
     func agentLoop(_ loop: AgentLoop, didExecuteTool name: String, result: String)
+    func agentLoop(_ loop: AgentLoop, didUpdateActivity activity: AgentActivity)
 }
 
 /// Pending proposal awaiting user confirmation
@@ -213,7 +228,10 @@ actor AgentLoop {
         args: [String: JSONValue]
     ) async throws -> ToolResult {
         logger.info("Executing confirmed tool: \(tool) with args: \(args.keys.joined(separator: ", "))")
-        
+
+        // Emit toolCall activity before execution
+        await notifyDelegateActivity(.toolCall(name: tool))
+
         do {
             let result = try await toolHost.execute(
                 toolName: tool,
@@ -221,16 +239,22 @@ actor AgentLoop {
                 confirmed: true,
                 sessionID: currentSessionID
             )
-            
+
+            // Emit toolResult activity after execution
+            await notifyDelegateActivity(.toolResult(name: tool))
+
             // Add to conversation context
             let resultText = "Tool \(tool) executed: \(result.humanSummary)"
             await conversationManager.addToolResult(resultText)
-            
+
             await notifyDelegateToolExecuted(name: tool, result: result.humanSummary)
-            
+
             logger.info("Tool \(tool) executed successfully: \(result.humanSummary)")
             return result
         } catch {
+            // Emit toolResult even on failure
+            await notifyDelegateActivity(.toolResult(name: tool))
+
             logger.error("Tool \(tool) execution failed: \(error.localizedDescription)")
             throw error
         }
@@ -244,7 +268,10 @@ actor AgentLoop {
     /// - Returns: The follow-up response text
     func generateFollowUp() async throws -> String {
         logger.info("Generating follow-up response")
-        
+
+        // Emit composing activity when starting to generate
+        await notifyDelegateActivity(.composing)
+
         let messages = await conversationManager.getMessagesForLLM()
         let output = try await structuredGenerator.generate(
             messages: messages,
@@ -275,13 +302,16 @@ actor AgentLoop {
     private func runLoop() async -> AgentResult {
         var steps = 0
         var toolCalls = 0
-        
+
         while steps < maxStepsPerTurn {
             steps += 1
             logger.debug("Agent loop step \(steps)/\(self.maxStepsPerTurn)")
-            
+
+            // Emit planning activity before each generation step
+            await notifyDelegateActivity(.planning)
+
             let messages = await conversationManager.getMessagesForLLM()
-            
+
             // Generate structured response
             let output: LLMOutput
             do {
@@ -295,10 +325,12 @@ actor AgentLoop {
                 logger.error("Generation failed: \(error.localizedDescription)")
                 return .error("I had trouble understanding that. Could you try again?")
             }
-            
+
             switch output {
             case .response(let text):
                 // Direct response - we're done
+                // Emit composing activity before returning response
+                await notifyDelegateActivity(.composing)
                 logger.info("Agent produced response: \(text.prefix(50))...")
                 await conversationManager.addAssistantMessage(text)
                 return .response(text: text)
@@ -310,9 +342,12 @@ actor AgentLoop {
                     return .error("I've reached my limit for this request. Please try a simpler question.")
                 }
                 toolCalls += 1
-                
+
                 logger.info("Executing tool: \(tool)")
-                
+
+                // Emit toolCall activity before execution
+                await notifyDelegateActivity(.toolCall(name: tool))
+
                 do {
                     let result = try await toolHost.execute(
                         toolName: tool,
@@ -320,7 +355,10 @@ actor AgentLoop {
                         confirmed: true,  // Read tools don't need confirmation
                         sessionID: currentSessionID
                     )
-                    
+
+                    // Emit toolResult activity after execution
+                    await notifyDelegateActivity(.toolResult(name: tool))
+
                     await notifyDelegateToolExecuted(name: tool, result: result.humanSummary)
 
                     // Add result to context for next iteration
@@ -328,14 +366,17 @@ actor AgentLoop {
                     let jsonString = result.json.compactJSON
                     let resultText = "Tool \(tool) returned: \(jsonString)"
                     await conversationManager.addToolResult(resultText)
-                    
+
                 } catch {
+                    // Emit toolResult even on failure
+                    await notifyDelegateActivity(.toolResult(name: tool))
+
                     // Tool failed, add error to context and continue
                     let errorText = "Tool \(tool) failed: \(error.localizedDescription)"
                     logger.warning("Tool failed: \(errorText)")
                     await conversationManager.addToolResult(errorText)
                 }
-                
+
                 // Continue loop for next step
                 continue
                 
@@ -372,6 +413,12 @@ actor AgentLoop {
     private func notifyDelegateToolExecuted(name: String, result: String) async {
         await MainActor.run {
             self._delegate?.agentLoop(self, didExecuteTool: name, result: result)
+        }
+    }
+
+    private func notifyDelegateActivity(_ activity: AgentActivity) async {
+        await MainActor.run {
+            self._delegate?.agentLoop(self, didUpdateActivity: activity)
         }
     }
 }

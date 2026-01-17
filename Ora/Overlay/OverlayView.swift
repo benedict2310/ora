@@ -134,13 +134,13 @@ struct OverlayView: View {
         case .listening:
             return .active(transcript: self.currentPartialTranscript)
         case .awaitingFollowUp:
-            return .idle(label: "Press Enter to reply")
+            return .idle(label: self.activityLabelOr("Press Enter to reply"))
         case .thinking:
-            return .idle(label: "Thinking")
+            return .idle(label: self.activityLabelOr("Thinking"))
         case .responding:
-            return .idle(label: "Responding")
+            return .idle(label: self.activityLabelOr("Responding"))
         case .executing:
-            return .idle(label: "Executing")
+            return .idle(label: self.activityLabelOr("Executing"))
         case .proposing:
             return .idle(label: "Confirm action")
         case .completed:
@@ -150,6 +150,12 @@ struct OverlayView: View {
         case .hidden:
             return .idle(label: "Listening")
         }
+    }
+
+    /// Returns the activity display label if set, otherwise the fallback
+    private func activityLabelOr(_ fallback: String) -> String {
+        let label = self.viewModel.activity.displayLabel
+        return label.isEmpty ? fallback : label
     }
 
     private var currentPartialTranscript: String? {

@@ -157,9 +157,10 @@ final class SimplePipelineController: ObservableObject {
         OverlayWindowController.shared.model.reset()
         
         self.transition(to: .listening)
-        
-        // Show overlay in listening mode
+
+        // Show overlay in listening mode with activity
         OverlayWindowController.shared.mode = .listening
+        self.setOverlayActivity(.listening)
         OverlayWindowController.shared.show()
         
         // Start the session task
@@ -198,9 +199,10 @@ final class SimplePipelineController: ObservableObject {
         }
         
         self.logger.info("Starting follow-up")
-        
+
         self.transition(to: .listening)
         OverlayWindowController.shared.mode = .listening
+        self.setOverlayActivity(.listening)
         
         // Reset current transcript for new turn
         self.currentTranscript = ""
@@ -245,9 +247,10 @@ final class SimplePipelineController: ObservableObject {
         }
 
         self.transition(to: .idle)
+        self.setOverlayActivity(.none)
         OverlayWindowController.shared.hide(animated: true)
     }
-    
+
     // MARK: - Private - Silence Detection
 
     /// Set up silence detection for conversation mode
@@ -455,9 +458,10 @@ final class SimplePipelineController: ObservableObject {
             guard !Task.isCancelled else { return }
             self.transition(to: .awaitingFollowUp)
             OverlayWindowController.shared.mode = .awaitingFollowUp
+            self.setOverlayActivity(.waiting)
         }
     }
-    
+
     // MARK: - Private - Proposal Handling
     
     private func handleProposalConfirmed() {
@@ -474,15 +478,16 @@ final class SimplePipelineController: ObservableObject {
     
     private func handleProposalDenied() {
         self.logger.info("Proposal denied by user")
-        
+
         // Clear the pending proposal
         Task {
             await self.agentLoop.clearPendingProposal()
         }
-        
+
         // Return to awaiting follow-up without executing (AC-6)
         self.transition(to: .awaitingFollowUp)
         OverlayWindowController.shared.mode = .awaitingFollowUp
+        self.setOverlayActivity(.waiting)
     }
     
     private func executeConfirmedProposal() async {
@@ -603,6 +608,7 @@ final class SimplePipelineController: ObservableObject {
 
     private func startStreamingSpeech(sentenceStream: AsyncThrowingStream<String, Error>) {
         self.transition(to: .speaking)
+        self.setOverlayActivity(.speaking)
 
         self.ttsTask = Task {
             do {
@@ -621,6 +627,7 @@ final class SimplePipelineController: ObservableObject {
     
     private func speakResponse(_ text: String) {
         self.transition(to: .speaking)
+        self.setOverlayActivity(.speaking)
 
         self.ttsTask = Task {
             do {
@@ -651,6 +658,7 @@ final class SimplePipelineController: ObservableObject {
         // Transition to awaiting follow-up state
         self.transition(to: .awaitingFollowUp)
         OverlayWindowController.shared.mode = .awaitingFollowUp
+        self.setOverlayActivity(.waiting)
 
         // Handle Conversation Mode: auto-listen after response (AC-7, AC-11)
         if self.isConversationModeEnabled {
@@ -693,10 +701,11 @@ final class SimplePipelineController: ObservableObject {
             try? await Task.sleep(for: .seconds(self.errorRecoveryDelay))
             guard !Task.isCancelled else { return }
             self.transition(to: .idle)
+            self.setOverlayActivity(.none)
             OverlayWindowController.shared.hide(animated: true)
         }
     }
-    
+
     // MARK: - Private - State Management
     
     private func transition(to newState: PipelineState) {
@@ -773,4 +782,37 @@ extension SimplePipelineController: AgentLoopDelegate {
     func agentLoop(_ loop: AgentLoop, didRequestConfirmation proposal: ToolProposal) {}
 
     func agentLoop(_ loop: AgentLoop, didExecuteTool name: String, result: String) {}
+
+    func agentLoop(_ loop: AgentLoop, didUpdateActivity activity: AgentActivity) {
+        self.updateOverlayActivity(from: activity)
+    }
+}
+
+// MARK: - Activity Updates
+
+extension SimplePipelineController {
+    /// Map AgentActivity to OverlayActivity and update the overlay
+    private func updateOverlayActivity(from agentActivity: AgentActivity) {
+        let overlayActivity: OverlayActivity
+        switch agentActivity {
+        case .planning:
+            overlayActivity = .planning
+        case .toolCall(let name):
+            let label = OverlayActivity.toolLabel(for: name)
+            overlayActivity = .toolCall(label: label)
+        case .toolResult(let name):
+            let label = OverlayActivity.toolLabel(for: name)
+            overlayActivity = .toolResult(label: label)
+        case .composing:
+            overlayActivity = .composing
+        case .waiting:
+            overlayActivity = .waiting
+        }
+        OverlayWindowController.shared.model.setActivity(overlayActivity)
+    }
+
+    /// Set the overlay activity directly
+    func setOverlayActivity(_ activity: OverlayActivity) {
+        OverlayWindowController.shared.model.setActivity(activity)
+    }
 }
