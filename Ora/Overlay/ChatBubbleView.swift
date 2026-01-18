@@ -49,6 +49,7 @@ struct ChatBubbleView: View {
 
     @State private var isHovered: Bool = false
     @State private var isCopied: Bool = false
+    @State private var hoverHideTask: Task<Void, Never>?
 
     private let maxBubbleWidth: CGFloat = 360
     private let bubbleInset: CGFloat = 24
@@ -57,9 +58,42 @@ struct ChatBubbleView: View {
         let alignment = self.role == .user ? BubbleAlignment.leading : BubbleAlignment.trailing
         return self.bubbleRow(alignment: alignment) {
             self.bubbleContent
+                // Position copy button outside bubble bounds
+                .overlay(alignment: self.role == .user ? .topTrailing : .topLeading) {
+                    if self.shouldShowCopyButton {
+                        self.copyButton
+                            .offset(x: self.role == .user ? 32 : -32, y: 6)
+                    }
+                }
         }
         .onHover { hovering in
-            self.isHovered = hovering
+            // Cancel any pending hide task
+            self.hoverHideTask?.cancel()
+            self.hoverHideTask = nil
+
+            if hovering {
+                // Show immediately on enter
+                if self.reduceMotion {
+                    self.isHovered = true
+                } else {
+                    withAnimation(.bouncy(duration: 0.3)) {
+                        self.isHovered = true
+                    }
+                }
+            } else {
+                // Delay hiding to prevent flickering at edges
+                self.hoverHideTask = Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(150))
+                    guard !Task.isCancelled else { return }
+                    if self.reduceMotion {
+                        self.isHovered = false
+                    } else {
+                        withAnimation(.bouncy(duration: 0.3)) {
+                            self.isHovered = false
+                        }
+                    }
+                }
+            }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(self.accessibilityLabel)
@@ -84,11 +118,8 @@ struct ChatBubbleView: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(self.isCopied ? .green : .secondary)
         }
-        .buttonStyle(.glass)  // Use native glass button style to avoid glass-on-glass conflict
+        .buttonStyle(.glass)
         .controlSize(.small)
-        .padding(6)
-        .transition(self.reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.8)))
-        .animation(self.reduceMotion ? nil : .easeOut(duration: 0.15), value: self.isHovered)
         .accessibilityLabel(self.isCopied ? "Copied" : "Copy to clipboard")
         .accessibilityAddTraits(.isButton)
     }
@@ -123,30 +154,30 @@ struct ChatBubbleView: View {
         .padding(.vertical, OverlayLayout.bubblePaddingVertical)
         .opacity(self.isPartial ? 0.8 : 1.0)
 
-        // Use ZStack to ensure copy button renders on top of glass effect
-        ZStack(alignment: .topTrailing) {
-            if self.reduceTransparency {
-                base
-                    .userChromaOverlay(
-                        enabled: self.role == .user,
-                        shape: shape
-                    )
-                    .background(shape.fill(self.baseFillColor(for: self.role)))
-                    .overlay(shape.stroke(Color.white.opacity(0.08), lineWidth: 0.6))
-            } else {
-                // glassEffect must be LAST to avoid black outline artifacts
-                base
-                    .userChromaOverlay(
-                        enabled: self.role == .user,
-                        shape: shape
-                    )
-                    .glassEffect(self.glassStyle(for: self.role), in: shape)
-            }
-
-            // Copy button explicitly layered on top
-            if self.shouldShowCopyButton {
-                self.copyButton
-            }
+        // Original structure: glass effect applied directly to base, no extra wrappers
+        if self.reduceTransparency {
+            base
+                .userChromaOverlay(
+                    enabled: self.role == .user,
+                    shape: shape
+                )
+                .background(shape.fill(self.baseFillColor(for: self.role)))
+                .overlay(shape.stroke(Color.white.opacity(0.08), lineWidth: 0.6))
+        } else {
+            base
+                // User bubbles get blue chroma overlay, assistant/tool get neutral background
+                // Both provide content for glass to sample for text color adaptation
+                .userChromaOverlay(
+                    enabled: self.role == .user,
+                    shape: shape
+                )
+                .neutralGlassBackground(
+                    enabled: self.role != .user,
+                    shape: shape
+                )
+                .glassEffect(self.glassStyle(for: self.role), in: shape)
+                // Force compositing to ensure glass samples background correctly on initial render
+                .compositingGroup()
         }
     }
 
@@ -169,7 +200,8 @@ struct ChatBubbleView: View {
 
     private func glassStyle(for role: Role) -> Glass {
         // Use .regular variant for full background adaptivity (light/dark)
-        // Tint opacities lowered to reduce black outline artifacts at glass boundaries
+        // Text adaptation works because user bubbles have chroma overlay and
+        // assistant/tool bubbles have neutral background for glass to sample
         switch role {
         case .user:
             return .regular.tint(Color(red: 0.12, green: 0.55, blue: 0.95).opacity(0.25))
@@ -307,6 +339,19 @@ private extension View {
                 )
                 .overlay(
                     shape.stroke(Color(red: 0.48, green: 0.78, blue: 1.0).opacity(0.35), lineWidth: 0.6)
+                )
+        } else {
+            self
+        }
+    }
+
+    /// Adds a subtle neutral background for glass to sample, enabling text color adaptation
+    @ViewBuilder
+    func neutralGlassBackground(enabled: Bool, shape: AnyShape) -> some View {
+        if enabled {
+            self
+                .background(
+                    shape.fill(Color.gray.opacity(0.15))
                 )
         } else {
             self

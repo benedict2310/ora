@@ -341,3 +341,133 @@ Button { ... } label: {
 ```
 
 **Key Learning:** When placing interactive elements on top of views with `.glassEffect()`, use `.buttonStyle(.glass)` instead of manually applying material backgrounds. This ensures proper integration with the glass rendering hierarchy.
+
+---
+
+## Follow-Up Issue: Copy Button Positioning & Glass Color Adaptation
+
+**Reported:** 2026-01-18
+**Status:** 🔴 In Progress - Needs Investigation
+
+### Problem Statement
+
+Two issues with the current implementation:
+
+1. **Copy button overlays text** - The copy icon appears in the top-right corner of the bubble, overlapping with the text content
+2. **Glass effect doesn't adapt text color on light backgrounds** - Text remains white/light even when the overlay is positioned over light backgrounds, making it unreadable
+
+### Screenshot Evidence
+
+On light backgrounds, assistant bubble text is white and nearly invisible. The "Listening" pill (VoiceInputControlView) correctly shows dark text, but ChatBubbleView bubbles do not adapt.
+
+### Investigation Summary
+
+#### What Was Tried
+
+1. **Side-floating copy button with HStack** - Moved copy button outside bubble using HStack layout
+   - Result: Broke glass background sampling (white tint on dark background)
+
+2. **GlassEffectContainer with morphing** - Wrapped bubble+button in GlassEffectContainer with glassEffectID
+   - Result: Broke glass background sampling completely
+
+3. **Overlay positioning with offset** - Used `.overlay()` with `.offset()` to position button outside bubble
+   - Result: Copy button positioning works, but color adaptation still broken
+
+4. **Removed explicit foregroundStyle** - Tried removing `.foregroundStyle(.primary)` to let glass handle vibrancy
+   - Result: No improvement
+
+5. **ZStack wrapper** - Wrapped if/else branches in ZStack for consistent hover detection
+   - Result: No improvement on color adaptation
+
+6. **Reverted to pre-UX.02 code** - Checked out original ChatBubbleView from c246f22 (before copy feature)
+   - Result: **SAME ISSUE EXISTS** - This proves the color adaptation problem is NOT caused by UX.02 changes
+
+#### Key Discovery
+
+The glass effect text color adaptation issue **predates UX.02**. It exists in the original ChatBubbleView implementation. The issue was likely not noticed before because:
+- Testing may have been done primarily on dark backgrounds
+- The VoiceInputControlView uses a heavy `.tint(.black.opacity(0.9))` which forces dark appearance (doesn't actually adapt)
+
+#### Technical Analysis
+
+**VoiceInputControlView (works visually but doesn't adapt):**
+```swift
+.foregroundStyle(Color.white.opacity(0.95))  // Explicit white
+.glassEffect(.regular.tint(.black.opacity(0.9)), in: shape)  // Heavy dark tint
+```
+This FORCES a dark appearance - it's not actually adapting to backgrounds.
+
+**ChatBubbleView (broken):**
+```swift
+.foregroundStyle(.primary)  // Should adapt to color scheme
+.glassEffect(.regular.tint(.white.opacity(0.03)), in: shape)  // Light tint
+```
+Uses `.primary` which should adapt, but doesn't work in transparent NSPanel context.
+
+#### Research Findings
+
+From Apple/GitHub Liquid Glass documentation:
+- "Glass automatically adapts between light/dark based on background"
+- "Text on glass automatically receives vibrant treatment"
+- "Hard-coded color schemes" is listed as an anti-pattern
+
+The glass effect SHOULD handle this automatically, but it appears to not work correctly when:
+- The view is in a transparent NSPanel (`backgroundColor = .clear`, `isOpaque = false`)
+- The panel floats over arbitrary desktop content
+
+#### Hypotheses for Root Cause
+
+1. **Transparent window sampling issue** - Glass effect may not properly sample through transparent NSPanel to detect background luminance
+2. **Missing appearance propagation** - NSPanel may need explicit appearance configuration
+3. **GlassEffectContainer context** - The parent OverlayView uses GlassEffectContainer which may affect child glass effects
+4. **macOS-specific limitation** - This may be a known limitation for transparent floating panels
+
+### Current State of Code
+
+The current ChatBubbleView in the working tree has:
+- Copy button positioned outside bubble using `.overlay()` with `.offset()`
+- Hover detection with debounce (150ms delay before hiding)
+- Animation using `.bouncy(duration: 0.3)`
+- Original glass effect structure (no ZStack/Group wrappers)
+
+```swift
+// Current copy button positioning
+.overlay(alignment: self.role == .user ? .topTrailing : .topLeading) {
+    if self.shouldShowCopyButton {
+        self.copyButton
+            .offset(x: self.role == .user ? 32 : -32, y: 6)
+    }
+}
+```
+
+### Resolution
+
+**Fixed:** 2026-01-18
+
+**Root Cause:** Two issues combined:
+1. **Missing content for glass sampling:** User bubbles had `userChromaOverlay` (blue fill) applied BEFORE the glass effect, giving the glass something to sample. Assistant/tool bubbles had no such content layer - the glass was sampling nothing (transparent window over desktop).
+2. **Timing issue:** Even with content to sample, the glass effect wasn't sampling on initial render - only after scrolling triggered a redraw.
+
+**Solution Applied:**
+1. Added `neutralGlassBackground` modifier for assistant/tool bubbles - a subtle gray background (`Color.gray.opacity(0.15)`) applied before the glass effect, similar to how user bubbles have blue chroma overlay.
+2. Added `.compositingGroup()` after the glass effect to force proper compositing and ensure the glass samples correctly on initial render.
+
+```swift
+// Assistant/tool bubbles now have:
+base
+    .userChromaOverlay(enabled: self.role == .user, shape: shape)
+    .neutralGlassBackground(enabled: self.role != .user, shape: shape)  // NEW
+    .glassEffect(self.glassStyle(for: self.role), in: shape)
+    .compositingGroup()  // NEW - forces correct sampling on initial render
+```
+
+**Key Learning:** Glass effects in transparent NSPanel windows need:
+1. **Content to sample** - Either a tinted background or overlay BEFORE the glass effect
+2. **Forced compositing** - `.compositingGroup()` ensures proper sampling timing
+
+### Resources
+
+- [Liquid Glass Resources](./liquid-glass-resources.md)
+- [conorluddy/LiquidGlassReference](https://github.com/conorluddy/LiquidGlassReference)
+- Apple WWDC 2025 Session 219: Meet Liquid Glass
+- [Glass Effect Documentation](https://developer.apple.com/documentation/swiftui/view/glasseffect(_:in:))

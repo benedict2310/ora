@@ -39,7 +39,26 @@ As a user, I want the overlay to feel well-spaced and visually consistent so it 
 - All UI changes remain inside `Ora/Overlay`.
 - Overlay positioning stays top-center with a small margin.
 - Reduce Motion and Reduce Transparency are respected at every layer.
- - Avoid regressions in focus recovery; prefer SwiftUI content transitions over panel alpha animation.
+- Avoid regressions in focus recovery; prefer SwiftUI content transitions over panel alpha animation.
+
+### CRITICAL: Glass Text Color Adaptation (Do Not Regress)
+
+When modifying `ChatBubbleView.swift`, preserve these patterns for proper text color adaptation on light backgrounds:
+
+1. **Content layer before glass effect:** Assistant/tool bubbles need `neutralGlassBackground` applied BEFORE `.glassEffect()` to give the glass something to sample. User bubbles use `userChromaOverlay` for this purpose.
+
+2. **Compositing group after glass:** `.compositingGroup()` must be applied AFTER `.glassEffect()` to force correct background sampling on initial render.
+
+```swift
+// CORRECT pattern - do not change this structure:
+base
+    .userChromaOverlay(enabled: self.role == .user, shape: shape)
+    .neutralGlassBackground(enabled: self.role != .user, shape: shape)
+    .glassEffect(self.glassStyle(for: self.role), in: shape)
+    .compositingGroup()
+```
+
+See UX.02 "Follow-Up Issue" section for full context on this fix.
 
 ## 5. Implementation Plan
 
@@ -94,3 +113,124 @@ As a user, I want the overlay to feel well-spaced and visually consistent so it 
 ## 9. Open Questions
 
 - Should the overlay height adapt to content (up to a max) or remain fixed?
+
+---
+
+## 10. Liquid Glass Enhancement Techniques
+
+> **Reference:** See `docs/stories/ux/liquid-glass-resources.md` for full details.
+
+The following advanced techniques from GitHub research can enhance the visual polish:
+
+### 10.1 Private Glass Variants (Experimental)
+
+The [JulianWindeck/liquid-glass](https://github.com/JulianWindeck/liquid-glass) repo reveals 20 hidden `NSGlassEffectView` variants (0-19) accessible via runtime. Variant **v11** is reportedly "visually super pleasing" for general use.
+
+**Potential use:** Experiment with different variants to find the best aesthetic for the overlay panel.
+
+```swift
+// Example: Access private variants via NSViewRepresentable wrapper
+LiquidGlassBackground(variant: .v11, cornerRadius: 12) {
+    YourOverlayContent()
+}
+```
+
+### 10.2 Control Center Style Luminosity
+
+For enhanced edge luminosity similar to macOS Control Center tiles:
+
+```swift
+// Add angular gradient stroke for edge luminosity effect
+.overlay(
+    RoundedRectangle(cornerRadius: 18)
+        .stroke(
+            AngularGradient(
+                gradient: Gradient(colors: [.white, .white.opacity(0.2), .white, .white.opacity(0.2), .white]),
+                center: .center
+            ),
+            lineWidth: 0.6
+        )
+        .rotationEffect(.degrees(45))
+        .opacity(0.7)
+)
+.saturation(1.5)
+.brightness(0.05)
+```
+
+### 10.3 Performance Optimization with GlassEffectContainer
+
+Per [JuniperPhoton's research](https://juniperphoton.substack.com/p/adopting-liquid-glass-experiences), each `CABackdropLayer` requires **3 offscreen textures** for rendering. Using `GlassEffectContainer` reduces the number of backdrop layers:
+
+```swift
+// ✅ Single CABackdropLayer for all elements
+GlassEffectContainer {
+    VStack {
+        Button("A") { }.glassEffect()
+        Button("B") { }.glassEffect()
+    }
+}
+
+// ❌ Multiple CABackdropLayers (worse performance)
+VStack {
+    Button("A") { }.glassEffect()
+    Button("B") { }.glassEffect()
+}
+```
+
+### 10.4 Fix Hit-Testing for Glass Buttons
+
+Glass effect buttons may have incorrect hit-testing areas:
+
+```swift
+Button { action() } label: {
+    Image(systemName: "ellipsis")
+}
+.glassEffect(.regular, in: .circle)
+.contentShape(.circle)  // Fix: Explicitly define hit area
+```
+
+### 10.5 Morphing Transition Control
+
+For show/hide animations, control whether glass morphs or fades:
+
+```swift
+// Morphing (default) - glass shapes blend together
+.glassEffectTransition(.matchedGeometry)
+
+// Materialize - fade in/out instead of morph
+.glassEffectTransition(.materialize)
+```
+
+### 10.6 UIKit Bridge for Rotation Issues
+
+If overlay rotates (e.g., for different screen orientations), SwiftUI's `glassEffect` has animation artifacts. Use UIKit bridge:
+
+```swift
+// Use UIVisualEffectView with UIGlassEffect for rotation-safe glass
+// See: https://github.com/JuniperPhoton/GlassRotationIssue
+```
+
+### 10.7 Symbol Variants for Liquid Glass
+
+Use "none" variants of SF Symbols for toolbar buttons in Liquid Glass design:
+
+```swift
+// ✅ Preferred for Liquid Glass
+Image(systemName: "checkmark")
+    .symbolVariant(.none)
+
+// ❌ Circle variants look dated in Liquid Glass
+Image(systemName: "checkmark.circle")
+```
+
+---
+
+## 11. Implementation Recommendations
+
+Based on the research, prioritize these enhancements for UX.03:
+
+1. **Ensure GlassEffectContainer wraps all bubbles** - Already done, but verify single CABackdropLayer.
+2. **Add edge luminosity overlay** - Subtle angular gradient stroke on bubble shapes.
+3. **Use `.contentShape()` on interactive elements** - Fix any hit-testing issues.
+4. **Consider `.glassEffectTransition(.materialize)`** - For calmer show/hide animations vs morphing.
+5. **Test with `.symbolVariant(.none)`** - For any toolbar/action icons.
