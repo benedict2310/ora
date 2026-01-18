@@ -86,11 +86,16 @@ See UX.02 "Follow-Up Issue" section for full context on this fix.
 
 ## 6. Acceptance Criteria
 
-- [ ] AC-1: Overlay panel dimensions and content spacing feel balanced for short and long messages.
-- [ ] AC-2: User/assistant/tool bubbles are visually distinct but cohesive.
-- [ ] AC-3: Voice input control aligns with the chat column and feels calmer.
-- [ ] AC-4: Show/hide motion is subtle and respects Reduce Motion.
-- [ ] AC-5: No regression in overlay positioning or focus recovery.
+- [x] AC-1: Overlay panel dimensions and content spacing feel balanced for short and long messages.
+  - ✅ Panel resized to 520x400, content max width 480, row spacing 24
+- [x] AC-2: User/assistant/tool bubbles are visually distinct but cohesive.
+  - ✅ User bubbles max 320px, assistant/tool max 380px, consistent corner radii
+- [x] AC-3: Voice input control aligns with the chat column and feels calmer.
+  - ✅ Max width aligned with assistant bubbles (380), smaller text/indicators, calmer copy
+- [x] AC-4: Show/hide motion is subtle and respects Reduce Motion.
+  - ✅ 10pt slide + fade animation, checks NSWorkspace.accessibilityDisplayShouldReduceMotion
+- [x] AC-5: No regression in overlay positioning or focus recovery.
+  - ✅ All existing tests pass, positioning uses centralized constants
 
 ## 7. Verification Plan
 
@@ -234,3 +239,58 @@ Based on the research, prioritize these enhancements for UX.03:
 3. **Use `.contentShape()` on interactive elements** - Fix any hit-testing issues.
 4. **Consider `.glassEffectTransition(.materialize)`** - For calmer show/hide animations vs morphing.
 5. **Test with `.symbolVariant(.none)`** - For any toolbar/action icons.
+
+---
+
+## Implementation Summary
+
+**Date:** 2026-01-18
+**Branch:** `feat/UX.03-overlay-visual-polish`
+**Commits:** 1
+
+### Files Changed
+
+- `Ora/Overlay/OverlayLayout.swift` - Expanded with panel dimensions, bubble sizing, animation constants
+- `Ora/Overlay/OverlayWindowController.swift` - Added slide+fade show/hide animations with Reduce Motion support
+- `Ora/Overlay/OverlayView.swift` - Updated to use centralized layout constants
+- `Ora/Overlay/ChatBubbleView.swift` - Differentiated bubble max widths by role
+- `Ora/Overlay/VoiceInputControlView.swift` - Refined sizing, calmer copy, aligned with chat column
+- `OraTests/Overlay/OverlayLayoutTests.swift` - Updated for new constants, added new property tests
+- `OraTests/Overlay/OverlayWindowTests.swift` - Updated to use centralized constants
+
+### Key Changes
+
+1. **Centralized Layout System:** All overlay dimensions, spacing, and animation values now live in `OverlayLayout.swift`
+
+2. **Panel Dimensions:**
+   - Width: 560 → 520 (tighter)
+   - Height: 380 → 400 (taller for more content)
+   - Top margin: 10 → 12
+
+3. **Bubble Sizing:**
+   - Assistant/tool bubbles: max 380px
+   - User bubbles: max 320px (narrower for visual distinction)
+   - Bubble inset: 24 → 20
+
+4. **Spacing:**
+   - Row spacing: 28 → 24 (slightly tighter)
+   - Bubble content spacing: 8 → 6
+   - Tool content spacing: 12 → 10
+
+5. **Voice Input Control:**
+   - Smaller indicator dots (10 → 8px)
+   - Smaller text (caption.bold → caption2.semibold)
+   - Calmer copy: "Listening..." → "Listening…"
+   - Reduced shadow intensity
+
+6. **Show/Hide Animation:**
+   - Slide distance: 10pt
+   - Show duration: 0.25s
+   - Hide duration: 0.15s
+   - Respects Reduce Motion accessibility setting
+
+### Ready for Review
+
+- [x] All acceptance criteria verified
+- [x] Tests passing (55 overlay tests)
+- [x] Working tree clean
