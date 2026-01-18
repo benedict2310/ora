@@ -1,10 +1,10 @@
 # BUG.02 - Liquid Glass Black Outline Artifact
 
-**Status:** ✅ Fixed
+**Status:** 🔄 Reopened (Artifacts Persist on Light Backgrounds)
 **Priority:** P2 (Visual polish)
-**Affects:** Light mode only (dark mode appears fixed)
+**Affects:** Light mode primarily (dark mode less affected)
 **Target:** macOS 26 (Tahoe)
-**Fixed:** 2026-01-05
+**Originally Fixed:** 2026-01-05 (partial fix, artifacts still visible)
 
 ---
 
@@ -241,3 +241,205 @@ Format findings as actionable code changes we can apply to:
 - [Apple GlassEffectContainer Documentation](https://developer.apple.com/documentation/swiftui/glasseffectcontainer/)
 - [LiquidGlassReference on GitHub](https://github.com/conorluddy/LiquidGlassReference)
 - [Adopting Liquid Glass: Experiences and Pitfalls](https://juniperphoton.substack.com/p/adopting-liquid-glass-experiences)
+
+---
+
+## 11. Additional Research (2026-01-11)
+
+> **Note:** Artifacts still persist despite previous fixes. This section documents additional research findings and potential solutions.
+
+### 11.1 Root Cause Hypotheses
+
+Based on research, the black outline artifact on light backgrounds likely stems from one or more of these causes:
+
+#### Hypothesis A: Lensing Edge Effect
+Liquid Glass uses **lensing** (light bending) rather than simple blur. At the edges of glass elements, the lensing creates a **refractive boundary** that can appear as a dark halo, especially on light backgrounds where the contrast is more visible.
+
+From Thomas Fitzgerald's analysis:
+> "The drop shadows are still an issue because occasionally, they pop-on to a stronger version depending on the content underneath... This problem mostly goes away in dark mode. As does the drop shadow issue."
+
+#### Hypothesis B: Adaptive Shadow System
+Glass elements have **adaptive shadows** that adjust based on background content:
+- Over dark backgrounds: shadows become lighter/invisible
+- Over light backgrounds: shadows become darker/more prominent
+- Over text: shadow opacity increases for legibility
+
+This adaptive behavior may cause the "black outline" appearance on light backgrounds.
+
+#### Hypothesis C: compositingGroup() Interference
+The current code uses `.compositingGroup()` after `.glassEffect()`:
+```swift
+.glassEffect(self.glassStyle(for: self.role), in: shape)
+.compositingGroup()
+```
+
+`compositingGroup()` flattens the view hierarchy before applying subsequent effects. This may interfere with how the glass effect samples its background or renders its edges.
+
+#### Hypothesis D: Background Sampling Issues
+The `neutralGlassBackground()` and `userChromaOverlay()` modifiers add colored backgrounds BEFORE the glass effect. These may interfere with edge rendering:
+```swift
+.userChromaOverlay(enabled: self.role == .user, shape: shape)
+.neutralGlassBackground(enabled: self.role != .user, shape: shape)
+.glassEffect(...)
+```
+
+### 11.2 Recommended Experiments
+
+Try these in order, testing after each change:
+
+#### Experiment 1: Remove compositingGroup()
+```swift
+// BEFORE
+.glassEffect(self.glassStyle(for: self.role), in: shape)
+.compositingGroup()
+
+// AFTER - Remove compositingGroup entirely
+.glassEffect(self.glassStyle(for: self.role), in: shape)
+```
+
+**Rationale:** `compositingGroup()` may be forcing a render pass that interferes with glass edge rendering.
+
+#### Experiment 2: Remove Background Overlays
+```swift
+// BEFORE
+.userChromaOverlay(enabled: self.role == .user, shape: shape)
+.neutralGlassBackground(enabled: self.role != .user, shape: shape)
+.glassEffect(...)
+
+// AFTER - No overlays before glass
+.glassEffect(self.glassStyle(for: self.role), in: shape)
+```
+
+Then use ONLY glass tinting for colors:
+```swift
+private func glassStyle(for role: Role) -> Glass {
+    switch role {
+    case .user:
+        return .regular.tint(Color.blue.opacity(0.35))  // Higher opacity
+    case .assistant:
+        return .regular.tint(.white.opacity(0.08))
+    case .tool:
+        return .regular.tint(.white.opacity(0.10))
+    }
+}
+```
+
+**Rationale:** Overlays BEFORE glass may create sampling artifacts.
+
+#### Experiment 3: Use .clear Variant on Light Backgrounds Only
+```swift
+@Environment(\.colorScheme) private var colorScheme
+
+private func glassStyle(for role: Role) -> Glass {
+    let variant: Glass = colorScheme == .light ? .clear : .regular
+    
+    switch role {
+    case .user:
+        return variant.tint(Color.blue.opacity(0.35))
+    case .assistant:
+        return variant.tint(.white.opacity(0.06))
+    case .tool:
+        return variant.tint(.white.opacity(0.08))
+    }
+}
+```
+
+**Rationale:** `.clear` variant has "limited adaptivity" and may produce fewer edge artifacts.
+
+#### Experiment 4: Add Explicit White Background Under Glass
+```swift
+// Add a very subtle white background to give glass something neutral to sample
+base
+    .background(shape.fill(Color.white.opacity(0.02)))  // Nearly invisible
+    .glassEffect(self.glassStyle(for: self.role), in: shape)
+```
+
+**Rationale:** Glass may be sampling transparency/nil at edges, causing dark rendering.
+
+#### Experiment 5: Use glassEffectUnion for All Bubbles
+```swift
+@Namespace private var bubbleNamespace
+
+// In OverlayView.swift
+ForEach(messages) { message in
+    ChatBubbleView(...)
+        .glassEffect(.regular.tint(.white.opacity(0.05)), in: bubbleShape)
+        .glassEffectUnion(id: "chatBubbles", in: bubbleNamespace)
+}
+```
+
+**Constraint:** All bubbles must have IDENTICAL glass style and tint. Role differentiation via overlays on top:
+```swift
+ChatBubbleView(...)
+    .overlay(bubbleShape.fill(roleColor(for: message.role)))
+    .glassEffect(.regular.tint(.white.opacity(0.05)), in: bubbleShape)
+    .glassEffectUnion(id: "chatBubbles", in: bubbleNamespace)
+```
+
+**Rationale:** `glassEffectUnion` creates a truly unified glass region, eliminating boundary artifacts entirely.
+
+#### Experiment 6: Use .buttonStyle(.glass) Instead
+For simple content, consider using button style:
+```swift
+Button { } label: {
+    bubbleContent
+}
+.buttonStyle(.glass)
+```
+
+**Rationale:** `.buttonStyle(.glass)` is Apple's recommended approach and may have better edge handling than raw `.glassEffect()`.
+
+#### Experiment 7: Disable Solarium (Debug Only)
+Temporarily disable Liquid Glass to confirm the artifact is glass-related:
+```bash
+defaults write -g com.apple.SwiftUI.DisableSolarium -bool YES
+# Restart app
+```
+
+If artifacts disappear, it confirms the issue is in the glass rendering.
+
+### 11.3 iOS/macOS 26.1 Tinted Mode
+
+Apple added a user setting in 26.1:
+- **Settings → Display & Brightness → Liquid Glass → Tinted**
+- Increases opacity and adds more contrast
+- This may reduce artifacts for end users
+
+Consider documenting this as a user-facing workaround.
+
+### 11.4 Known Limitations from Apple
+
+From LiquidGlassReference:
+> "Glass cannot sample other glass; container provides shared sampling region"
+
+This is a **fundamental limitation**. If bubbles are truly adjacent and each has its own `.glassEffect()`, artifacts at boundaries are expected behavior, not a bug.
+
+**The correct solution is `glassEffectUnion`** which combines multiple views into a single glass region.
+
+### 11.5 Performance Note
+
+From JuniperPhoton:
+> "Each `CABackdropLayer` requires 3 offscreen textures... Keeping the offscreen rendering count as low as possible is crucial."
+
+Use Xcode's View Debugger to count `CABackdropLayer` instances:
+1. Run app
+2. Debug → View Debugging → Capture View Hierarchy
+3. Search for `CABackdropLayer`
+4. With proper `GlassEffectContainer`, should see only ONE layer for all bubbles
+
+### 11.6 File Radar
+
+If none of the above work, file Apple Feedback:
+- **Title:** "Liquid Glass black outline artifact on light backgrounds in macOS 26"
+- **Description:** Include screenshots, code sample, and list of attempted workarounds
+- **Category:** SwiftUI / Visual Effects
+- **Steps to reproduce:** Minimal reproduction case with multiple adjacent glass elements
+
+---
+
+## 12. Recommended Implementation Order
+
+1. **Try Experiment 1** (remove `compositingGroup()`) - Low risk, quick test
+2. **Try Experiment 3** (`.clear` variant on light mode) - Medium risk
+3. **Try Experiment 5** (`glassEffectUnion`) - Most promising but requires refactoring
+4. **If all fail:** File Apple Feedback and implement workaround (Option I from UX.05 - user toggle to disable glass)
