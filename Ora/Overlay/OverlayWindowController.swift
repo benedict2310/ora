@@ -34,9 +34,6 @@ final class OverlayWindowController {
     private var permissionPromptEndObserver: NSObjectProtocol?
     private var externalFocusEndObserver: NSObjectProtocol?
 
-    /// Track if we're in the middle of a show animation to avoid conflicts
-    private var isShowAnimating = false
-
     /// Default cancel action (override in tests)
     var cancelHandler: (() -> Void) = {
         SimplePipelineController.shared.cancel()
