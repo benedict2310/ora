@@ -1,7 +1,7 @@
 # Ora - System Architecture
 
-> **Version:** 1.1
-> **Last Updated:** 2025-12-27
+> **Version:** 1.2
+> **Last Updated:** 2026-01-18
 > **Minimum macOS:** 26 (Tahoe)
 
 ---
@@ -46,6 +46,8 @@ This section maps architecture components to their implementation stories. See [
 | **TTSEngine** | T.01 (TTS Service) | ✅ Complete |
 | **AudioPlayback** | T.02 (Audio Playback) | ✅ Complete |
 | **Agent Transparency** | UX.01 (Agent Transparency Status) | ✅ Complete |
+| **Bubble Copy Interaction** | UX.02 (Bubble Copy Interaction) | ✅ Complete |
+| **Overlay Visual Polish** | UX.03 (Overlay Visual Polish) | ✅ Complete |
 
 ### Implementation Order
 
@@ -64,6 +66,7 @@ Phase 5: ✅ Complete
 
 Phase 6: 🚧 Current
   X.03-X.05 (More Tools) → O.04 (Confirmation Flow) → UX.* (Polish)
+  UX.01-UX.03: ✅ Complete (Agent Transparency, Bubble Copy, Visual Polish)
 ```
 
 ---
@@ -915,6 +918,23 @@ func request(_ type: PermissionType) async -> PermissionStatus {
 - `RemindersStoreProvider.ensureRemindersAccess()` - Tool-level reminders tracking
 
 The `OverlayWindowController.handleAppDeactivated()` method checks both trackers before deciding to cancel a session.
+
+#### Overlay Layout System
+
+All overlay dimensions, spacing, and animation values are centralized in `Overlay/OverlayLayout.swift`. This prevents inconsistencies and makes visual updates easier to manage.
+
+| Constant | Value | Purpose |
+|:---------|:------|:--------|
+| `panelWidth` | 520 | Overlay panel width |
+| `panelHeight` | 400 | Overlay panel height |
+| `contentMaxWidth` | 480 | Max width for content |
+| `rowSpacing` | 24 | Vertical spacing between messages |
+| `containerSpacing` | 4 | Glass effect container spacing (must be < rowSpacing to prevent blending) |
+| `assistantBubbleMaxWidth` | 380 | Max width for assistant/tool bubbles |
+| `userBubbleMaxWidth` | 320 | Max width for user bubbles (tighter for visual distinction) |
+| `showHideSlideDistance` | 10 | Animation slide distance |
+
+**Animation:** The overlay uses a subtle slide+fade animation (10pt slide, 0.25s show / 0.15s hide) that respects `NSWorkspace.accessibilityDisplayShouldReduceMotion`.
 
 ---
 

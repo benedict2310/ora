@@ -1,7 +1,7 @@
 # Ora - Product Requirements Document
 
-> **Version:** 1.1
-> **Last Updated:** 2025-12-27
+> **Version:** 1.2
+> **Last Updated:** 2026-01-18
 > **Minimum macOS:** 26 (Tahoe)
 
 ---
@@ -205,6 +205,14 @@ On first launch, display a **modal window** that guides the user through setup. 
 - Toggle to disable voice output
 - Text-only display option
 - For use in quiet environments
+
+### 7. Visual Polish & Accessibility
+
+- **Subtle animations:** Overlay uses slide+fade show/hide animation
+- **Reduce Motion support:** All animations disabled when system preference is set
+- **Reduce Transparency support:** Glass effects adapted for accessibility
+- **Consistent layout:** Centralized spacing system for visual coherence
+- **Role differentiation:** User/assistant/tool bubbles have distinct but cohesive styling
 
 ---
 

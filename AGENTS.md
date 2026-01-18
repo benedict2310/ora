@@ -130,6 +130,7 @@ For detailed triage workflows, load the `ora-testing` skill.
 - Cover request flows and settings opening in tests; record manual E2E checklists for permission/menu flows.
 - **Permission prompt tracking (CRITICAL):** Permission requests MUST go through `PermissionsManager.shared.request()` which handles `PermissionPromptTracker` calls centrally. Do NOT add tracker calls to individual permission files (`MicrophonePermission`, `EventKitPermission`, `ContactsPermission`) - this causes double tracking which breaks focus recovery. The tool-level providers (`EventStoreProvider`, `RemindersStoreProvider`) have their own tracker calls for when tools bypass `PermissionsManager`.
 - **MLX GPU memory (CRITICAL):** MLX caches Metal GPU buffers for reuse, but without limits this cache grows unbounded (15GB+ observed). Always: (1) Set `GPU.set(cacheLimit:)` on model load (512MB recommended), (2) Call `GPU.clearCache()` after each LLM/TTS generation. See `LLMService.swift` and `KokoroEngine.swift` for examples.
+- **Overlay layout constants:** All overlay dimensions, spacing, and animation values live in `Overlay/OverlayLayout.swift`. Do not hardcode layout values in individual views—use the centralized constants to maintain visual consistency.
 
 ### Commit & PR Guidelines
 - Commit messages: short imperative clauses (e.g., "Add calendar tool", "Fix ASR latency"); keep commits scoped.
@@ -334,7 +335,8 @@ These commands can cause data loss. **NEVER run them without the user explicitly
 
 *   **UI (`UI/`):**
     *   `StatusBarController.swift`: Menu bar management and PTT button.
-    *   `OverlayWindowController.swift`: Floating assistant overlay.
+    *   `OverlayWindowController.swift`: Floating assistant overlay with slide+fade animations.
+    *   `OverlayLayout.swift`: Centralized layout constants (panel size, spacing, animation values).
     *   `TranscriptView.swift`: User + assistant conversation display.
     *   `ToolExecutionView.swift`: Shows tool stages (Thinking → Proposing → Executing → Done).
     *   `ConfirmationDialog.swift`: Action confirmation UI.
