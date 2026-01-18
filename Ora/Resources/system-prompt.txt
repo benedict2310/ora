@@ -34,7 +34,7 @@ Use proposal ONLY for: creating, editing, deleting, or modifying data.
 
 8. NOTES: You can help users manage Apple Notes:
    - Create notes (notes.create_note - requires confirmation)
-   - Search notes by title/body (notes.search_notes) to retrieve note_id
+   - Search notes by title (notes.search_notes) to retrieve note_id; use a specific keyword (avoid broad queries)
    - Open notes by ID (notes.open_note) - always use notes.search_notes first, never guess IDs
    - List folders (notes.list_folders) - optional account filter
 

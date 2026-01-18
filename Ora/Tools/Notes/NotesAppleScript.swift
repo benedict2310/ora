@@ -113,7 +113,8 @@ enum NotesAppleScript {
         set queryText to "\(queryText)"
         set limitCount to \(limitValue)
 
-        set foundNotes to every note whose name contains queryText or body contains queryText
+        set foundNotes to every note whose name contains queryText
+        set totalCount to count of foundNotes
         set jsonItems to {}
 
         repeat with theNote in foundNotes
@@ -122,20 +123,17 @@ enum NotesAppleScript {
             set noteId to id of theNote as string
             set noteTitle to name of theNote as string
             set folderTitle to ""
-            set accountTitle to ""
 
             try
                 set folderItem to container of theNote
                 set folderTitle to name of folderItem as string
-                try
-                    set accountTitle to name of container of folderItem as string
-                end try
             end try
 
-            set end of jsonItems to "{\\\\\\"note_id\\\\\\":\\\\\\"" & my json_escape(noteId) & "\\\\\\",\\\\\\"title\\\\\\":\\\\\\"" & my json_escape(noteTitle) & "\\\\\\",\\\\\\"folder\\\\\\":\\\\\\"" & my json_escape(folderTitle) & "\\\\\\",\\\\\\"account\\\\\\":\\\\\\"" & my json_escape(accountTitle) & "\\\\\\\"}"
+            set end of jsonItems to "{\\\\\\"note_id\\\\\\":\\\\\\"" & my json_escape(noteId) & "\\\\\\",\\\\\\"title\\\\\\":\\\\\\"" & my json_escape(noteTitle) & "\\\\\\",\\\\\\"folder\\\\\\":\\\\\\"" & my json_escape(folderTitle) & "\\\\\\\"}"
         end repeat
 
-        set jsonText to "[" & my join_list(jsonItems, ",") & "]"
+        set itemsText to "[" & my join_list(jsonItems, ",") & "]"
+        set jsonText to "{\\\\\\"items\\\\\\":" & itemsText & ",\\\\\\"total_count\\\\\\":" & totalCount & "}"
         set result to jsonText
         """
 

@@ -79,6 +79,19 @@ final class NotesToolsTests: XCTestCase {
         }
     }
 
+    func test_searchTool_validate_rejectsBroadQuery() {
+        let tool = NotesSearchTool()
+        XCTAssertThrowsError(try tool.validate(args: ["query": .string("all")])) { error in
+            XCTAssertTrue(error is ToolHostError)
+        }
+        XCTAssertThrowsError(try tool.validate(args: ["query": .string("all notes")])) { error in
+            XCTAssertTrue(error is ToolHostError)
+        }
+        XCTAssertThrowsError(try tool.validate(args: ["query": .string("ok")])) { error in
+            XCTAssertTrue(error is ToolHostError)
+        }
+    }
+
     func test_openTool_validate_requiresNoteId() {
         let tool = NotesOpenTool()
         XCTAssertThrowsError(try tool.validate(args: [:])) { error in
@@ -122,7 +135,7 @@ final class NotesToolsTests: XCTestCase {
 
     func test_searchNotes_execute_returnsSummary() async throws {
         let stdout = """
-        {"success": true, "data": [{"note_id": "n1", "title": "Alpha", "folder": "Notes", "account": "iCloud"}]}
+        {"success": true, "data": {"items": [{"note_id": "n1", "title": "Alpha", "folder": "Notes"}], "total_count": 1}}
         """
         let runner = MockAppleScriptRunner(result: .success(Self.makeResult(stdout: stdout)))
         let tool = NotesSearchTool(runner: runner)
@@ -134,9 +147,34 @@ final class NotesToolsTests: XCTestCase {
 
         XCTAssertEqual(result.humanSummary, "Found 1 note matching 'Alpha'.")
 
+        if case .object(let dict) = result.json,
+           case .array(let items) = dict["items"],
+           case .object(let first)? = items.first {
+            XCTAssertEqual(first["note_id"]?.stringValue, "n1")
+        } else {
+            XCTFail("Expected items array")
+        }
+
         let script = await runner.lastScript
         XCTAssertTrue(script?.contains("set queryText to \"Alpha\"") ?? false)
         XCTAssertTrue(script?.contains("set limitCount to 5") ?? false)
+    }
+
+    func test_searchNotes_execute_reportsTruncation() async throws {
+        let stdout = """
+        {"success": true, "data": {"items": [{"note_id": "n1", "title": "Alpha", "folder": "Notes"}, {"note_id": "n2", "title": "Beta", "folder": "Notes"}], "total_count": 5}}
+        """
+        let runner = MockAppleScriptRunner(result: .success(Self.makeResult(stdout: stdout)))
+        let tool = NotesSearchTool(runner: runner)
+
+        let result = try await tool.execute(args: [
+            "query": .string("Alpha"),
+            "limit": .number(2)
+        ])
+
+        XCTAssertTrue(result.humanSummary.contains("5 notes"))
+        XCTAssertTrue(result.humanSummary.contains("3 more not shown"))
+        XCTAssertTrue(result.humanSummary.contains("more specific query"))
     }
 
     func test_openNote_execute_returnsSummary() async throws {
