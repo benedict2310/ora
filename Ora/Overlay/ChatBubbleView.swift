@@ -57,11 +57,6 @@ struct ChatBubbleView: View {
         let alignment = self.role == .user ? BubbleAlignment.leading : BubbleAlignment.trailing
         return self.bubbleRow(alignment: alignment) {
             self.bubbleContent
-                .overlay(alignment: .topTrailing) {
-                    if self.shouldShowCopyButton {
-                        self.copyButton
-                    }
-                }
         }
         .onHover { hovering in
             self.isHovered = hovering
@@ -88,18 +83,9 @@ struct ChatBubbleView: View {
             Image(systemName: self.isCopied ? "checkmark" : "doc.on.doc")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(self.isCopied ? .green : .secondary)
-                .frame(width: 24, height: 24)
-                .background {
-                    if self.reduceTransparency {
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(Color(nsColor: .controlBackgroundColor).opacity(0.9))
-                    } else {
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(.ultraThinMaterial)
-                    }
-                }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.glass)  // Use native glass button style to avoid glass-on-glass conflict
+        .controlSize(.small)
         .padding(6)
         .transition(self.reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.8)))
         .animation(self.reduceMotion ? nil : .easeOut(duration: 0.15), value: self.isHovered)
@@ -137,22 +123,30 @@ struct ChatBubbleView: View {
         .padding(.vertical, OverlayLayout.bubblePaddingVertical)
         .opacity(self.isPartial ? 0.8 : 1.0)
 
-        if self.reduceTransparency {
-            base
-                .userChromaOverlay(
-                    enabled: self.role == .user,
-                    shape: shape
-                )
-                .background(shape.fill(self.baseFillColor(for: self.role)))
-                .overlay(shape.stroke(Color.white.opacity(0.08), lineWidth: 0.6))
-        } else {
-            // Fix B: glassEffect must be LAST to avoid black outline artifacts
-            base
-                .userChromaOverlay(
-                    enabled: self.role == .user,
-                    shape: shape
-                )
-                .glassEffect(self.glassStyle(for: self.role), in: shape)
+        // Use ZStack to ensure copy button renders on top of glass effect
+        ZStack(alignment: .topTrailing) {
+            if self.reduceTransparency {
+                base
+                    .userChromaOverlay(
+                        enabled: self.role == .user,
+                        shape: shape
+                    )
+                    .background(shape.fill(self.baseFillColor(for: self.role)))
+                    .overlay(shape.stroke(Color.white.opacity(0.08), lineWidth: 0.6))
+            } else {
+                // glassEffect must be LAST to avoid black outline artifacts
+                base
+                    .userChromaOverlay(
+                        enabled: self.role == .user,
+                        shape: shape
+                    )
+                    .glassEffect(self.glassStyle(for: self.role), in: shape)
+            }
+
+            // Copy button explicitly layered on top
+            if self.shouldShowCopyButton {
+                self.copyButton
+            }
         }
     }
 

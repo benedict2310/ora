@@ -188,3 +188,156 @@ As a user, I want a quick way to copy text from the overlay so I can paste respo
 - [x] PR merged: https://github.com/benedict2310/ora/pull/75
 - [x] Merged to main: c0440a65898a092de3da1617ba54f01fd177ae00
 - [x] Date: 2026-01-17
+
+---
+
+## Post-Merge Issue: Copy Button Not Clickable
+
+**Reported:** 2026-01-17
+**Status:** ✅ Resolved
+
+### Problem
+
+The copy icon renders visually but:
+1. Appears to be in the background layer
+2. Is not clickable/interactive
+
+### Root Cause Analysis
+
+Based on research from the [Liquid Glass Reference](https://github.com/conorluddy/LiquidGlassReference), the issue is likely caused by **glass layering conflicts**:
+
+1. **Glass cannot sample other glass** - The copy button has its own `.ultraThinMaterial` background while sitting inside a `ZStack` with a parent that has `.glassEffect()`. This creates a glass-on-glass situation.
+
+2. **Button inside glass effect** - The current implementation applies `.glassEffect()` to the bubble content, then overlays a button with its own material background. The glass effect may be capturing hit-testing or rendering order.
+
+3. **Using manual background instead of `.buttonStyle(.glass)`** - The reference explicitly states: "Use `.buttonStyle(.glass)` for buttons instead of manually applying `.glassEffect()` to buttons."
+
+### Current Implementation (Problematic)
+
+```swift
+// ChatBubbleView.swift - current approach
+ZStack(alignment: .topTrailing) {
+    // Glass effect applied to base content
+    base
+        .glassEffect(self.glassStyle(for: self.role), in: shape)
+    
+    // Button with manual material background - may conflict
+    if self.shouldShowCopyButton {
+        Button { ... } label: {
+            Image(systemName: "doc.on.doc")
+                .background {
+                    RoundedRectangle(...)
+                        .fill(.ultraThinMaterial)  // ❌ Glass-on-glass
+                }
+        }
+        .buttonStyle(.plain)
+    }
+}
+```
+
+### Recommended Fixes
+
+**Option 1: Use `.buttonStyle(.glass)` (Preferred)**
+```swift
+ZStack(alignment: .topTrailing) {
+    base
+        .glassEffect(self.glassStyle(for: self.role), in: shape)
+    
+    if self.shouldShowCopyButton {
+        Button { self.copyToClipboard() } label: {
+            Image(systemName: self.isCopied ? "checkmark" : "doc.on.doc")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(self.isCopied ? .green : .secondary)
+        }
+        .buttonStyle(.glass)  // ✅ Native glass button style
+        .controlSize(.small)
+        .padding(6)
+    }
+}
+```
+
+**Option 2: Use `GlassEffectContainer` to wrap both elements**
+```swift
+GlassEffectContainer {
+    ZStack(alignment: .topTrailing) {
+        base
+            .glassEffect(self.glassStyle(for: self.role), in: shape)
+        
+        if self.shouldShowCopyButton {
+            self.copyButton
+                .glassEffect(.regular.interactive(), in: .circle)
+        }
+    }
+}
+```
+
+**Option 3: Remove glass from button (non-glass overlay)**
+```swift
+// If glass button has issues, use a simple colored background
+Button { ... } label: {
+    Image(systemName: "doc.on.doc")
+        .foregroundStyle(.secondary)
+        .frame(width: 24, height: 24)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.8))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+}
+.buttonStyle(.plain)
+.contentShape(Rectangle())  // Ensure hit-testing works
+```
+
+**Option 4: Move button outside the glass hierarchy**
+```swift
+// Apply glass to content only, button in separate layer
+VStack {
+    base
+        .glassEffect(self.glassStyle(for: self.role), in: shape)
+}
+.overlay(alignment: .topTrailing) {
+    if self.shouldShowCopyButton {
+        self.copyButton
+    }
+}
+```
+
+### Additional Considerations
+
+1. **Hit-testing**: Add `.contentShape(Rectangle())` to ensure the button's tap area is properly defined
+2. **Z-index**: May need explicit `.zIndex(1)` on the button
+3. **Reduce Transparency mode**: The fallback path using `Color(nsColor: .controlBackgroundColor)` should work correctly
+
+### References
+
+- [Liquid Glass Resources](./liquid-glass-resources.md)
+- [LiquidGlassReference - Glass Layering Guidelines](https://github.com/conorluddy/LiquidGlassReference#42-glass-layering-guidelines)
+- [LiquidGlassReference - Known Issues](https://github.com/conorluddy/LiquidGlassReference#46-known-issues--workarounds)
+
+### Resolution
+
+**Fixed:** 2026-01-17
+
+**Solution Applied:** Option 1 - Use `.buttonStyle(.glass)`
+
+The fix replaced the manual material background with the native `.buttonStyle(.glass)`:
+
+```swift
+// Before (broken) - glass-on-glass conflict
+Button { ... } label: {
+    Image(systemName: "doc.on.doc")
+        .background {
+            RoundedRectangle(...)
+                .fill(.ultraThinMaterial)  // ❌ Conflicts with parent glassEffect
+        }
+}
+.buttonStyle(.plain)
+
+// After (working) - native glass button style
+Button { ... } label: {
+    Image(systemName: "doc.on.doc")
+        .font(.system(size: 11, weight: .medium))
+        .foregroundStyle(self.isCopied ? .green : .secondary)
+}
+.buttonStyle(.glass)  // ✅ Properly integrates with glass hierarchy
+.controlSize(.small)
+```
+
+**Key Learning:** When placing interactive elements on top of views with `.glassEffect()`, use `.buttonStyle(.glass)` instead of manually applying material backgrounds. This ensures proper integration with the glass rendering hierarchy.
