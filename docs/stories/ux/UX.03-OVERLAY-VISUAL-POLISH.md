@@ -86,11 +86,11 @@ See UX.02 "Follow-Up Issue" section for full context on this fix.
 
 ## 6. Acceptance Criteria
 
-- AC-1: Overlay panel dimensions and content spacing feel balanced for short and long messages.
-- AC-2: User/assistant/tool bubbles are visually distinct but cohesive.
-- AC-3: Voice input control aligns with the chat column and feels calmer.
-- AC-4: Show/hide motion is subtle and respects Reduce Motion.
-- AC-5: No regression in overlay positioning or focus recovery.
+- [ ] AC-1: Overlay panel dimensions and content spacing feel balanced for short and long messages.
+- [ ] AC-2: User/assistant/tool bubbles are visually distinct but cohesive.
+- [ ] AC-3: Voice input control aligns with the chat column and feels calmer.
+- [ ] AC-4: Show/hide motion is subtle and respects Reduce Motion.
+- [ ] AC-5: No regression in overlay positioning or focus recovery.
 
 ## 7. Verification Plan
 

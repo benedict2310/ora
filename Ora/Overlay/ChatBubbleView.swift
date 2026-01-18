@@ -51,8 +51,10 @@ struct ChatBubbleView: View {
     @State private var isCopied: Bool = false
     @State private var hoverHideTask: Task<Void, Never>?
 
-    private let maxBubbleWidth: CGFloat = 360
-    private let bubbleInset: CGFloat = 24
+    /// Maximum bubble width based on role
+    private var maxBubbleWidth: CGFloat {
+        self.role == .user ? OverlayLayout.userBubbleMaxWidth : OverlayLayout.assistantBubbleMaxWidth
+    }
 
     var body: some View {
         let alignment = self.role == .user ? BubbleAlignment.leading : BubbleAlignment.trailing
@@ -189,9 +191,9 @@ struct ChatBubbleView: View {
             if alignment == .leading {
                 content()
                     .frame(maxWidth: self.maxBubbleWidth, alignment: .leading)
-                Spacer(minLength: self.bubbleInset)
+                Spacer(minLength: OverlayLayout.bubbleInset)
             } else {
-                Spacer(minLength: self.bubbleInset)
+                Spacer(minLength: OverlayLayout.bubbleInset)
                 content()
                     .frame(maxWidth: self.maxBubbleWidth, alignment: .trailing)
             }

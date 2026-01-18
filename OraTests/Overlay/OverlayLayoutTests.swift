@@ -9,6 +9,24 @@ import XCTest
 @testable import Ora
 
 final class OverlayLayoutTests: XCTestCase {
+    // MARK: - Panel Dimension Tests
+
+    func test_panelWidth_isDefined() {
+        XCTAssertGreaterThan(OverlayLayout.panelWidth, 0, "Panel width must be greater than 0")
+    }
+
+    func test_panelHeight_isDefined() {
+        XCTAssertGreaterThan(OverlayLayout.panelHeight, 0, "Panel height must be greater than 0")
+    }
+
+    func test_contentMaxWidth_isLessThanPanelWidth() {
+        XCTAssertLessThan(
+            OverlayLayout.contentMaxWidth,
+            OverlayLayout.panelWidth,
+            "Content max width must be less than panel width"
+        )
+    }
+
     // MARK: - Container Spacing Tests
 
     func test_containerSpacing_isDefined() {
@@ -31,6 +49,20 @@ final class OverlayLayoutTests: XCTestCase {
         XCTAssertGreaterThan(OverlayLayout.rowSpacing, 0, "Row spacing must be greater than 0")
     }
 
+    // MARK: - Bubble Sizing Tests
+
+    func test_userBubbleMaxWidth_isLessThanAssistant() {
+        XCTAssertLessThan(
+            OverlayLayout.userBubbleMaxWidth,
+            OverlayLayout.assistantBubbleMaxWidth,
+            "User bubble should be narrower than assistant bubble"
+        )
+    }
+
+    func test_bubbleInset_isDefined() {
+        XCTAssertGreaterThan(OverlayLayout.bubbleInset, 0, "Bubble inset must be greater than 0")
+    }
+
     // MARK: - Bubble Padding Tests
 
     func test_bubblePaddingHorizontal_isDefined() {
@@ -51,12 +83,23 @@ final class OverlayLayoutTests: XCTestCase {
         XCTAssertGreaterThan(OverlayLayout.toolContentSpacing, 0, "Tool content spacing must be greater than 0")
     }
 
+    // MARK: - Animation Tests
+
+    func test_showHideSlideDistance_isDefined() {
+        XCTAssertGreaterThan(OverlayLayout.showHideSlideDistance, 0, "Slide distance must be greater than 0")
+    }
+
+    func test_animationDurations_areDefined() {
+        XCTAssertGreaterThan(OverlayLayout.showAnimationDuration, 0, "Show animation duration must be greater than 0")
+        XCTAssertGreaterThan(OverlayLayout.hideAnimationDuration, 0, "Hide animation duration must be greater than 0")
+    }
+
     // MARK: - Spacing Relationships Tests
 
     func test_spacingValues_areReasonable() {
         // Verify spacing values are in reasonable ranges for UI
         XCTAssertLessThanOrEqual(OverlayLayout.containerSpacing, 20, "Container spacing should be reasonable")
-        XCTAssertLessThanOrEqual(OverlayLayout.rowSpacing, 20, "Row spacing should be reasonable")
+        XCTAssertLessThanOrEqual(OverlayLayout.rowSpacing, 30, "Row spacing should be reasonable")
         XCTAssertLessThanOrEqual(OverlayLayout.bubblePaddingHorizontal, 30, "Horizontal padding should be reasonable")
         XCTAssertLessThanOrEqual(OverlayLayout.bubblePaddingVertical, 30, "Vertical padding should be reasonable")
         XCTAssertLessThanOrEqual(OverlayLayout.bubbleContentSpacing, 15, "Bubble content spacing should be reasonable")
@@ -70,6 +113,6 @@ final class OverlayLayoutTests: XCTestCase {
 
     func test_rowSpacing_exactValue() {
         // Verify the exact value to catch unintentional changes
-        XCTAssertEqual(OverlayLayout.rowSpacing, 20, "Row spacing should be 20")
+        XCTAssertEqual(OverlayLayout.rowSpacing, 24, "Row spacing should be 24")
     }
 }
