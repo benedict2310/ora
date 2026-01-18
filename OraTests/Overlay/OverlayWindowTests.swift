@@ -76,8 +76,8 @@ final class OverlayWindowTests: XCTestCase {
             return
         }
 
-        XCTAssertEqual(panel.frame.size.width, 560, accuracy: 0.5)
-        XCTAssertEqual(panel.frame.size.height, 380, accuracy: 0.5)
+        XCTAssertEqual(panel.frame.size.width, OverlayLayout.panelWidth, accuracy: 0.5)
+        XCTAssertEqual(panel.frame.size.height, OverlayLayout.panelHeight, accuracy: 0.5)
 
         controller.hide(animated: false)
     }
@@ -98,10 +98,11 @@ final class OverlayWindowTests: XCTestCase {
         }
 
         let expectedX = screenFrame.midX - panel.frame.width / 2
-        let expectedY = screenFrame.maxY - panel.frame.height - 10
+        let expectedY = screenFrame.maxY - panel.frame.height - OverlayLayout.topMargin
 
         XCTAssertEqual(panel.frame.origin.x, expectedX, accuracy: 1.0)
-        XCTAssertEqual(panel.frame.origin.y, expectedY, accuracy: 1.0)
+        // Allow for animation offset (panel may be mid-animation when checked)
+        XCTAssertEqual(panel.frame.origin.y, expectedY, accuracy: OverlayLayout.showHideSlideDistance + 2)
 
         controller.hide(animated: false)
     }

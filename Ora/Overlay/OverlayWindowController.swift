@@ -22,7 +22,11 @@ final class OverlayWindowController {
     private var panel: NSPanel?
     private let viewModel = OverlayViewModel()
     private var currentSessionID: UUID = UUID()
-    private let panelSize = NSSize(width: 560, height: 380)
+
+    /// Whether Reduce Motion is enabled (cached for animation decisions)
+    private var reduceMotion: Bool {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
 
     private var escapeMonitor: Any?
     private var appDeactivationObserver: NSObjectProtocol?
@@ -71,13 +75,28 @@ final class OverlayWindowController {
         // Invalidate any pending hide operations
         self.currentSessionID = UUID()
 
-        // Position the panel
+        // Position the panel (at final position, animation offsets handled separately)
         self.positionPanel()
 
-        // Show the window - set alpha directly to ensure visibility
-        // Note: NSAnimationContext.runAnimationGroup was unreliable in Release builds
-        // Reset alpha to 1 in case it was animating to 0
-        panel.alphaValue = 1
+        // Animate in with slide + fade (respecting Reduce Motion)
+        if self.reduceMotion {
+            // No animation - show immediately
+            panel.alphaValue = 1
+        } else {
+            // Start slightly above final position and faded out
+            let finalOrigin = panel.frame.origin
+            let startOrigin = NSPoint(x: finalOrigin.x, y: finalOrigin.y + OverlayLayout.showHideSlideDistance)
+            panel.setFrameOrigin(startOrigin)
+            panel.alphaValue = 0
+
+            // Animate to final position
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = OverlayLayout.showAnimationDuration
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                panel.animator().setFrameOrigin(finalOrigin)
+                panel.animator().alphaValue = 1
+            }
+        }
 
         // Use orderFrontRegardless for more aggressive window ordering
         // This helps when coming back from system dialogs (e.g., permission prompts)
@@ -104,9 +123,15 @@ final class OverlayWindowController {
         
         let hideSessionID = self.currentSessionID
 
-        if animated {
+        if animated && !self.reduceMotion {
+            // Animate out with slide up + fade
+            let currentOrigin = panel.frame.origin
+            let targetOrigin = NSPoint(x: currentOrigin.x, y: currentOrigin.y + OverlayLayout.showHideSlideDistance)
+
             NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.15
+                context.duration = OverlayLayout.hideAnimationDuration
+                context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+                panel.animator().setFrameOrigin(targetOrigin)
                 panel.animator().alphaValue = 0
             } completionHandler: {
                 Task { @MainActor [weak self] in
@@ -117,7 +142,7 @@ final class OverlayWindowController {
                 }
             }
         } else {
-            // Only hide if we haven't started a new show session
+            // No animation - hide immediately
             guard self.currentSessionID == hideSessionID else { return }
             panel.orderOut(nil)
             self.viewModel.reset()
@@ -129,15 +154,17 @@ final class OverlayWindowController {
     // MARK: - Private
 
     private func createPanel() {
+        let panelSize = NSSize(width: OverlayLayout.panelWidth, height: OverlayLayout.panelHeight)
+
         let contentView = OverlayView()
             .environmentObject(self.viewModel)
 
         let hostingView = NSHostingView(rootView: contentView)
-        hostingView.setFrameSize(self.panelSize)
+        hostingView.setFrameSize(panelSize)
 
         // Create floating panel
         let panel = OverlayPanel(
-            contentRect: NSRect(origin: .zero, size: self.panelSize),
+            contentRect: NSRect(origin: .zero, size: panelSize),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -167,7 +194,7 @@ final class OverlayWindowController {
         let panelSize = panel.frame.size
 
         let x = screenFrame.midX - (panelSize.width / 2)
-        let y = screenFrame.maxY - panelSize.height - 10 // 10pt from top
+        let y = screenFrame.maxY - panelSize.height - OverlayLayout.topMargin
 
         panel.setFrameOrigin(NSPoint(x: x, y: y))
     }

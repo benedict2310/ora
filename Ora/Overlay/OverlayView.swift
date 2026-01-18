@@ -16,9 +16,6 @@ struct OverlayView: View {
 
     @Namespace private var inputGlassNamespace
 
-    private let panelWidth: CGFloat = 560
-    private let panelHeight: CGFloat = 380
-    private let contentMaxWidth: CGFloat = 520
     private let scrollAnchorID = "overlayScrollAnchor"
 
     var body: some View {
@@ -35,10 +32,10 @@ struct OverlayView: View {
 
                 self.chatScrollView
             }
-            .frame(maxWidth: self.contentMaxWidth, maxHeight: .infinity, alignment: .top)
+            .frame(maxWidth: OverlayLayout.contentMaxWidth, maxHeight: .infinity, alignment: .top)
         }
-        .padding(20)
-        .frame(width: self.panelWidth, height: self.panelHeight)
+        .padding(16)
+        .frame(width: OverlayLayout.panelWidth, height: OverlayLayout.panelHeight)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Ora Assistant")
     }
@@ -242,31 +239,29 @@ struct OverlayView: View {
 struct FollowUpPromptView: View {
     let reduceTransparency: Bool
 
-    private let maxBubbleWidth: CGFloat = 360
-    private let bubbleInset: CGFloat = 24
-
     var body: some View {
         HStack {
-            Spacer(minLength: self.bubbleInset)
+            Spacer(minLength: OverlayLayout.bubbleInset)
             self.content
-                .frame(maxWidth: self.maxBubbleWidth, alignment: .trailing)
+                .frame(maxWidth: OverlayLayout.assistantBubbleMaxWidth, alignment: .trailing)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Press Enter to reply, or Escape to close the assistant")
+        .accessibilityLabel("Press Enter to reply, or Escape to close")
     }
 
     @ViewBuilder
     private var content: some View {
-        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
-        let base = HStack(spacing: 8) {
+        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+        let base = HStack(spacing: 6) {
             Image(systemName: "mic.fill")
-                .foregroundColor(.cyan)
-            Text("Press Enter to reply, Escape to close")
-                .font(.caption)
+                .font(.caption2)
+                .foregroundColor(.cyan.opacity(0.9))
+            Text("Enter to reply · Esc to close")
+                .font(.caption2)
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, OverlayLayout.bubblePaddingHorizontal)
-        .padding(.vertical, OverlayLayout.bubblePaddingVertical)
+        .padding(.vertical, 10)
 
         if self.reduceTransparency {
             base
