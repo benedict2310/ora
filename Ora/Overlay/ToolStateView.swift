@@ -24,6 +24,8 @@ struct ToolStateView: View {
     let mode: Mode
     let reduceTransparency: Bool
     let reduceMotion: Bool
+    /// Optional namespace for glassEffectUnion to group with chat bubbles into a single glass region.
+    var glassUnionNamespace: Namespace.ID?
 
     @FocusState private var confirmButtonFocused: Bool
     @FocusState private var cancelButtonFocused: Bool
@@ -60,9 +62,16 @@ struct ToolStateView: View {
                 .overlay(shape.stroke(Color.white.opacity(0.08), lineWidth: 0.6))
         } else {
             // Use .regular variant for full background adaptivity (light/dark)
-            // Tint opacity lowered to reduce black outline artifacts
-            base
-                .glassEffect(.regular.tint(.white.opacity(0.04)), in: shape)
+            // Unified tint for glassEffectUnion to eliminate boundary artifacts
+            let glassView = base
+                .background(shape.fill(Color.white.opacity(0.03)))
+                .glassEffect(.regular.tint(.white.opacity(0.03)), in: shape)
+
+            if let namespace = self.glassUnionNamespace {
+                glassView.glassEffectUnion(id: "chatBubbles", namespace: namespace)
+            } else {
+                glassView
+            }
         }
     }
 

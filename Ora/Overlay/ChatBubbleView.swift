@@ -45,6 +45,9 @@ struct ChatBubbleView: View {
     let isPartial: Bool
     let reduceTransparency: Bool
     let reduceMotion: Bool
+    /// Optional namespace for glassEffectUnion to group bubbles into a single glass region.
+    /// When provided, all bubbles sharing the same namespace and ID will render as one unified glass.
+    var glassUnionNamespace: Namespace.ID?
     var pasteboard: PasteboardWriting = SystemPasteboard()
 
     @State private var isHovered: Bool = false
@@ -166,18 +169,32 @@ struct ChatBubbleView: View {
                 .background(shape.fill(self.baseFillColor(for: self.role)))
                 .overlay(shape.stroke(Color.white.opacity(0.08), lineWidth: 0.6))
         } else {
+            // When using glassEffectUnion, all bubbles must have identical glass style.
+            // Role differentiation is achieved via background overlays instead of glass tints.
+            let useUnifiedGlass = self.glassUnionNamespace != nil
+
             base
-                // User bubbles get blue chroma overlay, assistant/tool get neutral background
-                // Both provide content for glass to sample for text color adaptation
+                // Role differentiation via background overlays (works with glassEffectUnion)
+                .background(
+                    shape.fill(self.roleBackgroundColor(for: self.role))
+                )
+                // User bubbles get blue chroma overlay for additional accent
                 .userChromaOverlay(
                     enabled: self.role == .user,
                     shape: shape
                 )
+                // Neutral background for glass to sample (text color adaptation)
                 .neutralGlassBackground(
-                    enabled: self.role != .user,
+                    enabled: self.role != .user && !useUnifiedGlass,
                     shape: shape
                 )
-                .glassEffect(self.glassStyle(for: self.role), in: shape)
+                .glassEffect(self.glassStyle(for: self.role, unified: useUnifiedGlass), in: shape)
+                // Apply glassEffectUnion when namespace is provided to eliminate boundary artifacts
+                .glassEffectUnion(
+                    id: "chatBubbles",
+                    namespace: self.glassUnionNamespace,
+                    enabled: useUnifiedGlass
+                )
                 // Force compositing to ensure glass samples background correctly on initial render
                 .compositingGroup()
         }
@@ -200,7 +217,14 @@ struct ChatBubbleView: View {
         }
     }
 
-    private func glassStyle(for role: Role) -> Glass {
+    private func glassStyle(for role: Role, unified: Bool = false) -> Glass {
+        // When using glassEffectUnion, all bubbles must have IDENTICAL glass style.
+        // Role differentiation is achieved via background overlays instead of glass tints.
+        if unified {
+            // Unified neutral tint for glassEffectUnion - eliminates boundary artifacts
+            return .regular.tint(.white.opacity(0.03))
+        }
+
         // Use .regular variant for full background adaptivity (light/dark)
         // Text adaptation works because user bubbles have chroma overlay and
         // assistant/tool bubbles have neutral background for glass to sample
@@ -211,6 +235,22 @@ struct ChatBubbleView: View {
             return .regular.tint(.white.opacity(0.03))
         case .tool:
             return .regular.tint(.white.opacity(0.04))
+        }
+    }
+
+    /// Background color for role differentiation when using glassEffectUnion.
+    /// This replaces glass tint differentiation to maintain visual distinction between roles.
+    private func roleBackgroundColor(for role: Role) -> Color {
+        switch role {
+        case .user:
+            // Blue accent for user messages
+            return Color(red: 0.12, green: 0.55, blue: 0.95).opacity(0.12)
+        case .assistant:
+            // Very subtle for assistant
+            return Color.white.opacity(0.02)
+        case .tool:
+            // Slightly more visible for tool messages
+            return Color.white.opacity(0.03)
         }
     }
 
@@ -355,6 +395,17 @@ private extension View {
                 .background(
                     shape.fill(Color.gray.opacity(0.15))
                 )
+        } else {
+            self
+        }
+    }
+
+    /// Conditionally applies glassEffectUnion to group multiple glass elements into one region.
+    /// This eliminates boundary artifacts between adjacent glass elements.
+    @ViewBuilder
+    func glassEffectUnion(id: String, namespace: Namespace.ID?, enabled: Bool) -> some View {
+        if enabled, let namespace = namespace {
+            self.glassEffectUnion(id: id, namespace: namespace)
         } else {
             self
         }

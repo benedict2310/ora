@@ -427,38 +427,56 @@ Given that artifacts persist after Option A + C implementation:
 
 ## Implementation Summary
 
-**Date:** 2026-01-16
+### Phase 1: Option A + Option C (2026-01-16)
+
 **Branch:** `feat/UX.05-glass-artifact-mitigation`
 **Commits:** 1
 
-### Approach Implemented
+**Approach:**
+1. **Increased row spacing** (Option A): `OverlayLayout.rowSpacing`: 20 → 28
+2. **Lowered tint opacities** (Option C): Reduced all glass tint opacities
 
-**Option A + Option C** (as recommended):
+**Result:** Artifacts significantly reduced but still visible in some cases. Status changed to "In Progress (Artifacts Persist)".
 
-1. **Increased row spacing** (Option A):
-   - `OverlayLayout.rowSpacing`: 20 → 28
-   - Creates more visual separation between adjacent glass bubbles
+---
 
-2. **Lowered tint opacities** (Option C):
-   - `ChatBubbleView` user: 0.4 → 0.25
-   - `ChatBubbleView` assistant: 0.06 → 0.03
-   - `ChatBubbleView` tool: 0.08 → 0.04
-   - `ToolStateView`: 0.08 → 0.04
-   - `FollowUpPromptView`: 0.08 → 0.04
+### Phase 2: Option G - glassEffectUnion (2026-01-20)
 
-### Files Changed
+**Branch:** `feat/UX.05-glass-effect-union`
 
-- `Ora/Overlay/OverlayLayout.swift` - Increased rowSpacing
-- `Ora/Overlay/ChatBubbleView.swift` - Lowered tint opacities
-- `Ora/Overlay/ToolStateView.swift` - Lowered tint opacity
-- `Ora/Overlay/OverlayView.swift` - Lowered FollowUpPromptView tint opacity
+**Approach:**
+Implemented `glassEffectUnion(id:namespace:)` to render all chat bubbles as a single unified glass region. This is Apple's recommended approach for grouping multiple glass elements without boundary artifacts.
 
-### Result
+**Key insight:** The `glassEffectUnion` modifier requires ALL grouped elements to have **identical** glass styles. Role differentiation (user vs assistant vs tool) is now achieved via background overlays instead of glass tints.
 
-User verified that artifacts are significantly reduced while maintaining the floating bubble aesthetic.
+**Files Changed:**
+
+1. **`Ora/Overlay/ChatBubbleView.swift`**:
+   - Added `glassUnionNamespace: Namespace.ID?` parameter
+   - Added `roleBackgroundColor(for:)` for role differentiation via background overlays
+   - Updated `glassStyle(for:unified:)` to use unified tint when namespace provided
+   - Added `glassEffectUnion` modifier application
+   - Added conditional `glassEffectUnion` extension helper
+
+2. **`Ora/Overlay/ToolStateView.swift`**:
+   - Added `glassUnionNamespace: Namespace.ID?` parameter
+   - Apply unified glass tint and `glassEffectUnion` when namespace provided
+
+3. **`Ora/Overlay/OverlayView.swift`**:
+   - Added `@Namespace private var chatBubbleNamespace`
+   - Updated `FollowUpPromptView` to support `glassUnionNamespace`
+   - Pass namespace to all `ChatBubbleView`, `ToolStateView`, and `FollowUpPromptView` instances
+
+**Technical Details:**
+- All glass bubbles now share ID `"chatBubbles"` in the same namespace
+- Unified tint: `.regular.tint(.white.opacity(0.03))`
+- Role colors via background: user=blue(0.12), assistant=white(0.02), tool=white(0.03)
+- User bubbles retain blue chroma overlay for accent
+
+**Tests:** 982/982 passed
 
 ## Completion Status
 
-- [x] Implementation complete
-- [x] User verified improvements
-- [x] All tests passing (933/933)
+- [x] Implementation complete (Phase 2)
+- [ ] User verification needed
+- [x] All tests passing (982/982)
