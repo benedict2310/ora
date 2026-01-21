@@ -41,6 +41,27 @@ final class NotesToolsTests: XCTestCase {
         XCTAssertNotNil(tool.schema.parameters["note_id"])
     }
 
+    func test_readTool_schema() {
+        let tool = NotesReadTool()
+        XCTAssertEqual(tool.name, "notes.read_note")
+        XCTAssertEqual(tool.kind, .read)
+        XCTAssertFalse(tool.requiresConfirmation)
+        XCTAssertEqual(tool.schema.requiredParameters, ["note_id"])
+        XCTAssertNotNil(tool.schema.parameters["note_id"])
+        XCTAssertNotNil(tool.schema.parameters["max_chars"])
+    }
+
+    func test_editTool_schema() {
+        let tool = NotesEditTool()
+        XCTAssertEqual(tool.name, "notes.edit_note")
+        XCTAssertEqual(tool.kind, .mutate)
+        XCTAssertTrue(tool.requiresConfirmation)
+        XCTAssertEqual(tool.schema.requiredParameters, ["note_id", "text"])
+        XCTAssertNotNil(tool.schema.parameters["note_id"])
+        XCTAssertNotNil(tool.schema.parameters["text"])
+        XCTAssertNotNil(tool.schema.parameters["mode"])
+    }
+
     func test_listFoldersTool_schema() {
         let tool = NotesListFoldersTool()
         XCTAssertEqual(tool.name, "notes.list_folders")
@@ -57,11 +78,15 @@ final class NotesToolsTests: XCTestCase {
         let create = await ToolRegistry.shared.tool(named: "notes.create_note")
         let search = await ToolRegistry.shared.tool(named: "notes.search_notes")
         let open = await ToolRegistry.shared.tool(named: "notes.open_note")
+        let read = await ToolRegistry.shared.tool(named: "notes.read_note")
+        let edit = await ToolRegistry.shared.tool(named: "notes.edit_note")
         let list = await ToolRegistry.shared.tool(named: "notes.list_folders")
 
         XCTAssertNotNil(create)
         XCTAssertNotNil(search)
         XCTAssertNotNil(open)
+        XCTAssertNotNil(read)
+        XCTAssertNotNil(edit)
         XCTAssertNotNil(list)
     }
 
@@ -95,6 +120,32 @@ final class NotesToolsTests: XCTestCase {
     func test_openTool_validate_requiresNoteId() {
         let tool = NotesOpenTool()
         XCTAssertThrowsError(try tool.validate(args: [:])) { error in
+            XCTAssertTrue(error is ToolHostError)
+        }
+    }
+
+    func test_readTool_validate_requiresNoteId() {
+        let tool = NotesReadTool()
+        XCTAssertThrowsError(try tool.validate(args: [:])) { error in
+            XCTAssertTrue(error is ToolHostError)
+        }
+    }
+
+    func test_editTool_validate_requiresNoteIdAndText() {
+        let tool = NotesEditTool()
+        XCTAssertThrowsError(try tool.validate(args: ["text": .string("Hi")])) { error in
+            XCTAssertTrue(error is ToolHostError)
+        }
+        XCTAssertThrowsError(try tool.validate(args: ["note_id": .string("n1")])) { error in
+            XCTAssertTrue(error is ToolHostError)
+        }
+    }
+
+    func test_editTool_validate_rejectsInvalidMode() {
+        let tool = NotesEditTool()
+        XCTAssertThrowsError(
+            try tool.validate(args: ["note_id": .string("n1"), "text": .string("Hi"), "mode": .string("merge")])
+        ) { error in
             XCTAssertTrue(error is ToolHostError)
         }
     }
@@ -151,6 +202,11 @@ final class NotesToolsTests: XCTestCase {
            case .array(let items) = dict["items"],
            case .object(let first)? = items.first {
             XCTAssertEqual(first["note_id"]?.stringValue, "n1")
+            XCTAssertEqual(dict["total_count"]?.numberValue, 1)
+            XCTAssertEqual(dict["returned_count"]?.numberValue, 1)
+            XCTAssertEqual(dict["remaining_count"]?.numberValue, 0)
+            XCTAssertEqual(dict["truncated"]?.boolValue, false)
+            XCTAssertNil(dict["recommendation"])
         } else {
             XCTFail("Expected items array")
         }
@@ -158,6 +214,38 @@ final class NotesToolsTests: XCTestCase {
         let script = await runner.lastScript
         XCTAssertTrue(script?.contains("set queryText to \"Alpha\"") ?? false)
         XCTAssertTrue(script?.contains("set limitCount to 5") ?? false)
+    }
+
+    func test_searchNotes_execute_stripsWrappingQuotes() async throws {
+        let stdout = """
+        {"success": true, "data": {"items": [], "total_count": 0}}
+        """
+        let runner = MockAppleScriptRunner(result: .success(Self.makeResult(stdout: stdout)))
+        let tool = NotesSearchTool(runner: runner)
+
+        _ = try await tool.execute(args: [
+            "query": .string("\"middle management\""),
+            "limit": .number(5)
+        ])
+
+        let script = await runner.lastScript
+        XCTAssertTrue(script?.contains("set queryText to \"middle management\"") ?? false)
+    }
+
+    func test_searchNotes_execute_stripsTrailingPunctuation() async throws {
+        let stdout = """
+        {"success": true, "data": {"items": [], "total_count": 0}}
+        """
+        let runner = MockAppleScriptRunner(result: .success(Self.makeResult(stdout: stdout)))
+        let tool = NotesSearchTool(runner: runner)
+
+        _ = try await tool.execute(args: [
+            "query": .string("middle management?"),
+            "limit": .number(5)
+        ])
+
+        let script = await runner.lastScript
+        XCTAssertTrue(script?.contains("set queryText to \"middle management\"") ?? false)
     }
 
     func test_searchNotes_execute_reportsTruncation() async throws {
@@ -175,6 +263,19 @@ final class NotesToolsTests: XCTestCase {
         XCTAssertTrue(result.humanSummary.contains("5 notes"))
         XCTAssertTrue(result.humanSummary.contains("3 more not shown"))
         XCTAssertTrue(result.humanSummary.contains("more specific query"))
+
+        if case .object(let dict) = result.json {
+            XCTAssertEqual(dict["total_count"]?.numberValue, 5)
+            XCTAssertEqual(dict["returned_count"]?.numberValue, 2)
+            XCTAssertEqual(dict["remaining_count"]?.numberValue, 3)
+            XCTAssertEqual(dict["truncated"]?.boolValue, true)
+            XCTAssertEqual(
+                dict["recommendation"]?.stringValue,
+                "Try a more specific query to see more results."
+            )
+        } else {
+            XCTFail("Expected object result")
+        }
     }
 
     func test_openNote_execute_returnsSummary() async throws {
@@ -192,6 +293,121 @@ final class NotesToolsTests: XCTestCase {
 
         let script = await runner.lastScript
         XCTAssertTrue(script?.contains("set noteId to \"note-xyz\"") ?? false)
+    }
+
+    func test_openNote_execute_normalizesNoteId() async throws {
+        let stdout = """
+        {"success": true, "data": {"note_id": "note-xyz", "title": "Meeting Notes"}}
+        """
+        let runner = MockAppleScriptRunner(result: .success(Self.makeResult(stdout: stdout)))
+        let tool = NotesOpenTool(runner: runner)
+
+        _ = try await tool.execute(args: [
+            "note_id": .string("x-coredata:///ABC/ICNote/p1")
+        ])
+
+        let script = await runner.lastScript
+        XCTAssertTrue(script?.contains("set noteId to \"x-coredata://ABC/ICNote/p1\"") ?? false)
+    }
+
+    func test_readNote_execute_returnsSummary() async throws {
+        let stdout = """
+        {"success": true, "data": {"note_id": "n1", "title": "Alpha", "body": "Hello", "total_chars": 5, "returned_chars": 5, "remaining_chars": 0, "truncated": false}}
+        """
+        let runner = MockAppleScriptRunner(result: .success(Self.makeResult(stdout: stdout)))
+        let tool = NotesReadTool(runner: runner)
+
+        let result = try await tool.execute(args: [
+            "note_id": .string("n1"),
+            "max_chars": .number(1200)
+        ])
+
+        XCTAssertEqual(result.humanSummary, "Read note 'Alpha'.")
+
+        if case .object(let dict) = result.json {
+            XCTAssertEqual(dict["body"]?.stringValue, "Hello")
+            XCTAssertEqual(dict["truncated"]?.boolValue, false)
+            XCTAssertNil(dict["recommendation"])
+        } else {
+            XCTFail("Expected object result")
+        }
+
+        let script = await runner.lastScript
+        XCTAssertTrue(script?.contains("set noteId to \"n1\"") ?? false)
+    }
+
+    func test_readNote_execute_normalizesNoteId() async throws {
+        let stdout = """
+        {"success": true, "data": {"note_id": "n1", "title": "Alpha", "body": "Hello", "total_chars": 5, "returned_chars": 5, "remaining_chars": 0, "truncated": false}}
+        """
+        let runner = MockAppleScriptRunner(result: .success(Self.makeResult(stdout: stdout)))
+        let tool = NotesReadTool(runner: runner)
+
+        _ = try await tool.execute(args: [
+            "note_id": .string("x-coredata:///ABC/ICNote/p1")
+        ])
+
+        let script = await runner.lastScript
+        XCTAssertTrue(script?.contains("set noteId to \"x-coredata://ABC/ICNote/p1\"") ?? false)
+    }
+
+    func test_readNote_execute_reportsTruncation() async throws {
+        let stdout = """
+        {"success": true, "data": {"note_id": "n1", "title": "Alpha", "body": "Hello", "total_chars": 20, "returned_chars": 5, "remaining_chars": 15, "truncated": true}}
+        """
+        let runner = MockAppleScriptRunner(result: .success(Self.makeResult(stdout: stdout)))
+        let tool = NotesReadTool(runner: runner)
+
+        let result = try await tool.execute(args: [
+            "note_id": .string("n1")
+        ])
+
+        XCTAssertTrue(result.humanSummary.contains("Showing 5 of 20"))
+
+        if case .object(let dict) = result.json {
+            XCTAssertEqual(dict["remaining_chars"]?.numberValue, 15)
+            XCTAssertEqual(dict["truncated"]?.boolValue, true)
+            XCTAssertEqual(dict["recommendation"]?.stringValue, "Ask to read more or lower max_chars.")
+        } else {
+            XCTFail("Expected object result")
+        }
+    }
+
+    func test_editNote_execute_returnsSummary() async throws {
+        let stdout = """
+        {"success": true, "data": {"note_id": "n1", "title": "Alpha", "mode": "append"}}
+        """
+        let runner = MockAppleScriptRunner(result: .success(Self.makeResult(stdout: stdout)))
+        let tool = NotesEditTool(runner: runner)
+
+        let result = try await tool.execute(args: [
+            "note_id": .string("n1"),
+            "text": .string("Extra"),
+            "mode": .string("append")
+        ])
+
+        XCTAssertEqual(result.humanSummary, "Appended to note 'Alpha'.")
+
+        let script = await runner.lastScript
+        XCTAssertTrue(script?.contains("set noteId to \"n1\"") ?? false)
+        XCTAssertTrue(script?.contains("set editMode to \"append\"") ?? false)
+    }
+
+    func test_editNote_execute_normalizesNoteId() async throws {
+        let stdout = """
+        {"success": true, "data": {"note_id": "n1", "title": "Alpha", "mode": "append"}}
+        """
+        let runner = MockAppleScriptRunner(result: .success(Self.makeResult(stdout: stdout)))
+        let tool = NotesEditTool(runner: runner)
+
+        _ = try await tool.execute(args: [
+            "note_id": .string("x-coredata:///ABC/ICNote/p1"),
+            "text": .string("Extra"),
+            "mode": .string("append")
+        ])
+
+        let script = await runner.lastScript
+        XCTAssertTrue(script?.contains("set noteId to \"x-coredata://ABC/ICNote/p1\"") ?? false)
     }
 
     func test_listFolders_execute_usesAccountFilter() async throws {
@@ -230,6 +446,23 @@ final class NotesToolsTests: XCTestCase {
 
         XCTAssertThrowsError(try NotesAppleScript.parseEnvelope(result)) { error in
             XCTAssertEqual(error as? NotesToolError, .permissionDenied)
+        }
+    }
+
+    func test_parseEnvelope_unescapesEscapedJSON() throws {
+        let stdout = """
+        {\\\"success\\\": true, \\\"data\\\": {\\\"items\\\": [], \\\"total_count\\\": 0}}
+        """
+        let result = Self.makeResult(stdout: stdout)
+
+        let data = try NotesAppleScript.parseEnvelope(result)
+
+        if case .object(let dict) = data,
+           case .array(let items) = dict["items"] {
+            XCTAssertEqual(items.count, 0)
+            XCTAssertEqual(dict["total_count"]?.numberValue, 0)
+        } else {
+            XCTFail("Expected data object with items array")
         }
     }
 

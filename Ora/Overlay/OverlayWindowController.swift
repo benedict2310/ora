@@ -150,6 +150,7 @@ final class OverlayWindowController {
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isMovableByWindowBackground = true
+        panel.hidesOnDeactivate = false
 
         // Enable key events for keyboard navigation
         // We want it to become key immediately when shown

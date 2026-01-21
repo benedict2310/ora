@@ -60,6 +60,8 @@ struct NotesSearchTool: Tool {
         let query = Self.normalizeQuery(args["query"]?.stringValue ?? "")
         let limit = Self.normalizedLimit(args["limit"]?.numberValue)
 
+        Self.logger.info("Searching notes for query: \(query, privacy: .public)")
+
         let script = NotesAppleScript.searchNotesScript(query: query, limit: limit)
 
         let result: AppleScriptResult
@@ -75,11 +77,25 @@ struct NotesSearchTool: Tool {
             throw NotesToolError.invalidResponse
         }
 
-        let totalCount = Int(dict["total_count"]?.numberValue ?? Double(notes.count))
-        let summary = Self.summary(returnedCount: notes.count, totalCount: totalCount, query: query)
+        let returnedCount = notes.count
+        let totalCount = Int(dict["total_count"]?.numberValue ?? Double(returnedCount))
+        let remainingCount = max(totalCount - returnedCount, 0)
+        let truncated = remainingCount > 0
+
+        var responseDict = dict
+        responseDict["total_count"] = .number(Double(totalCount))
+        responseDict["returned_count"] = .number(Double(returnedCount))
+        responseDict["remaining_count"] = .number(Double(remainingCount))
+        responseDict["truncated"] = .bool(truncated)
+        if truncated {
+            responseDict["recommendation"] = .string("Try a more specific query to see more results.")
+        }
+
+        let summary = Self.summary(returnedCount: returnedCount, totalCount: totalCount, query: query)
+        Self.logger.info("Notes search returned \(returnedCount) of \(totalCount)")
         Self.logger.info("Found \(totalCount) notes for query: \(query, privacy: .private)")
 
-        return .success(.object(dict), summary: summary)
+        return .success(.object(responseDict), summary: summary)
     }
 
     // MARK: - Helpers
@@ -106,7 +122,9 @@ struct NotesSearchTool: Tool {
     }
 
     private static func normalizeQuery(_ query: String) -> String {
-        query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let unquoted = Self.stripWrappingQuotes(trimmed)
+        return Self.stripOuterPunctuation(unquoted)
     }
 
     private static func isQuerySpecific(_ query: String) -> Bool {
@@ -123,5 +141,20 @@ struct NotesSearchTool: Tool {
         return tokens.contains { token in
             token.count >= minQueryLength && !blockedQueries.contains(token)
         }
+    }
+
+    private static func stripWrappingQuotes(_ query: String) -> String {
+        guard query.count >= 2 else { return query }
+        let first = query.first
+        let last = query.last
+        if (first == "\"" && last == "\"") || (first == "'" && last == "'") {
+            return String(query.dropFirst().dropLast())
+        }
+        return query
+    }
+
+    private static func stripOuterPunctuation(_ query: String) -> String {
+        let punctuation = CharacterSet(charactersIn: ".,!?;:")
+        return query.trimmingCharacters(in: punctuation)
     }
 }

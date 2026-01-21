@@ -6,8 +6,10 @@
 //
 
 import Foundation
+import os
 
 enum NotesAppleScript {
+    private static let logger = Logger(subsystem: "com.ora.app", category: "NotesAppleScript")
     private static let jsonHelpers = """
     on json_escape(theText)
         if theText is missing value then return ""
@@ -35,6 +37,24 @@ enum NotesAppleScript {
         set AppleScript's text item delimiters to ""
         return joined
     end join_list
+
+    on html_escape(theText)
+        if theText is missing value then return ""
+        set theText to theText as string
+        set theText to my replace_chars(theText, "&", "&amp;")
+        set theText to my replace_chars(theText, "<", "&lt;")
+        set theText to my replace_chars(theText, ">", "&gt;")
+        set theText to my replace_chars(theText, "\\\"", "&quot;")
+        return theText
+    end html_escape
+
+    on html_from_plain(theText)
+        if theText is missing value then return "<div></div>"
+        set theText to my html_escape(theText)
+        set theText to my replace_chars(theText, return, "<br>")
+        set theText to my replace_chars(theText, linefeed, "<br>")
+        return "<div>" & theText & "</div>"
+    end html_from_plain
     """
 
     static func createNoteScript(title: String?, body: String, folder: String?, account: String?) -> String {
@@ -98,7 +118,7 @@ enum NotesAppleScript {
         set folderTitle to name of targetFolder as string
         set accountTitle to name of targetAccount as string
 
-        set jsonText to "{\\\\\\"note_id\\\\\\":\\\\\\"" & my json_escape(noteId) & "\\\\\\",\\\\\\"title\\\\\\":\\\\\\"" & my json_escape(noteTitle) & "\\\\\\",\\\\\\"folder\\\\\\":\\\\\\"" & my json_escape(folderTitle) & "\\\\\\",\\\\\\"account\\\\\\":\\\\\\"" & my json_escape(accountTitle) & "\\\\\\\"}"
+        set jsonText to "{\\\"note_id\\\":\\\"" & my json_escape(noteId) & "\\\",\\\"title\\\":\\\"" & my json_escape(noteTitle) & "\\\",\\\"folder\\\":\\\"" & my json_escape(folderTitle) & "\\\",\\\"account\\\":\\\"" & my json_escape(accountTitle) & "\\\"}"
         set result to jsonText
         """
 
@@ -129,11 +149,11 @@ enum NotesAppleScript {
                 set folderTitle to name of folderItem as string
             end try
 
-            set end of jsonItems to "{\\\\\\"note_id\\\\\\":\\\\\\"" & my json_escape(noteId) & "\\\\\\",\\\\\\"title\\\\\\":\\\\\\"" & my json_escape(noteTitle) & "\\\\\\",\\\\\\"folder\\\\\\":\\\\\\"" & my json_escape(folderTitle) & "\\\\\\\"}"
+            set end of jsonItems to "{\\\"note_id\\\":\\\"" & my json_escape(noteId) & "\\\",\\\"title\\\":\\\"" & my json_escape(noteTitle) & "\\\",\\\"folder\\\":\\\"" & my json_escape(folderTitle) & "\\\"}"
         end repeat
 
         set itemsText to "[" & my join_list(jsonItems, ",") & "]"
-        set jsonText to "{\\\\\\"items\\\\\\":" & itemsText & ",\\\\\\"total_count\\\\\\":" & totalCount & "}"
+        set jsonText to "{\\\"items\\\":" & itemsText & ",\\\"total_count\\\":" & totalCount & "}"
         set result to jsonText
         """
 
@@ -141,7 +161,7 @@ enum NotesAppleScript {
     }
 
     static func openNoteScript(noteID: String) -> String {
-        let noteIdValue = Self.escape(noteID)
+        let noteIdValue = Self.escape(Self.normalizeNoteID(noteID))
 
         let commands = """
         set noteId to "\(noteIdValue)"
@@ -154,7 +174,80 @@ enum NotesAppleScript {
         activate
 
         set noteTitle to name of targetNote as string
-        set jsonText to "{\\\\\\"note_id\\\\\\":\\\\\\"" & my json_escape(noteId) & "\\\\\\",\\\\\\"title\\\\\\":\\\\\\"" & my json_escape(noteTitle) & "\\\\\\\"}"
+        set jsonText to "{\\\"note_id\\\":\\\"" & my json_escape(noteId) & "\\\",\\\"title\\\":\\\"" & my json_escape(noteTitle) & "\\\"}"
+        set result to jsonText
+        """
+
+        return Self.buildScript(commands: commands)
+    }
+
+    static func readNoteScript(noteID: String, maxChars: Int) -> String {
+        let noteIdValue = Self.escape(Self.normalizeNoteID(noteID))
+        let maxValue = max(1, maxChars)
+
+        let commands = """
+        set noteId to "\(noteIdValue)"
+        set maxChars to \(maxValue)
+
+        if not (exists note id noteId) then
+            error "Note not found: " & noteId number 1003
+        end if
+
+        set targetNote to note id noteId
+        set noteTitle to name of targetNote as string
+        set noteBody to plaintext of targetNote as string
+        set totalChars to length of noteBody
+        set truncated to false
+        set returnedBody to noteBody
+
+        if totalChars > maxChars then
+            set returnedBody to text 1 thru maxChars of noteBody
+            set truncated to true
+        end if
+
+        set returnedChars to length of returnedBody
+        set remainingChars to totalChars - returnedChars
+
+        set jsonText to "{\\\"note_id\\\":\\\"" & my json_escape(noteId) & "\\\",\\\"title\\\":\\\"" & my json_escape(noteTitle) & "\\\",\\\"body\\\":\\\"" & my json_escape(returnedBody) & "\\\",\\\"total_chars\\\":" & totalChars & ",\\\"returned_chars\\\":" & returnedChars & ",\\\"remaining_chars\\\":" & remainingChars & ",\\\"truncated\\\":" & truncated & "}"
+        set result to jsonText
+        """
+
+        return Self.buildScript(commands: commands)
+    }
+
+    static func editNoteScript(noteID: String, text: String, mode: String) -> String {
+        let noteIdValue = Self.escape(Self.normalizeNoteID(noteID))
+        let textValue = Self.escape(text)
+        let modeValue = Self.escape(mode)
+
+        let commands = """
+        set noteId to "\(noteIdValue)"
+        set editMode to "\(modeValue)"
+        set newText to "\(textValue)"
+
+        if not (exists note id noteId) then
+            error "Note not found: " & noteId number 1003
+        end if
+
+        set targetNote to note id noteId
+        set noteTitle to name of targetNote as string
+        set htmlText to my html_from_plain(newText)
+        set newBody to htmlText
+
+        if editMode is "append" then
+            set existingBody to body of targetNote as string
+            if existingBody is not "" then
+                set newBody to existingBody & "<div><br></div>" & htmlText
+            end if
+        else if editMode is "replace" then
+            set newBody to htmlText
+        else
+            error "Invalid edit mode: " & editMode number 1004
+        end if
+
+        set body of targetNote to newBody
+
+        set jsonText to "{\\\"note_id\\\":\\\"" & my json_escape(noteId) & "\\\",\\\"title\\\":\\\"" & my json_escape(noteTitle) & "\\\",\\\"mode\\\":\\\"" & my json_escape(editMode) & "\\\"}"
         set result to jsonText
         """
 
@@ -182,7 +275,7 @@ enum NotesAppleScript {
             set accountTitle to name of theAccount as string
             repeat with theFolder in folders of theAccount
                 set folderTitle to name of theFolder as string
-                set end of jsonItems to "{\\\\\\"name\\\\\\":\\\\\\"" & my json_escape(folderTitle) & "\\\\\\",\\\\\\"account\\\\\\":\\\\\\"" & my json_escape(accountTitle) & "\\\\\\\"}"
+                set end of jsonItems to "{\\\"name\\\":\\\"" & my json_escape(folderTitle) & "\\\",\\\"account\\\":\\\"" & my json_escape(accountTitle) & "\\\"}"
             end repeat
         end repeat
 
@@ -194,10 +287,23 @@ enum NotesAppleScript {
     }
 
     static func parseEnvelope(_ result: AppleScriptResult) throws -> JSONValue {
-        guard let envelope = AppleScriptUtils.parseEnvelope(result.stdout) else {
-            throw NotesToolError.invalidResponse
+        let output = result.stdout
+        if let envelope = AppleScriptUtils.parseEnvelope(output) {
+            return try Self.extractData(from: envelope, output: output)
         }
 
+        let normalized = Self.normalizeEnvelopeOutput(output)
+        if normalized != output, let envelope = AppleScriptUtils.parseEnvelope(normalized) {
+            Self.logger.info("Normalized Notes response from escaped JSON.")
+            return try Self.extractData(from: envelope, output: normalized)
+        }
+
+        let trimmed = Self.truncate(output)
+        Self.logger.error("Failed to parse Notes response. stdout: \(trimmed, privacy: .private)")
+        throw NotesToolError.invalidResponse
+    }
+
+    private static func extractData(from envelope: AppleScriptJSONEnvelope, output: String) throws -> JSONValue {
         guard envelope.success else {
             let message = envelope.error ?? "Notes error"
             if let code = envelope.code, AppleScriptError.permissionErrorCodes.contains(code) {
@@ -217,10 +323,34 @@ enum NotesAppleScript {
         }
 
         guard let data = envelope.data else {
+            let trimmed = Self.truncate(output)
+            Self.logger.error("Missing data in Notes response. stdout: \(trimmed, privacy: .private)")
             throw NotesToolError.invalidResponse
         }
 
         return data
+    }
+
+    private static func normalizeEnvelopeOutput(_ output: String) -> String {
+        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if trimmed.hasPrefix("\""), trimmed.hasSuffix("\""),
+           let data = trimmed.data(using: .utf8),
+           let unescaped = try? JSONSerialization.jsonObject(with: data) as? String {
+            return unescaped
+        }
+
+        guard trimmed.contains("\\\"success\\\"") else {
+            return trimmed
+        }
+
+        var unescaped = trimmed
+        unescaped = unescaped.replacingOccurrences(of: "\\\"", with: "\"")
+        unescaped = unescaped.replacingOccurrences(of: "\\n", with: "\n")
+        unescaped = unescaped.replacingOccurrences(of: "\\r", with: "\r")
+        unescaped = unescaped.replacingOccurrences(of: "\\t", with: "\t")
+        unescaped = unescaped.replacingOccurrences(of: "\\\\", with: "\\")
+        return unescaped
     }
 
     // MARK: - Private
@@ -233,9 +363,9 @@ enum NotesAppleScript {
             tell application "Notes"
         \(indented)
             end tell
-            return "{\\\\\\"success\\\\\\":true,\\\\\\"data\\\\\\":" & result & "}"
+            return "{\\\"success\\\":true,\\\"data\\\":" & result & "}"
         on error errMsg number errNum
-            return "{\\\\\\"success\\\\\\":false,\\\\\\"error\\\\\\":\\\\\\"" & errMsg & "\\\\\\",\\\\\\"code\\\\\\":" & errNum & "}"
+            return "{\\\"success\\\":false,\\\"error\\\":\\\"" & my json_escape(errMsg) & "\\\",\\\"code\\\":" & errNum & "}"
         end try
         """
     }
@@ -257,5 +387,22 @@ enum NotesAppleScript {
             return ""
         }
         return Self.escape(value)
+    }
+
+    private static func normalizeNoteID(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("x-coredata:///") {
+            return trimmed.replacingOccurrences(of: "x-coredata:///", with: "x-coredata://")
+        }
+        return trimmed
+    }
+
+    private static func truncate(_ value: String, limit: Int = 400) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.count <= limit {
+            return trimmed
+        }
+        let prefix = trimmed.prefix(limit)
+        return "\(prefix)…"
     }
 }

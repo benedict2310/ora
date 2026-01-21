@@ -24,12 +24,13 @@ As a user, I want to create and find notes via voice command so that I can captu
 
 - **Create Note:** `notes.create_note` (body, optional title, folder, account).
 - **Search Notes:** `notes.search_notes` (query, limit) returning ID/Name/Folder.
+- **Read Note:** `notes.read_note` (plain text, truncation metadata).
+- **Edit Note:** `notes.edit_note` (append or replace).
 - **Open Note:** `notes.open_note` (by ID).
 - **List Folders:** `notes.list_folders` (account filter).
 
 ### Out of Scope
 
-- Appending to notes (handled in X.06B).
 - Complex formatting (rich text/images).
 - Folder creation/deletion.
 
@@ -71,6 +72,8 @@ As a user, I want to create and find notes via voice command so that I can captu
 - [x] AC-4: `notes.open_note` opens the correct note by ID. - ✅ Verified in `Ora/Tools/Notes/NotesOpenTool.swift` and `OraTests/Tools/Notes/NotesToolsTests.swift`.
 - [x] AC-5: `notes.list_folders` returns available folders. - ✅ Verified in `Ora/Tools/Notes/NotesListFoldersTool.swift`.
 - [x] AC-6: Permission denied errors return actionable remediation instructions. - ✅ Verified in `Ora/Tools/Notes/NotesToolError.swift` and `OraTests/Tools/Notes/NotesToolsTests.swift`.
+- [x] AC-7: `notes.read_note` returns plain text with truncation metadata. - ✅ Verified in `Ora/Tools/Notes/NotesReadTool.swift` and `OraTests/Tools/Notes/NotesToolsTests.swift`.
+- [x] AC-8: `notes.edit_note` supports append and replace modes. - ✅ Verified in `Ora/Tools/Notes/NotesEditTool.swift` and `OraTests/Tools/Notes/NotesToolsTests.swift`.
 
 ## 7. Verification Plan
 
@@ -87,6 +90,7 @@ As a user, I want to create and find notes via voice command so that I can captu
 ## 8. Performance / Reliability Considerations
 
 - Search performance depends on AppleScript; enforce `limit` parameter.
+- Read performance depends on note size; enforce `max_chars`.
 
 ## 9. Risks & Mitigations
 
@@ -110,6 +114,8 @@ As a user, I want to create and find notes via voice command so that I can captu
 - `Ora/Tools/Notes/NotesCreateTool.swift` - Implemented `notes.create_note`.
 - `Ora/Tools/Notes/NotesSearchTool.swift` - Implemented `notes.search_notes`.
 - `Ora/Tools/Notes/NotesOpenTool.swift` - Implemented `notes.open_note`.
+- `Ora/Tools/Notes/NotesReadTool.swift` - Implemented `notes.read_note`.
+- `Ora/Tools/Notes/NotesEditTool.swift` - Implemented `notes.edit_note`.
 - `Ora/Tools/Notes/NotesListFoldersTool.swift` - Implemented `notes.list_folders`.
 - `Ora/Tools/ToolRegistry.swift` - Registered Notes tools.
 - `Ora/Resources/system-prompt.txt` - Documented Notes tool usage and open_note lookup.

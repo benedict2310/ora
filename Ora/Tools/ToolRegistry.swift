@@ -74,6 +74,8 @@ actor ToolRegistry {
         register(NotesCreateTool())
         register(NotesSearchTool())
         register(NotesOpenTool())
+        register(NotesReadTool())
+        register(NotesEditTool())
         register(NotesListFoldersTool())
 
         // System tools
