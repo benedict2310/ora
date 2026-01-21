@@ -65,6 +65,7 @@ struct OverlayView: View {
                             reduceTransparency: self.reduceTransparency,
                             reduceMotion: self.reduceMotion
                         )
+                        .id("thinking-bubble")
                     }
 
                     if self.shouldShowToolBubble {
@@ -76,7 +77,8 @@ struct OverlayView: View {
                             reduceTransparency: self.reduceTransparency,
                             reduceMotion: self.reduceMotion
                         )
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        .id("tool-bubble")
+                        .transition(.opacity)
                     }
 
                     if self.shouldShowExecutingBubble {
@@ -85,6 +87,7 @@ struct OverlayView: View {
                             reduceTransparency: self.reduceTransparency,
                             reduceMotion: self.reduceMotion
                         )
+                        .id("executing-bubble")
                     }
 
                     if case .proposing(let proposal) = self.viewModel.mode {
@@ -93,10 +96,12 @@ struct OverlayView: View {
                             reduceTransparency: self.reduceTransparency,
                             reduceMotion: self.reduceMotion
                         )
+                        .id("proposal-bubble")
                     }
 
                     if case .awaitingFollowUp = self.viewModel.mode {
                         FollowUpPromptView(reduceTransparency: self.reduceTransparency)
+                            .id("followup-prompt")
                     }
 
                     if case .error(let message) = self.viewModel.mode {
@@ -108,6 +113,7 @@ struct OverlayView: View {
                             reduceTransparency: self.reduceTransparency,
                             reduceMotion: self.reduceMotion
                         )
+                        .id("error-bubble")
                     }
 
                     Color.clear

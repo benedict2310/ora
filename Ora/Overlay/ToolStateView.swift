@@ -115,13 +115,11 @@ struct ToolStateView: View {
         HStack(spacing: 8) {
             // Animated gear icon
             Image(systemName: "gearshape")
-                .font(.caption)
-                .foregroundStyle(.secondary)
                 .symbolEffect(.rotate, options: .repeating, isActive: !self.reduceMotion)
             Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
+        .font(.body.weight(.semibold))
+        .foregroundStyle(.secondary)
     }
 
     // MARK: - Tool-Specific Styling

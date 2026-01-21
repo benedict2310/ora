@@ -53,9 +53,14 @@ struct ChatBubbleView: View {
 
     /// Maximum bubble width based on role and state
     private var maxBubbleWidth: CGFloat {
-        // Thinking-only bubbles (no text) are narrower
-        if self.text == nil, case .thinking = self.state {
-            return 140
+        // State-only bubbles (no text) have compact widths
+        if self.text == nil, let state = self.state {
+            switch state {
+            case .thinking:
+                return 140
+            case .tool:
+                return 180
+            }
         }
         return self.role == .user ? OverlayLayout.userBubbleMaxWidth : OverlayLayout.assistantBubbleMaxWidth
     }
@@ -202,6 +207,7 @@ struct ChatBubbleView: View {
                     .frame(maxWidth: self.maxBubbleWidth, alignment: .trailing)
             }
         }
+        .animation(self.reduceMotion ? nil : .smooth(duration: 0.25), value: self.state)
     }
 
     private func glassStyle(for role: Role) -> Glass {
@@ -237,21 +243,11 @@ struct ChatBubbleView: View {
     }
 
     private func stateRow(_ state: BubbleState, alignRight: Bool) -> some View {
-        let textFont: Font
-        switch state {
-        case .thinking:
-            textFont = .body.weight(.semibold)
-        case .tool:
-            textFont = .caption
-        }
-
-        return HStack(spacing: 6) {
+        HStack(spacing: 6) {
             switch state {
             case .thinking(let label):
                 // Standard styling with shimmer - adapts to light/dark
                 Text(label ?? "Thinking")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.secondary)
                     .shimmer(
                         active: !self.reduceMotion,
                         duration: 1.2,
@@ -259,15 +255,12 @@ struct ChatBubbleView: View {
                     )
             case .tool(let label):
                 // Tool state with rotating gear animation
-                HStack(spacing: 6) {
-                    Image(systemName: "gearshape")
-                        .font(.caption)
-                        .symbolEffect(.rotate, options: .repeating, isActive: !self.reduceMotion)
-                    Text(label)
-                }
+                Image(systemName: "gearshape")
+                    .symbolEffect(.rotate, options: .repeating, isActive: !self.reduceMotion)
+                Text(label)
             }
         }
-        .font(textFont)
+        .font(.body.weight(.semibold))
         .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, alignment: alignRight ? .trailing : .leading)
     }

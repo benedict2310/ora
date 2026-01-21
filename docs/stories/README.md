@@ -73,7 +73,9 @@ User experience improvements for overlay clarity and interaction.
 | UX.00 | [Overlay Bubble Spacing](ux/UX.00-OVERLAY-BUBBLE-SPACING.md) | 🚧 To Do |
 | UX.01 | [Agent Transparency Status](ux/UX.01-AGENT-TRANSPARENCY-STATUS.md) | ✅ Complete |
 | UX.02 | [Overlay Bubble Copy Action](ux/UX.02-OVERLAY-BUBBLE-COPY.md) | ✅ Complete |
-| UX.03 | [Overlay Visual Polish](ux/UX.03-OVERLAY-VISUAL-POLISH.md) | 🚧 To Do |
+| UX.03 | [Overlay Visual Polish](ux/UX.03-OVERLAY-VISUAL-POLISH.md) | ✅ Complete |
+| UX.05 | [Glass Artifact Mitigation](ux/UX.05-GLASS-ARTIFACT-MITIGATION.md) | ✅ Complete |
+| UX.07 | [Thinking Animation Effects](ux/UX.07-THINKING-ANIMATION-EFFECTS.md) | ✅ Complete |
 
 ### 🎙 ASR Integration (A)
 Speech-to-text pipeline using FluidAudio Parakeet.

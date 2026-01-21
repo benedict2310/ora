@@ -218,6 +218,27 @@ Ora/Shaders/
 
 **Solution:** Use SwiftUI-Shimmer's approach - mask the content WITH the gradient (not overlay masked with content). The gradient's start/end points are animated to create the sweeping effect.
 
+### Issue 2: Bubbles Appearing in Wrong Positions (RESOLVED)
+
+**Symptom:** Tool and thinking bubbles appearing too high or too low, sometimes overlaying other bubbles.
+
+**Root Causes:**
+1. Conditional bubbles in LazyVStack lacked stable IDs, causing SwiftUI to reuse/morph views incorrectly
+2. `.transition(.opacity.combined(with: .move(edge: .top)))` made bubbles animate from above their final position
+3. Double animation modifiers (on both `bubbleRow` and `stateRow`) caused conflicts
+
+**Solution:**
+1. Added stable IDs to all conditional bubbles (`"thinking-bubble"`, `"tool-bubble"`, etc.)
+2. Simplified transition to `.opacity` only
+3. Removed redundant animation from `stateRow`, kept single animation on `bubbleRow`
+4. Made animation respect `reduceMotion` accessibility setting
+
+### Issue 3: Inconsistent Font Sizes (RESOLVED)
+
+**Symptom:** Thinking and tool state text had different font sizes, causing visual inconsistency during state transitions.
+
+**Solution:** Unified both states to use `.font(.body.weight(.semibold))` and `.foregroundStyle(.secondary)`.
+
 ---
 
 ## 8. Acceptance Criteria
