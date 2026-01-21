@@ -113,18 +113,15 @@ struct ToolStateView: View {
 
     private func executingContent(label: String) -> some View {
         HStack(spacing: 8) {
+            // Animated gear icon
             Image(systemName: "gearshape")
                 .font(.caption)
+                .foregroundStyle(.secondary)
+                .symbolEffect(.rotate, options: .repeating, isActive: !self.reduceMotion)
             Text(label)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
-        // Apply chromatic aberration effect during execution
-        .chromaticAberration(
-            active: !self.reduceMotion,
-            intensity: 2.5,
-            animated: true
-        )
     }
 
     // MARK: - Tool-Specific Styling

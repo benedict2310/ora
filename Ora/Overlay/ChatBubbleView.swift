@@ -258,17 +258,13 @@ struct ChatBubbleView: View {
                         bandSize: 0.3
                     )
             case .tool(let label):
-                // Tool state with chromatic aberration effect
+                // Tool state with rotating gear animation
                 HStack(spacing: 6) {
                     Image(systemName: "gearshape")
                         .font(.caption)
+                        .symbolEffect(.rotate, options: .repeating, isActive: !self.reduceMotion)
                     Text(label)
                 }
-                .chromaticAberration(
-                    active: !self.reduceMotion,
-                    intensity: 2.0,
-                    animated: true
-                )
             }
         }
         .font(textFont)

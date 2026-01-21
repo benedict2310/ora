@@ -167,16 +167,16 @@ Text(label ?? "Thinking")
 ```
 
 **Tool State:**
-- Uses Metal `colorPlanes` shader for chromatic aberration
-- Applied to HStack container (not directly to Text) via `.drawingGroup()`
-- Animated oscillating intensity for subtle movement
+- Uses native SwiftUI `.symbolEffect(.rotate)` on gear icon
+- Chromatic aberration shader removed (doesn't work reliably on Text views)
+- Smooth continuous rotation animation
 
 ```swift
 HStack(spacing: 6) {
     Image(systemName: "gearshape")
+        .symbolEffect(.rotate, options: .repeating, isActive: !reduceMotion)
     Text(label)
 }
-.chromaticAberration(active: !reduceMotion, intensity: 2.0, animated: true)
 ```
 
 ---
@@ -223,7 +223,7 @@ Ora/Shaders/
 ## 8. Acceptance Criteria
 
 - [x] AC-1: Thinking state shows animated shimmer/spotlight on text
-- [x] AC-2: Tool calling state has chromatic aberration effect
+- [x] AC-2: Tool calling state has animated effect (rotating gear icon)
 - [x] AC-3: Animations respect `reduceMotion` accessibility setting
 - [x] AC-4: No performance regression
 - [x] AC-5: Works in both light and dark modes
