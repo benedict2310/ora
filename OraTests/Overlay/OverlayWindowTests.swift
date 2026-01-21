@@ -34,6 +34,7 @@ final class OverlayWindowTests: XCTestCase {
         XCTAssertEqual(panel.styleMask.contains(.borderless), true, "Style mask must contain .borderless")
         XCTAssertEqual(panel.styleMask.contains(.nonactivatingPanel), false, "Style mask must NOT contain .nonactivatingPanel")
         XCTAssertEqual(panel.becomesKeyOnlyIfNeeded, false, "becomesKeyOnlyIfNeeded must be false")
+        XCTAssertEqual(panel.hidesOnDeactivate, false, "Overlay should remain visible during external focus")
     }
 
     func test_rapidHideAndShow_keepsWindowVisible() async {

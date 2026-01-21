@@ -37,6 +37,11 @@ struct AppleScriptConfig: Sendable {
     }
 }
 
+/// Protocol for AppleScript execution (allows mocking in tests)
+protocol AppleScriptRunning: Sendable {
+    func execute(script: String, config: AppleScriptConfig) async throws -> AppleScriptResult
+}
+
 /// Executes AppleScripts with timeout, error normalization, and JSON parsing
 actor AppleScriptRunner {
     private let logger = Logger(subsystem: "com.ora.app", category: "AppleScriptRunner")
@@ -317,3 +322,5 @@ actor AppleScriptRunner {
         }
     }
 }
+
+extension AppleScriptRunner: AppleScriptRunning {}
