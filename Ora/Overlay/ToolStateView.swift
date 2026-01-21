@@ -113,17 +113,18 @@ struct ToolStateView: View {
 
     private func executingContent(label: String) -> some View {
         HStack(spacing: 8) {
-            if self.reduceMotion {
-                Image(systemName: "gearshape")
-                    .font(.caption)
-            } else {
-                ProgressView()
-                    .controlSize(.small)
-            }
+            Image(systemName: "gearshape")
+                .font(.caption)
             Text(label)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+        // Apply chromatic aberration effect during execution
+        .chromaticAberration(
+            active: !self.reduceMotion,
+            intensity: 2.5,
+            animated: true
+        )
     }
 
     // MARK: - Tool-Specific Styling

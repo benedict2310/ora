@@ -459,6 +459,66 @@ User verified that artifacts are significantly reduced while maintaining the flo
 
 ## Completion Status
 
-- [x] Implementation complete
-- [x] User verified improvements
-- [x] All tests passing (933/933)
+- [x] Option A+C implemented (spacing + opacity)
+- [x] Option E implemented (window shadow invalidation)
+- [ ] Option G attempted but failed (glassEffectUnion merges bubbles visually)
+- [x] Artifacts reduced on dark backgrounds
+- [ ] Artifacts still visible on light backgrounds
+
+**Current State:** Partially mitigated. This appears to be a fundamental limitation of Apple's Liquid Glass API ("glass cannot sample glass"). Further mitigation may require:
+- Filing Apple Feedback
+- Accepting the limitation
+- Using non-glass backgrounds in light mode
+
+---
+
+### Phase 3: Option E - Window Shadow Invalidation (2026-01-21)
+
+**Branch:** `feat/UX.05-glass-effect-union`
+
+Added `invalidateShadow()` calls to clear rendering artifacts:
+- On overlay show
+- After message count changes
+- After mode changes
+
+**Result:** Improved on dark backgrounds, artifacts still visible on light backgrounds.
+
+### Phase 2.5: Option G - glassEffectUnion (Failed)
+
+**Attempted:** Using `glassEffectUnion(id:namespace:)` to render all bubbles as one glass region.
+
+**Result:** FAILED - The API is designed to visually MERGE elements into one connected shape (like toolbar buttons), not keep them visually separate. Created one large opaque bubble instead of individual floating bubbles.
+
+**Lesson learned:** `glassEffectUnion` is for merging UI elements, not for fixing sampling artifacts between separate elements.
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-01-20T20:39:06Z
+**Commit reviewed:** dee5fa7
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 4
+- Build status: Pass
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- None.
+
+#### P1 - Major (Should fix)
+- None.
+
+#### P2 - Minor (Can defer)
+- [ ] `ToolStateView.swift` / `OverlayView.swift` - Inconsistent application of `glassEffectUnion`. `ChatBubbleView` uses a helper extension `.glassEffectUnion(id:namespace:enabled:)`, while `ToolStateView` and `FollowUpPromptView` use manual `if let` unwrapping. Consider promoting the helper to a public extension in a utility file for consistency, but acceptable for now.
+
+### Future Considerations (Out of Scope)
+- Ensure `glassEffectUnion` performance is monitored on older Apple Silicon devices if the conversation history grows very long, as it creates a single large rendering group.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge

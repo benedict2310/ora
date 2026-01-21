@@ -120,9 +120,11 @@ struct OverlayView: View {
             .scrollIndicators(.hidden)
             .onChange(of: self.viewModel.messages.count) { _, _ in
                 self.scrollToBottom(proxy)
+                self.invalidateWindowShadow()
             }
             .onChange(of: self.viewModel.mode) { _, _ in
                 self.scrollToBottom(proxy)
+                self.invalidateWindowShadow()
             }
         }
     }
@@ -230,6 +232,15 @@ struct OverlayView: View {
             withAnimation(.easeOut(duration: 0.2)) {
                 action()
             }
+        }
+    }
+
+    /// Invalidate window shadow to help clear glass rendering artifacts.
+    /// Called after layout changes that may leave visual artifacts between glass regions.
+    private func invalidateWindowShadow() {
+        // Delay slightly to let SwiftUI complete its layout pass
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            OverlayWindowController.shared.invalidateShadow()
         }
     }
 }

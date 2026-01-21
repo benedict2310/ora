@@ -51,9 +51,13 @@ struct ChatBubbleView: View {
     @State private var isCopied: Bool = false
     @State private var hoverHideTask: Task<Void, Never>?
 
-    /// Maximum bubble width based on role
+    /// Maximum bubble width based on role and state
     private var maxBubbleWidth: CGFloat {
-        self.role == .user ? OverlayLayout.userBubbleMaxWidth : OverlayLayout.assistantBubbleMaxWidth
+        // Thinking-only bubbles (no text) are narrower
+        if self.text == nil, case .thinking = self.state {
+            return 140
+        }
+        return self.role == .user ? OverlayLayout.userBubbleMaxWidth : OverlayLayout.assistantBubbleMaxWidth
     }
 
     var body: some View {
@@ -244,17 +248,27 @@ struct ChatBubbleView: View {
         return HStack(spacing: 6) {
             switch state {
             case .thinking(let label):
-                if self.reduceMotion {
-                    Image(systemName: "ellipsis")
-                } else {
-                    ProgressView()
-                        .controlSize(.small)
-                }
+                // Standard styling with shimmer - adapts to light/dark
                 Text(label ?? "Thinking")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .shimmer(
+                        active: !self.reduceMotion,
+                        duration: 1.2,
+                        bandSize: 0.3
+                    )
             case .tool(let label):
-                Image(systemName: "gearshape")
-                    .font(.caption)
-                Text(label)
+                // Tool state with chromatic aberration effect
+                HStack(spacing: 6) {
+                    Image(systemName: "gearshape")
+                        .font(.caption)
+                    Text(label)
+                }
+                .chromaticAberration(
+                    active: !self.reduceMotion,
+                    intensity: 2.0,
+                    animated: true
+                )
             }
         }
         .font(textFont)
