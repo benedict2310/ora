@@ -24,8 +24,6 @@ struct ToolStateView: View {
     let mode: Mode
     let reduceTransparency: Bool
     let reduceMotion: Bool
-    /// Optional namespace for glassEffectUnion to group with chat bubbles into a single glass region.
-    var glassUnionNamespace: Namespace.ID?
 
     @FocusState private var confirmButtonFocused: Bool
     @FocusState private var cancelButtonFocused: Bool
@@ -62,16 +60,9 @@ struct ToolStateView: View {
                 .overlay(shape.stroke(Color.white.opacity(0.08), lineWidth: 0.6))
         } else {
             // Use .regular variant for full background adaptivity (light/dark)
-            // Unified tint for glassEffectUnion to eliminate boundary artifacts
-            let glassView = base
-                .background(shape.fill(Color.white.opacity(0.03)))
-                .glassEffect(.regular.tint(.white.opacity(0.03)), in: shape)
-
-            if let namespace = self.glassUnionNamespace {
-                glassView.glassEffectUnion(id: "chatBubbles", namespace: namespace)
-            } else {
-                glassView
-            }
+            // Tint opacity lowered to reduce black outline artifacts
+            base
+                .glassEffect(.regular.tint(.white.opacity(0.04)), in: shape)
         }
     }
 
@@ -122,17 +113,18 @@ struct ToolStateView: View {
 
     private func executingContent(label: String) -> some View {
         HStack(spacing: 8) {
-            if self.reduceMotion {
-                Image(systemName: "gearshape")
-                    .font(.caption)
-            } else {
-                ProgressView()
-                    .controlSize(.small)
-            }
+            Image(systemName: "gearshape")
+                .font(.caption)
             Text(label)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+        // Apply chromatic aberration effect during execution
+        .chromaticAberration(
+            active: !self.reduceMotion,
+            intensity: 2.5,
+            animated: true
+        )
     }
 
     // MARK: - Tool-Specific Styling

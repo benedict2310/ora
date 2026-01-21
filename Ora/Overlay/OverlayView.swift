@@ -15,7 +15,6 @@ struct OverlayView: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     @Namespace private var inputGlassNamespace
-    @Namespace private var chatBubbleNamespace
 
     private let scrollAnchorID = "overlayScrollAnchor"
 
@@ -52,8 +51,7 @@ struct OverlayView: View {
                             state: nil,
                             isPartial: message.isPartial,
                             reduceTransparency: self.reduceTransparency,
-                            reduceMotion: self.reduceMotion,
-                            glassUnionNamespace: self.chatBubbleNamespace
+                            reduceMotion: self.reduceMotion
                         )
                         .id(message.id)
                     }
@@ -65,8 +63,7 @@ struct OverlayView: View {
                             state: .thinking(self.thinkingBubbleLabel),
                             isPartial: false,
                             reduceTransparency: self.reduceTransparency,
-                            reduceMotion: self.reduceMotion,
-                            glassUnionNamespace: self.chatBubbleNamespace
+                            reduceMotion: self.reduceMotion
                         )
                     }
 
@@ -77,8 +74,7 @@ struct OverlayView: View {
                             state: .tool(self.viewModel.activity.displayLabel),
                             isPartial: false,
                             reduceTransparency: self.reduceTransparency,
-                            reduceMotion: self.reduceMotion,
-                            glassUnionNamespace: self.chatBubbleNamespace
+                            reduceMotion: self.reduceMotion
                         )
                         .transition(.opacity.combined(with: .move(edge: .top)))
                     }
@@ -87,8 +83,7 @@ struct OverlayView: View {
                         ToolStateView(
                             mode: .executing(label: "Executing action"),
                             reduceTransparency: self.reduceTransparency,
-                            reduceMotion: self.reduceMotion,
-                            glassUnionNamespace: self.chatBubbleNamespace
+                            reduceMotion: self.reduceMotion
                         )
                     }
 
@@ -96,16 +91,12 @@ struct OverlayView: View {
                         ToolStateView(
                             mode: .proposal(proposal),
                             reduceTransparency: self.reduceTransparency,
-                            reduceMotion: self.reduceMotion,
-                            glassUnionNamespace: self.chatBubbleNamespace
+                            reduceMotion: self.reduceMotion
                         )
                     }
 
                     if case .awaitingFollowUp = self.viewModel.mode {
-                        FollowUpPromptView(
-                            reduceTransparency: self.reduceTransparency,
-                            glassUnionNamespace: self.chatBubbleNamespace
-                        )
+                        FollowUpPromptView(reduceTransparency: self.reduceTransparency)
                     }
 
                     if case .error(let message) = self.viewModel.mode {
@@ -115,8 +106,7 @@ struct OverlayView: View {
                             state: .tool("Error"),
                             isPartial: false,
                             reduceTransparency: self.reduceTransparency,
-                            reduceMotion: self.reduceMotion,
-                            glassUnionNamespace: self.chatBubbleNamespace
+                            reduceMotion: self.reduceMotion
                         )
                     }
 
@@ -130,9 +120,11 @@ struct OverlayView: View {
             .scrollIndicators(.hidden)
             .onChange(of: self.viewModel.messages.count) { _, _ in
                 self.scrollToBottom(proxy)
+                self.invalidateWindowShadow()
             }
             .onChange(of: self.viewModel.mode) { _, _ in
                 self.scrollToBottom(proxy)
+                self.invalidateWindowShadow()
             }
         }
     }
@@ -242,14 +234,21 @@ struct OverlayView: View {
             }
         }
     }
+
+    /// Invalidate window shadow to help clear glass rendering artifacts.
+    /// Called after layout changes that may leave visual artifacts between glass regions.
+    private func invalidateWindowShadow() {
+        // Delay slightly to let SwiftUI complete its layout pass
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            OverlayWindowController.shared.invalidateShadow()
+        }
+    }
 }
 
 // MARK: - Follow-Up Prompt
 
 struct FollowUpPromptView: View {
     let reduceTransparency: Bool
-    /// Optional namespace for glassEffectUnion to group with chat bubbles into a single glass region.
-    var glassUnionNamespace: Namespace.ID?
 
     var body: some View {
         HStack {
@@ -280,16 +279,9 @@ struct FollowUpPromptView: View {
                 .background(shape.fill(Color(nsColor: .controlBackgroundColor).opacity(0.94)))
                 .overlay(shape.stroke(Color.white.opacity(0.08), lineWidth: 0.6))
         } else {
-            // Unified tint for glassEffectUnion to eliminate boundary artifacts
-            let glassView = base
-                .background(shape.fill(Color.white.opacity(0.03)))
-                .glassEffect(.regular.tint(.white.opacity(0.03)), in: shape)
-
-            if let namespace = self.glassUnionNamespace {
-                glassView.glassEffectUnion(id: "chatBubbles", namespace: namespace)
-            } else {
-                glassView
-            }
+            // Tint opacity lowered to reduce black outline artifacts
+            base
+                .glassEffect(.regular.tint(.white.opacity(0.04)), in: shape)
         }
     }
 }

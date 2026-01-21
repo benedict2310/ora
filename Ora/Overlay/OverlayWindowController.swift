@@ -55,6 +55,12 @@ final class OverlayWindowController {
         self.panel?.isVisible ?? false
     }
 
+    /// Invalidate window shadow to clear glass rendering artifacts.
+    /// Call this after layout changes or content updates that may leave visual artifacts.
+    func invalidateShadow() {
+        self.panel?.invalidateShadow()
+    }
+
     // MARK: - Initialization
 
     private init() {}
@@ -77,6 +83,9 @@ final class OverlayWindowController {
 
         // Position the panel (at final position, animation offsets handled separately)
         self.positionPanel()
+
+        // Invalidate shadow to clear any stale rendering artifacts from previous sessions
+        panel.invalidateShadow()
 
         // Animate in with slide + fade (respecting Reduce Motion)
         if self.reduceMotion {
