@@ -122,12 +122,12 @@ As a user, I want to draft and send emails by voice so that I can process commun
 ## Code Review Findings
 
 **Reviewer:** Codex Subagent
-**Date:** 2026-01-22T08:08:47+01:00
-**Commit reviewed:** c6a7082
-**Iteration:** 2
+**Date:** 2026-01-22T15:52:00+01:00
+**Commit reviewed:** c946d32
+**Iteration:** 3
 
 ### Summary
-- Files reviewed: 8
+- Files reviewed: 11
 - Build status: Pass
 
 ### Issues Found
@@ -142,7 +142,7 @@ As a user, I want to draft and send emails by voice so that I can process commun
 - [ ] None.
 
 ### Future Considerations (Out of Scope)
-- None.
+- The implementation of `MailAppleScript` handles JSON escaping manually. While correct for now, considering a shared utility for robust AppleScript JSON generation in the future might be beneficial if more tools require it.
 
 ### Approval Status
 - [x] All P0 issues resolved
