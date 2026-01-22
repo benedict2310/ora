@@ -221,19 +221,17 @@ enum MailAppleScript {
 
         let commands = """
         set draftId to "\(draftIdValue)"
+        set draftIdValue to draftId
+        try
+            set draftIdValue to draftId as integer
+        end try
         set targetMessage to missing value
 
         repeat with theAccount in accounts
             try
                 set draftsBox to drafts mailbox of theAccount
-                repeat with candidate in messages of draftsBox
-                    set candidateId to id of candidate as string
-                    if candidateId is draftId then
-                        set targetMessage to candidate
-                        exit repeat
-                    end if
-                end repeat
-                if targetMessage is not missing value then exit repeat
+                set targetMessage to first message of draftsBox whose id is draftIdValue
+                exit repeat
             end try
         end repeat
 
