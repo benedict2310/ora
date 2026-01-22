@@ -68,4 +68,11 @@ enum MailToolError: LocalizedError, Equatable {
         }
         return .scriptFailed(message)
     }
+
+    static func safeLogDetails(from error: AppleScriptError) -> (type: String, app: String, code: String) {
+        let info = error.debugInfo
+        let app = info["app"] ?? "unknown"
+        let code = info["errorNumber"] ?? info["timeoutSeconds"] ?? "none"
+        return (error.errorType, app, code)
+    }
 }
