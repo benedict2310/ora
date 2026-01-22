@@ -99,7 +99,7 @@ As a user, I want to draft and send emails by voice so that I can process commun
 
 **Date:** 2026-01-22
 **Branch:** `feat/apple-mail-integration`
-**Commits:** 3
+**Commits:** 4
 
 ### Files Changed
 - `Ora/Tools/Mail/MailAppleScript.swift` - Build AppleScript payloads and parse JSON envelopes.
@@ -108,7 +108,10 @@ As a user, I want to draft and send emails by voice so that I can process commun
 - `Ora/Tools/Mail/MailSendTool.swift` - Send emails with confirmation.
 - `Ora/Tools/Mail/MailOpenDraftTool.swift` - Open drafts via Apple Mail.
 - `Ora/Tools/ToolRegistry.swift` - Register Mail tools.
+- `Ora/LLM/SystemPromptBuilder.swift` - Add ISO timestamp and timezone offset variables.
+- `Ora/Resources/system-prompt.txt` - Add ISO time and offset context for timezone clarity.
 - `OraTests/Tools/Mail/MailComposeToolsTests.swift` - Coverage for schemas, validation, and parsing.
+- `OraTests/LLM/SystemPromptBuilderTests.swift` - Coverage for new prompt variables.
 - `docs/stories/tools/X.07A-MAIL-COMPOSE.md` - Plan, AC verification, and summary updates.
 
 ### Ready for Review

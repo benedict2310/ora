@@ -23,7 +23,9 @@ final class SystemPromptBuilderTests: XCTestCase {
         // Verify all expected variable placeholders are present
         XCTAssertTrue(template.contains("{{current_date}}"), "Template should contain {{current_date}}")
         XCTAssertTrue(template.contains("{{current_time}}"), "Template should contain {{current_time}}")
+        XCTAssertTrue(template.contains("{{current_datetime_iso}}"), "Template should contain {{current_datetime_iso}}")
         XCTAssertTrue(template.contains("{{timezone}}"), "Template should contain {{timezone}}")
+        XCTAssertTrue(template.contains("{{timezone_offset}}"), "Template should contain {{timezone_offset}}")
         XCTAssertTrue(template.contains("{{default_calendar}}"), "Template should contain {{default_calendar}}")
         XCTAssertTrue(template.contains("{{tools}}"), "Template should contain {{tools}}")
     }
@@ -85,6 +87,40 @@ final class SystemPromptBuilderTests: XCTestCase {
         
         XCTAssertTrue(result.contains("America/New_York"), "Timezone should be included")
         XCTAssertFalse(result.contains("{{timezone}}"), "Variable should be replaced")
+    }
+
+    func test_resolveVariables_replacesTimezoneOffset() {
+        let template = "Offset: {{timezone_offset}}"
+        let timezone = TimeZone(identifier: "America/New_York")!
+        let date = createTestDate(year: 2025, month: 12, day: 27, hour: 10, minute: 0)
+
+        let result = SystemPromptBuilder.resolveVariables(
+            in: template,
+            currentDate: date,
+            timezone: timezone,
+            defaultCalendar: nil,
+            tools: []
+        )
+
+        XCTAssertTrue(result.contains("UTC"), "Timezone offset should be included")
+        XCTAssertFalse(result.contains("{{timezone_offset}}"), "Variable should be replaced")
+    }
+
+    func test_resolveVariables_replacesCurrentDateTimeISO() {
+        let template = "Now: {{current_datetime_iso}}"
+        let timezone = TimeZone(identifier: "America/Los_Angeles")!
+        let date = createTestDate(year: 2025, month: 12, day: 27, hour: 14, minute: 30)
+
+        let result = SystemPromptBuilder.resolveVariables(
+            in: template,
+            currentDate: date,
+            timezone: timezone,
+            defaultCalendar: nil,
+            tools: []
+        )
+
+        XCTAssertTrue(result.contains("T"), "ISO datetime should contain T separator")
+        XCTAssertFalse(result.contains("{{current_datetime_iso}}"), "Variable should be replaced")
     }
     
     func test_resolveVariables_replacesDefaultCalendar() {
