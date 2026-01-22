@@ -73,8 +73,9 @@ struct MailCreateDraftTool: Tool {
             result = try await runner.execute(script: script, config: .json())
         } catch let error as AppleScriptError {
             let details = MailToolError.safeLogDetails(from: error)
+            let message = MailToolError.sanitizedMessage(from: error)
             Self.logger.error(
-                "\(name, privacy: .public) failed: type=\(details.type, privacy: .public) app=\(details.app, privacy: .public) code=\(details.code, privacy: .public)"
+                "\(name, privacy: .public) failed: type=\(details.type, privacy: .public) app=\(details.app, privacy: .public) code=\(details.code, privacy: .public) message=\(message, privacy: .public)"
             )
             throw MailToolError.fromAppleScriptError(error)
         }

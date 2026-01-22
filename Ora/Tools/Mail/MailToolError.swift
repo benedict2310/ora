@@ -75,4 +75,25 @@ enum MailToolError: LocalizedError, Equatable {
         let code = info["errorNumber"] ?? info["timeoutSeconds"] ?? "none"
         return (error.errorType, app, code)
     }
+
+    static func sanitizedMessage(from error: AppleScriptError) -> String {
+        let info = error.debugInfo
+        let raw = info["rawMessage"] ?? info["reason"] ?? info["rawOutput"] ?? "unknown"
+        var sanitized = raw
+        sanitized = sanitized.replacingOccurrences(
+            of: #""[^"]*""#,
+            with: "\"<redacted>\"",
+            options: .regularExpression
+        )
+        sanitized = sanitized.replacingOccurrences(
+            of: #"[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}"#,
+            with: "<redacted>",
+            options: [.regularExpression, .caseInsensitive]
+        )
+        sanitized = sanitized.trimmingCharacters(in: .whitespacesAndNewlines)
+        if sanitized.count > 200 {
+            sanitized = String(sanitized.prefix(200)) + "..."
+        }
+        return sanitized
+    }
 }
