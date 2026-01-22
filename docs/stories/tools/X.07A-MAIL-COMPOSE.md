@@ -99,7 +99,7 @@ As a user, I want to draft and send emails by voice so that I can process commun
 
 **Date:** 2026-01-22
 **Branch:** `feat/apple-mail-integration`
-**Commits:** 4
+**Commits:** 6
 
 ### Files Changed
 - `Ora/Tools/Mail/MailAppleScript.swift` - Build AppleScript payloads and parse JSON envelopes.
