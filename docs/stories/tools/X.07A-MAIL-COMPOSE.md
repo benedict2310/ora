@@ -99,7 +99,7 @@ As a user, I want to draft and send emails by voice so that I can process commun
 
 **Date:** 2026-01-22
 **Branch:** `feat/apple-mail-integration`
-**Commits:** 9
+**Commits:** 10
 
 ### Files Changed
 - `Ora/Tools/Mail/MailAppleScript.swift` - Build AppleScript payloads and parse JSON envelopes.
@@ -109,7 +109,7 @@ As a user, I want to draft and send emails by voice so that I can process commun
 - `Ora/Tools/Mail/MailOpenDraftTool.swift` - Open drafts via Apple Mail.
 - `Ora/Tools/ToolRegistry.swift` - Register Mail tools.
 - `Ora/LLM/SystemPromptBuilder.swift` - Add ISO timestamp and timezone offset variables.
-- `Ora/Resources/system-prompt.txt` - Add ISO time and offset context for timezone clarity.
+- `Ora/Resources/system-prompt.txt` - Add ISO time and offset context for timezone clarity and require mail fields before tool calls.
 - `OraTests/Tools/Mail/MailComposeToolsTests.swift` - Coverage for schemas, validation, and parsing.
 - `OraTests/LLM/SystemPromptBuilderTests.swift` - Coverage for new prompt variables.
 - `docs/stories/tools/X.07A-MAIL-COMPOSE.md` - Plan, AC verification, and summary updates.
@@ -122,9 +122,9 @@ As a user, I want to draft and send emails by voice so that I can process commun
 ## Code Review Findings
 
 **Reviewer:** Codex Subagent
-**Date:** 2026-01-22T16:08:00+01:00
-**Commit reviewed:** 25f8b9d
-**Iteration:** 4
+**Date:** 2026-01-22T16:55:00+01:00
+**Commit reviewed:** 70c05ff
+**Iteration:** 5
 
 ### Summary
 - Files reviewed: 11
@@ -139,10 +139,10 @@ As a user, I want to draft and send emails by voice so that I can process commun
 - [ ] None.
 
 #### P2 - Minor (Can defer)
-- [ ] `MailAppleScript.swift` - The `split_recipients` AppleScript handler splits purely on commas (and semicolons). If an email address is provided with a display name containing a comma (e.g., "Doe, John <john@example.com>"), it will be split incorrectly. Given the LLM generates the input, this is low risk, but valid parsing of RFC 5322 addresses would be more robust.
+- [ ] `MailAppleScript.swift` - The `split_recipients` handler splits on commas, which may break names containing commas (e.g., "Doe, John"). This is low risk given LLM input, but robust RFC 5322 parsing would be safer.
 
 ### Future Considerations (Out of Scope)
-- Consider a shared AppleScript JSON encoding utility if more tools require it, to handle full JSON spec escaping (control characters, etc.).
+- `SystemPromptBuilder.swift` - `formatUTCOffset` calculates offsets manually. Consider consolidating with `ISO8601DateFormatter` if standard format suffices in future.
 
 ### Approval Status
 - [x] All P0 issues resolved
