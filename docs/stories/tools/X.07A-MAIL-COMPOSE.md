@@ -38,11 +38,12 @@ As a user, I want to draft and send emails by voice so that I can process commun
 - **Foundation:** `AppleScriptRunner` (X.00).
 - **Safety:** `mail.send` must have `requiresConfirmation = true`.
 
-## 5. Implementation Plan (Draft)
+## 5. Implementation Plan
 
 ### 5.1 Files to Create
 
 - `Ora/Tools/Mail/MailToolError.swift`
+- `Ora/Tools/Mail/MailAppleScript.swift`
 - `Ora/Tools/Mail/MailCreateDraftTool.swift`
 - `Ora/Tools/Mail/MailSendTool.swift`
 - `Ora/Tools/Mail/MailOpenDraftTool.swift`
@@ -61,12 +62,12 @@ As a user, I want to draft and send emails by voice so that I can process commun
 
 ## 6. Acceptance Criteria
 
-- [ ] AC-1: `mail.create_draft` creates a draft with all fields populated.
-- [ ] AC-2: `mail.create_draft` returns a draft ID.
-- [ ] AC-3: `mail.open_draft` opens the window for the given draft ID.
-- [ ] AC-4: `mail.send` sends the email.
-- [ ] AC-5: `mail.send` requires confirmation.
-- [ ] AC-6: Permission denied returns remediation.
+- [x] AC-1: `mail.create_draft` creates a draft with all fields populated. ✅ Verified in `Ora/Tools/Mail/MailCreateDraftTool.swift` and `Ora/Tools/Mail/MailAppleScript.swift`.
+- [x] AC-2: `mail.create_draft` returns a draft ID. ✅ Verified in `Ora/Tools/Mail/MailAppleScript.swift`.
+- [x] AC-3: `mail.open_draft` opens the window for the given draft ID. ✅ Verified in `Ora/Tools/Mail/MailOpenDraftTool.swift` and `Ora/Tools/Mail/MailAppleScript.swift`.
+- [x] AC-4: `mail.send` sends the email. ✅ Verified in `Ora/Tools/Mail/MailSendTool.swift` and `Ora/Tools/Mail/MailAppleScript.swift`.
+- [x] AC-5: `mail.send` requires confirmation. ✅ Verified in `Ora/Tools/Mail/MailSendTool.swift`.
+- [x] AC-6: Permission denied returns remediation. ✅ Verified in `Ora/Tools/Mail/MailToolError.swift` and `OraTests/Tools/Mail/MailComposeToolsTests.swift`.
 
 ## 7. Verification Plan
 
@@ -96,7 +97,24 @@ As a user, I want to draft and send emails by voice so that I can process commun
 
 ## Implementation Summary
 
-(TBD after implementation.)
+**Date:** 2026-01-22
+**Branch:** `feat/apple-mail-integration`
+**Commits:** 1
+
+### Files Changed
+- `Ora/Tools/Mail/MailAppleScript.swift` - Build AppleScript payloads and parse JSON envelopes.
+- `Ora/Tools/Mail/MailToolError.swift` - Map Mail automation failures to user-facing remediation.
+- `Ora/Tools/Mail/MailCreateDraftTool.swift` - Create drafts with confirmation.
+- `Ora/Tools/Mail/MailSendTool.swift` - Send emails with confirmation.
+- `Ora/Tools/Mail/MailOpenDraftTool.swift` - Open drafts via Apple Mail.
+- `Ora/Tools/ToolRegistry.swift` - Register Mail tools.
+- `OraTests/Tools/Mail/MailComposeToolsTests.swift` - Coverage for schemas, validation, and parsing.
+- `docs/stories/tools/X.07A-MAIL-COMPOSE.md` - Plan, AC verification, and summary updates.
+
+### Ready for Review
+- [x] All acceptance criteria verified
+- [ ] Tests passing (full suite timed out; targeted tests passed)
+- [x] Working tree clean
 
 ## Code Review Findings
 
