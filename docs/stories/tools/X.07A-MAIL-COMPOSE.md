@@ -99,7 +99,7 @@ As a user, I want to draft and send emails by voice so that I can process commun
 
 **Date:** 2026-01-22
 **Branch:** `feat/apple-mail-integration`
-**Commits:** 2
+**Commits:** 3
 
 ### Files Changed
 - `Ora/Tools/Mail/MailAppleScript.swift` - Build AppleScript payloads and parse JSON envelopes.
@@ -119,9 +119,9 @@ As a user, I want to draft and send emails by voice so that I can process commun
 ## Code Review Findings
 
 **Reviewer:** Codex Subagent
-**Date:** 2026-01-22T07:57:37+01:00
-**Commit reviewed:** 51139dc
-**Iteration:** 1
+**Date:** 2026-01-22T08:08:47+01:00
+**Commit reviewed:** c6a7082
+**Iteration:** 2
 
 ### Summary
 - Files reviewed: 8
@@ -133,10 +133,10 @@ As a user, I want to draft and send emails by voice so that I can process commun
 - [ ] None.
 
 #### P1 - Major (Should fix)
-- [x] `Ora/Tools/Mail/MailAppleScript.swift` - In `openDraftScript`, the loop `repeat with candidate in messages of draftsBox` iterates strictly one-by-one, generating excessive AppleEvents. For users with many drafts, this will cause timeouts or UI freezes. **Fix:** Use an AppleScript `whose` filter: `set targetMessage to first message of draftsBox whose id is draftId`. ✅ Fixed by switching to `first message of draftsBox whose id is draftIdValue`.
+- [ ] None.
 
 #### P2 - Minor (Can defer)
-- [ ] `Ora/Tools/Mail/MailAppleScript.swift` - Significant code duplication between `createDraftScript` and `sendEmailScript` for account lookup and sender resolution.
+- [ ] None.
 
 ### Future Considerations (Out of Scope)
 - None.
@@ -144,7 +144,7 @@ As a user, I want to draft and send emails by voice so that I can process commun
 ### Approval Status
 - [x] All P0 issues resolved
 - [x] All P1 issues resolved
-- [ ] Ready for merge
+- [x] Ready for merge
 
 ## Completion Status
 
