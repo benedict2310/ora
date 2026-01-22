@@ -99,7 +99,7 @@ As a user, I want to draft and send emails by voice so that I can process commun
 
 **Date:** 2026-01-22
 **Branch:** `feat/apple-mail-integration`
-**Commits:** 6
+**Commits:** 7
 
 ### Files Changed
 - `Ora/Tools/Mail/MailAppleScript.swift` - Build AppleScript payloads and parse JSON envelopes.
@@ -122,9 +122,9 @@ As a user, I want to draft and send emails by voice so that I can process commun
 ## Code Review Findings
 
 **Reviewer:** Codex Subagent
-**Date:** 2026-01-22T15:52:00+01:00
-**Commit reviewed:** c946d32
-**Iteration:** 3
+**Date:** 2026-01-22T16:08:00+01:00
+**Commit reviewed:** 25f8b9d
+**Iteration:** 4
 
 ### Summary
 - Files reviewed: 11
@@ -139,10 +139,10 @@ As a user, I want to draft and send emails by voice so that I can process commun
 - [ ] None.
 
 #### P2 - Minor (Can defer)
-- [ ] None.
+- [ ] `MailAppleScript.swift` - The `split_recipients` AppleScript handler splits purely on commas (and semicolons). If an email address is provided with a display name containing a comma (e.g., "Doe, John <john@example.com>"), it will be split incorrectly. Given the LLM generates the input, this is low risk, but valid parsing of RFC 5322 addresses would be more robust.
 
 ### Future Considerations (Out of Scope)
-- The implementation of `MailAppleScript` handles JSON escaping manually. While correct for now, considering a shared utility for robust AppleScript JSON generation in the future might be beneficial if more tools require it.
+- Consider a shared AppleScript JSON encoding utility if more tools require it, to handle full JSON spec escaping (control characters, etc.).
 
 ### Approval Status
 - [x] All P0 issues resolved
