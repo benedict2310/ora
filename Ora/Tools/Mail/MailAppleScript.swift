@@ -326,7 +326,7 @@ enum MailAppleScript {
         return """
         \(Self.jsonHelpers)
         try
-            tell application "Mail"
+            tell application id "com.apple.mail"
         \(indented)
             end tell
             return "{\\\"success\\\":true,\\\"data\\\":" & result & "}"
