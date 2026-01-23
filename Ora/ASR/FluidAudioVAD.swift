@@ -96,6 +96,9 @@ public actor FluidAudioVAD {
     private var streamState: VadStreamState
     private var isReady = false
 
+    /// Internal buffer for accumulating samples when input is smaller than chunk size
+    private var sampleBuffer: [Float] = []
+
     /// Current speech state
     public private(set) var isSpeech: Bool = false
 
@@ -136,6 +139,10 @@ public actor FluidAudioVAD {
 
     /// Process audio samples and return VAD result with potential event
     ///
+    /// Handles variable-sized input by buffering samples internally.
+    /// When enough samples are accumulated (4096 = 256ms at 16kHz),
+    /// processes one or more chunks and returns the result from the last chunk.
+    ///
     /// - Parameter samples: Audio samples (16kHz mono Float32)
     /// - Returns: Result with probability and potential speech start/end event
     public func process(_ samples: [Float]) async throws -> FluidAudioVADResult {
@@ -143,9 +150,19 @@ public actor FluidAudioVAD {
             throw FluidAudioVADError.notReady
         }
 
-        // FluidAudio VAD expects 4096 samples (256ms at 16kHz)
-        // Pad or chunk as needed
-        let processedSamples = padOrTruncate(samples, to: VadManager.chunkSize)
+        // Add new samples to buffer
+        sampleBuffer.append(contentsOf: samples)
+
+        let chunkSize = VadManager.chunkSize  // 4096 samples (256ms at 16kHz)
+
+        // If we don't have enough samples yet, return current state without processing
+        guard sampleBuffer.count >= chunkSize else {
+            return FluidAudioVADResult(
+                isSpeech: isSpeech,
+                probability: lastProbability,
+                transitionType: nil
+            )
+        }
 
         let segmentConfig = VadSegmentationConfig(
             minSpeechDuration: configuration.minSpeechDuration,
@@ -154,60 +171,61 @@ public actor FluidAudioVAD {
             speechPadding: configuration.speechPadding
         )
 
-        let result = try await manager.processStreamingChunk(
-            processedSamples,
-            state: streamState,
-            config: segmentConfig,
-            returnSeconds: true
-        )
+        // Process all complete chunks in the buffer
+        var lastResult: FluidAudioVADResult?
+        var reportedEvent: VADTransitionType? = nil
 
-        // Update state
-        streamState = result.state
-        lastProbability = result.probability
+        while sampleBuffer.count >= chunkSize {
+            // Extract one chunk
+            let chunk = Array(sampleBuffer.prefix(chunkSize))
+            sampleBuffer.removeFirst(chunkSize)
 
-        // Map event
-        var transitionType: VADTransitionType? = nil
-        if let event = result.event {
-            switch event.kind {
-            case .speechStart:
-                isSpeech = true
-                transitionType = .speechStart
-                logger.debug("Speech started (prob: \(result.probability, format: .fixed(precision: 2)))")
-            case .speechEnd:
-                isSpeech = false
-                transitionType = .speechEnd
-                logger.debug("Speech ended (prob: \(result.probability, format: .fixed(precision: 2)))")
+            // Process chunk
+            let result = try await manager.processStreamingChunk(
+                chunk,
+                state: streamState,
+                config: segmentConfig,
+                returnSeconds: true
+            )
+
+            // Update state
+            streamState = result.state
+            lastProbability = result.probability
+
+            // Track events - report the first event encountered (most important for state changes)
+            if let event = result.event {
+                switch event.kind {
+                case .speechStart:
+                    isSpeech = true
+                    if reportedEvent == nil {
+                        reportedEvent = .speechStart
+                    }
+                    logger.debug("Speech started (prob: \(result.probability, format: .fixed(precision: 2)))")
+                case .speechEnd:
+                    isSpeech = false
+                    if reportedEvent == nil {
+                        reportedEvent = .speechEnd
+                    }
+                    logger.debug("Speech ended (prob: \(result.probability, format: .fixed(precision: 2)))")
+                }
             }
         }
 
+        // Return result with the first event we encountered (if any)
         return FluidAudioVADResult(
             isSpeech: isSpeech,
-            probability: result.probability,
-            transitionType: transitionType
+            probability: lastProbability,
+            transitionType: reportedEvent
         )
     }
 
     /// Reset VAD state for new session
     public func reset() {
         streamState = VadStreamState.initial()
+        sampleBuffer.removeAll()
         isSpeech = false
         lastProbability = 0
         logger.debug("VAD state reset")
-    }
-
-    // MARK: - Private Methods
-
-    /// Pad or truncate samples to expected chunk size
-    private func padOrTruncate(_ samples: [Float], to size: Int) -> [Float] {
-        if samples.count == size {
-            return samples
-        } else if samples.count < size {
-            // Pad with zeros
-            return samples + Array(repeating: 0, count: size - samples.count)
-        } else {
-            // Take the last `size` samples (most recent audio)
-            return Array(samples.suffix(size))
-        }
     }
 }
 
