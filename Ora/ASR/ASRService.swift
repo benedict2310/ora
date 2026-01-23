@@ -78,6 +78,13 @@ actor ASRService: @preconcurrency ASRServicing {
     /// Audio older than this is dropped to prevent unbounded memory growth
     private let maxWindowSamples = 160000
 
+    /// FluidAudio neural VAD (lazily initialized on first transcription)
+    /// Provides more robust speech detection than EnergyVAD (M.06 Phase 2)
+    private var fluidVAD: FluidAudioVAD?
+
+    /// Whether FluidAudioVAD initialization was attempted
+    private var fluidVADInitialized = false
+
     // MARK: - Initialization
 
     private init() {}
@@ -134,10 +141,51 @@ actor ASRService: @preconcurrency ASRServicing {
     /// Reset decoder state for new session
     func reset() async {
         await engine?.reset()
+        await fluidVAD?.reset()
         logger.debug("ASR decoder reset")
     }
 
     // MARK: - Private
+
+    /// Initialize or get FluidAudioVAD with settings from AppSettings
+    /// Falls back to nil (triggering EnergyVAD fallback) if initialization fails
+    private func getOrInitializeFluidVAD() async -> FluidAudioVAD? {
+        // Return cached instance if available
+        if let vad = fluidVAD {
+            return vad
+        }
+
+        // Only try to initialize once
+        guard !fluidVADInitialized else {
+            return nil
+        }
+        fluidVADInitialized = true
+
+        // Get settings from AppSettings on main thread since PersistenceManager uses MainActor context
+        let (minSpeechDuration, minSilenceGap) = await MainActor.run {
+            let settings = PersistenceManager.shared.settings
+            return (settings.minSpeechDuration, settings.minSilenceGap)
+        }
+
+        let config = FluidAudioVADConfiguration(
+            speechThreshold: 0.70,
+            minSpeechDuration: minSpeechDuration,
+            minSilenceGap: minSilenceGap,
+            speechPadding: 0.10
+        )
+
+        let vad = FluidAudioVAD(configuration: config)
+
+        do {
+            try await vad.prepare()
+            fluidVAD = vad
+            logger.info("FluidAudioVAD initialized (minSpeech=\(minSpeechDuration)s, minSilence=\(minSilenceGap)s)")
+            return vad
+        } catch {
+            logger.warning("FluidAudioVAD failed to initialize, falling back to EnergyVAD: \(error.localizedDescription)")
+            return nil
+        }
+    }
 
     /// Ensure buffer has at least 1 second of audio (16000 samples) by padding with silence
     private func ensureMinimumDuration(_ samples: [Float]) -> [Float] {
@@ -162,8 +210,9 @@ actor ASRService: @preconcurrency ASRServicing {
         // Committed text from chunks that have rolled out of the window
         var committedText = ""
 
-        // VAD for speech detection
-        var vad = EnergyVAD(configuration: VADConfiguration())
+        // VAD for speech detection - try FluidAudioVAD first, fallback to EnergyVAD (M.06 Phase 2)
+        let neuralVAD = await getOrInitializeFluidVAD()
+        var energyVAD = EnergyVAD(configuration: VADConfiguration())
         var lastVADState = false
 
         // Transcript stabilizer to prevent jittery emissions (M.06)
@@ -174,8 +223,28 @@ actor ASRService: @preconcurrency ASRServicing {
             accumulatedSamples.append(contentsOf: frame.samples)
 
             // Run VAD on incoming frame for fast speech detection
-            let vadResult = vad.process(frame.samples)
-            if let transition = vadResult.transitionType {
+            // Use FluidAudioVAD (neural) if available, otherwise fall back to EnergyVAD
+            var transitionType: VADTransitionType? = nil
+
+            if let vad = neuralVAD {
+                // Neural VAD (Silero-based) - more robust to noise
+                do {
+                    let vadResult = try await vad.process(frame.samples)
+                    transitionType = vadResult.transitionType
+                } catch {
+                    // If neural VAD fails, fall back to energy VAD for this frame
+                    logger.warning("FluidAudioVAD processing failed, using EnergyVAD fallback: \(error.localizedDescription)")
+                    let energyResult = energyVAD.process(frame.samples)
+                    transitionType = energyResult.transitionType
+                }
+            } else {
+                // Fall back to energy-based VAD
+                let energyResult = energyVAD.process(frame.samples)
+                transitionType = energyResult.transitionType
+            }
+
+            // Report VAD state changes
+            if let transition = transitionType {
                 let isSpeech = transition == .speechStart
                 if isSpeech != lastVADState {
                     lastVADState = isSpeech
