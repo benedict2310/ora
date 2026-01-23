@@ -375,3 +375,56 @@ var liveText: String
 - [ ] AC-10: Long sentences with natural pauses don't trigger early submission
 - [ ] AC-11: Transcription doesn't jitter or deteriorate during extended speech
 - [ ] AC-12: Works reliably in quiet and moderately noisy environments
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-01-23T22:02:00Z
+**Commit reviewed:** 825b12c
+**Iteration:** 2 (Phase 2 integration review)
+
+### Summary
+- Files reviewed: 3
+- Build status: Pass
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- None
+
+#### P1 - Major (Should fix)
+- None
+
+#### P2 - Minor (Can defer)
+- None
+
+### Review Notes
+
+**ASRService.swift Changes:**
+- ✅ Lazy initialization of `FluidAudioVAD` via `getOrInitializeFluidVAD()` is correct - avoids startup delay
+- ✅ `fluidVADInitialized` flag ensures only one initialization attempt, preventing repeated failures
+- ✅ Settings read from `PersistenceManager.shared.settings` on MainActor correctly
+- ✅ Fallback to `EnergyVAD` on per-frame basis if neural VAD processing fails - robust error handling
+- ✅ `fluidVAD?.reset()` added to `reset()` method for proper state cleanup
+- ✅ VAD transition logic correctly handles both neural and energy VAD results
+
+**FluidAudioVADTests.swift:**
+- ✅ Good coverage of configuration presets (default, relaxed, strict, custom)
+- ✅ Tests initialization, prepare, reset, and processing paths
+- ✅ Tests error handling for unprepared VAD
+- ✅ Tests small chunk buffering behavior
+
+**Story Document Updates:**
+- ✅ Status correctly updated to "Complete (Phase 1 + Phase 2)"
+- ✅ AC-4 marked as complete with accurate file references
+- ✅ Implementation notes accurately describe the changes
+
+### Future Considerations (Out of Scope)
+- `ASRService.swift` still uses `accumulatedSamples` full-buffer reprocessing logic. The story notes this is a future refactoring opportunity (Option B: StreamingManager migration).
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
