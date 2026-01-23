@@ -40,6 +40,16 @@ final class AppSettings {
     /// Controls how long to wait after last speech before auto-submitting
     var silenceTimeout: Double = 1.0
 
+    // MARK: - VAD Settings (M.06)
+
+    /// Minimum speech duration in seconds before detecting speech start
+    /// Prevents false starts from brief noises (0.15s - 0.5s range)
+    var minSpeechDuration: Double = 0.25
+
+    /// Minimum silence gap in seconds before detecting speech end
+    /// Prevents premature cutoffs during natural pauses (0.3s - 1.0s range)
+    var minSilenceGap: Double = 0.50
+
     // MARK: - Initialization
 
     init() {}
