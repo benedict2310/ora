@@ -250,9 +250,10 @@ final class SilenceDetectorTests: XCTestCase {
         XCTAssertLessThan(elapsed, 0.6)      // At most 600ms
     }
 
-    func test_partialDuringVADConfirmation_resetsTimer() async {
-        // AC-7: ASR partial during confirmation resets the timer
-        let detector = SilenceDetector(timeout: 0.5)
+    func test_partialDuringVADConfirmation_doesNotResetTimer() async {
+        // M.06: ASR partial during VAD confirmation does NOT reset the timer
+        // This prevents jitter where partials keep cancelling the confirmation
+        let detector = SilenceDetector(timeout: 2.0)  // Long ASR timeout so it doesn't interfere
         var silenceCount = 0
 
         detector.onSilenceDetected = {
@@ -260,31 +261,59 @@ final class SilenceDetectorTests: XCTestCase {
         }
 
         // Receive a partial to enable silence detection
-        detector.onPartialReceived()
+        detector.onPartialReceived(text: "Hello")
 
         // Start VAD confirmation
         detector.onVADStateChanged(isSpeech: false)
 
-        // Wait a bit
-        try? await Task.sleep(for: .milliseconds(150))
+        // Verify confirmation is in progress
+        XCTAssertTrue(detector.isVADConfirmationInProgress)
 
-        // New partial should cancel VAD confirmation
-        detector.onPartialReceived()
+        // Wait a bit (less than confirmation delay)
+        try? await Task.sleep(for: .milliseconds(100))
 
-        // Wait a bit more - less than VAD confirmation delay
-        try? await Task.sleep(for: .milliseconds(200))
+        // New partial should NOT cancel VAD confirmation (M.06 change)
+        detector.onPartialReceived(text: "Hello world")
 
-        // Silence should NOT have been detected (partial cancelled VAD confirmation)
-        XCTAssertEqual(silenceCount, 0)
+        // Confirmation should still be in progress
+        XCTAssertTrue(detector.isVADConfirmationInProgress)
 
-        // Now simulate another VAD speech end to trigger confirmation
+        // Wait for VAD confirmation to complete
+        try? await Task.sleep(for: .milliseconds(300))
+
+        // Silence should have been detected via VAD confirmation
+        // (partial did not cancel it)
+        XCTAssertEqual(silenceCount, 1)
+    }
+
+    func test_speechStartCancelsVADConfirmation() async {
+        // Speech resuming (not just a partial) should cancel VAD confirmation
+        let detector = SilenceDetector(timeout: 2.0)
+        var silenceCount = 0
+
+        detector.onSilenceDetected = {
+            silenceCount += 1
+        }
+
+        // Receive a partial to enable silence detection
+        detector.onPartialReceived(text: "Hello")
+
+        // Start VAD confirmation (speech ended)
         detector.onVADStateChanged(isSpeech: false)
+        XCTAssertTrue(detector.isVADConfirmationInProgress)
 
-        // Wait for VAD confirmation
+        // Wait a bit
+        try? await Task.sleep(for: .milliseconds(100))
+
+        // Speech resumes - this SHOULD cancel confirmation
+        detector.onVADStateChanged(isSpeech: true)
+        XCTAssertFalse(detector.isVADConfirmationInProgress)
+
+        // Wait longer than confirmation delay
         try? await Task.sleep(for: .milliseconds(400))
 
-        // Now should have fired once via VAD confirmation
-        XCTAssertEqual(silenceCount, 1)
+        // Silence should NOT have been detected (speech resumed)
+        XCTAssertEqual(silenceCount, 0)
     }
 
     func test_vadSpeechEndWithoutPartial_doesNotTrigger() async {
@@ -449,5 +478,84 @@ final class SilenceDetectorTests: XCTestCase {
         detector.onPartialReceived()
 
         await fulfillment(of: [expectation], timeout: 2.0)
+    }
+
+    // MARK: - M.06 New Features Tests
+
+    func test_noChangeTimeout_constant() {
+        // M.06: No-change timeout is 600ms
+        XCTAssertEqual(SilenceDetector.noChangeTimeout, 0.6)
+    }
+
+    func test_hardMaxDuration_constant() {
+        // M.06: Hard max duration is 10 seconds
+        XCTAssertEqual(SilenceDetector.hardMaxDuration, 10.0)
+    }
+
+    func test_noChangeTimeout_triggersAfterStableText() async {
+        // M.06: Finalize after text unchanged for noChangeTimeout
+        let detector = SilenceDetector(timeout: 5.0)  // Long ASR timeout
+        let expectation = XCTestExpectation(description: "No-change timeout triggered")
+
+        detector.onSilenceDetected = {
+            expectation.fulfill()
+        }
+
+        // Receive initial partial
+        detector.onPartialReceived(text: "Hello world")
+
+        // Should fire after noChangeTimeout (~600ms) + buffer
+        await fulfillment(of: [expectation], timeout: 1.5)
+    }
+
+    func test_noChangeTimeout_resetsOnTextChange() async {
+        // M.06: Text change resets no-change timer
+        let detector = SilenceDetector(timeout: 5.0)  // Long ASR timeout
+        var silenceCount = 0
+
+        detector.onSilenceDetected = {
+            silenceCount += 1
+        }
+
+        // Receive initial partial
+        detector.onPartialReceived(text: "Hello")
+
+        // Wait less than no-change timeout
+        try? await Task.sleep(for: .milliseconds(300))
+
+        // New text resets the timer
+        detector.onPartialReceived(text: "Hello world")
+
+        // Wait less than no-change timeout again
+        try? await Task.sleep(for: .milliseconds(300))
+
+        // Should not have triggered yet (timer was reset)
+        XCTAssertEqual(silenceCount, 0)
+
+        // Wait for timeout after last change
+        try? await Task.sleep(for: .milliseconds(500))
+
+        // Now should have triggered
+        XCTAssertEqual(silenceCount, 1)
+    }
+
+    func test_isVADConfirmationInProgress_property() {
+        let detector = SilenceDetector(timeout: 2.0)
+
+        // Initially false
+        XCTAssertFalse(detector.isVADConfirmationInProgress)
+
+        // Receive partial first
+        detector.onPartialReceived(text: "Hello")
+
+        // Trigger VAD speech end
+        detector.onVADStateChanged(isSpeech: false)
+
+        // Should now be true
+        XCTAssertTrue(detector.isVADConfirmationInProgress)
+
+        // Cancel should clear it
+        detector.cancel()
+        XCTAssertFalse(detector.isVADConfirmationInProgress)
     }
 }

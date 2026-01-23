@@ -166,6 +166,9 @@ actor ASRService: @preconcurrency ASRServicing {
         var vad = EnergyVAD(configuration: VADConfiguration())
         var lastVADState = false
 
+        // Transcript stabilizer to prevent jittery emissions (M.06)
+        var stabilizer = TranscriptStabilizer(stabilityThreshold: 2, minCharacterDifference: 1)
+
         // Process frames as they arrive
         for await frame in frames {
             accumulatedSamples.append(contentsOf: frame.samples)
@@ -226,9 +229,15 @@ actor ASRService: @preconcurrency ASRServicing {
                         fullText = committedText + " " + partial.text
                     }
 
-                    if fullText != lastPartialText {
+                    // M.06: Use stabilizer to avoid emitting jittery partials
+                    // Only emit if text has meaningfully changed
+                    if stabilizer.shouldEmit(fullText) {
                         lastPartialText = fullText
                         continuation.yield(.partial(text: fullText, stability: 0.8))
+                        logger.debug("Emitting partial: '\(fullText.prefix(50))...'")
+                    } else if fullText != lastPartialText {
+                        // Text changed but not meaningfully - log but don't emit
+                        logger.debug("Skipping non-meaningful partial change: '\(fullText.prefix(50))...'")
                     }
                 }
             }

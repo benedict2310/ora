@@ -10,10 +10,17 @@ import os
 
 /// Detects silence (end of speech) using a hybrid approach:
 /// 1. **VAD-assisted (primary)**: Uses VAD speechEnd events with a confirmation timer
-/// 2. **ASR-based (fallback)**: Monitors time since last ASR partial
+/// 2. **No-change timeout**: Finalizes after text unchanged for 500-800ms
+/// 3. **ASR-based (fallback)**: Monitors time since last ASR partial
+/// 4. **Hard max duration**: Forces finalize after 10s
 ///
 /// The VAD-assisted approach provides much faster response times (~330ms vs ~1.9s)
 /// while the ASR fallback ensures reliability when VAD events are unavailable.
+///
+/// ## Key Behavior (M.06 improvements)
+/// - Once VAD detects speechEnd, partials do NOT cancel the confirmation timer
+/// - No-change timeout triggers if text hasn't meaningfully changed for 600ms
+/// - Hard max duration (10s) forces finalization regardless of other signals
 ///
 /// ## Usage
 /// ```swift
@@ -46,6 +53,12 @@ final class SilenceDetector {
     /// VAD confirmation delay in seconds before triggering submission
     static let vadConfirmationDelay: TimeInterval = 0.3
 
+    /// No-change timeout in seconds - finalize if text unchanged for this duration
+    static let noChangeTimeout: TimeInterval = 0.6
+
+    /// Hard maximum duration in seconds - force finalize after this
+    static let hardMaxDuration: TimeInterval = 10.0
+
     // MARK: - Properties
 
     private let logger = Logger(subsystem: "com.ora.app", category: "SilenceDetector")
@@ -62,6 +75,12 @@ final class SilenceDetector {
     /// Task for VAD confirmation timer (primary)
     private var vadConfirmationTask: Task<Void, Never>?
 
+    /// Task for no-change timeout
+    private var noChangeTask: Task<Void, Never>?
+
+    /// Task for hard max duration timeout
+    private var hardMaxTask: Task<Void, Never>?
+
     /// Whether we have received at least one partial
     private var hasReceivedPartial = false
 
@@ -70,9 +89,15 @@ final class SilenceDetector {
 
     /// Current VAD speech state
     private var isSpeechActive = false
+
+    /// Whether VAD confirmation is in progress (partials should not cancel it)
+    private var vadConfirmationInProgress = false
     
     /// Last normalized text for stability checking
     private var lastNormalizedText = ""
+
+    /// Time when first partial was received (for hard max duration)
+    private var sessionStartTime: Date?
 
     // MARK: - Initialization
 
@@ -89,7 +114,7 @@ final class SilenceDetector {
     // MARK: - Public API
 
     /// Called when an ASR partial is received.
-    /// Resets the ASR-based silence timer and cancels VAD confirmation if pending.
+    /// Resets the ASR-based silence timer. Does NOT cancel VAD confirmation once started.
     /// - Parameter text: The partial transcript text (for stability checking)
     func onPartialReceived(text: String = "") {
         // Track if text actually changed (ignore punctuation-only changes)
@@ -100,6 +125,9 @@ final class SilenceDetector {
             if textChanged {
                 self.logger.info("Partial received (changed): '\(text.prefix(50))...'")
                 self.lastNormalizedText = normalizedText
+
+                // Text changed - restart no-change timeout
+                self.startNoChangeTimer()
             } else {
                 self.logger.debug("Partial received (unchanged/punctuation only): '\(text.prefix(50))...'")
                 // Don't reset timers for punctuation-only changes
@@ -111,12 +139,19 @@ final class SilenceDetector {
         self.silenceTask?.cancel()
         self.silenceTask = nil
 
-        // Cancel VAD confirmation if pending (AC-7: partial during confirmation resets)
-        self.vadConfirmationTask?.cancel()
-        self.vadConfirmationTask = nil
+        // M.06: Do NOT cancel VAD confirmation once it has started
+        // This prevents the jitter issue where partials keep resetting the confirmation
+        // Old behavior (commented out):
+        // self.vadConfirmationTask?.cancel()
+        // self.vadConfirmationTask = nil
 
         // Mark that we've received at least one partial
-        self.hasReceivedPartial = true
+        if !self.hasReceivedPartial {
+            self.hasReceivedPartial = true
+            self.sessionStartTime = Date()
+            // Start hard max duration timer on first partial
+            self.startHardMaxTimer()
+        }
 
         // Start new ASR-based silence timer (fallback)
         self.silenceTask = Task { [weak self] in
@@ -129,15 +164,20 @@ final class SilenceDetector {
                 // Only trigger if VAD hasn't already handled it
                 guard let self = self else { return }
 
-                // If VAD-assisted mode is active, don't use ASR fallback
-                // (VAD confirmation timer should handle it)
+                // If VAD confirmation is in progress, let it handle the detection
+                if self.vadConfirmationInProgress {
+                    self.logger.debug("ASR timeout fired but VAD confirmation in progress, skipping")
+                    return
+                }
+
+                // If VAD-assisted mode is active and speech has ended, don't duplicate
                 if self.vadEventsReceived && !self.isSpeechActive {
                     self.logger.debug("ASR timeout fired but VAD-assisted mode active, skipping")
                     return
                 }
 
                 self.logger.info("Silence detected after \(self.timeout)s (ASR fallback)")
-                self.onSilenceDetected?()
+                self.triggerSilenceDetected(reason: "ASR fallback")
             } catch {
                 // Task was cancelled - this is expected
             }
@@ -182,6 +222,11 @@ final class SilenceDetector {
         self.silenceTask = nil
         self.vadConfirmationTask?.cancel()
         self.vadConfirmationTask = nil
+        self.noChangeTask?.cancel()
+        self.noChangeTask = nil
+        self.hardMaxTask?.cancel()
+        self.hardMaxTask = nil
+        self.vadConfirmationInProgress = false
         self.logger.debug("Silence detection cancelled")
     }
 
@@ -191,7 +236,9 @@ final class SilenceDetector {
         self.hasReceivedPartial = false
         self.vadEventsReceived = false
         self.isSpeechActive = false
+        self.vadConfirmationInProgress = false
         self.lastNormalizedText = ""
+        self.sessionStartTime = nil
         self.logger.debug("Silence detector reset")
     }
 
@@ -205,12 +252,37 @@ final class SilenceDetector {
         return self.vadEventsReceived
     }
 
+    /// Whether VAD confirmation timer is currently running
+    var isVADConfirmationInProgress: Bool {
+        return self.vadConfirmationInProgress
+    }
+
     // MARK: - Private Methods
+
+    /// Trigger silence detection with logging
+    private func triggerSilenceDetected(reason: String) {
+        self.logger.info("Silence detected: \(reason)")
+        // Cancel all other timers to prevent double-triggers
+        self.silenceTask?.cancel()
+        self.silenceTask = nil
+        self.vadConfirmationTask?.cancel()
+        self.vadConfirmationTask = nil
+        self.noChangeTask?.cancel()
+        self.noChangeTask = nil
+        self.hardMaxTask?.cancel()
+        self.hardMaxTask = nil
+        self.vadConfirmationInProgress = false
+
+        self.onSilenceDetected?()
+    }
 
     /// Start the VAD confirmation timer (AC-4)
     private func startConfirmationTimer() {
         // Cancel any existing confirmation
         self.vadConfirmationTask?.cancel()
+
+        // Mark that confirmation is in progress - partials should not cancel this
+        self.vadConfirmationInProgress = true
 
         self.vadConfirmationTask = Task { [weak self] in
             do {
@@ -220,13 +292,7 @@ final class SilenceDetector {
                 guard let self = self else { return }
 
                 // Confirmation complete - VAD-detected silence confirmed
-                self.logger.info("VAD silence confirmed after \(SilenceDetector.vadConfirmationDelay)s")
-
-                // Cancel the ASR fallback timer since VAD handled it
-                self.silenceTask?.cancel()
-                self.silenceTask = nil
-
-                self.onSilenceDetected?()
+                self.triggerSilenceDetected(reason: "VAD confirmation (\(SilenceDetector.vadConfirmationDelay)s)")
             } catch {
                 // Task was cancelled - this is expected
             }
@@ -237,5 +303,48 @@ final class SilenceDetector {
     private func cancelConfirmationTimer() {
         self.vadConfirmationTask?.cancel()
         self.vadConfirmationTask = nil
+        self.vadConfirmationInProgress = false
+    }
+
+    /// Start the no-change timeout timer
+    /// Triggers if text hasn't meaningfully changed for noChangeTimeout duration
+    private func startNoChangeTimer() {
+        // Cancel any existing no-change timer
+        self.noChangeTask?.cancel()
+
+        self.noChangeTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(SilenceDetector.noChangeTimeout))
+
+                guard !Task.isCancelled else { return }
+                guard let self = self else { return }
+
+                // No change detected for noChangeTimeout seconds
+                self.triggerSilenceDetected(reason: "no-change timeout (\(SilenceDetector.noChangeTimeout)s)")
+            } catch {
+                // Task was cancelled - this is expected
+            }
+        }
+    }
+
+    /// Start the hard max duration timer
+    /// Forces finalization after hardMaxDuration regardless of other signals
+    private func startHardMaxTimer() {
+        // Only start once per session
+        guard self.hardMaxTask == nil else { return }
+
+        self.hardMaxTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(SilenceDetector.hardMaxDuration))
+
+                guard !Task.isCancelled else { return }
+                guard let self = self else { return }
+
+                // Hard max duration reached
+                self.triggerSilenceDetected(reason: "hard max duration (\(SilenceDetector.hardMaxDuration)s)")
+            } catch {
+                // Task was cancelled - this is expected
+            }
+        }
     }
 }
