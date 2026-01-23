@@ -504,8 +504,8 @@ final class SilenceDetectorTests: XCTestCase {
         // Receive initial partial
         detector.onPartialReceived(text: "Hello world")
 
-        // Should fire after noChangeTimeout (~600ms) + buffer
-        await fulfillment(of: [expectation], timeout: 1.5)
+        // Should fire after noChangeTimeout (~1.0s) + buffer
+        await fulfillment(of: [expectation], timeout: 2.0)
     }
 
     func test_noChangeTimeout_resetsOnTextChange() async {
