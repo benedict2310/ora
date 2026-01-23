@@ -172,7 +172,6 @@ public actor FluidAudioVAD {
         )
 
         // Process all complete chunks in the buffer
-        var lastResult: FluidAudioVADResult?
         var reportedEvent: VADTransitionType? = nil
 
         while sampleBuffer.count >= chunkSize {
