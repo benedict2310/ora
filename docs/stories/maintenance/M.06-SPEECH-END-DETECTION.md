@@ -157,7 +157,7 @@ FluidAudio provides a dedicated End-of-Utterance model: `parakeet-realtime-eou-1
 2. Decouple VAD confirmation from ASR partials - once VAD detects speechEnd, don't let partials cancel it
 3. Tune EnergyVAD thresholds based on environment testing
 
-**Phase 2: Proper Fix (2-3 days)** ⏳ IN PROGRESS
+**Phase 2: Proper Fix (2-3 days)** ✅ COMPLETE
 1. Integrate FluidAudio's Silero VAD to replace EnergyVAD
 2. Add configurable `minSpeechDuration` and `minSilenceGap` parameters
 3. Add "finalize fallbacks":
@@ -328,11 +328,11 @@ var liveText: String
 ## Completion Status
 
 - [x] Implementation complete (Phase 1 + Phase 2)
-- [x] Code review passed (1 iteration for Phase 1)
+- [x] Code review passed (1 iteration for Phase 1, 1 iteration for Phase 2)
 - [x] PR merged (Phase 1): https://github.com/benedict2310/ora/pull/80
-- [x] Merged to main (Phase 1): 8b4d6b1
-- [x] Date (Phase 1): 2026-01-23
-- [x] Phase 2 implementation: commit c69ae9b
+- [x] PR merged (Phase 2): https://github.com/benedict2310/ora/pull/81
+- [x] Merged to main: 3c688b4
+- [x] Date: 2026-01-23
 
 ---
 
