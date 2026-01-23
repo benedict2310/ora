@@ -10,7 +10,7 @@ import os
 
 /// Detects silence (end of speech) using a hybrid approach:
 /// 1. **VAD-assisted (primary)**: Uses VAD speechEnd events with a confirmation timer
-/// 2. **No-change timeout**: Finalizes after text unchanged for 500-800ms
+/// 2. **No-change timeout**: Finalizes after text unchanged for 1.0s
 /// 3. **ASR-based (fallback)**: Monitors time since last ASR partial
 /// 4. **Hard max duration**: Forces finalize after 10s
 ///
@@ -19,7 +19,7 @@ import os
 ///
 /// ## Key Behavior (M.06 improvements)
 /// - Once VAD detects speechEnd, partials do NOT cancel the confirmation timer
-/// - No-change timeout triggers if text hasn't meaningfully changed for 600ms
+/// - No-change timeout triggers if text hasn't meaningfully changed for 1.0s
 /// - Hard max duration (10s) forces finalization regardless of other signals
 ///
 /// ## Usage
