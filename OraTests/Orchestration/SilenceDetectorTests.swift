@@ -483,8 +483,8 @@ final class SilenceDetectorTests: XCTestCase {
     // MARK: - M.06 New Features Tests
 
     func test_noChangeTimeout_constant() {
-        // M.06: No-change timeout is 600ms
-        XCTAssertEqual(SilenceDetector.noChangeTimeout, 0.6)
+        // M.06: No-change timeout is 1.0s
+        XCTAssertEqual(SilenceDetector.noChangeTimeout, 1.0)
     }
 
     func test_hardMaxDuration_constant() {

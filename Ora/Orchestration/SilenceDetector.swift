@@ -54,7 +54,7 @@ final class SilenceDetector {
     static let vadConfirmationDelay: TimeInterval = 0.3
 
     /// No-change timeout in seconds - finalize if text unchanged for this duration
-    static let noChangeTimeout: TimeInterval = 0.6
+    static let noChangeTimeout: TimeInterval = 1.0
 
     /// Hard maximum duration in seconds - force finalize after this
     static let hardMaxDuration: TimeInterval = 10.0
