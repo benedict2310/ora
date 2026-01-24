@@ -36,6 +36,18 @@ protocol ASRServicing: Sendable {
         onVADStateChange: @escaping @Sendable @MainActor (Bool) -> Void
     ) -> AsyncThrowingStream<ASREvent, Error>
 
+    /// Transcribe audio frames with VAD and EOU callbacks (M.07)
+    /// - Parameters:
+    ///   - frames: Async stream of audio frames
+    ///   - onVADStateChange: Callback for VAD state transitions (batch mode only)
+    ///   - onEndOfUtterance: Callback for EOU detection (streaming mode only)
+    /// - Returns: Async throwing stream of ASR events
+    func transcribe(
+        frames: AsyncStream<AudioFrame>,
+        onVADStateChange: @escaping @Sendable @MainActor (Bool) -> Void,
+        onEndOfUtterance: (@Sendable @MainActor () -> Void)?
+    ) -> AsyncThrowingStream<ASREvent, Error>
+
     /// Reset decoder state for new session
     func reset() async
 }

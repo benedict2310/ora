@@ -19,7 +19,7 @@ protocol StreamingASRManaging: Sendable {
     func loadModels(modelDir: URL) async throws
 
     /// Process audio buffer, accumulates internally
-    func process(audioBuffer: AVAudioPCMBuffer) async throws -> String
+    func process(audioBuffer: sending AVAudioPCMBuffer) async throws -> String
 
     /// Finalize and return accumulated transcript
     func finish() async throws -> String
@@ -58,7 +58,7 @@ actor FluidAudioStreamingManager: StreamingASRManaging {
         try await manager.loadModels(modelDir: modelDir)
     }
 
-    func process(audioBuffer: AVAudioPCMBuffer) async throws -> String {
+    nonisolated func process(audioBuffer: sending AVAudioPCMBuffer) async throws -> String {
         try await manager.process(audioBuffer: audioBuffer)
     }
 
