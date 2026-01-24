@@ -1,7 +1,7 @@
 # M.06 - Speech End Detection Improvements
 
 **Epic:** Maintenance
-**Status:** ✅ Complete (Phase 1 + Phase 2)
+**Status:** ✅ Complete (Implementation Done - Manual Testing Pending)
 **Priority:** P1 (High)
 **Estimated Effort:** 3-5 days
 **Dependencies:** M.03
@@ -428,3 +428,24 @@ var liveText: String
 - [x] All P0 issues resolved
 - [x] All P1 issues resolved
 - [x] Ready for merge
+
+---
+
+## Next Steps
+
+### Required for Story Closure
+The following manual tests should be performed to validate the implementation before marking AC-9 through AC-12 complete:
+
+1. **AC-9: Short phrases** - Say "yes", "no", "okay" quickly and verify they're captured without cutoff
+2. **AC-10: Long sentences with pauses** - Speak a long sentence with natural pauses (e.g., "I want to schedule a meeting... with John... tomorrow at 3pm") and verify no early submission
+3. **AC-11: Extended speech stability** - Speak continuously for 8+ seconds and verify transcription doesn't jitter or deteriorate
+4. **AC-12: Environment testing** - Test in quiet room and with background noise (fan, music)
+
+### Optional (Phase 3 - Future)
+- Evaluate FluidAudio EOU model for always-on wake word scenarios
+- Add adaptive threshold based on ambient noise level
+- Consider exposing VAD sensitivity in Preferences UI
+
+### Story Complete When
+- [ ] Manual tests AC-9 through AC-12 verified by user
+- [ ] No regressions reported in normal usage
