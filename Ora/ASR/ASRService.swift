@@ -239,6 +239,7 @@ actor ASRService: @preconcurrency ASRServicing {
     /// Reset decoder state for new session
     func reset() async {
         await engine?.reset()
+        await streamingEngine?.reset()
         await fluidVAD?.reset()
         logger.debug("ASR decoder reset")
     }
