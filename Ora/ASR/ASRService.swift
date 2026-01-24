@@ -96,9 +96,6 @@ actor ASRService: @preconcurrency ASRServicing {
     /// Whether streaming mode is enabled (M.07)
     private var useStreamingMode = false
 
-    /// Callback for EOU detection in streaming mode
-    private var onEndOfUtteranceDetected: (@Sendable @MainActor () -> Void)?
-
     /// Minimum samples before first transcription attempt (160ms at 16kHz)
     private let minimumSamples = 2560
 
