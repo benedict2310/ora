@@ -20,12 +20,16 @@ enum ModelCategory: String, Codable, Sendable, CaseIterable {
 
 /// Known model identifiers
 enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
-    // ASR
+    // ASR - Batch mode (TDT)
     case parakeetTDT = "parakeet-tdt-0.6b-v3"
+
+    // ASR - Streaming mode (EOU) - M.07
+    case parakeetEOU160 = "parakeet-eou-120m-160ms"
+    case parakeetEOU320 = "parakeet-eou-120m-320ms"
 
     // LLM - Qwen 3 models
     case qwen3_4B = "qwen3-4b-instruct-4bit"
-    
+
     // Legacy Qwen 2.5 identifiers (for migration detection)
     // These are kept for backward compatibility with existing metadata
     case qwen7B = "qwen2.5-7b-instruct-4bit"
@@ -49,7 +53,7 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
 
     var category: ModelCategory {
         switch self {
-        case .parakeetTDT: return .asr
+        case .parakeetTDT, .parakeetEOU160, .parakeetEOU320: return .asr
         case .qwen3_4B, .qwen7B, .qwen3B: return .llm
         case .kokoro: return .tts
         }
@@ -58,6 +62,8 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
     var displayName: String {
         switch self {
         case .parakeetTDT: return "Parakeet TDT 0.6B"
+        case .parakeetEOU160: return "Parakeet EOU 120M (160ms)"
+        case .parakeetEOU320: return "Parakeet EOU 120M (320ms)"
         case .qwen3_4B: return "Qwen 3 4B"
         case .qwen7B: return "Qwen 2.5 7B (Legacy)"
         case .qwen3B: return "Qwen 2.5 3B (Legacy)"
@@ -68,6 +74,7 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
     var huggingFaceRepo: String {
         switch self {
         case .parakeetTDT: return "FluidInference/parakeet-tdt-0.6b-v3-coreml"
+        case .parakeetEOU160, .parakeetEOU320: return "FluidInference/parakeet-realtime-eou-120m-coreml"
         case .qwen3_4B: return "mlx-community/Qwen3-4B-Instruct-2507-4bit"
         case .qwen7B: return "mlx-community/Qwen2.5-7B-Instruct-4bit"  // Legacy
         case .qwen3B: return "mlx-community/Qwen2.5-3B-Instruct-4bit"  // Legacy
@@ -78,6 +85,8 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
     var estimatedSizeBytes: Int64 {
         switch self {
         case .parakeetTDT: return 600_000_000      // ~600 MB
+        case .parakeetEOU160: return 150_000_000   // ~150 MB (120M model, 160ms variant)
+        case .parakeetEOU320: return 150_000_000   // ~150 MB (120M model, 320ms variant)
         case .qwen3_4B: return 2_500_000_000       // ~2.5 GB (actual: 2.26 GB model + tokenizer)
         case .qwen7B: return 5_000_000_000         // ~5 GB (legacy)
         case .qwen3B: return 2_000_000_000         // ~2 GB (legacy)
@@ -88,6 +97,7 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
     var isRequired: Bool {
         switch self {
         case .parakeetTDT, .kokoro: return true
+        case .parakeetEOU160, .parakeetEOU320: return false  // Optional streaming models
         case .qwen3_4B: return false  // Required as the only active LLM, but handled specially
         case .qwen7B, .qwen3B: return false  // Legacy models
         }
@@ -99,6 +109,8 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
         // Note: FluidAudio creates its own directory name when downloading,
         // so this must match what FluidAudio actually creates
         case .parakeetTDT: return "asr/parakeet-tdt-0.6b-v3-coreml"
+        case .parakeetEOU160: return "asr/parakeet-eou-streaming/160ms"
+        case .parakeetEOU320: return "asr/parakeet-eou-streaming/320ms"
         case .qwen3_4B: return "llm/qwen3-4b-instruct-4bit"
         case .qwen7B: return "llm/qwen2.5-7b-instruct-4bit"  // Legacy
         case .qwen3B: return "llm/qwen2.5-3b-instruct-4bit"  // Legacy
@@ -112,6 +124,9 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
         case .parakeetTDT:
             // FluidAudio creates these CoreML models with capitalized names
             return ["Encoder.mlmodelc", "Decoder.mlmodelc", "JointDecision.mlmodelc", "parakeet_vocab.json"]
+        case .parakeetEOU160, .parakeetEOU320:
+            // Streaming EOU models from FluidAudio
+            return ["streaming_encoder.mlmodelc", "decoder.mlmodelc", "joint_decision.mlmodelc", "vocab.json"]
         case .qwen3_4B:
             // Qwen 3 uses sharded weights with index file
             return ["config.json", "tokenizer.json", "model.safetensors"]
@@ -131,6 +146,9 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
         switch self {
         case .parakeetTDT:
             // FluidAudio handles its own verification
+            return [:]
+        case .parakeetEOU160, .parakeetEOU320:
+            // FluidAudio handles its own verification for streaming models
             return [:]
         case .qwen3_4B:
             return [
