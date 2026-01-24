@@ -1,15 +1,30 @@
-# Maintenance Stories - MLX Memory Optimization
+# Maintenance Stories
 
-Stories for optimizing MLX GPU memory management in Ora, based on community research and best practices.
+Stories for quality improvements, optimizations, and technical debt in Ora.
 
-## Priority Order
+## Story Index
+
+| ID | Story | Priority | Status |
+|----|-------|----------|--------|
+| M.01 | [Test Coverage Improvements](M.01-TEST-COVERAGE-IMPROVEMENTS.md) | P0 - Critical | 🚧 In Progress |
+| M.02 | [Unified Model Status Tracking](M.02-UNIFIED-MODEL-STATUS-TRACKING.md) | P1 - High | ✅ Complete |
+| M.03 | [Response Triggering Improvements](M.03-STT-QUALITY-IMPROVEMENTS.md) | P1 - High | ✅ Complete |
+| M.04 | [Voice Processing](M.04-VOICE-PROCESSING.md) | P2 - Medium | 🚧 To Do |
+| M.06 | [Speech End Detection](M.06-SPEECH-END-DETECTION.md) | P1 - High | ✅ Complete |
+| M.07 | [Streaming ASR Migration](M.07-STREAMING-ASR-MIGRATION.md) | P1 - High | 🚧 To Do |
+
+---
+
+## MLX Memory Optimization (Backlog)
+
+Stories for optimizing MLX GPU memory management, based on community research and best practices.
 
 | ID | Story | Priority | Impact | Effort |
 |----|-------|----------|--------|--------|
-| M.01 | [KV Cache Persistence](M.01-KV-CACHE-PERSISTENCE.md) | P0 - Critical | High (50%+ faster follow-up turns) | Medium |
-| M.02 | [Cache Clearing Strategy](M.02-CACHE-CLEARING-STRATEGY.md) | P1 - High | Medium (10-20% faster) | Low |
-| M.03 | [Dynamic Cache Limit](M.03-DYNAMIC-CACHE-LIMIT.md) | P1 - High | Medium (device-optimized) | Low |
-| M.04 | [Idle Model Unloading](M.04-IDLE-MODEL-UNLOADING.md) | P2 - Medium | High (memory savings) | Medium |
+| M.01b | [KV Cache Persistence](M.01-KV-CACHE-PERSISTENCE.md) | P0 - Critical | High (50%+ faster follow-up turns) | Medium |
+| M.02b | [Cache Clearing Strategy](M.02-CACHE-CLEARING-STRATEGY.md) | P1 - High | Medium (10-20% faster) | Low |
+| M.03b | [Dynamic Cache Limit](M.03-DYNAMIC-CACHE-LIMIT.md) | P1 - High | Medium (device-optimized) | Low |
+| M.04b | [Idle Model Unloading](M.04-IDLE-MODEL-UNLOADING.md) | P2 - Medium | High (memory savings) | Medium |
 | M.05 | [Memory Monitoring](M.05-MEMORY-MONITORING.md) | P3 - Low | Low (developer tooling) | Low |
 
 ## Background

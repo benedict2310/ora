@@ -129,6 +129,8 @@ Quality, coverage, and repository hygiene.
 | M.02 | [Unified Model Status Tracking](maintenance/M.02-UNIFIED-MODEL-STATUS-TRACKING.md) | ✅ Complete |
 | M.03 | [Response Triggering Improvements](maintenance/M.03-STT-QUALITY-IMPROVEMENTS.md) | ✅ Complete |
 | M.04 | [Voice Processing](maintenance/M.04-VOICE-PROCESSING.md) | 🚧 To Do |
+| M.06 | [Speech End Detection](maintenance/M.06-SPEECH-END-DETECTION.md) | ✅ Complete |
+| M.07 | [Streaming ASR Migration](maintenance/M.07-STREAMING-ASR-MIGRATION.md) | 🚧 To Do |
 
 ### 🎼 Orchestration (O)
 Connecting the loop: Audio → ASR → LLM → Tools → TTS.
