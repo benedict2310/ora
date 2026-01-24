@@ -1,7 +1,7 @@
 # M.07 - Streaming ASR Migration
 
 **Epic:** Maintenance
-**Status:** Review Complete
+**Status:** Complete
 **Priority:** P1 (High)
 **Estimated Effort:** 3-5 days
 **Dependencies:** M.06
@@ -733,4 +733,19 @@ None found.
 
 ## Completion Status
 
-(TBD after merge.)
+- [x] Implementation complete
+- [x] Code review passed (1 iteration)
+- [x] PR merged: https://github.com/benedict2310/ora/pull/82
+- [x] Merged to main: 925a06a
+- [x] Date: 2026-01-24
+
+### Next Steps (Manual Testing Required)
+
+Before marking streaming mode as default, complete these manual tests:
+1. Say short phrases ("yes", "no") - verify captured without cutoff
+2. Say long sentences with pauses - verify no premature submission
+3. Speak continuously for 30+ seconds - verify no jitter or degradation
+4. Compare side-by-side: batch mode vs streaming mode stability
+5. Verify model downloads correctly on fresh install
+
+Enable streaming mode with: `defaults write com.ora.app useStreamingASR -bool true`
