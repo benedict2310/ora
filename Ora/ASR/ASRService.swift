@@ -36,6 +36,18 @@ protocol ASRServicing: Sendable {
         onVADStateChange: @escaping @Sendable @MainActor (Bool) -> Void
     ) -> AsyncThrowingStream<ASREvent, Error>
 
+    /// Transcribe audio frames with VAD and EOU callbacks (M.07)
+    /// - Parameters:
+    ///   - frames: Async stream of audio frames
+    ///   - onVADStateChange: Callback for VAD state transitions (batch mode only)
+    ///   - onEndOfUtterance: Callback for EOU detection (streaming mode only)
+    /// - Returns: Async throwing stream of ASR events
+    func transcribe(
+        frames: AsyncStream<AudioFrame>,
+        onVADStateChange: @escaping @Sendable @MainActor (Bool) -> Void,
+        onEndOfUtterance: (@Sendable @MainActor () -> Void)?
+    ) -> AsyncThrowingStream<ASREvent, Error>
+
     /// Reset decoder state for new session
     func reset() async
 }
@@ -43,6 +55,15 @@ protocol ASRServicing: Sendable {
 // MARK: - ASR Service
 
 /// Parakeet-based ASR service providing streaming transcription.
+///
+/// ## Modes
+///
+/// **Batch Mode (default):** Uses ParakeetEngine which reprocesses the entire buffer
+/// on each ~300ms cycle. Uses FluidAudioVAD + SilenceDetector for end-of-speech.
+///
+/// **Streaming Mode (M.07):** Uses StreamingParakeetEngine with incremental processing.
+/// Only new audio is processed in 160/320ms chunks. Uses built-in EOU detection for
+/// end-of-speech, eliminating VAD + timeout workarounds.
 ///
 /// ## Usage
 /// ```swift
@@ -69,7 +90,14 @@ actor ASRService: @preconcurrency ASRServicing {
 
     private let logger = Logger(subsystem: "com.ora.app", category: "ASRService")
     private var engine: (any ASREngine)?
+    private var streamingEngine: StreamingParakeetEngine?
     private var isReady = false
+
+    /// Whether streaming mode is enabled (M.07)
+    private var useStreamingMode = false
+
+    /// Callback for EOU detection in streaming mode
+    private var onEndOfUtteranceDetected: (@Sendable @MainActor () -> Void)?
 
     /// Minimum samples before first transcription attempt (160ms at 16kHz)
     private let minimumSamples = 2560
@@ -80,6 +108,7 @@ actor ASRService: @preconcurrency ASRServicing {
 
     /// FluidAudio neural VAD (lazily initialized on first transcription)
     /// Provides more robust speech detection than EnergyVAD (M.06 Phase 2)
+    /// Only used in batch mode; streaming mode uses built-in EOU detection.
     private var fluidVAD: FluidAudioVAD?
 
     /// Whether FluidAudioVAD initialization was attempted
@@ -94,13 +123,57 @@ actor ASRService: @preconcurrency ASRServicing {
         self.engine = engine
     }
 
+    /// Initialize with a custom streaming engine (for testing)
+    init(streamingEngine: StreamingParakeetEngine) {
+        self.streamingEngine = streamingEngine
+        self.useStreamingMode = true
+    }
+
     // MARK: - Public API
 
     /// Prepare the ASR engine (load models)
     func prepare() async throws {
         guard !isReady else { return }
 
-        logger.info("Preparing ASR engine...")
+        // Check settings for streaming mode (M.07)
+        // Read settings on main actor to avoid Sendable issues with SwiftData
+        let (streamingEnabled, debounceMs) = await MainActor.run {
+            let settings = PersistenceManager.shared.settings
+            return (settings.useStreamingASR, settings.eouDebounceMs)
+        }
+        self.useStreamingMode = streamingEnabled
+
+        if useStreamingMode {
+            logger.info("Preparing streaming ASR engine (M.07)...")
+
+            // Check if streaming models are available
+            let chunkSize = StreamingASRConfiguration.ChunkSize.ms160
+            guard StreamingParakeetBootstrap.modelsAvailable(for: chunkSize) else {
+                logger.warning("Streaming ASR models not available, falling back to batch mode")
+                self.useStreamingMode = false
+                try await prepareBatchEngine()
+                return
+            }
+
+            // Create streaming engine with user's debounce setting
+            let config = StreamingASRConfiguration(
+                chunkSize: chunkSize,
+                eouDebounceMs: debounceMs
+            )
+            streamingEngine = StreamingParakeetEngine(configuration: config)
+            try await streamingEngine?.prepare()
+
+            logger.info("Streaming ASR engine ready (debounce: \(debounceMs)ms)")
+        } else {
+            try await prepareBatchEngine()
+        }
+
+        isReady = true
+    }
+
+    /// Prepare the batch (non-streaming) ASR engine
+    private func prepareBatchEngine() async throws {
+        logger.info("Preparing batch ASR engine...")
 
         // Use injected engine if available, otherwise create ParakeetEngine
         if engine == nil {
@@ -108,8 +181,7 @@ actor ASRService: @preconcurrency ASRServicing {
         }
         try await engine?.prepare()
 
-        isReady = true
-        logger.info("ASR engine ready")
+        logger.info("Batch ASR engine ready")
     }
 
     /// Transcribe audio frames to text events
@@ -123,14 +195,40 @@ actor ASRService: @preconcurrency ASRServicing {
         frames: AsyncStream<AudioFrame>,
         onVADStateChange: @escaping @Sendable @MainActor (Bool) -> Void
     ) -> AsyncThrowingStream<ASREvent, Error> {
+        transcribe(frames: frames, onVADStateChange: onVADStateChange, onEndOfUtterance: nil)
+    }
+
+    /// Transcribe audio frames to text events with VAD and EOU callbacks.
+    ///
+    /// In streaming mode (M.07), `onEndOfUtterance` is called when the built-in EOU
+    /// detector confirms end of speech. This replaces VAD-based finalization.
+    ///
+    /// - Parameters:
+    ///   - frames: Audio frame stream
+    ///   - onVADStateChange: Callback for VAD speech start/end (batch mode only)
+    ///   - onEndOfUtterance: Callback for EOU detection (streaming mode only)
+    /// - Returns: Stream of ASR events
+    func transcribe(
+        frames: AsyncStream<AudioFrame>,
+        onVADStateChange: @escaping @Sendable @MainActor (Bool) -> Void,
+        onEndOfUtterance: (@Sendable @MainActor () -> Void)?
+    ) -> AsyncThrowingStream<ASREvent, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    try await self.runTranscription(
-                        frames: frames,
-                        continuation: continuation,
-                        onVADStateChange: onVADStateChange
-                    )
+                    if self.useStreamingMode {
+                        try await self.runStreamingTranscription(
+                            frames: frames,
+                            continuation: continuation,
+                            onEndOfUtterance: onEndOfUtterance
+                        )
+                    } else {
+                        try await self.runTranscription(
+                            frames: frames,
+                            continuation: continuation,
+                            onVADStateChange: onVADStateChange
+                        )
+                    }
                 } catch {
                     continuation.finish(throwing: error)
                 }
@@ -339,6 +437,150 @@ actor ASRService: @preconcurrency ASRServicing {
         }
 
         continuation.finish()
+    }
+
+    // MARK: - Streaming Mode Transcription (M.07)
+
+    /// Run streaming transcription using StreamingParakeetEngine.
+    ///
+    /// Unlike batch mode, streaming mode:
+    /// - Processes audio incrementally in 160/320ms chunks
+    /// - Emits partials via callback during processing
+    /// - Uses built-in EOU detection instead of VAD + timeouts
+    private func runStreamingTranscription(
+        frames: AsyncStream<AudioFrame>,
+        continuation: AsyncThrowingStream<ASREvent, Error>.Continuation,
+        onEndOfUtterance: (@Sendable @MainActor () -> Void)?
+    ) async throws {
+        guard isReady, let engine = streamingEngine else {
+            throw ASRServiceError.notReady
+        }
+
+        // Use actor-isolated state tracking for thread safety
+        let stateTracker = StreamingStateTracker()
+
+        // Set up partial handler - emit partials as they arrive
+        engine.setPartialHandler { [weak self] (partial: ASRPartial) in
+            guard !partial.text.isEmpty else { return }
+
+            Task {
+                // Check if text has changed
+                let previousText = await stateTracker.lastPartialText
+                guard partial.text != previousText else { return }
+                await stateTracker.setLastPartialText(partial.text)
+
+                continuation.yield(.partial(text: partial.text, stability: 0.9))
+                self?.logger.debug("Streaming partial: '\(partial.text.prefix(50))...'")
+            }
+        }
+
+        // Set up EOU callback - triggers finalization
+        engine.onEndOfUtterance = { (transcript: String) in
+            Task {
+                let alreadyTriggered = await stateTracker.eouTriggered
+                guard !alreadyTriggered else { return }
+                await stateTracker.setEouTriggered(true)
+
+                await MainActor.run {
+                    onEndOfUtterance?()
+                }
+            }
+        }
+
+        // Process audio frames as they arrive
+        for await frame in frames {
+            guard !Task.isCancelled else { break }
+
+            // Convert frame to AVAudioPCMBuffer and process
+            guard let buffer = Self.makePCMBuffer(samples: frame.samples) else {
+                continue
+            }
+
+            do {
+                // Process returns empty string; partials come via callback
+                _ = try await engine.process(buffer, language: "en")
+            } catch {
+                logger.warning("Streaming chunk processing failed: \(error.localizedDescription)")
+                // Continue processing - don't fail the entire stream for one chunk
+            }
+        }
+
+        // Finalize transcription
+        do {
+            // Create an empty buffer for finalization (all audio already processed)
+            guard let emptyBuffer = Self.makePCMBuffer(samples: [0.0]) else {
+                continuation.finish()
+                return
+            }
+
+            let final = try await engine.finalize(emptyBuffer, language: "en")
+            let lastText = await stateTracker.lastPartialText
+
+            if let final = final, !final.text.isEmpty {
+                continuation.yield(.final(text: final.text))
+                logger.info("Streaming final: '\(final.text.prefix(50))...'")
+            } else if !lastText.isEmpty {
+                // Fall back to last partial if finalize returned empty
+                continuation.yield(.final(text: lastText))
+                logger.info("Streaming final (from partial): '\(lastText.prefix(50))...'")
+            }
+        } catch {
+            logger.error("Streaming finalization failed: \(error.localizedDescription)")
+            // Still emit what we have
+            let lastText = await stateTracker.lastPartialText
+            if !lastText.isEmpty {
+                continuation.yield(.final(text: lastText))
+            }
+        }
+
+        // Reset for next session
+        await engine.reset()
+        continuation.finish()
+    }
+
+    // MARK: - Audio Buffer Helpers
+
+    /// Create AVAudioPCMBuffer from Float32 samples (16kHz mono)
+    private static func makePCMBuffer(samples: [Float]) -> AVAudioPCMBuffer? {
+        guard !samples.isEmpty else { return nil }
+
+        guard let format = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 16000,
+            channels: 1,
+            interleaved: false
+        ) else { return nil }
+
+        guard let buffer = AVAudioPCMBuffer(
+            pcmFormat: format,
+            frameCapacity: AVAudioFrameCount(samples.count)
+        ) else { return nil }
+
+        buffer.frameLength = AVAudioFrameCount(samples.count)
+
+        if let channelData = buffer.floatChannelData?[0] {
+            for (index, sample) in samples.enumerated() {
+                channelData[index] = sample
+            }
+        }
+
+        return buffer
+    }
+}
+
+// MARK: - Streaming State Tracker
+
+/// Actor to track streaming transcription state in a thread-safe manner
+private actor StreamingStateTracker {
+    var lastPartialText: String = ""
+    var eouTriggered: Bool = false
+
+    func setLastPartialText(_ text: String) {
+        lastPartialText = text
+    }
+
+    func setEouTriggered(_ triggered: Bool) {
+        eouTriggered = triggered
     }
 }
 
