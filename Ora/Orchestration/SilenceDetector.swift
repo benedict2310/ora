@@ -56,12 +56,11 @@ final class SilenceDetector {
     /// No-change timeout in seconds - finalize if text unchanged for this duration
     static let noChangeTimeout: TimeInterval = 1.0
 
-    /// Hard maximum duration in seconds - force finalize after this
-    static let hardMaxDuration: TimeInterval = 10.0
-
-    /// Hard max duration for streaming mode (longer since EOU handles natural finalization)
-    /// This is just a safety net for when EOU detection fails
-    static let streamingHardMaxDuration: TimeInterval = 60.0
+    /// Hard maximum duration in seconds - force finalize after this.
+    /// This is a SAFETY NET for when VAD/ASR timeouts fail, not the primary cutoff.
+    /// Normal end-of-speech is detected by VAD confirmation (0.3s), no-change timeout (1.0s),
+    /// or ASR fallback timeout (1.0s). The hard max just prevents runaway recordings.
+    static let hardMaxDuration: TimeInterval = 60.0
 
     // MARK: - Properties
 
@@ -69,9 +68,6 @@ final class SilenceDetector {
 
     /// Timeout duration in seconds before silence is detected (ASR fallback)
     let timeout: TimeInterval
-
-    /// Whether streaming ASR mode is enabled (uses longer hard max timeout)
-    let isStreamingMode: Bool
 
     /// Called when silence is detected (no partials for `timeout` seconds or VAD confirmed)
     var onSilenceDetected: (() -> Void)?
@@ -109,16 +105,13 @@ final class SilenceDetector {
     // MARK: - Initialization
 
     /// Create a silence detector with the specified timeout
-    /// - Parameters:
-    ///   - timeout: Seconds of silence before detection fires (default 1.0s)
-    ///   - isStreamingMode: Whether streaming ASR mode is enabled (uses longer hard max timeout)
-    init(timeout: TimeInterval = SilenceDetector.defaultTimeout, isStreamingMode: Bool = false) {
+    /// - Parameter timeout: Seconds of silence before detection fires (default 1.0s)
+    init(timeout: TimeInterval = SilenceDetector.defaultTimeout) {
         // Clamp timeout to valid range
         self.timeout = max(
             Self.minimumTimeout,
             min(Self.maximumTimeout, timeout)
         )
-        self.isStreamingMode = isStreamingMode
     }
 
     // MARK: - Public API
@@ -338,27 +331,22 @@ final class SilenceDetector {
     }
 
     /// Start the hard max duration timer
-    /// Forces finalization after hardMaxDuration regardless of other signals
-    /// In streaming mode, uses a much longer timeout since EOU handles natural finalization
+    /// Forces finalization after hardMaxDuration regardless of other signals.
+    /// This is a SAFETY NET - normal end-of-speech uses VAD/ASR timeouts.
     private func startHardMaxTimer() {
         // Only start once per session
         guard self.hardMaxTask == nil else { return }
 
-        // Use longer timeout in streaming mode since EOU detection handles natural finalization
-        // The hard max timer is just a safety net for when EOU fails
-        let maxDuration = self.isStreamingMode
-            ? SilenceDetector.streamingHardMaxDuration
-            : SilenceDetector.hardMaxDuration
-
         self.hardMaxTask = Task { [weak self] in
             do {
-                try await Task.sleep(for: .seconds(maxDuration))
+                try await Task.sleep(for: .seconds(SilenceDetector.hardMaxDuration))
 
                 guard !Task.isCancelled else { return }
                 guard let self = self else { return }
 
-                // Hard max duration reached
-                self.triggerSilenceDetected(reason: "hard max duration (\(maxDuration)s)")
+                // Hard max duration reached - this should rarely happen
+                self.logger.warning("Hard max duration (\(SilenceDetector.hardMaxDuration)s) reached - VAD/ASR timeouts may have failed")
+                self.triggerSilenceDetected(reason: "hard max duration (\(SilenceDetector.hardMaxDuration)s)")
             } catch {
                 // Task was cancelled - this is expected
             }

@@ -266,13 +266,9 @@ final class SimplePipelineController: ObservableObject {
         self.logger.debug("Setting up silence detector")
 
         // Use user-configured silence timeout (AC-2, AC-3)
-        let settings = PersistenceManager.shared.settings
-        let timeout = settings.silenceTimeout
+        let timeout = PersistenceManager.shared.settings.silenceTimeout
 
-        // In streaming mode, use longer hard max timeout since EOU handles natural finalization (M.07)
-        let isStreamingMode = settings.useStreamingASR
-
-        let detector = SilenceDetector(timeout: timeout, isStreamingMode: isStreamingMode)
+        let detector = SilenceDetector(timeout: timeout)
         detector.onSilenceDetected = { [weak self] in
             guard let self = self else { return }
             // Only auto-submit if we have a transcript (AC-6)
