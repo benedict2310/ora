@@ -760,17 +760,23 @@ Enable streaming mode with: `defaults write com.ora.app useStreamingASR -bool tr
 
 **Root Cause:** `SilenceDetector` has a `hardMaxDuration` of 10 seconds that forces transcript submission. At normal speech rate (~3-4 words/second), 10 seconds ≈ 30-40 words.
 
-**Fix Applied:**
-1. Added `streamingHardMaxDuration = 60.0` constant to `SilenceDetector`
-2. Added `isStreamingMode` parameter to `SilenceDetector` initializer
-3. Modified `startHardMaxTimer()` to use 60s timeout in streaming mode (vs 10s in batch mode)
-4. Updated `SimplePipelineController.setupSilenceDetector()` to pass streaming mode flag
+**Initial (incorrect) fix:** Added streaming-only 60s timeout - but this didn't help because:
+- `useStreamingASR` defaults to `false`
+- User was in batch mode
+- Still getting 10s cutoff
+
+**Correct fix (commit c78088c):**
+The hard max timer is a **safety net** for when VAD/ASR timeouts fail. Normal end-of-speech is detected by:
+- VAD confirmation (0.3s)
+- No-change timeout (1.0s)
+- ASR fallback timeout (1.0s)
+
+Increased `hardMaxDuration` from 10s to 60s for **all modes** (batch and streaming).
+Removed the unnecessary `isStreamingMode` parameter.
 
 **Files Modified:**
-- `Ora/Orchestration/SilenceDetector.swift` - Added streaming mode support
-- `Ora/Orchestration/SimplePipelineController.swift` - Pass streaming flag to detector
-
-**Note:** This fix only applies when `useStreamingASR = true`. Batch mode retains 10s limit.
+- `Ora/Orchestration/SilenceDetector.swift` - Changed `hardMaxDuration` to 60.0, removed streaming-specific logic
+- `Ora/Orchestration/SimplePipelineController.swift` - Removed streaming mode flag
 
 ### Issue 2: Jibberish Transcription Output (UNDER INVESTIGATION)
 
