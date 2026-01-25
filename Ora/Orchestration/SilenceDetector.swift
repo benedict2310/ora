@@ -59,12 +59,19 @@ final class SilenceDetector {
     /// Hard maximum duration in seconds - force finalize after this
     static let hardMaxDuration: TimeInterval = 10.0
 
+    /// Hard max duration for streaming mode (longer since EOU handles natural finalization)
+    /// This is just a safety net for when EOU detection fails
+    static let streamingHardMaxDuration: TimeInterval = 60.0
+
     // MARK: - Properties
 
     private let logger = Logger(subsystem: "com.ora.app", category: "SilenceDetector")
 
     /// Timeout duration in seconds before silence is detected (ASR fallback)
     let timeout: TimeInterval
+
+    /// Whether streaming ASR mode is enabled (uses longer hard max timeout)
+    let isStreamingMode: Bool
 
     /// Called when silence is detected (no partials for `timeout` seconds or VAD confirmed)
     var onSilenceDetected: (() -> Void)?
@@ -102,13 +109,16 @@ final class SilenceDetector {
     // MARK: - Initialization
 
     /// Create a silence detector with the specified timeout
-    /// - Parameter timeout: Seconds of silence before detection fires (default 1.0s)
-    init(timeout: TimeInterval = SilenceDetector.defaultTimeout) {
+    /// - Parameters:
+    ///   - timeout: Seconds of silence before detection fires (default 1.0s)
+    ///   - isStreamingMode: Whether streaming ASR mode is enabled (uses longer hard max timeout)
+    init(timeout: TimeInterval = SilenceDetector.defaultTimeout, isStreamingMode: Bool = false) {
         // Clamp timeout to valid range
         self.timeout = max(
             Self.minimumTimeout,
             min(Self.maximumTimeout, timeout)
         )
+        self.isStreamingMode = isStreamingMode
     }
 
     // MARK: - Public API
@@ -329,19 +339,26 @@ final class SilenceDetector {
 
     /// Start the hard max duration timer
     /// Forces finalization after hardMaxDuration regardless of other signals
+    /// In streaming mode, uses a much longer timeout since EOU handles natural finalization
     private func startHardMaxTimer() {
         // Only start once per session
         guard self.hardMaxTask == nil else { return }
 
+        // Use longer timeout in streaming mode since EOU detection handles natural finalization
+        // The hard max timer is just a safety net for when EOU fails
+        let maxDuration = self.isStreamingMode
+            ? SilenceDetector.streamingHardMaxDuration
+            : SilenceDetector.hardMaxDuration
+
         self.hardMaxTask = Task { [weak self] in
             do {
-                try await Task.sleep(for: .seconds(SilenceDetector.hardMaxDuration))
+                try await Task.sleep(for: .seconds(maxDuration))
 
                 guard !Task.isCancelled else { return }
                 guard let self = self else { return }
 
                 // Hard max duration reached
-                self.triggerSilenceDetected(reason: "hard max duration (\(SilenceDetector.hardMaxDuration)s)")
+                self.triggerSilenceDetected(reason: "hard max duration (\(maxDuration)s)")
             } catch {
                 // Task was cancelled - this is expected
             }

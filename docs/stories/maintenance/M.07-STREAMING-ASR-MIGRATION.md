@@ -749,3 +749,125 @@ Before marking streaming mode as default, complete these manual tests:
 5. Verify model downloads correctly on fresh install
 
 Enable streaming mode with: `defaults write com.ora.app useStreamingASR -bool true`
+
+---
+
+## Post-Merge Issues (2026-01-25)
+
+### Issue 1: 10-Second Hard Max Timer Cutoff (FIXED)
+
+**Symptom:** User reported transcription being cut off at approximately 35-40 words consistently, regardless of content.
+
+**Root Cause:** `SilenceDetector` has a `hardMaxDuration` of 10 seconds that forces transcript submission. At normal speech rate (~3-4 words/second), 10 seconds ≈ 30-40 words.
+
+**Fix Applied:**
+1. Added `streamingHardMaxDuration = 60.0` constant to `SilenceDetector`
+2. Added `isStreamingMode` parameter to `SilenceDetector` initializer
+3. Modified `startHardMaxTimer()` to use 60s timeout in streaming mode (vs 10s in batch mode)
+4. Updated `SimplePipelineController.setupSilenceDetector()` to pass streaming mode flag
+
+**Files Modified:**
+- `Ora/Orchestration/SilenceDetector.swift` - Added streaming mode support
+- `Ora/Orchestration/SimplePipelineController.swift` - Pass streaming flag to detector
+
+**Note:** This fix only applies when `useStreamingASR = true`. Batch mode retains 10s limit.
+
+### Issue 2: Jibberish Transcription Output (UNDER INVESTIGATION)
+
+**Symptom:** User reports transcription producing jibberish with repeated "Yeah" tokens interspersed with actual words. Example output:
+```
+"Oh Well, Yeah. Extra. Yeah. Hard metal. Maximum. Yeah. Yeah. Ten seconds. Transcription. Submission. Yeah. Yeah..."
+```
+Expected: "The SilenceDetector has a hard maximum duration of 10 seconds..."
+
+**Key Observations:**
+- Real words appear ("Maximum", "Ten seconds", "Transcription") mixed with "Yeah" filler
+- Some word mutations ("Hard metal" instead of "hard maximum")
+- User's other Parakeet app (MacTalk in `../mactalk`) transcribes the same audio correctly
+- Same audio input, same model files - rules out audio quality issues
+
+**Investigation Findings:**
+
+1. **User is using BATCH mode, not streaming mode:**
+   - `useStreamingASR` defaults to `false` in AppSettings
+   - Streaming models not downloaded: `~/Library/Application Support/Ora/Models/asr/parakeet-eou-streaming/` doesn't exist
+   - ASRService correctly falls back to batch mode
+
+2. **Batch model IS correctly installed:**
+   ```
+   ~/Library/Application Support/FluidAudio/Models/parakeet-tdt-0.6b-v3-coreml/
+   ├── Decoder.mlmodelc
+   ├── Encoder.mlmodelc
+   ├── JointDecision.mlmodelc
+   ├── Preprocessor.mlmodelc
+   ├── parakeet_v3_vocab.json
+   ```
+
+3. **FluidAudio version change:** M.07 updated FluidAudio from 0.8.2 → 0.10.0
+   - v0.9.1 included fix: "Preventing loops with non-blank tokens (#244)"
+   - This fix should prevent token repetition, but issue persists
+
+4. **MacTalk vs Ora Comparison:**
+   Both apps use identical `manager.transcribe(buffer, source: .microphone)` calls.
+
+   Key differences in Ora:
+   - `ensureMinimumDuration()` pads short audio with silence (could cause hallucination)
+   - `TranscriptStabilizer` filters partials
+   - FluidAudioVAD (neural) instead of simple RMS-based detection
+   - Explicit 10s window management with finalization of excess audio
+
+   MacTalk simpler approach:
+   - Simple RMS-based silence detection (threshold 0.005)
+   - No minimum duration padding
+   - No transcript stabilization
+
+**Diagnostic Logging Added:**
+
+Added instrumentation to trace the issue:
+
+```swift
+// ASRService.swift - runTranscription()
+logger.info("🎙️ [DIAG] Starting batch transcription session")
+logger.debug("🎙️ [DIAG] Frame N: accumulated X samples (Y.YYs)")
+logger.debug("🎙️ [DIAG] Process #N: Padded X samples (Y.YYs of silence)")
+logger.info("🎙️ [DIAG] Process #N: Raw ASR result: '...'")
+logger.info("🎙️ [DIAG] Session complete: N frames, M ASR calls")
+
+// ParakeetEngineCore.transcribe()
+logger.info("🔊 [DIAG] FluidAudio raw result: '...'")
+```
+
+**Files with diagnostic logging:**
+- `Ora/ASR/ASRService.swift` - Frame accumulation, padding, ASR calls
+- `Ora/ASR/ParakeetEngine.swift` - Raw FluidAudio results
+
+**To view logs:**
+```bash
+./build.sh logs --category ASRService --category ParakeetEngineCore
+```
+
+**Suspected Root Causes (to investigate):**
+
+1. **Silence padding hallucination:** `ensureMinimumDuration()` pads audio < 1s with zeros. Model may hallucinate "Yeah" during silence.
+
+2. **Window management issue:** When exceeding 10s, Ora finalizes excess audio before dropping. This finalization with padding could produce artifacts.
+
+3. **FluidAudio 0.10.0 regression:** Despite the "Preventing loops" fix, batch mode may have regressed.
+
+4. **Decoder state not reset properly:** Between process() calls, decoder state accumulation could cause repetition.
+
+**Next Steps:**
+
+1. Run app with diagnostic logging and capture actual log output
+2. Compare raw FluidAudio results (`🔊 [DIAG]`) with final output
+3. Test removing `ensureMinimumDuration()` padding
+4. Consider reverting to FluidAudio 0.8.2 to test for regression
+5. Compare decoder reset behavior between MacTalk and Ora
+
+**Workaround (if needed):**
+Revert FluidAudio to 0.8.2 in `project.yml`:
+```yaml
+FluidAudio:
+  url: https://github.com/FluidInference/FluidAudio
+  exactVersion: "0.8.2"  # Was 0.10.0
+```

@@ -306,6 +306,11 @@ actor ASRService: @preconcurrency ASRServicing {
         // Committed text from chunks that have rolled out of the window
         var committedText = ""
 
+        // Diagnostic: Track transcription session
+        var frameCount = 0
+        var processCount = 0
+        logger.info("🎙️ [DIAG] Starting batch transcription session")
+
         // VAD for speech detection - try FluidAudioVAD first, fallback to EnergyVAD (M.06 Phase 2)
         let neuralVAD = await getOrInitializeFluidVAD()
         var energyVAD = EnergyVAD(configuration: VADConfiguration())
@@ -316,7 +321,14 @@ actor ASRService: @preconcurrency ASRServicing {
 
         // Process frames as they arrive
         for await frame in frames {
+            frameCount += 1
             accumulatedSamples.append(contentsOf: frame.samples)
+
+            // Diagnostic: Log every 10th frame
+            if frameCount % 10 == 0 {
+                let durationSec = Double(accumulatedSamples.count) / 16000.0
+                logger.debug("🎙️ [DIAG] Frame \(frameCount): accumulated \(accumulatedSamples.count) samples (\(String(format: "%.2f", durationSec))s)")
+            }
 
             // Run VAD on incoming frame for fast speech detection
             // Use FluidAudioVAD (neural) if available, otherwise fall back to EnergyVAD
@@ -377,13 +389,23 @@ actor ASRService: @preconcurrency ASRServicing {
 
             // Process when we have enough audio
             if accumulatedSamples.count >= minimumSamples {
+                processCount += 1
                 let paddedSamples = ensureMinimumDuration(accumulatedSamples)
+
+                // Diagnostic: Log before ASR call
+                let paddingAdded = paddedSamples.count - accumulatedSamples.count
+                if paddingAdded > 0 {
+                    logger.debug("🎙️ [DIAG] Process #\(processCount): Padded \(paddingAdded) samples (\(String(format: "%.2f", Double(paddingAdded)/16000.0))s of silence)")
+                }
+
                 let partial = try await engine.process(
                     samples: paddedSamples,
                     language: "en"
                 )
 
+                // Diagnostic: Log raw ASR result
                 if let partial = partial {
+                    logger.info("🎙️ [DIAG] Process #\(processCount): Raw ASR result: '\(partial.text.prefix(100))'")
                     // Combine committed text with current window partial
                     let fullText: String
                     if committedText.isEmpty {
@@ -407,6 +429,9 @@ actor ASRService: @preconcurrency ASRServicing {
                 }
             }
         }
+
+        // Diagnostic: Session summary
+        logger.info("🎙️ [DIAG] Session complete: \(frameCount) frames, \(processCount) ASR calls, committed: '\(committedText.prefix(50))...'")
 
         // Finalize: Combine committed text with final transcription of remaining audio
         if !accumulatedSamples.isEmpty || !committedText.isEmpty {
