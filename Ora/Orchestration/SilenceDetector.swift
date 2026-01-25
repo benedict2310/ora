@@ -41,20 +41,22 @@ final class SilenceDetector {
 
     // MARK: - Constants
 
-    /// Default silence timeout in seconds (reduced from 1.5s for faster response)
-    static let defaultTimeout: TimeInterval = 1.0
+    /// Default silence timeout in seconds
+    static let defaultTimeout: TimeInterval = 1.5
 
     /// Minimum timeout allowed (0.5 seconds)
     static let minimumTimeout: TimeInterval = 0.5
 
-    /// Maximum timeout allowed (2.0 seconds)
-    static let maximumTimeout: TimeInterval = 2.0
+    /// Maximum timeout allowed (3.0 seconds)
+    static let maximumTimeout: TimeInterval = 3.0
 
-    /// VAD confirmation delay in seconds before triggering submission
-    static let vadConfirmationDelay: TimeInterval = 0.3
+    /// VAD confirmation delay in seconds before triggering submission.
+    /// Increased from 0.3s to allow natural pauses in speech.
+    static let vadConfirmationDelay: TimeInterval = 0.8
 
-    /// No-change timeout in seconds - finalize if text unchanged for this duration
-    static let noChangeTimeout: TimeInterval = 1.0
+    /// No-change timeout in seconds - finalize if text unchanged for this duration.
+    /// Increased from 1.0s to be less aggressive during dictation.
+    static let noChangeTimeout: TimeInterval = 1.5
 
     /// Hard maximum duration in seconds - force finalize after this.
     /// This is a SAFETY NET for when VAD/ASR timeouts fail, not the primary cutoff.
