@@ -778,102 +778,68 @@ Removed the unnecessary `isStreamingMode` parameter.
 - `Ora/Orchestration/SilenceDetector.swift` - Changed `hardMaxDuration` to 60.0, removed streaming-specific logic
 - `Ora/Orchestration/SimplePipelineController.swift` - Removed streaming mode flag
 
-### Issue 2: Jibberish Transcription Output (UNDER INVESTIGATION)
+### Issue 2: Jibberish Transcription Output (FIXED)
 
-**Symptom:** User reports transcription producing jibberish with repeated "Yeah" tokens interspersed with actual words. Example output:
+**Symptom:** Transcription producing jibberish with repeated "Yeah" tokens interspersed with actual words. Example output:
 ```
 "Oh Well, Yeah. Extra. Yeah. Hard metal. Maximum. Yeah. Yeah. Ten seconds. Transcription. Submission. Yeah. Yeah..."
 ```
 Expected: "The SilenceDetector has a hard maximum duration of 10 seconds..."
 
-**Key Observations:**
-- Real words appear ("Maximum", "Ten seconds", "Transcription") mixed with "Yeah" filler
-- Some word mutations ("Hard metal" instead of "hard maximum")
-- User's other Parakeet app (MacTalk in `../mactalk`) transcribes the same audio correctly
-- Same audio input, same model files - rules out audio quality issues
+**Root Cause Analysis:**
 
-**Investigation Findings:**
+The diagnostic logging revealed the issue was in the **sliding window approach** with rolled-off audio finalization:
 
-1. **User is using BATCH mode, not streaming mode:**
-   - `useStreamingASR` defaults to `false` in AppSettings
-   - Streaming models not downloaded: `~/Library/Application Support/Ora/Models/asr/parakeet-eou-streaming/` doesn't exist
-   - ASRService correctly falls back to batch mode
+1. When audio exceeded the 10s window, Ora would:
+   - Finalize the small excess portion (a few hundred ms)
+   - Pad it to 1 second with silence
+   - Transcribe this tiny padded fragment → produced garbage ("Yeah.", "Interesting.", "Switch.")
 
-2. **Batch model IS correctly installed:**
+2. These garbage fragments were accumulated in `committedText` and prepended to new partials
+
+3. The diagnostic logs showed:
    ```
-   ~/Library/Application Support/FluidAudio/Models/parakeet-tdt-0.6b-v3-coreml/
-   ├── Decoder.mlmodelc
-   ├── Encoder.mlmodelc
-   ├── JointDecision.mlmodelc
-   ├── Preprocessor.mlmodelc
-   ├── parakeet_v3_vocab.json
+   Process #48: 'Dynatrace, our mission is to bring...' ✓ (correct)
+   Then: 'Yeah.' (finalize of excess samples - garbage!)
+   Process #49: 'Our mission is to bring...' ✓ (correct)
+   Then: 'Yeah.' (finalize of excess samples - garbage!)
    ```
 
-3. **FluidAudio version change:** M.07 updated FluidAudio from 0.8.2 → 0.10.0
-   - v0.9.1 included fix: "Preventing loops with non-blank tokens (#244)"
-   - This fix should prevent token repetition, but issue persists
+**Solution: MacTalk-style "accumulate all, finalize once" approach**
 
-4. **MacTalk vs Ora Comparison:**
-   Both apps use identical `manager.transcribe(buffer, source: .microphone)` calls.
+Adopted the same pattern used by MacTalk (which transcribes correctly):
 
-   Key differences in Ora:
-   - `ensureMinimumDuration()` pads short audio with silence (could cause hallucination)
-   - `TranscriptStabilizer` filters partials
-   - FluidAudioVAD (neural) instead of simple RMS-based detection
-   - Explicit 10s window management with finalization of excess audio
+1. **Accumulate ALL audio** up to 10 minutes (9.6M samples)
+2. **Partials**: Use only the last 10 seconds for UI responsiveness (approximate)
+3. **Final**: Transcribe the ENTIRE accumulated buffer once - FluidAudio's `ChunkProcessor` handles long audio internally via ~15s overlapping chunks
 
-   MacTalk simpler approach:
-   - Simple RMS-based silence detection (threshold 0.005)
-   - No minimum duration padding
-   - No transcript stabilization
+**Key insight from FluidAudio investigation:**
 
-**Diagnostic Logging Added:**
+FluidAudio's batch `AsrManager.transcribe()` already handles long audio correctly via `ChunkProcessor`:
+- Splits audio into ~14.96s overlapping chunks
+- Merges tokens across chunk boundaries
+- Supports unlimited audio length
 
-Added instrumentation to trace the issue:
+The artificial window limit and rolled-off finalization in Ora was the problem, not FluidAudio.
 
-```swift
-// ASRService.swift - runTranscription()
-logger.info("🎙️ [DIAG] Starting batch transcription session")
-logger.debug("🎙️ [DIAG] Frame N: accumulated X samples (Y.YYs)")
-logger.debug("🎙️ [DIAG] Process #N: Padded X samples (Y.YYs of silence)")
-logger.info("🎙️ [DIAG] Process #N: Raw ASR result: '...'")
-logger.info("🎙️ [DIAG] Session complete: N frames, M ASR calls")
+**Files Modified:**
 
-// ParakeetEngineCore.transcribe()
-logger.info("🔊 [DIAG] FluidAudio raw result: '...'")
-```
+| File | Change |
+|------|--------|
+| `Ora/ASR/ASRService.swift` | Replaced sliding window with accumulate-all approach. Partials use last 10s window. Final uses entire buffer. |
+| `Ora/ASR/ParakeetEngine.swift` | Removed diagnostic logging |
+| `Ora/Persistence/Models/AppSettings.swift` | Updated comment - both modes now support 10 min recordings |
 
-**Files with diagnostic logging:**
-- `Ora/ASR/ASRService.swift` - Frame accumulation, padding, ASR calls
-- `Ora/ASR/ParakeetEngine.swift` - Raw FluidAudio results
+**Before vs After:**
 
-**To view logs:**
-```bash
-./build.sh logs --category ASRService --category ParakeetEngineCore
-```
+| Aspect | Before (Sliding Window) | After (MacTalk-style) |
+|--------|------------------------|----------------------|
+| Audio limit | 10s/60s window | 10 minutes |
+| Partials | Full window re-transcribed | Last 10s only |
+| Window rollover | Finalize excess (garbage!) | Just trim buffer |
+| Final | Window only | ENTIRE buffer |
+| Long recordings | Lost beginning / garbage | Accurate, complete |
 
-**Suspected Root Causes (to investigate):**
+**Verification:**
 
-1. **Silence padding hallucination:** `ensureMinimumDuration()` pads audio < 1s with zeros. Model may hallucinate "Yeah" during silence.
-
-2. **Window management issue:** When exceeding 10s, Ora finalizes excess audio before dropping. This finalization with padding could produce artifacts.
-
-3. **FluidAudio 0.10.0 regression:** Despite the "Preventing loops" fix, batch mode may have regressed.
-
-4. **Decoder state not reset properly:** Between process() calls, decoder state accumulation could cause repetition.
-
-**Next Steps:**
-
-1. Run app with diagnostic logging and capture actual log output
-2. Compare raw FluidAudio results (`🔊 [DIAG]`) with final output
-3. Test removing `ensureMinimumDuration()` padding
-4. Consider reverting to FluidAudio 0.8.2 to test for regression
-5. Compare decoder reset behavior between MacTalk and Ora
-
-**Workaround (if needed):**
-Revert FluidAudio to 0.8.2 in `project.yml`:
-```yaml
-FluidAudio:
-  url: https://github.com/FluidInference/FluidAudio
-  exactVersion: "0.8.2"  # Was 0.10.0
-```
+Tested with 73-second recording of Dynatrace introduction - transcribed accurately without jibberish.

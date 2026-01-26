@@ -8,7 +8,6 @@
 import Foundation
 @preconcurrency import AVFoundation
 import FluidAudio
-import os
 
 final class ParakeetEngine: @unchecked Sendable, ASREngine {
 
@@ -91,12 +90,6 @@ private actor ParakeetEngineCore {
 
     func transcribe(buffer: AVAudioPCMBuffer) async throws -> ASRResult {
         let manager = try await bootstrap.ensureReady()
-        let result = try await manager.transcribe(buffer, source: .microphone)
-
-        // Diagnostic: Log raw FluidAudio result
-        let logger = Logger(subsystem: "com.ora.app", category: "ParakeetEngineCore")
-        logger.info("🔊 [DIAG] FluidAudio raw result: '\(result.text.prefix(100))'")
-
-        return result
+        return try await manager.transcribe(buffer, source: .microphone)
     }
 }

@@ -130,6 +130,7 @@ For detailed triage workflows, load the `ora-testing` skill.
 - Cover request flows and settings opening in tests; record manual E2E checklists for permission/menu flows.
 - **Permission prompt tracking (CRITICAL):** Permission requests MUST go through `PermissionsManager.shared.request()` which handles `PermissionPromptTracker` calls centrally. Do NOT add tracker calls to individual permission files (`MicrophonePermission`, `EventKitPermission`, `ContactsPermission`) - this causes double tracking which breaks focus recovery. The tool-level providers (`EventStoreProvider`, `RemindersStoreProvider`) have their own tracker calls for when tools bypass `PermissionsManager`.
 - **MLX GPU memory (CRITICAL):** MLX caches Metal GPU buffers for reuse, but without limits this cache grows unbounded (15GB+ observed). Always: (1) Set `GPU.set(cacheLimit:)` on model load (512MB recommended), (2) Call `GPU.clearCache()` after each LLM/TTS generation. See `LLMService.swift` and `KokoroEngine.swift` for examples.
+- **macOS Logger privacy:** By default, macOS redacts dynamic string interpolation in `Logger` calls as `<private>`. To see actual values during debugging, use `privacy: .public`: `logger.error("Result: '\(String(text), privacy: .public)'")`). **IMPORTANT:** Remove `.public` privacy modifiers before merging - they should only be used temporarily for debugging, never in production code.
 
 ### Commit & PR Guidelines
 - Commit messages: short imperative clauses (e.g., "Add calendar tool", "Fix ASR latency"); keep commits scoped.

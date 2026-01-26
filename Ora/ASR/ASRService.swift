@@ -99,9 +99,15 @@ actor ASRService: @preconcurrency ASRServicing {
     /// Minimum samples before first transcription attempt (160ms at 16kHz)
     private let minimumSamples = 2560
 
-    /// Maximum window size in samples (10 seconds at 16kHz)
-    /// Audio older than this is dropped to prevent unbounded memory growth
-    private let maxWindowSamples = 160000
+    /// Maximum audio buffer size in samples (10 minutes at 16kHz = ~19MB)
+    /// Matches MacTalk's approach - accumulate all audio for accurate final transcription.
+    /// FluidAudio's ChunkProcessor handles long audio internally via ~15s overlapping chunks.
+    private let maxAudioBufferSamples = 9_600_000
+
+    /// Window size for partial transcriptions (10 seconds at 16kHz)
+    /// Partials only use a recent window for UI responsiveness.
+    /// The full buffer is used for final transcription (accurate result).
+    private let partialWindowSamples = 160_000
 
     /// FluidAudio neural VAD (lazily initialized on first transcription)
     /// Provides more robust speech detection than EnergyVAD (M.06 Phase 2)
@@ -301,15 +307,14 @@ actor ASRService: @preconcurrency ASRServicing {
             throw ASRServiceError.notReady
         }
 
-        var accumulatedSamples: [Float] = []
+        // Accumulate ALL audio for accurate final transcription (MacTalk approach)
+        var allAudio: [Float] = []
         var lastPartialText = ""
-        // Committed text from chunks that have rolled out of the window
-        var committedText = ""
 
         // Diagnostic: Track transcription session
         var frameCount = 0
         var processCount = 0
-        logger.info("🎙️ [DIAG] Starting batch transcription session")
+        logger.info("🎙️ Starting batch transcription session")
 
         // VAD for speech detection - try FluidAudioVAD first, fallback to EnergyVAD (M.06 Phase 2)
         let neuralVAD = await getOrInitializeFluidVAD()
@@ -322,12 +327,13 @@ actor ASRService: @preconcurrency ASRServicing {
         // Process frames as they arrive
         for await frame in frames {
             frameCount += 1
-            accumulatedSamples.append(contentsOf: frame.samples)
+            allAudio.append(contentsOf: frame.samples)
 
-            // Diagnostic: Log every 10th frame
-            if frameCount % 10 == 0 {
-                let durationSec = Double(accumulatedSamples.count) / 16000.0
-                logger.debug("🎙️ [DIAG] Frame \(frameCount): accumulated \(accumulatedSamples.count) samples (\(String(format: "%.2f", durationSec))s)")
+            // Trim buffer if it exceeds 10 minutes (like MacTalk)
+            if allAudio.count > maxAudioBufferSamples {
+                let overflow = allAudio.count - maxAudioBufferSamples
+                allAudio.removeFirst(overflow)
+                logger.debug("Trimmed \(overflow) samples from buffer (exceeded 10 min limit)")
             }
 
             // Run VAD on incoming frame for fast speech detection
@@ -362,101 +368,66 @@ actor ASRService: @preconcurrency ASRServicing {
                 }
             }
 
-            // When exceeding the max window, finalize the portion being dropped
-            // and add it to committed text to preserve the full transcript
-            if accumulatedSamples.count > maxWindowSamples {
-                let excessCount = accumulatedSamples.count - maxWindowSamples
-                let excessSamples = Array(accumulatedSamples.prefix(excessCount))
-
-                // Finalize the audio being dropped to preserve its transcription
-                if !excessSamples.isEmpty {
-                    let paddedSamples = ensureMinimumDuration(excessSamples)
-                    let segment = try await engine.finalize(
-                        samples: paddedSamples,
-                        language: "en"
-                    )
-                    if let segment = segment, !segment.text.isEmpty {
-                        if committedText.isEmpty {
-                            committedText = segment.text
-                        } else {
-                            committedText += " " + segment.text
-                        }
-                    }
-                }
-
-                accumulatedSamples.removeFirst(excessCount)
-            }
-
-            // Process when we have enough audio
-            if accumulatedSamples.count >= minimumSamples {
+            // For partials: only transcribe the recent window (last 10 seconds)
+            // This is for UI responsiveness - the final will use the full buffer
+            if allAudio.count >= minimumSamples {
                 processCount += 1
-                let paddedSamples = ensureMinimumDuration(accumulatedSamples)
 
-                // Diagnostic: Log before ASR call
-                let paddingAdded = paddedSamples.count - accumulatedSamples.count
-                if paddingAdded > 0 {
-                    logger.debug("🎙️ [DIAG] Process #\(processCount): Padded \(paddingAdded) samples (\(String(format: "%.2f", Double(paddingAdded)/16000.0))s of silence)")
+                // Use only the recent window for partials
+                let partialSamples: [Float]
+                if allAudio.count > partialWindowSamples {
+                    partialSamples = Array(allAudio.suffix(partialWindowSamples))
+                } else {
+                    partialSamples = allAudio
                 }
+
+                let paddedSamples = ensureMinimumDuration(partialSamples)
 
                 let partial = try await engine.process(
                     samples: paddedSamples,
                     language: "en"
                 )
 
-                // Diagnostic: Log raw ASR result
                 if let partial = partial {
-                    logger.info("🎙️ [DIAG] Process #\(processCount): Raw ASR result: '\(partial.text.prefix(100))'")
-                    // Combine committed text with current window partial
-                    let fullText: String
-                    if committedText.isEmpty {
-                        fullText = partial.text
-                    } else if partial.text.isEmpty {
-                        fullText = committedText
-                    } else {
-                        fullText = committedText + " " + partial.text
-                    }
-
                     // M.06: Use stabilizer to avoid emitting jittery partials
                     // Only emit if text has meaningfully changed
-                    if stabilizer.shouldEmit(fullText) {
-                        lastPartialText = fullText
-                        continuation.yield(.partial(text: fullText, stability: 0.8))
-                        logger.debug("Emitting partial: '\(fullText.prefix(50))...'")
-                    } else if fullText != lastPartialText {
-                        // Text changed but not meaningfully - log but don't emit
-                        logger.debug("Skipping non-meaningful partial change: '\(fullText.prefix(50))...'")
+                    if stabilizer.shouldEmit(partial.text) {
+                        lastPartialText = partial.text
+                        continuation.yield(.partial(text: partial.text, stability: 0.8))
+                        logger.debug("Emitting partial: '\(partial.text.prefix(50))...'")
                     }
                 }
             }
         }
 
-        // Diagnostic: Session summary
-        logger.info("🎙️ [DIAG] Session complete: \(frameCount) frames, \(processCount) ASR calls, committed: '\(committedText.prefix(50))...'")
+        // Session summary
+        let durationSec = Double(allAudio.count) / 16000.0
+        logger.info("🎙️ Session complete: \(frameCount) frames, \(processCount) partial calls, total audio: \(String(format: "%.1f", durationSec))s")
 
-        // Finalize: Combine committed text with final transcription of remaining audio
-        if !accumulatedSamples.isEmpty || !committedText.isEmpty {
-            var finalText = committedText
+        // FINAL: Transcribe the ENTIRE accumulated audio buffer
+        // FluidAudio's ChunkProcessor handles long audio via ~15s overlapping chunks internally
+        if !allAudio.isEmpty {
+            logger.info("🎙️ Finalizing with full audio buffer (\(allAudio.count) samples)")
+            let paddedSamples = ensureMinimumDuration(allAudio)
 
-            // Finalize remaining audio in the window
-            if !accumulatedSamples.isEmpty {
-                let paddedSamples = ensureMinimumDuration(accumulatedSamples)
-                let final = try await engine.finalize(
-                    samples: paddedSamples,
-                    language: "en"
-                )
+            let final = try await engine.finalize(
+                samples: paddedSamples,
+                language: "en"
+            )
 
-                if let final = final, !final.text.isEmpty {
-                    if finalText.isEmpty {
-                        finalText = final.text
-                    } else {
-                        finalText += " " + final.text
-                    }
+            if let final = final, !final.text.isEmpty {
+                logger.info("🎙️ Final transcription: '\(final.text.prefix(100))...'")
+                continuation.yield(.final(text: final.text))
+            } else {
+                // Fall back to last partial if finalize returned empty
+                logger.warning("Finalize returned empty, using last partial")
+                if !lastPartialText.isEmpty {
+                    continuation.yield(.final(text: lastPartialText))
                 }
             }
-
-            if !finalText.isEmpty {
-                continuation.yield(.final(text: finalText))
-            }
+        } else if !lastPartialText.isEmpty {
+            // No audio, use last partial as final
+            continuation.yield(.final(text: lastPartialText))
         }
 
         continuation.finish()

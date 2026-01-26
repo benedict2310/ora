@@ -54,9 +54,11 @@ final class AppSettings {
 
     /// Use streaming ASR mode with built-in EOU detection.
     /// When enabled, uses StreamingParakeetEngine with incremental processing.
-    /// When disabled, uses batch ParakeetEngine with full-buffer reprocessing.
-    /// Default: false (batch mode) until streaming models are downloaded and stable.
-    var useStreamingASR: Bool = false
+    /// When disabled, uses batch ParakeetEngine with full-buffer accumulation.
+    /// Default: true (streaming mode) for lower latency EOU detection.
+    /// Falls back to batch mode automatically if streaming models aren't downloaded.
+    /// Both modes support recordings up to 10 minutes.
+    var useStreamingASR: Bool = true
 
     /// EOU debounce duration in milliseconds (400-1280 range).
     /// Lower = more responsive but may cut off during natural pauses.
