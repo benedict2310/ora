@@ -157,6 +157,7 @@ actor ASRService: @preconcurrency ASRServicing {
                 logger.warning("Streaming ASR models not available, falling back to batch mode")
                 self.useStreamingMode = false
                 try await prepareBatchEngine()
+                isReady = true
                 return
             }
 
