@@ -318,20 +318,13 @@ final class SimplePipelineController: ObservableObject {
                 await PermissionPromptTracker.shared.endPrompt(for: .microphone)
             }
 
-            // Start transcription with VAD and EOU callbacks
-            // In streaming mode (M.07), EOU detection triggers immediate submission
-            // In batch mode, VAD state changes drive the silence detector timeout
+            // Start transcription with VAD callback
+            // VAD state changes drive the silence detector timeout
             let asrStream = await ASRService.shared.transcribe(
                 frames: audioStream,
                 onVADStateChange: { [weak self] isSpeech in
                     // Wire VAD state changes to silence detector (AC-4, AC-5)
                     self?.silenceDetector?.onVADStateChanged(isSpeech: isSpeech)
-                },
-                onEndOfUtterance: { [weak self] in
-                    // EOU detected by streaming ASR - auto-submit immediately (M.07)
-                    guard let self = self else { return }
-                    self.logger.info("EOU detected, auto-submitting transcript")
-                    self.submitTranscript()
                 }
             )
 

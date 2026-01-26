@@ -8,6 +8,8 @@
 **Target:** macOS 26 (Tahoe)
 **Design Reference:** None
 
+> **Note:** The streaming ASR code implemented in this story was removed in **M.08** (Remove Streaming ASR). The batch mode fix (MacTalk-style "accumulate all, finalize once") proved more effective, making streaming ASR unnecessary. This story is kept for historical reference.
+
 ---
 
 ## 1. Objective

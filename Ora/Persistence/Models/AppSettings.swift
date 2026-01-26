@@ -50,22 +50,6 @@ final class AppSettings {
     /// Prevents premature cutoffs during natural pauses (0.3s - 1.0s range)
     var minSilenceGap: Double = 0.50
 
-    // MARK: - Streaming ASR Settings (M.07)
-
-    /// Use streaming ASR mode with built-in EOU detection.
-    /// When enabled, uses StreamingParakeetEngine with incremental processing.
-    /// When disabled, uses batch ParakeetEngine with full-buffer accumulation.
-    /// Default: true (streaming mode) for lower latency EOU detection.
-    /// Falls back to batch mode automatically if streaming models aren't downloaded.
-    /// Both modes support recordings up to 10 minutes.
-    var useStreamingASR: Bool = true
-
-    /// EOU debounce duration in milliseconds (400-1280 range).
-    /// Lower = more responsive but may cut off during natural pauses.
-    /// Higher = waits longer for complete utterances.
-    /// Only applies when useStreamingASR is enabled.
-    var eouDebounceMs: Int = 600
-
     // MARK: - Initialization
 
     init() {}

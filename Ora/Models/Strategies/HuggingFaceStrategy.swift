@@ -132,8 +132,8 @@ struct HuggingFaceStrategy: ModelDownloadStrategy, Sendable {
                 "voices/af_heart.safetensors",  // Default voice (American female)
             ]
 
-        case .parakeetTDT, .parakeetEOU160, .parakeetEOU320:
-            // Parakeet models are handled by FluidAudioStrategy, not this one
+        case .parakeetTDT:
+            // Parakeet model is handled by FluidAudioStrategy, not this one
             return []
         }
     }
