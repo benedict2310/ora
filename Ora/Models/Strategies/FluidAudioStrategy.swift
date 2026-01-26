@@ -26,10 +26,6 @@ struct FluidAudioStrategy: ModelDownloadStrategy, Sendable {
         switch model {
         case .parakeetTDT:
             try await downloadTDTModel(to: directory, progress: progress)
-        case .parakeetEOU160:
-            try await downloadStreamingModel(chunkSize: .ms160, to: directory, progress: progress, model: model)
-        case .parakeetEOU320:
-            try await downloadStreamingModel(chunkSize: .ms320, to: directory, progress: progress, model: model)
         default:
             throw ModelError.downloadFailed(model, "Unknown ASR model: \(model.rawValue)")
         }
@@ -85,74 +81,6 @@ struct FluidAudioStrategy: ModelDownloadStrategy, Sendable {
 
         } catch {
             self.logger.error("FluidAudio download failed: \(error.localizedDescription)")
-            throw ModelError.downloadFailed(model, error.localizedDescription)
-        }
-    }
-
-    // MARK: - Streaming EOU Model Download
-
-    private func downloadStreamingModel(
-        chunkSize: StreamingChunkSize,
-        to directory: URL,
-        progress: @escaping @Sendable (ModelDownloadProgress) -> Void,
-        model: ModelIdentifier
-    ) async throws {
-        self.logger.info("Starting streaming EOU model download for \(model.displayName)")
-
-        // Emit initial progress
-        progress(ModelDownloadProgress(identifier: model, progress: 0.0))
-
-        // Get the repo for this chunk size
-        let repo: Repo
-        switch chunkSize {
-        case .ms160:
-            repo = .parakeetEou160
-        case .ms320:
-            repo = .parakeetEou320
-        case .ms1600:
-            throw ModelError.downloadFailed(model, "1600ms chunk size not supported")
-        }
-
-        do {
-            // Create target directory if needed
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-
-            // Download each required file using FluidAudio's AssetDownloader
-            let requiredFiles = ModelNames.ParakeetEOU.requiredModels
-            let totalFiles = requiredFiles.count
-            var downloadedCount = 0
-
-            for fileName in requiredFiles {
-                // Build remote URL with subPath for the chunk size variant
-                let remotePath: String
-                if let subPath = repo.subPath {
-                    remotePath = "\(subPath)/\(fileName)"
-                } else {
-                    remotePath = fileName
-                }
-
-                let remoteURL = try ModelRegistry.resolveModel(repo.remotePath, remotePath)
-                let localURL = directory.appendingPathComponent(fileName)
-
-                let descriptor = AssetDownloader.Descriptor(
-                    description: fileName,
-                    remoteURL: remoteURL,
-                    destinationURL: localURL
-                )
-
-                _ = try await AssetDownloader.ensure(descriptor)
-
-                downloadedCount += 1
-                let progressValue = Double(downloadedCount) / Double(totalFiles)
-                progress(ModelDownloadProgress(identifier: model, progress: progressValue))
-            }
-
-            // Emit completion
-            progress(ModelDownloadProgress(identifier: model, progress: 1.0))
-            self.logger.info("Streaming EOU model download complete for \(model.displayName)")
-
-        } catch {
-            self.logger.error("Streaming EOU model download failed: \(error.localizedDescription)")
             throw ModelError.downloadFailed(model, error.localizedDescription)
         }
     }
