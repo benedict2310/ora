@@ -1,7 +1,7 @@
 # M.08 - Remove Streaming ASR Models and Functionality
 
 **Epic:** Maintenance
-**Status:** Open
+**Status:** Complete
 **Priority:** P2 (Medium)
 **Estimated Effort:** 0.5-1 day
 **Dependencies:** M.07 (Streaming ASR Migration - completed, streaming now superseded)
@@ -233,3 +233,13 @@ grep -r "StreamingStateTracker" Ora/ OraTests/
 - **M.07** - Streaming ASR Migration (implemented streaming, then fixed batch mode instead)
 - **A.02** - ASR Service (original batch implementation)
 - **M.06** - Speech End Detection Improvements (VAD improvements used by batch mode)
+
+---
+
+## Completion Status
+
+- [x] Implementation complete
+- [x] All tests pass (1045/1045)
+- [x] PR merged: https://github.com/benedict2310/ora/pull/83
+- [x] Merged to main: ca53f8c
+- [x] Date: 2026-01-26
