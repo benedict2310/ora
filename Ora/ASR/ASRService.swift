@@ -58,8 +58,10 @@ protocol ASRServicing: Sendable {
 ///
 /// ## Modes
 ///
-/// **Batch Mode (default):** Uses ParakeetEngine which reprocesses the entire buffer
-/// on each ~300ms cycle. Uses FluidAudioVAD + SilenceDetector for end-of-speech.
+/// **Batch Mode:** Accumulates all audio (up to 10 minutes). Partials transcribe a
+/// recent 10-second window for UI responsiveness. Final transcribes the entire buffer
+/// using FluidAudio's ChunkProcessor (handles long audio via ~15s overlapping chunks).
+/// Uses FluidAudioVAD + SilenceDetector for end-of-speech detection.
 ///
 /// **Streaming Mode (M.07):** Uses StreamingParakeetEngine with incremental processing.
 /// Only new audio is processed in 160/320ms chunks. Uses built-in EOU detection for
