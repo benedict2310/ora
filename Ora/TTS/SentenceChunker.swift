@@ -298,7 +298,8 @@ struct SentenceChunker: Sendable {
 
     private func normalizeForSpeech(_ text: String) -> String {
         let stripped = stripMarkdown(text)
-        return normalizeDateRanges(stripped)
+        let ranged = normalizeDateRanges(stripped)
+        return normalizeSingleDates(ranged)
     }
 
     private func stripMarkdown(_ text: String) -> String {
@@ -356,6 +357,29 @@ struct SentenceChunker: Sendable {
             let startWord = ordinalDayString(start)
             let endWord = ordinalDayString(end)
             let replacement = "\(month) \(startWord) to \(endWord)"
+            if let range = Range(match.range, in: result) {
+                result.replaceSubrange(range, with: replacement)
+            }
+        }
+        return result
+    }
+
+    private func normalizeSingleDates(_ text: String) -> String {
+        let pattern = "(?i)\\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\\s+(\\d{1,2})(?!\\s*[-–])(?!\\d)"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+            return text
+        }
+        let nsText = text as NSString
+        let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
+        if matches.isEmpty { return text }
+
+        var result = text
+        for match in matches.reversed() {
+            guard match.numberOfRanges >= 3 else { continue }
+            let month = nsText.substring(with: match.range(at: 1))
+            let dayText = nsText.substring(with: match.range(at: 2))
+            guard let day = Int(dayText) else { continue }
+            let replacement = "\(month) \(ordinalDayString(day))"
             if let range = Range(match.range, in: result) {
                 result.replaceSubrange(range, with: replacement)
             }

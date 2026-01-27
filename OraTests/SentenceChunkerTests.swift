@@ -49,6 +49,7 @@ final class SentenceChunkerTests: XCTestCase {
             options: .regularExpression
         )
         result = normalizeDateRanges(result)
+        result = normalizeSingleDates(result)
         result = result.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -112,6 +113,29 @@ final class SentenceChunkerTests: XCTestCase {
         case 31: return "thirty first"
         default: return String(value)
         }
+    }
+
+    private func normalizeSingleDates(_ text: String) -> String {
+        let pattern = "(?i)\\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\\s+(\\d{1,2})(?!\\s*[-–])(?!\\d)"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+            return text
+        }
+        let nsText = text as NSString
+        let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
+        if matches.isEmpty { return text }
+
+        var result = text
+        for match in matches.reversed() {
+            guard match.numberOfRanges >= 3 else { continue }
+            let month = nsText.substring(with: match.range(at: 1))
+            let dayText = nsText.substring(with: match.range(at: 2))
+            guard let day = Int(dayText) else { continue }
+            let replacement = "\(month) \(ordinalDayString(day))"
+            if let range = Range(match.range, in: result) {
+                result.replaceSubrange(range, with: replacement)
+            }
+        }
+        return result
     }
 
     private func chunkedOutput(_ text: String, minSentenceLength: Int = 10, maxChunkLength: Int = 240) -> String {
@@ -210,6 +234,17 @@ final class SentenceChunkerTests: XCTestCase {
         XCTAssertTrue(output.contains("Calendar: Maddie & Bene"))
         XCTAssertTrue(output.contains("January twenty fourth to twenty ninth"))
         XCTAssertTrue(output.contains("January twenty fifth to twenty ninth"))
+    }
+
+    func test_chunkerHandlesCalendarWeekBulletList() {
+        let output = chunkedOutput(ChunkerTestCorpus.calendarWeekBullets)
+        XCTAssertTrue(output.contains("January twenty fifth"))
+        XCTAssertTrue(output.contains("January twenty sixth"))
+        XCTAssertTrue(output.contains("January twenty seventh"))
+        XCTAssertTrue(output.contains("January twenty eighth"))
+        XCTAssertTrue(output.contains("January twenty ninth"))
+        XCTAssertTrue(output.contains("January thirtieth"))
+        XCTAssertTrue(output.contains("February second"))
     }
 
     func test_chunkerPreservesAllContent() {
