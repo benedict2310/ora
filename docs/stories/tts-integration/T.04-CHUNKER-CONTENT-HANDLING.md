@@ -386,15 +386,16 @@ struct ChunkerTestCorpus {
 **Commits:** 0
 
 ### Files Changed
-- `Ora/TTS/SentenceChunker.swift` - list-aware chunking + extra markdown stripping + date range normalization
-- `OraTests/SentenceChunkerTests.swift` - added Phase 2 coverage (headers/bullets/list items/nested formatting)
-- `OraTests/ChunkerTestCorpus.swift` - regression corpus for real-world content
+- `Ora/TTS/SentenceChunker.swift` - list-aware chunking + extra markdown stripping + date range + single-date ordinal normalization
+- `OraTests/SentenceChunkerTests.swift` - added Phase 2 coverage (headers/bullets/list items/nested formatting + calendar bullets)
+- `OraTests/ChunkerTestCorpus.swift` - regression corpus for real-world content + calendar week bullets
 - `OraTests/TTSIntegrationTests.swift` - on-demand audio integration tests (gated by flag file)
 - `build.sh` - added `test-tts` command + flag gating
 
 ### Test Notes
-- `./build.sh test` failed with exit code 65 due to xcodebuild reporting unhandled SwiftPM resources, but summary reported ✅ `1065/1065` tests passed. Artifacts: `.artifacts/TestResults.xcresult`, `.artifacts/xcodebuild.test.log`.
-- `./build.sh test-tts` reported ✅ `3/3` on 2026-01-27 with audio playback; xcodebuild still reports unhandled SwiftPM resources.
+- Isolated: `xcodebuild ... -only-testing:OraTests/SentenceChunkerTests/test_chunkerHandlesCalendarWeekBulletList` ✅ `1/1` passed.
+- `./build.sh test` timed out at 300s on 2026-01-27; result bundle was incomplete.
+- `./build.sh test-tts` reported ✅ `6/6` on 2026-01-27 with audio playback; xcodebuild still reports unhandled SwiftPM resources.
 
 ## Code Review Findings
 

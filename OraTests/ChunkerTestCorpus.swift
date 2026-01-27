@@ -85,4 +85,23 @@ struct ChunkerTestCorpus {
     Please open `file_name_here.txt` and **IMG_2024_01_01.png**
     Keep snake_case identifiers intact.
     """
+
+    /// Calendar week bullets with dates and times
+    static let calendarWeekBullets = """
+    Here are your events for this week:
+
+    - Monday, January 25: All day - "Elfie & Gerhard Skivacay" (in calendar 'Maddie & Bene')
+    - Tuesday, January 26: All day - "PERFORM" (in calendar 'Maddie & Bene')
+    - Wednesday, January 27: All day - "Raphael Faisthuber*" (in calendar 'Familie')
+    - Wednesday, January 27: 10:15-11:15 - "Pilates mums & babies!" (in calendar 'Maddie & Bene')
+    - Thursday, January 28: 12:15-13:15 - "Magda physio 12:15" (in calendar 'Maddie & Bene')
+    - Thursday, January 28: 14:00-15:00 - "Sophia Spatt 14:00" (in calendar 'Maddie & Bene')
+    - Friday, January 29: 12:15-13:45 - "Maddie facial 12:30" (in calendar 'Maddie & Bene')
+    - Friday, January 30: 13:00-14:00 - "Elektriker home visit" (in calendar 'Maddie & Bene')
+    - Friday, January 30: 15:00-19:00 - "Evi & Peter" (at Kochstrasse 10, Attnang-Puchheim, Austria)
+    - Sunday, January 30: All day - "Thomas Hechenberger's 46th Birthday" (in calendar 'Birthdays')
+    - Sunday, February 2: All day - "Diphtheria tetanus Impfung (2/2)" and "Pneumococcus Impfung" (in calendar 'Sophia Reminders')
+
+    Let me know if you'd like help with anything specific!
+    """
 }
