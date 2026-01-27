@@ -12,8 +12,9 @@ final class TTSIntegrationTests: XCTestCase {
 
     private func requireTTSTestsEnabled() throws {
         let flagURL = ModelPaths.oraRoot.appendingPathComponent("run-tts-tests.flag")
-        if !FileManager.default.fileExists(atPath: flagURL.path) {
-            throw XCTSkip("Create run-tts-tests.flag to enable audio integration tests")
+        let envEnabled = ProcessInfo.processInfo.environment["RUN_TTS_TESTS"] == "1"
+        if !envEnabled || !FileManager.default.fileExists(atPath: flagURL.path) {
+            throw XCTSkip("Set RUN_TTS_TESTS=1 and create run-tts-tests.flag to enable audio integration tests")
         }
     }
 
@@ -63,5 +64,9 @@ final class TTSIntegrationTests: XCTestCase {
 
     func test_ttsPlaysFilenamesAndIdentifiers() async throws {
         try await runAudioTest(text: ChunkerTestCorpus.filenamesWithMarkdown)
+    }
+
+    func test_ttsPlaysCalendarWeekBullets() async throws {
+        try await runAudioTest(text: ChunkerTestCorpus.calendarWeekBullets)
     }
 }
