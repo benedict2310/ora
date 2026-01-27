@@ -22,6 +22,7 @@ This epic provides voice output for Ora using Kokoro TTS:
 | **T.01** | [TTS Service](T.01-TTS-SERVICE.md) | Kokoro wrapper, audio generation | F.03 |
 | **T.02** | [Audio Playback](T.02-AUDIO-PLAYBACK.md) | Queue management, streaming playback | T.01 |
 | **T.03** | [Sentence Chunker](T.03-SENTENCE-CHUNKER.md) | Split text for early audio start | T.01, T.02 |
+| **T.04** | [Chunker Content Handling](T.04-CHUNKER-CONTENT-HANDLING.md) | Fix content loss for markdown/lists | T.03 |
 
 ## Dependency Graph
 
@@ -31,6 +32,8 @@ F.03 (Model Manager) ──► T.01 (TTS Service)
                               ├──► T.02 (Audio Playback)
                               │
                               └──► T.03 (Sentence Chunker)
+                                         │
+                                         └──► T.04 (Chunker Content Handling)
 ```
 
 ## Architecture Alignment
@@ -74,7 +77,8 @@ struct AudioChunk: Sendable {
 |:------|:-------|
 | T.01 - TTS Service | ✅ Complete (Kokoro + AVSpeech fallback) |
 | T.02 - Audio Playback | ✅ Complete (jitter buffer, streaming) |
-| T.03 - Sentence Chunker | 🔮 Deferred (P2 - optimization for perceived latency) |
+| T.03 - Sentence Chunker | ✅ Complete (basic implementation) |
+| T.04 - Chunker Content Handling | 🚧 In Progress (Phase 2 complete) |
 
 ## Notes
 
