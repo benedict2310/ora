@@ -9,6 +9,7 @@
 #   ./build.sh clean        # Clean build
 #   ./build.sh reset-perms  # Reset TCC permissions (after rebuild)
 #   ./build.sh test         # Run tests with token-optimized output
+#   ./build.sh test-tts     # Run on-demand TTS integration tests (audio)
 #   ./build.sh test-tsan    # Run tests with Thread Sanitizer
 #   ./build.sh logs         # Tail unified logs for Ora
 #
@@ -59,6 +60,8 @@ generate_project() {
 # Run tests with token-optimized output
 run_tests() {
   local test_scheme="$1"
+  shift
+  local extra_args=("$@")
   
   check_xcodegen
   generate_project
@@ -76,6 +79,7 @@ run_tests() {
     -derivedDataPath build \
     -resultBundlePath "$RESULT_BUNDLE" \
     -destination "platform=macOS" \
+    "${extra_args[@]}" \
     -quiet \
     test \
     2>&1 | tee "$RAW_LOG"
@@ -190,6 +194,14 @@ case "${1:-build}" in
     run_tests "$SCHEME_TSAN"
     ;;
 
+  test-tts)
+    TTS_FLAG_PATH="$HOME/Library/Application Support/Ora/run-tts-tests.flag"
+    mkdir -p "$(dirname "$TTS_FLAG_PATH")"
+    touch "$TTS_FLAG_PATH"
+    trap 'rm -f "$TTS_FLAG_PATH"' EXIT
+    RUN_TTS_TESTS=1 run_tests "$SCHEME" -only-testing:OraTests/TTSIntegrationTests
+    ;;
+
   logs)
     # Unified Logging tail for the app
     # NOTE: This command streams continuously until interrupted with Ctrl+C
@@ -198,16 +210,17 @@ case "${1:-build}" in
     echo -e "${YELLOW}Streaming logs (Ctrl+C to stop)...${NC}"
     
     # Default: stream all logs for com.ora.app subsystem
+    # Note: --level debug includes debug, info, and default levels
     if [ "${1:-}" = "--predicate" ]; then
       shift
       PRED="$1"; shift
-      log stream --style json --predicate "$PRED" "$@"
+      log stream --level debug --style json --predicate "$PRED" "$@"
     elif [ "${1:-}" = "--category" ]; then
       shift
       CAT="$1"; shift
-      log stream --style json --predicate "subsystem == \"$BUNDLE_ID\" && category == \"$CAT\"" "$@"
+      log stream --level debug --style json --predicate "subsystem == \"$BUNDLE_ID\" && category == \"$CAT\"" "$@"
     else
-      log stream --style json --predicate "subsystem == \"$BUNDLE_ID\"" "$@"
+      log stream --level debug --style json --predicate "subsystem == \"$BUNDLE_ID\"" "$@"
     fi
     ;;
 
@@ -222,7 +235,7 @@ case "${1:-build}" in
     ;;
 
   *)
-    echo "Usage: $0 {build|run|clean|reset-perms|test|test-tsan|logs|open-results}"
+    echo "Usage: $0 {build|run|clean|reset-perms|test|test-tsan|test-tts|logs|open-results}"
     echo ""
     echo "Commands:"
     echo "  build         Build the app (default)"
@@ -231,6 +244,7 @@ case "${1:-build}" in
     echo "  reset-perms   Reset TCC permissions (use after rebuild)"
     echo "  test          Run tests with token-optimized output"
     echo "  test-tsan     Run tests with Thread Sanitizer enabled"
+    echo "  test-tts      Run on-demand TTS integration tests (audio)"
     echo "  logs          Tail unified logs (Ctrl+C to stop; --category <name> or --predicate <expr>)"
     echo "  open-results  Open the .xcresult bundle in Xcode"
     exit 1
