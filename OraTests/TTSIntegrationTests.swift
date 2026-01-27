@@ -12,9 +12,8 @@ final class TTSIntegrationTests: XCTestCase {
 
     private func requireTTSTestsEnabled() throws {
         let flagURL = ModelPaths.oraRoot.appendingPathComponent("run-tts-tests.flag")
-        let envEnabled = ProcessInfo.processInfo.environment["RUN_TTS_TESTS"] == "1"
-        if !envEnabled || !FileManager.default.fileExists(atPath: flagURL.path) {
-            throw XCTSkip("Set RUN_TTS_TESTS=1 and create run-tts-tests.flag to enable audio integration tests")
+        if !FileManager.default.fileExists(atPath: flagURL.path) {
+            throw XCTSkip("Create run-tts-tests.flag to enable audio integration tests")
         }
     }
 

@@ -187,10 +187,12 @@ case "${1:-build}" in
     ;;
 
   test)
+    rm -f "$HOME/Library/Application Support/Ora/run-tts-tests.flag"
     run_tests "$SCHEME"
     ;;
 
   test-tsan)
+    rm -f "$HOME/Library/Application Support/Ora/run-tts-tests.flag"
     run_tests "$SCHEME_TSAN"
     ;;
 
@@ -199,7 +201,7 @@ case "${1:-build}" in
     mkdir -p "$(dirname "$TTS_FLAG_PATH")"
     touch "$TTS_FLAG_PATH"
     trap 'rm -f "$TTS_FLAG_PATH"' EXIT
-    RUN_TTS_TESTS=1 run_tests "$SCHEME" -only-testing:OraTests/TTSIntegrationTests
+    run_tests "$SCHEME" -only-testing:OraTests/TTSIntegrationTests
     ;;
 
   logs)
