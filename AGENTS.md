@@ -58,8 +58,45 @@ Voice → (FluidAudio Parakeet) → (MLX + Qwen 2.5) → (Kokoro TTS) → Voice/
 | `./build.sh reset-perms` | Reset TCC permissions (Accessibility, Calendar, Reminders, Contacts) |
 | `./build.sh test` | Run tests with token-optimized output |
 | `./build.sh test-tsan` | Run tests with Thread Sanitizer enabled |
-| `./build.sh logs` | Tail unified logs (`--category <name>` to filter) |
+| `./build.sh logs` | Stream unified logs (includes debug level) |
+| `./build.sh logs --category <name>` | Stream logs for specific category (e.g., `chunker`, `tts`, `llm`) |
 | `./build.sh open-results` | Open `.xcresult` bundle in Xcode |
+
+### Viewing Logs (macOS Unified Logging)
+
+**Important:** macOS filters out debug and info level logs by default. Use these commands to see all log levels:
+
+**Stream logs in real-time:**
+```bash
+# All Ora logs (recommended)
+./build.sh logs
+
+# Specific category
+./build.sh logs --category chunker
+./build.sh logs --category tts
+./build.sh logs --category llm
+```
+
+**View recent logs (last N minutes):**
+```bash
+# All levels including debug/info (REQUIRED for most debugging)
+log show --debug --info --predicate 'subsystem == "com.ora.app"' --last 5m
+
+# Specific category
+log show --debug --info --predicate 'subsystem == "com.ora.app" AND category == "chunker"' --last 5m
+
+# Search for specific text
+log show --debug --info --predicate 'subsystem == "com.ora.app"' --last 5m | grep -i "search term"
+```
+
+**Log categories:** `audio`, `asr`, `llm`, `tools`, `tts`, `chunker`, `ui`, `orchestration`, `permissions`, `models`, `persistence`
+
+**Log levels (in order of severity):**
+- `.debug` - Detailed debugging (filtered by default, use `--debug` flag)
+- `.info` - General flow info (filtered by default, use `--info` flag)
+- `.notice` - Important events (always visible)
+- `.error` - Errors that don't crash
+- `.fault` - Critical errors with stack traces
 
 **Common workflows:**
 
