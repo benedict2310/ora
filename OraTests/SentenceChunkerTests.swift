@@ -50,6 +50,7 @@ final class SentenceChunkerTests: XCTestCase {
         )
         result = normalizeDateRanges(result)
         result = normalizeSingleDates(result)
+        result = normalizeTimeRanges(result)
         result = result.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -136,6 +137,95 @@ final class SentenceChunkerTests: XCTestCase {
             }
         }
         return result
+    }
+
+    private func normalizeTimeRanges(_ text: String) -> String {
+        let pattern = "\\b([01]?\\d|2[0-3]):([0-5]\\d)\\s*[-–]\\s*([01]?\\d|2[0-3]):([0-5]\\d)\\b"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+            return text
+        }
+        let nsText = text as NSString
+        let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
+        if matches.isEmpty { return text }
+
+        var result = text
+        for match in matches.reversed() {
+            guard match.numberOfRanges >= 5 else { continue }
+            let startHourText = nsText.substring(with: match.range(at: 1))
+            let startMinuteText = nsText.substring(with: match.range(at: 2))
+            let endHourText = nsText.substring(with: match.range(at: 3))
+            let endMinuteText = nsText.substring(with: match.range(at: 4))
+            guard
+                let startHour = Int(startHourText),
+                let startMinute = Int(startMinuteText),
+                let endHour = Int(endHourText),
+                let endMinute = Int(endMinuteText)
+            else { continue }
+            let startSpoken = spoken24HourTime(hour: startHour, minute: startMinute)
+            let endSpoken = spoken24HourTime(hour: endHour, minute: endMinute)
+            let replacement = "\(startSpoken) to \(endSpoken)"
+            if let range = Range(match.range, in: result) {
+                result.replaceSubrange(range, with: replacement)
+            }
+        }
+        return result
+    }
+
+    private func spoken24HourTime(hour: Int, minute: Int) -> String {
+        let hourText = cardinalNumberString(hour)
+        if minute == 0 {
+            return "\(hourText) hundred"
+        }
+        let minuteText: String
+        if minute < 10 {
+            minuteText = "oh \(cardinalNumberString(minute))"
+        } else {
+            minuteText = cardinalNumberString(minute)
+        }
+        return "\(hourText) \(minuteText)"
+    }
+
+    private func cardinalNumberString(_ value: Int) -> String {
+        let ones: [String] = [
+            "zero",
+            "one",
+            "two",
+            "three",
+            "four",
+            "five",
+            "six",
+            "seven",
+            "eight",
+            "nine",
+            "ten",
+            "eleven",
+            "twelve",
+            "thirteen",
+            "fourteen",
+            "fifteen",
+            "sixteen",
+            "seventeen",
+            "eighteen",
+            "nineteen"
+        ]
+        if value < ones.count {
+            return ones[value]
+        }
+        let tensWords: [Int: String] = [
+            2: "twenty",
+            3: "thirty",
+            4: "forty",
+            5: "fifty"
+        ]
+        let tens = value / 10
+        let onesValue = value % 10
+        guard let tensWord = tensWords[tens] else {
+            return String(value)
+        }
+        if onesValue == 0 {
+            return tensWord
+        }
+        return "\(tensWord) \(ones[onesValue])"
     }
 
     private func chunkedOutput(_ text: String, minSentenceLength: Int = 10, maxChunkLength: Int = 240) -> String {
@@ -245,6 +335,7 @@ final class SentenceChunkerTests: XCTestCase {
         XCTAssertTrue(output.contains("January twenty ninth"))
         XCTAssertTrue(output.contains("January thirtieth"))
         XCTAssertTrue(output.contains("February second"))
+        XCTAssertTrue(output.contains("thirteen hundred to fourteen hundred"))
     }
 
     func test_chunkerPreservesAllContent() {
