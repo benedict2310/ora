@@ -166,11 +166,9 @@ public actor TTSService: TTSServicing {
         sessionID: UUID
     ) async {
         self.isSpeaking = true
-        MemoryDiagnostics.logSnapshot(label: "TTS start", logger: self.logger)
         defer { 
             self.isSpeaking = false
             self.clearCurrentTask(sessionID: sessionID)
-            MemoryDiagnostics.logSnapshot(label: "TTS end", logger: self.logger)
         }
 
         // Capture current state for synthesis decision
@@ -196,11 +194,9 @@ public actor TTSService: TTSServicing {
         sessionID: UUID
     ) async {
         self.isSpeaking = true
-        MemoryDiagnostics.logSnapshot(label: "TTS start", logger: self.logger)
         defer {
             self.isSpeaking = false
             self.clearCurrentTask(sessionID: sessionID)
-            MemoryDiagnostics.logSnapshot(label: "TTS end", logger: self.logger)
         }
 
         let useKokoro = self.isKokoroReady

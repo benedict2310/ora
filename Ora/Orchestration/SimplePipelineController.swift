@@ -53,7 +53,6 @@ final class SimplePipelineController: ObservableObject {
     private var autoDismissTask: Task<Void, Never>?
     private var ttsTask: Task<Void, Never>?
     private var confirmationTask: Task<Void, Never>?
-    private var memoryLogTask: Task<Void, Never>?
     private var sentenceChunker: SentenceChunker?
     private var sentenceStreamContinuation: AsyncThrowingStream<String, Error>.Continuation?
     private var isStreamingResponse = false
@@ -77,8 +76,6 @@ final class SimplePipelineController: ObservableObject {
     private let errorRecoveryDelay: TimeInterval = 3.0
     /// Delay before auto-starting follow-up listening (conversation mode)
     private let followUpAutoListenDelay: TimeInterval = 0.5
-    /// Interval for periodic memory diagnostics while session is active
-    private let memoryLogInterval: TimeInterval = 60.0
     
     /// Whether conversation mode is enabled (combines silence detection + auto-listen)
     private var isConversationModeEnabled: Bool {
@@ -774,7 +771,6 @@ final class SimplePipelineController: ObservableObject {
         
         // Update status bar
         self.updateStatusBar(for: newState)
-        self.updateMemoryDiagnosticsLogging(for: newState)
     }
     
     private func updateStatusBar(for state: PipelineState) {
@@ -814,33 +810,6 @@ final class SimplePipelineController: ObservableObject {
             return .speaking
         case .error(let message):
             return .error(message)
-        }
-    }
-}
-
-// MARK: - Memory Diagnostics
-
-extension SimplePipelineController {
-    private func updateMemoryDiagnosticsLogging(for state: PipelineState) {
-        let sessionActive = Self.isSessionActive(for: state)
-        if sessionActive {
-            if self.memoryLogTask == nil {
-                MemoryDiagnostics.logSnapshot(label: "session start", logger: self.logger)
-                self.memoryLogTask = Task { [weak self] in
-                    guard let self else { return }
-                    while !Task.isCancelled {
-                        try? await Task.sleep(for: .seconds(self.memoryLogInterval))
-                        guard !Task.isCancelled else { return }
-                        MemoryDiagnostics.logSnapshot(label: "session tick", logger: self.logger)
-                    }
-                }
-            }
-        } else {
-            if self.memoryLogTask != nil {
-                MemoryDiagnostics.logSnapshot(label: "session end", logger: self.logger)
-                self.memoryLogTask?.cancel()
-                self.memoryLogTask = nil
-            }
         }
     }
 }
