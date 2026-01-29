@@ -156,9 +156,7 @@ struct ChatBubbleView: View {
             }
 
             if let text = self.text {
-                Text(text)
-                    .font(.body)
-                    .foregroundStyle(.primary)
+                MarkdownTextView(text: text, role: self.role)
             }
         }
         .padding(.horizontal, OverlayLayout.bubblePaddingHorizontal)
@@ -236,10 +234,8 @@ struct ChatBubbleView: View {
     }
 
     private func bubbleShape(for role: Role) -> AnyShape {
-        if role == .user {
-            return AnyShape(Capsule())
-        }
-        return AnyShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        let cornerRadius: CGFloat = 18
+        return AnyShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
 
     private func stateRow(_ state: BubbleState, alignRight: Bool) -> some View {

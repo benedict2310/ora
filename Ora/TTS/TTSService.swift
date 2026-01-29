@@ -24,6 +24,7 @@ public actor TTSService: TTSServicing {
     private var isKokoroReady = false
     private var isSpeaking = false
     private var currentTask: Task<Void, Never>?
+    private var currentSessionID: UUID?
     
     /// Keep fallback synthesizer alive during playback
     private var fallbackSynthesizerHolder: FallbackSynthesizerHolder?
@@ -72,19 +73,20 @@ public actor TTSService: TTSServicing {
     /// - Parameter text: Text to synthesize
     /// - Returns: Async stream of audio chunks
     nonisolated public func speak(_ text: String) -> AsyncThrowingStream<AudioChunk, Error> {
-        AsyncThrowingStream { continuation in
+        let sessionID = UUID()
+        return AsyncThrowingStream { continuation in
             Task {
                 // Store reference to this task for cancellation support
                 let synthesisTask = Task {
-                    await self.runSynthesis(text: text, continuation: continuation)
+                    await self.runSynthesis(text: text, continuation: continuation, sessionID: sessionID)
                 }
-                await self.setCurrentTask(synthesisTask)
+                await self.setCurrentTask(synthesisTask, sessionID: sessionID)
                 await synthesisTask.value
             }
 
             continuation.onTermination = { @Sendable _ in
                 Task {
-                    await self.stop()
+                    await self.stop(sessionID: sessionID)
                 }
             }
         }
@@ -96,18 +98,19 @@ public actor TTSService: TTSServicing {
     nonisolated public func speak(
         sentences: AsyncThrowingStream<String, Error>
     ) -> AsyncThrowingStream<AudioChunk, Error> {
-        AsyncThrowingStream { continuation in
+        let sessionID = UUID()
+        return AsyncThrowingStream { continuation in
             Task {
                 let synthesisTask = Task {
-                    await self.runStreamingSynthesis(sentences: sentences, continuation: continuation)
+                    await self.runStreamingSynthesis(sentences: sentences, continuation: continuation, sessionID: sessionID)
                 }
-                await self.setCurrentTask(synthesisTask)
+                await self.setCurrentTask(synthesisTask, sessionID: sessionID)
                 await synthesisTask.value
             }
 
             continuation.onTermination = { @Sendable _ in
                 Task {
-                    await self.stop()
+                    await self.stop(sessionID: sessionID)
                 }
             }
         }
@@ -115,8 +118,16 @@ public actor TTSService: TTSServicing {
 
     /// Stop current speech synthesis
     public func stop() async {
+        await self.stop(sessionID: nil)
+    }
+
+    public func stop(sessionID: UUID? = nil) async {
+        if let sessionID, sessionID != self.currentSessionID {
+            return
+        }
         self.currentTask?.cancel()
         self.currentTask = nil
+        self.currentSessionID = nil
         self.isSpeaking = false
         
         // Stop any fallback synthesizer
@@ -138,18 +149,28 @@ public actor TTSService: TTSServicing {
 
     // MARK: - Private
     
-    private func setCurrentTask(_ task: Task<Void, Never>?) {
-        self.currentTask = task as? Task<Void, Never>
+    private func setCurrentTask(_ task: Task<Void, Never>?, sessionID: UUID) {
+        self.currentTask = task
+        self.currentSessionID = sessionID
+    }
+
+    private func clearCurrentTask(sessionID: UUID) {
+        guard self.currentSessionID == sessionID else { return }
+        self.currentTask = nil
+        self.currentSessionID = nil
     }
 
     private func runSynthesis(
         text: String,
-        continuation: AsyncThrowingStream<AudioChunk, Error>.Continuation
+        continuation: AsyncThrowingStream<AudioChunk, Error>.Continuation,
+        sessionID: UUID
     ) async {
         self.isSpeaking = true
+        MemoryDiagnostics.logSnapshot(label: "TTS start", logger: self.logger)
         defer { 
             self.isSpeaking = false
-            self.currentTask = nil
+            self.clearCurrentTask(sessionID: sessionID)
+            MemoryDiagnostics.logSnapshot(label: "TTS end", logger: self.logger)
         }
 
         // Capture current state for synthesis decision
@@ -171,12 +192,15 @@ public actor TTSService: TTSServicing {
 
     private func runStreamingSynthesis(
         sentences: AsyncThrowingStream<String, Error>,
-        continuation: AsyncThrowingStream<AudioChunk, Error>.Continuation
+        continuation: AsyncThrowingStream<AudioChunk, Error>.Continuation,
+        sessionID: UUID
     ) async {
         self.isSpeaking = true
+        MemoryDiagnostics.logSnapshot(label: "TTS start", logger: self.logger)
         defer {
             self.isSpeaking = false
-            self.currentTask = nil
+            self.clearCurrentTask(sessionID: sessionID)
+            MemoryDiagnostics.logSnapshot(label: "TTS end", logger: self.logger)
         }
 
         let useKokoro = self.isKokoroReady

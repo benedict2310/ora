@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import os
 
 // MARK: - Overlay Activity
 
@@ -137,6 +138,7 @@ struct OverlayMessage: Identifiable, Equatable, Sendable {
 /// Observable state for the overlay
 @MainActor
 final class OverlayViewModel: ObservableObject {
+    private let logger = Logger(subsystem: "com.ora.app", category: "OverlayViewModel")
     @Published var mode: OverlayMode = .hidden
     @Published var messages: [OverlayMessage] = []
     @Published var currentProposal: ToolProposal?
@@ -229,6 +231,7 @@ final class OverlayViewModel: ObservableObject {
 
     /// Clear conversation for new session
     func reset() {
+        self.logger.info("Overlay model reset (messages: \(self.messages.count, privacy: .public))")
         self.toolActivityRevealTask?.cancel()
         self.toolActivityRevealTask = nil
         self.pendingToolActivity = nil

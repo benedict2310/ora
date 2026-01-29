@@ -5,6 +5,7 @@
 //  Main overlay content view
 //
 
+import Foundation
 import SwiftUI
 
 // MARK: - Main Overlay View
@@ -104,6 +105,11 @@ struct OverlayView: View {
                             .id("followup-prompt")
                     }
 
+                    if self.shouldShowStopSpeakingPrompt {
+                        StopSpeakingPromptView(reduceTransparency: self.reduceTransparency)
+                            .id("stop-speaking-prompt")
+                    }
+
                     if case .error(let message) = self.viewModel.mode {
                         ChatBubbleView(
                             text: message,
@@ -129,6 +135,10 @@ struct OverlayView: View {
                 self.invalidateWindowShadow()
             }
             .onChange(of: self.viewModel.mode) { _, _ in
+                self.scrollToBottom(proxy)
+                self.invalidateWindowShadow()
+            }
+            .onChange(of: self.viewModel.activity) { _, _ in
                 self.scrollToBottom(proxy)
                 self.invalidateWindowShadow()
             }
@@ -218,6 +228,10 @@ struct OverlayView: View {
         return false
     }
 
+    private var shouldShowStopSpeakingPrompt: Bool {
+        self.viewModel.activity == .speaking
+    }
+
     private var voiceInputAccessibilityLabel: String {
         switch self.voiceInputState {
         case .idle(let label):
@@ -251,10 +265,14 @@ struct OverlayView: View {
     }
 }
 
-// MARK: - Follow-Up Prompt
+// MARK: - Overlay Prompts
 
-struct FollowUpPromptView: View {
+private struct OverlayPromptView: View {
+    let text: String
+    let iconName: String
+    let accessibilityLabel: String
     let reduceTransparency: Bool
+    let action: (() -> Void)?
 
     var body: some View {
         HStack {
@@ -263,32 +281,77 @@ struct FollowUpPromptView: View {
                 .frame(maxWidth: OverlayLayout.assistantBubbleMaxWidth, alignment: .trailing)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Press Enter to reply, or Escape to close")
+        .accessibilityLabel(self.accessibilityLabel)
     }
 
     @ViewBuilder
     private var content: some View {
         let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
         let base = HStack(spacing: 6) {
-            Image(systemName: "mic.fill")
+            Image(systemName: self.iconName)
                 .font(.caption2)
                 .foregroundColor(.cyan.opacity(0.9))
-            Text("Enter to reply · Esc to close")
+            Text(self.text)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, OverlayLayout.bubblePaddingHorizontal)
         .padding(.vertical, 10)
 
-        if self.reduceTransparency {
-            base
-                .background(shape.fill(Color(nsColor: .controlBackgroundColor).opacity(0.94)))
-                .overlay(shape.stroke(Color.white.opacity(0.08), lineWidth: 0.6))
+        if let action = self.action {
+            Button(action: action) {
+                if self.reduceTransparency {
+                    base
+                        .background(shape.fill(Color(nsColor: .controlBackgroundColor).opacity(0.94)))
+                        .overlay(shape.stroke(Color.white.opacity(0.08), lineWidth: 0.6))
+                } else {
+                    // Tint opacity lowered to reduce black outline artifacts
+                    base
+                        .glassEffect(.regular.tint(.white.opacity(0.04)), in: shape)
+                }
+            }
+            .buttonStyle(.plain)
         } else {
-            // Tint opacity lowered to reduce black outline artifacts
-            base
-                .glassEffect(.regular.tint(.white.opacity(0.04)), in: shape)
+            if self.reduceTransparency {
+                base
+                    .background(shape.fill(Color(nsColor: .controlBackgroundColor).opacity(0.94)))
+                    .overlay(shape.stroke(Color.white.opacity(0.08), lineWidth: 0.6))
+            } else {
+                // Tint opacity lowered to reduce black outline artifacts
+                base
+                    .glassEffect(.regular.tint(.white.opacity(0.04)), in: shape)
+            }
         }
+    }
+}
+
+struct FollowUpPromptView: View {
+    let reduceTransparency: Bool
+
+    var body: some View {
+        OverlayPromptView(
+            text: "Enter to reply · Esc to close",
+            iconName: "mic.fill",
+            accessibilityLabel: "Press Enter to reply, or Escape to close",
+            reduceTransparency: self.reduceTransparency,
+            action: nil
+        )
+    }
+}
+
+struct StopSpeakingPromptView: View {
+    let reduceTransparency: Bool
+
+    var body: some View {
+        OverlayPromptView(
+            text: "Stop speaking · Esc",
+            iconName: "speaker.slash.fill",
+            accessibilityLabel: "Stop speaking",
+            reduceTransparency: self.reduceTransparency,
+            action: {
+                NotificationCenter.default.post(name: .speechStopRequested, object: nil)
+            }
+        )
     }
 }
 
