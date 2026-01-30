@@ -145,6 +145,11 @@ struct SentenceChunker: Sendable {
         return result
     }
 
+    static func normalizeText(_ text: String) -> String {
+        var chunker = SentenceChunker()
+        return chunker.normalizeForSpeech(text)
+    }
+
     private func extractCompleteSentences(from buffer: inout String) -> [String] {
         guard !buffer.isEmpty else { return [] }
 
@@ -278,7 +283,31 @@ struct SentenceChunker: Sendable {
                 buffer = joinSegments(pending, remainder)
             }
         } else if !endsWithNewline {
-            buffer = joinSegments(currentItem ?? "", proseBuffer)
+            let pending = joinSegments(currentItem ?? "", proseBuffer)
+            if !pending.isEmpty {
+                buffer = pending
+            }
+        }
+
+        if lastConsumed == buffer.startIndex && !endsWithNewline && sentences.isEmpty {
+            let trimmed = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                let proseSentences = tokenizeSentences(trimmed)
+                if !proseSentences.isEmpty {
+                    var remainderSentence = ""
+                    for (index, sentence) in proseSentences.enumerated() {
+                        if index == proseSentences.count - 1 && !isCompleteSentence(sentence) {
+                            remainderSentence = sentence
+                            continue
+                        }
+                        let normalized = normalizeForSpeech(sentence)
+                        if !normalized.isEmpty {
+                            sentences.append(normalized)
+                        }
+                    }
+                    buffer = remainderSentence
+                }
+            }
         }
 
         let remainingLen = buffer.count

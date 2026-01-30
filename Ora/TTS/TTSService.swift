@@ -293,7 +293,8 @@ public actor TTSService: TTSServicing {
         self.fallbackSynthesizerHolder = holder
 
         // Start synthesis on main actor
-        await holder.speak(text: text)
+        let normalizedText = SentenceChunker.normalizeText(text)
+        await holder.speak(text: normalizedText)
 
         // Yield empty chunk to signal playback has started
         continuation.yield(AudioChunk.empty(sampleRate: Self.kokoroSampleRate))
