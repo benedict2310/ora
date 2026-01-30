@@ -20,8 +20,7 @@ packages:
     url: https://github.com/huggingface/swift-transformers
     from: "1.1.0"
   kokoro-ios:
-    url: https://github.com/mlalma/kokoro-ios.git
-    from: "1.0.0"
+    path: Vendor/kokoro-ios
 
 settings:
   base:
