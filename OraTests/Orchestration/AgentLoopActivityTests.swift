@@ -248,6 +248,10 @@ final class AgentLoopActivityTests: XCTestCase {
         ])
 
         _ = try await agentLoop.process(userText: "Start")
+        await ToolRegistry.shared.clear()
+        await ToolRegistry.shared.register(AgentLoopMockMutateTool(name: "test.create", result: "Created"))
+
+        _ = try await agentLoop.executeConfirmedTool(tool: "test.create", args: [:])
         delegate.reset()
 
         // When: Generate follow-up
@@ -255,5 +259,7 @@ final class AgentLoopActivityTests: XCTestCase {
 
         // Then: Should emit composing activity
         XCTAssertTrue(delegate.activities.contains(.composing), "Should emit composing during follow-up")
+
+        await ToolRegistry.shared.clear()
     }
 }
