@@ -63,32 +63,42 @@ def first_int(values: list, default: int = 0) -> int:
 def collect_failures(json_obj: dict) -> list[tuple[str, str, str, str]]:
     """Extract failure details from xcresult JSON."""
     failures = []
+
+    def normalize_list(block):
+        block = unwrap(block)
+        if isinstance(block, dict) and "_values" in block:
+            return block["_values"]
+        if isinstance(block, list):
+            return block
+        return None
     
     # Try testFailureSummaries (common in Xcode 15+)
     for block in deep_find_all(json_obj, "testFailureSummaries"):
-        block = unwrap(block)
-        if isinstance(block, list):
-            for item in block:
-                item = unwrap(item)
-                if isinstance(item, dict):
-                    test = unwrap(item.get("testCaseName", ""))
-                    msg = unwrap(item.get("message", ""))
-                    file = unwrap(item.get("fileName", ""))
-                    line = unwrap(item.get("lineNumber", ""))
-                    failures.append((str(test), str(msg), str(file), str(line)))
+        block = normalize_list(block)
+        if block is None:
+            continue
+        for item in block:
+            item = unwrap(item)
+            if isinstance(item, dict):
+                test = unwrap(item.get("testCaseName", ""))
+                msg = unwrap(item.get("message", ""))
+                file = unwrap(item.get("fileName", ""))
+                line = unwrap(item.get("lineNumber", ""))
+                failures.append((str(test), str(msg), str(file), str(line)))
     
     # Try failureSummaries as fallback
     if not failures:
         for block in deep_find_all(json_obj, "failureSummaries"):
-            block = unwrap(block)
-            if isinstance(block, list):
-                for item in block:
-                    item = unwrap(item)
-                    if isinstance(item, dict):
-                        msg = unwrap(item.get("message", ""))
-                        file = unwrap(item.get("fileName", ""))
-                        line = unwrap(item.get("lineNumber", ""))
-                        failures.append(("", str(msg), str(file), str(line)))
+            block = normalize_list(block)
+            if block is None:
+                continue
+            for item in block:
+                item = unwrap(item)
+                if isinstance(item, dict):
+                    msg = unwrap(item.get("message", ""))
+                    file = unwrap(item.get("fileName", ""))
+                    line = unwrap(item.get("lineNumber", ""))
+                    failures.append(("", str(msg), str(file), str(line)))
     
     # Deduplicate
     seen = set()
@@ -100,40 +110,55 @@ def collect_failures(json_obj: dict) -> list[tuple[str, str, str, str]]:
     return unique
 
 
-def load_xcresult(bundle_path: str) -> dict:
-    """Load and parse xcresult bundle using xcresulttool."""
-    
-    # Xcode 16+: try `get test-results summary` first
+def load_summary(bundle_path: str) -> dict | None:
+    """Load xcresult summary (Xcode 16+)."""
     cmd_new = [
         "xcrun", "xcresulttool", "get", "test-results", "summary",
         "--path", bundle_path,
         "--format", "json",
     ]
-    data = try_json(cmd_new)
-    if data is not None:
-        return data
-    
-    # Xcode 15+: try legacy object graph
+    return try_json(cmd_new)
+
+
+def load_legacy_object(bundle_path: str) -> dict | None:
+    """Load xcresult legacy object graph (Xcode 15+)."""
     cmd_legacy = [
         "xcrun", "xcresulttool", "get", "object", "--legacy",
         "--path", bundle_path,
         "--format", "json",
     ]
-    data = try_json(cmd_legacy)
-    if data is not None:
-        return data
-    
-    # Oldest fallback: object without --legacy
+    return try_json(cmd_legacy)
+
+
+def load_old_object(bundle_path: str) -> dict | None:
+    """Load xcresult object graph without --legacy."""
     cmd_old = [
         "xcrun", "xcresulttool", "get", "object",
         "--path", bundle_path,
         "--format", "json",
     ]
-    data = try_json(cmd_old)
-    if data is not None:
-        return data
-    
-    raise RuntimeError("Failed to read xcresult via xcresulttool")
+    return try_json(cmd_old)
+
+
+def extract_counts(json_obj: dict) -> tuple[int, int, bool, bool]:
+    """Extract tests/failed counts with flags for presence."""
+    tests_count_values = deep_find_all(json_obj, "testsCount")
+    tests_failed_values = deep_find_all(json_obj, "testsFailedCount")
+    tests_count = first_int(tests_count_values, default=0)
+    tests_failed = first_int(tests_failed_values, default=0)
+    count_found = len(tests_count_values) > 0
+    failed_found = len(tests_failed_values) > 0
+
+    if tests_count == 0:
+        total_values = deep_find_all(json_obj, "totalTestCount")
+        count_found = count_found or len(total_values) > 0
+        tests_count = first_int(total_values, default=0)
+    if tests_failed == 0:
+        failed_values = deep_find_all(json_obj, "failedTestCount")
+        failed_found = failed_found or len(failed_values) > 0
+        tests_failed = first_int(failed_values, default=0)
+
+    return tests_count, tests_failed, count_found, failed_found
 
 
 def main() -> int:
@@ -146,22 +171,25 @@ def main() -> int:
         print(f"Missing xcresult bundle: {bundle}", file=sys.stderr)
         return 2
     
-    try:
-        data = load_xcresult(bundle)
-    except RuntimeError as e:
-        print(f"Error: {e}", file=sys.stderr)
+    data = load_summary(bundle)
+    if data is None:
+        data = load_legacy_object(bundle)
+    if data is None:
+        data = load_old_object(bundle)
+    if data is None:
+        print("Error: Failed to read xcresult via xcresulttool", file=sys.stderr)
         return 2
+
+    tests_count, tests_failed, _, failed_found = extract_counts(data)
+    if tests_count == 0 or not failed_found:
+        legacy = load_legacy_object(bundle)
+        if legacy is not None:
+            data = legacy
+            tests_count, tests_failed, _, failed_found = extract_counts(data)
     
-    # Extract counts
-    tests_count = first_int(deep_find_all(data, "testsCount"), default=0)
-    tests_failed = first_int(deep_find_all(data, "testsFailedCount"), default=0)
-    
-    # Fallback: try alternative key names
-    if tests_count == 0:
-        tests_count = first_int(deep_find_all(data, "totalTestCount"), default=0)
-    if tests_failed == 0:
-        tests_failed = first_int(deep_find_all(data, "failedTestCount"), default=0)
-    
+    failures = collect_failures(data)
+    if failures:
+        tests_failed = max(tests_failed, len(failures))
     passed = max(0, tests_count - tests_failed)
     
     if tests_failed == 0:
@@ -170,7 +198,6 @@ def main() -> int:
     
     print(f"❌ Tests: {passed}/{tests_count} passed ({tests_failed} failed)")
     
-    failures = collect_failures(data)
     if failures:
         print("Failures:")
         for test, msg, file, line in failures[:10]:  # Limit to first 10
