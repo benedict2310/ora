@@ -185,6 +185,7 @@ actor LLMService: LLMServicing {
         guard isReady, let container = modelContainer else {
             throw LLMServiceError.notReady
         }
+
         
         // Convert LLMMessage to the format expected by applyChatTemplate
         // The tokenizer expects [[String: any Sendable]] with "role" and "content" keys
@@ -291,6 +292,7 @@ actor LLMService: LLMServicing {
         let totalTime = (CFAbsoluteTimeGetCurrent() - generationStart) * 1000
         let tokensPerSec = tokenCount > 0 ? Double(tokenCount) / (totalTime / 1000) : 0
         self.logger.info("⏱️ Generation complete: \(tokenCount) tokens in \(String(format: "%.1f", totalTime))ms (\(String(format: "%.1f", tokensPerSec)) tok/s)")
+
         
         // Note: GPU.clearCache() is intentionally NOT called here (M.02 optimization)
         // The 512MB cache limit allows buffer reuse across generations for faster TTFT.

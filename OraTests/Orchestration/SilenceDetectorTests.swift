@@ -13,27 +13,25 @@ final class SilenceDetectorTests: XCTestCase {
 
     // MARK: - Constants Tests
 
-    func test_defaultTimeout_is1Second() {
-        // AC-1: Default timeout reduced from 1.5s to 1.0s
-        XCTAssertEqual(SilenceDetector.defaultTimeout, 1.0)
+    func test_defaultTimeout_is1Point5Seconds() {
+        XCTAssertEqual(SilenceDetector.defaultTimeout, 1.5)
     }
 
     func test_minimumTimeout_is0Point5Seconds() {
         XCTAssertEqual(SilenceDetector.minimumTimeout, 0.5)
     }
 
-    func test_maximumTimeout_is2Seconds() {
-        XCTAssertEqual(SilenceDetector.maximumTimeout, 2.0)
+    func test_maximumTimeout_is3Seconds() {
+        XCTAssertEqual(SilenceDetector.maximumTimeout, 3.0)
     }
 
-    func test_vadConfirmationDelay_is300ms() {
-        // AC-4: VAD confirmation delay is 300ms
-        XCTAssertEqual(SilenceDetector.vadConfirmationDelay, 0.3)
+    func test_vadConfirmationDelay_is800ms() {
+        XCTAssertEqual(SilenceDetector.vadConfirmationDelay, 0.8)
     }
 
     func test_init_usesDefaultTimeout() {
         let detector = SilenceDetector()
-        XCTAssertEqual(detector.timeout, 1.0)
+        XCTAssertEqual(detector.timeout, 1.5)
     }
 
     func test_init_withCustomTimeout() {
@@ -173,7 +171,7 @@ final class SilenceDetectorTests: XCTestCase {
     // MARK: - VAD-assisted Detection Tests
 
     func test_vadAssistedDetection_triggersOnSpeechEnd() async {
-        // AC-4: VAD speechEnd triggers 300ms confirmation timer
+        // AC-4: VAD speechEnd triggers confirmation timer
         let detector = SilenceDetector(timeout: 2.0)  // Long ASR timeout
         let expectation = XCTestExpectation(description: "VAD silence detected")
 
@@ -187,8 +185,8 @@ final class SilenceDetectorTests: XCTestCase {
         // Simulate speech end
         detector.onVADStateChanged(isSpeech: false)
 
-        // Should fire within confirmation delay (~300ms) + buffer
-        await fulfillment(of: [expectation], timeout: 1.0)
+        // Should fire within confirmation delay + buffer
+        await fulfillment(of: [expectation], timeout: 2.0)
     }
 
     func test_vadConfirmation_cancelledOnSpeechResume() async {
@@ -213,13 +211,13 @@ final class SilenceDetectorTests: XCTestCase {
         detector.onVADStateChanged(isSpeech: true)
 
         // Wait longer than confirmation delay
-        try? await Task.sleep(for: .milliseconds(400))
+        try? await Task.sleep(for: .seconds(SilenceDetector.vadConfirmationDelay + 0.2))
 
         XCTAssertFalse(silenceDetected)
     }
 
     func test_vadConfirmation_triggersAfterDelay() async {
-        // AC-4: Confirmation timer fires correctly after 300ms
+        // AC-4: Confirmation timer fires correctly after delay
         let detector = SilenceDetector(timeout: 2.0)  // Long ASR timeout
         var detectionTime: Date?
         let startTime = Date()
@@ -239,15 +237,15 @@ final class SilenceDetectorTests: XCTestCase {
 
         await fulfillment(of: [expectation], timeout: 2.0)
 
-        // Check that detection happened around 300ms after VAD event
+        // Check that detection happened around the VAD delay after event
         guard let detection = detectionTime else {
             XCTFail("Detection time not recorded")
             return
         }
         let elapsed = detection.timeIntervalSince(startTime)
-        // Allow some tolerance for timing
-        XCTAssertGreaterThan(elapsed, 0.25)  // At least 250ms
-        XCTAssertLessThan(elapsed, 0.6)      // At most 600ms
+        let expected = SilenceDetector.vadConfirmationDelay
+        XCTAssertGreaterThan(elapsed, max(0.0, expected - 0.2))
+        XCTAssertLessThan(elapsed, expected + 0.4)
     }
 
     func test_partialDuringVADConfirmation_doesNotResetTimer() async {
@@ -279,7 +277,7 @@ final class SilenceDetectorTests: XCTestCase {
         XCTAssertTrue(detector.isVADConfirmationInProgress)
 
         // Wait for VAD confirmation to complete
-        try? await Task.sleep(for: .milliseconds(300))
+        try? await Task.sleep(for: .seconds(SilenceDetector.vadConfirmationDelay + 0.2))
 
         // Silence should have been detected via VAD confirmation
         // (partial did not cancel it)
@@ -310,7 +308,7 @@ final class SilenceDetectorTests: XCTestCase {
         XCTAssertFalse(detector.isVADConfirmationInProgress)
 
         // Wait longer than confirmation delay
-        try? await Task.sleep(for: .milliseconds(400))
+        try? await Task.sleep(for: .seconds(SilenceDetector.vadConfirmationDelay + 0.2))
 
         // Silence should NOT have been detected (speech resumed)
         XCTAssertEqual(silenceCount, 0)
@@ -331,7 +329,7 @@ final class SilenceDetectorTests: XCTestCase {
         detector.onVADStateChanged(isSpeech: false)
 
         // Wait longer than confirmation delay
-        try? await Task.sleep(for: .milliseconds(500))
+        try? await Task.sleep(for: .seconds(SilenceDetector.vadConfirmationDelay + 0.2))
 
         // Should not trigger because no partial was received
         XCTAssertFalse(silenceDetected)
@@ -392,7 +390,7 @@ final class SilenceDetectorTests: XCTestCase {
         detector.reset()
 
         // Wait longer than confirmation delay
-        try? await Task.sleep(for: .milliseconds(500))
+        try? await Task.sleep(for: .seconds(SilenceDetector.vadConfirmationDelay + 0.2))
 
         XCTAssertFalse(silenceDetected)
     }
@@ -447,7 +445,7 @@ final class SilenceDetectorTests: XCTestCase {
         detector.cancel()
 
         // Wait longer than confirmation delay
-        try? await Task.sleep(for: .milliseconds(500))
+        try? await Task.sleep(for: .seconds(SilenceDetector.vadConfirmationDelay + 0.2))
 
         XCTAssertFalse(silenceDetected)
     }
@@ -483,13 +481,11 @@ final class SilenceDetectorTests: XCTestCase {
     // MARK: - M.06 New Features Tests
 
     func test_noChangeTimeout_constant() {
-        // M.06: No-change timeout is 1.0s
-        XCTAssertEqual(SilenceDetector.noChangeTimeout, 1.0)
+        XCTAssertEqual(SilenceDetector.noChangeTimeout, 1.5)
     }
 
     func test_hardMaxDuration_constant() {
-        // M.06: Hard max duration is 10 seconds
-        XCTAssertEqual(SilenceDetector.hardMaxDuration, 10.0)
+        XCTAssertEqual(SilenceDetector.hardMaxDuration, 60.0)
     }
 
     func test_noChangeTimeout_triggersAfterStableText() async {
@@ -504,8 +500,8 @@ final class SilenceDetectorTests: XCTestCase {
         // Receive initial partial
         detector.onPartialReceived(text: "Hello world")
 
-        // Should fire after noChangeTimeout (~1.0s) + buffer
-        await fulfillment(of: [expectation], timeout: 2.0)
+        // Should fire after noChangeTimeout + buffer
+        await fulfillment(of: [expectation], timeout: 3.0)
     }
 
     func test_noChangeTimeout_resetsOnTextChange() async {
@@ -533,7 +529,7 @@ final class SilenceDetectorTests: XCTestCase {
         XCTAssertEqual(silenceCount, 0)
 
         // Wait for timeout after last change
-        try? await Task.sleep(for: .milliseconds(500))
+        try? await Task.sleep(for: .seconds(SilenceDetector.noChangeTimeout + 0.2))
 
         // Now should have triggered
         XCTAssertEqual(silenceCount, 1)

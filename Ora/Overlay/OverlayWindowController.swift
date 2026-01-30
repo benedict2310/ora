@@ -129,6 +129,8 @@ final class OverlayWindowController {
 
         // Remove dismiss monitors
         self.removeDismissMonitors()
+
+        self.logger.info("Overlay hide requested (animated: \(animated, privacy: .public))")
         
         let hideSessionID = self.currentSessionID
 
@@ -219,8 +221,13 @@ final class OverlayWindowController {
             guard let self = self else { return event }
             
             if event.keyCode == 53 { // Escape key
-                // Cancel the pipeline session (which will hide the overlay)
-                SimplePipelineController.shared.cancel()
+                // If speaking, interrupt TTS without closing the overlay
+                if SimplePipelineController.shared.state == .speaking {
+                    SimplePipelineController.shared.interruptSpeech()
+                } else {
+                    // Cancel the pipeline session (which will hide the overlay)
+                    SimplePipelineController.shared.cancel()
+                }
                 return nil // Consume the event
             }
             
@@ -405,6 +412,9 @@ extension Notification.Name {
 
     /// Posted when a tool proposal is denied by the user
     static let proposalDenied = Notification.Name("proposalDenied")
+
+    /// Posted when the user requests to stop TTS playback
+    static let speechStopRequested = Notification.Name("speechStopRequested")
 }
 
 // MARK: - Overlay Panel Subclass

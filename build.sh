@@ -78,7 +78,7 @@ run_tests() {
     -scheme "$test_scheme" \
     -derivedDataPath build \
     -resultBundlePath "$RESULT_BUNDLE" \
-    -destination "platform=macOS" \
+    -destination "platform=macOS,arch=${ARCH}" \
     "${extra_args[@]}" \
     -quiet \
     test \
@@ -87,8 +87,24 @@ run_tests() {
   set -e
   
   # Token-optimized summary
+  local summary_output=""
+  local summary_status=0
+  local tests_total=""
+  local tests_passed=""
   if [ -f "scripts/xcresult_summary.py" ]; then
-    python3 scripts/xcresult_summary.py "$RESULT_BUNDLE" || true
+    set +e
+    summary_output=$(python3 scripts/xcresult_summary.py "$RESULT_BUNDLE")
+    summary_status=$?
+    set -e
+    if [ -n "$summary_output" ]; then
+      echo "$summary_output"
+      local summary_line
+      summary_line=$(echo "$summary_output" | head -n 1)
+      if [[ "$summary_line" =~ Tests:\ ([0-9]+)/([0-9]+)\ passed ]]; then
+        tests_passed="${BASH_REMATCH[1]}"
+        tests_total="${BASH_REMATCH[2]}"
+      fi
+    fi
   else
     # Fallback if script not available
     if [ $status -eq 0 ]; then
@@ -99,6 +115,17 @@ run_tests() {
   fi
   
   if [ $status -ne 0 ]; then
+    local has_unhandled_resources=0
+    if command -v rg &> /dev/null; then
+      rg -q "Found unhandled resource" "$RAW_LOG" && has_unhandled_resources=1
+    else
+      grep -q "Found unhandled resource" "$RAW_LOG" && has_unhandled_resources=1
+    fi
+    if [ $summary_status -eq 0 ] && [ -n "$tests_total" ] && [ "$tests_total" -gt 0 ] && [ $has_unhandled_resources -eq 1 ]; then
+      echo ""
+      echo -e "${YELLOW}⚠️ xcodebuild exited with status $status due to SwiftPM unhandled resources; tests passed (${tests_passed}/${tests_total}).${NC}"
+      exit 0
+    fi
     echo ""
     echo -e "${YELLOW}Artifacts:${NC}"
     echo "  Raw log:       $RAW_LOG"

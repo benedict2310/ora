@@ -154,7 +154,21 @@ enum AppleScriptUtils {
     /// - Parameter string: The string to escape
     /// - Returns: Escaped string safe for AppleScript
     static func escapeForAppleScript(_ string: String) -> String {
-        var escaped = string
+        var sanitized = String()
+        sanitized.reserveCapacity(string.count)
+
+        for scalar in string.unicodeScalars {
+            switch scalar.value {
+            case 0x2028, 0x2029:
+                sanitized.unicodeScalars.append(UnicodeScalar(0x0A)!)
+            case 0x00...0x08, 0x0B, 0x0C, 0x0E...0x1F, 0x7F:
+                sanitized.unicodeScalars.append(UnicodeScalar(0x20)!)
+            default:
+                sanitized.unicodeScalars.append(scalar)
+            }
+        }
+
+        var escaped = sanitized
         escaped = escaped.replacingOccurrences(of: "\\", with: "\\\\")
         escaped = escaped.replacingOccurrences(of: "\"", with: "\\\"")
         escaped = escaped.replacingOccurrences(of: "\n", with: "\\n")

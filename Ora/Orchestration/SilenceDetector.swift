@@ -10,7 +10,7 @@ import os
 
 /// Detects silence (end of speech) using a hybrid approach:
 /// 1. **VAD-assisted (primary)**: Uses VAD speechEnd events with a confirmation timer
-/// 2. **No-change timeout**: Finalizes after text unchanged for 1.0s
+/// 2. **No-change timeout**: Finalizes after text unchanged for 1.5s
 /// 3. **ASR-based (fallback)**: Monitors time since last ASR partial
 /// 4. **Hard max duration**: Forces finalize after 10s
 ///
@@ -19,8 +19,8 @@ import os
 ///
 /// ## Key Behavior (M.06 improvements)
 /// - Once VAD detects speechEnd, partials do NOT cancel the confirmation timer
-/// - No-change timeout triggers if text hasn't meaningfully changed for 1.0s
-/// - Hard max duration (10s) forces finalization regardless of other signals
+/// - No-change timeout triggers if text hasn't meaningfully changed for 1.5s
+/// - Hard max duration (60s) forces finalization regardless of other signals
 ///
 /// ## Usage
 /// ```swift
@@ -60,8 +60,8 @@ final class SilenceDetector {
 
     /// Hard maximum duration in seconds - force finalize after this.
     /// This is a SAFETY NET for when VAD/ASR timeouts fail, not the primary cutoff.
-    /// Normal end-of-speech is detected by VAD confirmation (0.3s), no-change timeout (1.0s),
-    /// or ASR fallback timeout (1.0s). The hard max just prevents runaway recordings.
+/// Normal end-of-speech is detected by VAD confirmation (0.8s), no-change timeout (1.5s),
+/// or ASR fallback timeout (1.5s). The hard max just prevents runaway recordings.
     static let hardMaxDuration: TimeInterval = 60.0
 
     // MARK: - Properties
@@ -107,7 +107,7 @@ final class SilenceDetector {
     // MARK: - Initialization
 
     /// Create a silence detector with the specified timeout
-    /// - Parameter timeout: Seconds of silence before detection fires (default 1.0s)
+    /// - Parameter timeout: Seconds of silence before detection fires (default 1.5s)
     init(timeout: TimeInterval = SilenceDetector.defaultTimeout) {
         // Clamp timeout to valid range
         self.timeout = max(

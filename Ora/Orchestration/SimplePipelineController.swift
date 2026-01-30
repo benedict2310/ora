@@ -70,9 +70,12 @@ final class SimplePipelineController: ObservableObject {
     /// and this is a singleton that lives for the app's lifetime
     nonisolated(unsafe) private var proposalConfirmObserver: NSObjectProtocol?
     nonisolated(unsafe) private var proposalDenyObserver: NSObjectProtocol?
+    nonisolated(unsafe) private var speechStopObserver: NSObjectProtocol?
     
     /// Delay before auto-recovering from error (seconds)
     private let errorRecoveryDelay: TimeInterval = 3.0
+    /// Delay before auto-starting follow-up listening (conversation mode)
+    private let followUpAutoListenDelay: TimeInterval = 0.5
     
     /// Whether conversation mode is enabled (combines silence detection + auto-listen)
     private var isConversationModeEnabled: Bool {
@@ -121,6 +124,14 @@ final class SimplePipelineController: ObservableObject {
         ) { [weak self] _ in
             self?.handleProposalDenied()
         }
+
+        self.speechStopObserver = NotificationCenter.default.addObserver(
+            forName: .speechStopRequested,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.interruptSpeech()
+        }
     }
     
     deinit {
@@ -128,6 +139,9 @@ final class SimplePipelineController: ObservableObject {
             NotificationCenter.default.removeObserver(observer)
         }
         if let observer = proposalDenyObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = speechStopObserver {
             NotificationCenter.default.removeObserver(observer)
         }
     }
@@ -156,6 +170,7 @@ final class SimplePipelineController: ObservableObject {
         self.resetStreamingResponse()
         
         // Reset overlay for new session
+        self.logger.info("Resetting overlay for new session")
         OverlayWindowController.shared.model.reset()
         
         self.transition(to: .listening)
@@ -251,6 +266,26 @@ final class SimplePipelineController: ObservableObject {
         self.transition(to: .idle)
         self.setOverlayActivity(.none)
         OverlayWindowController.shared.hide(animated: true)
+    }
+
+    /// Stop speaking without closing the overlay
+    func interruptSpeech() {
+        guard self.state == .speaking else {
+            self.logger.debug("Ignoring interruptSpeech in state: \(self.state.description)")
+            return
+        }
+
+        self.logger.info("Interrupting TTS playback")
+
+        self.ttsTask?.cancel()
+        self.ttsTask = nil
+
+        Task {
+            await TTSService.shared.stop()
+            await AudioPlaybackService.shared.stop()
+        }
+
+        self.transitionToAwaitingFollowUp(autoListen: self.isConversationModeEnabled)
     }
 
     // MARK: - Private - Silence Detection
@@ -671,24 +706,28 @@ final class SimplePipelineController: ObservableObject {
     private func finishSpeaking() {
         self.logger.info("TTS complete")
 
+        self.transitionToAwaitingFollowUp(autoListen: self.isConversationModeEnabled)
+    }
+
+    private func transitionToAwaitingFollowUp(autoListen: Bool) {
         // Transition to awaiting follow-up state
         self.transition(to: .awaitingFollowUp)
         OverlayWindowController.shared.mode = .awaitingFollowUp
         self.setOverlayActivity(.waiting)
 
         // Handle Conversation Mode: auto-listen after response (AC-7, AC-11)
-        if self.isConversationModeEnabled {
-            self.logger.info("Conversation mode enabled, scheduling follow-up")
-            Task {
-                // Short delay to let the user process the response
-                try? await Task.sleep(for: .milliseconds(500))
+        guard autoListen else { return }
 
-                // Ensure we are still in awaitingFollowUp state (user didn't cancel)
-                guard !Task.isCancelled, self.state == .awaitingFollowUp else { return }
+        self.logger.info("Conversation mode enabled, scheduling follow-up")
+        Task {
+            // Short delay to let the user process the response
+            try? await Task.sleep(for: .milliseconds(Int(self.followUpAutoListenDelay * 1000)))
 
-                await MainActor.run {
-                    self.startFollowUp()
-                }
+            // Ensure we are still in awaitingFollowUp state (user didn't cancel)
+            guard !Task.isCancelled, self.state == .awaitingFollowUp else { return }
+
+            await MainActor.run {
+                self.startFollowUp()
             }
         }
     }

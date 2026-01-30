@@ -309,10 +309,22 @@ final class AppleScriptUtilsTests: XCTestCase {
         XCTAssertEqual(escaped, "line1\\nline2")
     }
 
+    func test_escapeForAppleScript_replacesLineSeparators() {
+        let input = "line1\u{2028}line2\u{2029}line3"
+        let escaped = AppleScriptUtils.escapeForAppleScript(input)
+        XCTAssertEqual(escaped, "line1\\nline2\\nline3")
+    }
+
     func test_escapeForAppleScript_escapesTabs() {
         let input = "col1\tcol2"
         let escaped = AppleScriptUtils.escapeForAppleScript(input)
         XCTAssertEqual(escaped, "col1\\tcol2")
+    }
+
+    func test_escapeForAppleScript_replacesControlCharactersWithSpace() {
+        let input = "a\u{000B}b\u{000C}c"
+        let escaped = AppleScriptUtils.escapeForAppleScript(input)
+        XCTAssertEqual(escaped, "a b c")
     }
 
     // MARK: - Record Conversion

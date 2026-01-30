@@ -17,7 +17,9 @@ import os
 /// ## Supported Variables
 /// - `{{current_date}}` - Current date (e.g., "Friday, December 27, 2025")
 /// - `{{current_time}}` - Current time (e.g., "2:30 PM")
+/// - `{{current_datetime_iso}}` - Current date/time in ISO 8601 format with timezone
 /// - `{{timezone}}` - Timezone identifier (e.g., "America/Los_Angeles")
+/// - `{{timezone_offset}}` - Timezone offset (e.g., "UTC-08:00")
 /// - `{{default_calendar}}` - User's default calendar name
 /// - `{{tools}}` - Available tool descriptions
 ///
@@ -104,12 +106,18 @@ struct SystemPromptBuilder {
         timeFormatter.dateFormat = "h:mm a"
         timeFormatter.timeZone = timezone
         
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withColonSeparatorInTimeZone]
+        isoFormatter.timeZone = timezone
+        
         var result = template
         
         // Resolve each variable
         result = result.replacingOccurrences(of: "{{current_date}}", with: dateFormatter.string(from: currentDate))
         result = result.replacingOccurrences(of: "{{current_time}}", with: timeFormatter.string(from: currentDate))
+        result = result.replacingOccurrences(of: "{{current_datetime_iso}}", with: isoFormatter.string(from: currentDate))
         result = result.replacingOccurrences(of: "{{timezone}}", with: timezone.identifier)
+        result = result.replacingOccurrences(of: "{{timezone_offset}}", with: formatUTCOffset(for: timezone, date: currentDate))
         result = result.replacingOccurrences(of: "{{default_calendar}}", with: defaultCalendar ?? "Default")
         result = result.replacingOccurrences(of: "{{tools}}", with: encodeToolSchemas(tools))
         
@@ -145,10 +153,20 @@ struct SystemPromptBuilder {
     CURRENT CONTEXT:
     - Date: {{current_date}}
     - Time: {{current_time}}
+    - Time (ISO 8601): {{current_datetime_iso}}
     - Timezone: {{timezone}}
     
     Respond with valid JSON only.
     """
+
+    private static func formatUTCOffset(for timezone: TimeZone, date: Date) -> String {
+        let seconds = timezone.secondsFromGMT(for: date)
+        let sign = seconds >= 0 ? "+" : "-"
+        let absSeconds = abs(seconds)
+        let hours = absSeconds / 3600
+        let minutes = (absSeconds % 3600) / 60
+        return String(format: "UTC%@%02d:%02d", sign, hours, minutes)
+    }
 }
 
 // MARK: - Tool Definition
