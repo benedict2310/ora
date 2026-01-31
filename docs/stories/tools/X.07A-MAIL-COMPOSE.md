@@ -37,6 +37,7 @@ As a user, I want to draft and send emails by voice so that I can process commun
 - **Component:** `Ora/Tools/Mail`
 - **Foundation:** `AppleScriptRunner` (X.00).
 - **Safety:** `mail.send` must have `requiresConfirmation = true`.
+- **AppleScript Safety:** argv-based scripts + Notes-aligned `json_escape` to avoid parse errors.
 
 ## 5. Implementation Plan
 
@@ -47,10 +48,14 @@ As a user, I want to draft and send emails by voice so that I can process commun
 - `Ora/Tools/Mail/MailCreateDraftTool.swift`
 - `Ora/Tools/Mail/MailSendTool.swift`
 - `Ora/Tools/Mail/MailOpenDraftTool.swift`
+- `Ora/Tools/Mail/MailAppleScriptTemplates.applescript` (optional: static argv script resource)
 
 ### 5.2 Files to Modify
 
 - `Ora/Tools/ToolRegistry.swift`
+- `Ora/Resources/system-prompt.txt`
+- `Ora/Info.plist` (Apple Events usage description)
+- `Ora/Tools/Automation/AppleScriptRunner.swift` (argv support + logging on parse failures)
 
 ### 5.3 Tests to Add
 
@@ -68,6 +73,9 @@ As a user, I want to draft and send emails by voice so that I can process commun
 - [x] AC-4: `mail.send` sends the email. ✅ Verified in `Ora/Tools/Mail/MailSendTool.swift` and `Ora/Tools/Mail/MailAppleScript.swift`.
 - [x] AC-5: `mail.send` requires confirmation. ✅ Verified in `Ora/Tools/Mail/MailSendTool.swift`.
 - [x] AC-6: Permission denied returns remediation. ✅ Verified in `Ora/Tools/Mail/MailToolError.swift` and `OraTests/Tools/Mail/MailComposeToolsTests.swift`.
+- [ ] AC-7: AppleScript execution uses argv (no string interpolation of user input).
+- [ ] AC-8: Script source is ASCII-only and compiles under `osascript` without parse errors.
+- [ ] AC-9: JSON escaping matches Notes tool behavior (double-escaped backslashes/quotes).
 
 ## 7. Verification Plan
 
