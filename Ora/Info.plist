@@ -32,7 +32,7 @@
     <key>NSContactsUsageDescription</key>
     <string>Ora needs contacts access to look up people you mention.</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>Ora needs permission to control Messages to send messages on your behalf.</string>
+    <string>Ora needs permission to control apps like Messages, Mail, and Notes on your behalf.</string>
 
     <!-- Minimum system -->
     <key>LSMinimumSystemVersion</key>
