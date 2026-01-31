@@ -157,6 +157,17 @@ Optional orchestration playbooks that layer on top of native tools.
 | S.04 | [Skills Marketplace](skills/S.04-SKILLS-MARKETPLACE.md) | 📋 Future |
 | S.05 | [Embedding Retrieval](skills/S.05-EMBEDDING-RETRIEVAL.md) | 📋 Future |
 
+### ☁️ Cloud Integrations (C)
+Cloud LLM provider support (Anthropic, OpenAI) with secure credential management.
+
+| ID | Title | Status |
+|:---|:------|:-------|
+| C.01 | [Keychain Credential Manager](integrations/C.01-KEYCHAIN-CREDENTIAL-MANAGER.md) | 🚧 To Do |
+| C.02 | [Cloud Provider Abstraction](integrations/C.02-CLOUD-PROVIDER-ABSTRACTION.md) | 🚧 To Do |
+| C.03 | [Anthropic Claude Provider](integrations/C.03-ANTHROPIC-PROVIDER.md) | 🚧 To Do |
+| C.04 | [OpenAI Provider](integrations/C.04-OPENAI-PROVIDER.md) | 🚧 To Do |
+| C.05 | [Provider Preferences UI](integrations/C.05-PROVIDER-PREFERENCES-UI.md) | 🚧 To Do |
+
 ---
 
 ## Implementation Order
