@@ -125,3 +125,69 @@ As a user, I want to draft and send emails by voice so that I can process commun
 - [x] All acceptance criteria verified
 - [x] Tests passing (24/24 mail tests + all previously passing tests)
 - [ ] Working tree clean
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-02-01T12:38:00+01:00
+**Commit reviewed:** 00108bf
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 11
+- Build status: Pass
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [ ] None.
+
+#### P1 - Major (Should fix)
+- [ ] `Ora/Info.plist` - Plan specified modifying `Info.plist`, but it was not in the diff. `NSAppleEventsUsageDescription` currently only mentions "Messages", which may be confusing or insufficient when the app requests to control Mail.
+
+#### P2 - Minor (Can defer)
+- [ ] `MailAppleScript.swift:split_recipients` - Recipients are split by comma only. Names containing commas (e.g., "Doe, John <john@example.com>") will be incorrectly split.
+- [ ] `MailAppleScript.swift:openDraftScript` - Iterates through all messages in the drafts mailbox to find the draft ID. This may be slow for users with a large number of drafts.
+
+### Future Considerations (Out of Scope)
+- None.
+
+### Approval Status
+- [ ] All P0 issues resolved
+- [ ] All P1 issues resolved
+- [ ] Ready for merge
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-02-01T12:45:00+01:00
+**Commit reviewed:** 0e3ddea
+**Iteration:** 2
+
+### Summary
+- Files reviewed: 11
+- Build status: Pass
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [ ] None.
+
+#### P1 - Major (Should fix)
+- [ ] None.
+
+#### P2 - Minor (Can defer)
+- [ ] `MailAppleScript.swift:split_recipients` - Recipients are split by comma only. Names containing commas (e.g., "Doe, John <john@example.com>") will be incorrectly split.
+- [ ] `MailAppleScript.swift:openDraftScript` - Iterates through all messages in the drafts mailbox to find the draft ID. This may be slow for users with a large number of drafts.
+
+### Future Considerations (Out of Scope)
+- None.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
