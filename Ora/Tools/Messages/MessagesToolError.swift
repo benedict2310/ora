@@ -1,16 +1,16 @@
 //
-//  MailToolError.swift
+//  MessagesToolError.swift
 //  Ora
 //
-//  Errors for Mail tools
+//  Errors for Messages tools
 //
 
 import Foundation
 
-enum MailToolError: LocalizedError, Equatable {
+enum MessagesToolError: LocalizedError, Equatable {
     case permissionDenied
-    case accountNotFound(String)
-    case draftNotFound(String)
+    case accountUnavailable
+    case invalidHandle(String)
     case invalidArgument(String)
     case scriptFailed(String)
     case invalidResponse
@@ -18,21 +18,21 @@ enum MailToolError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .permissionDenied:
-            return "Mail access denied. Please enable Automation access for Ora in System Settings > Privacy & Security > Automation."
-        case .accountNotFound(let name):
-            return "Mail account not found: \(name)"
-        case .draftNotFound(let id):
-            return "Draft not found: \(id)"
+            return "Messages access denied. Please enable Automation access for Ora in System Settings > Privacy & Security > Automation."
+        case .accountUnavailable:
+            return "No Messages account is available. Please sign in to Messages and try again."
+        case .invalidHandle(let handle):
+            return "Invalid message recipient: \(handle)"
         case .invalidArgument(let reason):
             return "Invalid argument: \(reason)"
         case .scriptFailed(let reason):
-            return "Mail operation failed: \(reason)"
+            return "Messages operation failed: \(reason)"
         case .invalidResponse:
-            return "Unexpected response from Mail."
+            return "Unexpected response from Messages."
         }
     }
 
-    static func fromAppleScriptError(_ error: AppleScriptError) -> MailToolError {
+    static func fromAppleScriptError(_ error: AppleScriptError) -> MessagesToolError {
         switch error {
         case .permissionDenied:
             return .permissionDenied
@@ -49,22 +49,16 @@ enum MailToolError: LocalizedError, Equatable {
         }
     }
 
-    static func fromEnvelopeError(_ message: String) -> MailToolError {
+    static func fromEnvelopeError(_ message: String) -> MessagesToolError {
         let lowercased = message.lowercased()
-        if lowercased.hasPrefix("account not found:") {
-            return .accountNotFound(
-                String(message.dropFirst("account not found:".count)).trimmingCharacters(in: .whitespaces)
-            )
+        if lowercased.contains("no messages account") {
+            return .accountUnavailable
         }
-        if lowercased.hasPrefix("draft not found:") {
-            return .draftNotFound(
-                String(message.dropFirst("draft not found:".count)).trimmingCharacters(in: .whitespaces)
-            )
+        if lowercased.contains("participant") || lowercased.contains("buddy") || lowercased.contains("handle") {
+            return .invalidHandle(message)
         }
-        if lowercased.hasPrefix("invalid argument:") {
-            return .invalidArgument(
-                String(message.dropFirst("invalid argument:".count)).trimmingCharacters(in: .whitespaces)
-            )
+        if lowercased.contains("invalid argument") {
+            return .invalidArgument(message)
         }
         return .scriptFailed(message)
     }

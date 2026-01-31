@@ -40,6 +40,13 @@ struct AppleScriptConfig: Sendable {
 /// Protocol for AppleScript execution (allows mocking in tests)
 protocol AppleScriptRunning: Sendable {
     func execute(script: String, config: AppleScriptConfig) async throws -> AppleScriptResult
+    func execute(script: String, arguments: [String], config: AppleScriptConfig) async throws -> AppleScriptResult
+}
+
+extension AppleScriptRunning {
+    func execute(script: String, arguments: [String], config: AppleScriptConfig) async throws -> AppleScriptResult {
+        try await execute(script: script, config: config)
+    }
 }
 
 /// Executes AppleScripts with timeout, error normalization, and JSON parsing
@@ -101,6 +108,69 @@ actor AppleScriptRunner {
 
             return AppleScriptResult(stdout: result, json: json, duration: duration)
 
+        } catch let error as AppleScriptError {
+            throw error
+        } catch {
+            throw AppleScriptError.processStartFailed(reason: error.localizedDescription)
+        }
+    }
+
+    /// Execute an AppleScript string with argv arguments
+    /// - Parameters:
+    ///   - script: The AppleScript source code
+    ///   - arguments: Arguments passed as argv
+    ///   - config: Execution configuration (timeout, JSON parsing)
+    /// - Returns: The execution result
+    /// - Throws: AppleScriptError on failure
+    func execute(
+        script: String,
+        arguments: [String],
+        config: AppleScriptConfig = .default
+    ) async throws -> AppleScriptResult {
+        let startTime = Date()
+        let processId = UUID()
+
+        logger.debug("Executing script (id: \(processId.uuidString.prefix(8))) with argv count \(arguments.count)")
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+
+        var processArgs = ["-e", script]
+        if !arguments.isEmpty {
+            processArgs.append("--")
+            processArgs.append(contentsOf: arguments)
+        }
+        process.arguments = processArgs
+
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+
+        self.activeProcesses[processId] = process
+
+        defer {
+            self.activeProcesses.removeValue(forKey: processId)
+        }
+
+        do {
+            let result = try await self.runWithTimeout(
+                process: process,
+                stdoutPipe: stdoutPipe,
+                stderrPipe: stderrPipe,
+                timeout: config.timeout,
+                processId: processId
+            )
+
+            let duration = Date().timeIntervalSince(startTime)
+            logger.debug("Script completed in \(String(format: "%.2f", duration))s")
+
+            var json: JSONValue?
+            if config.expectsJSON {
+                json = AppleScriptUtils.parseJSONEnvelope(result)
+            }
+
+            return AppleScriptResult(stdout: result, json: json, duration: duration)
         } catch let error as AppleScriptError {
             throw error
         } catch {

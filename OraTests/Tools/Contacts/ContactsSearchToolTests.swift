@@ -138,11 +138,112 @@ final class ContactsSearchToolTests: XCTestCase {
     func test_summary_multiple() {
         let contact1 = CNMutableContact()
         contact1.givenName = "John"
-        
+
         let contact2 = CNMutableContact()
         contact2.givenName = "Jane"
-        
+
         let summary = ContactsSearchTool.summary(for: [contact1, contact2], query: "J")
         XCTAssertEqual(summary, "Found 2 contacts matching 'J'.")
+    }
+
+    // MARK: - Nickname in JSON
+
+    func test_contactToJSON_includesNickname() {
+        let contact = CNMutableContact()
+        contact.givenName = "Elizabeth"
+        contact.familyName = "Taylor"
+        contact.nickname = "Liz"
+
+        let json = ContactsSearchTool.contactToJSON(contact)
+
+        guard case .object(let dict) = json else {
+            XCTFail("Expected object")
+            return
+        }
+
+        XCTAssertEqual(dict["nickname"]?.stringValue, "Liz")
+    }
+
+    func test_contactToJSON_omitsEmptyNickname() {
+        let contact = CNMutableContact()
+        contact.givenName = "John"
+        contact.familyName = "Doe"
+
+        let json = ContactsSearchTool.contactToJSON(contact)
+
+        guard case .object(let dict) = json else {
+            XCTFail("Expected object")
+            return
+        }
+
+        XCTAssertNil(dict["nickname"])
+    }
+
+    // MARK: - Match Score in JSON
+
+    func test_contactToJSON_includesMatchScore() throws {
+        let contact = CNMutableContact()
+        contact.givenName = "Alice"
+        contact.familyName = "Smith"
+
+        let json = ContactsSearchTool.contactToJSON(contact, matchScore: 0.95)
+
+        guard case .object(let dict) = json else {
+            XCTFail("Expected object")
+            return
+        }
+
+        let score = try XCTUnwrap(dict["match_score"]?.numberValue)
+        XCTAssertEqual(score, 0.95, accuracy: 0.01)
+    }
+
+    func test_contactToJSON_omitsMatchScoreWhenNil() {
+        let contact = CNMutableContact()
+        contact.givenName = "Alice"
+
+        let json = ContactsSearchTool.contactToJSON(contact)
+
+        guard case .object(let dict) = json else {
+            XCTFail("Expected object")
+            return
+        }
+
+        XCTAssertNil(dict["match_score"])
+    }
+
+    // MARK: - Fuzzy Summary Tests
+
+    func test_fuzzySummary_empty() {
+        let summary = ContactsSearchTool.fuzzySummary(for: [], query: "Madline")
+        XCTAssertEqual(summary, "No contacts found matching 'Madline'.")
+    }
+
+    func test_fuzzySummary_singleMatch() {
+        let contact = CNMutableContact()
+        contact.givenName = "Madeline"
+        contact.familyName = "Smith"
+        let scored = ScoredContact(contact: contact, score: 0.95, matchField: .givenName)
+
+        let summary = ContactsSearchTool.fuzzySummary(for: [scored], query: "Madline")
+        XCTAssertEqual(summary, "Found possible match: Madeline Smith (fuzzy match for 'Madline').")
+    }
+
+    func test_fuzzySummary_multipleMatches() {
+        let c1 = CNMutableContact()
+        c1.givenName = "Madeline"
+        c1.familyName = "Smith"
+        let c2 = CNMutableContact()
+        c2.givenName = "Madeleine"
+        c2.familyName = "Jones"
+
+        let matches = [
+            ScoredContact(contact: c1, score: 0.97, matchField: .givenName),
+            ScoredContact(contact: c2, score: 0.93, matchField: .givenName),
+        ]
+
+        let summary = ContactsSearchTool.fuzzySummary(for: matches, query: "Madline")
+        XCTAssertTrue(summary.contains("2 possible matches"))
+        XCTAssertTrue(summary.contains("Madeline Smith"))
+        XCTAssertTrue(summary.contains("Madeleine Jones"))
     }
 }
