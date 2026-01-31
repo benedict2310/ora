@@ -78,10 +78,9 @@ actor ToolRegistry {
         register(NotesEditTool())
         register(NotesListFoldersTool())
 
-        // Mail tools
-        register(MailCreateDraftTool())
-        register(MailSendTool())
-        register(MailOpenDraftTool())
+        // Messages tools
+        register(MessagesSendTool())
+        register(MessagesOpenChatTool())
 
         // System tools
         register(SystemOpenAppTool())

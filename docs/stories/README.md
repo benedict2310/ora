@@ -119,7 +119,18 @@ Agentic tools for system integration.
 | X.03 | [Reminders Tools](tools/X.03-REMINDERS-TOOLS.md) | 🚧 To Do |
 | X.04 | [Contacts Tools](tools/X.04-CONTACTS-TOOLS.md) | 🚧 To Do |
 | X.05 | [System Tools](tools/X.05-SYSTEM-TOOLS.md) | 🚧 To Do |
-| X.07A | [Mail: Compose](tools/X.07A-MAIL-COMPOSE.md) | 🚧 To Do |
+| X.06C | [Messages: Send & Open](tools/X.06C-MESSAGES.md) | 🚧 To Do |
+
+### 🧰 Background Tasks (BG)
+Safe, containerized background task execution for Ora.
+
+| ID | Title | Status |
+|:---|:------|:-------|
+| BG.00 | [Background Tasks Overview](container-execution/BG.00-BACKGROUND-TASKS-OVERVIEW.md) | 🚧 To Do |
+| BG.01 | [Task Queue](container-execution/BG.01-TASK-QUEUE.md) | 🚧 To Do |
+| BG.02 | [Worker Abstraction](container-execution/BG.02-WORKER-ABSTRACTION.md) | 🚧 To Do |
+| BG.03 | [Network Safety Policy](container-execution/BG.03-NETWORK-SAFETY.md) | 🚧 To Do |
+| BG.04 | [Artifact Persistence](container-execution/BG.04-ARTIFACT-PERSISTENCE.md) | 🚧 To Do |
 
 ### 🧹 Maintenance (M)
 Quality, coverage, and repository hygiene.
