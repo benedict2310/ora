@@ -43,24 +43,28 @@ enum MessagesAppleScript {
         set serviceHint to "\(serviceText)"
 
         set targetAccount to missing value
-        if serviceHint is "SMS" then
-            try
-                set targetAccount to first account whose service type is SMS
-            end try
-        else if serviceHint is "iMessage" then
-            try
-                set targetAccount to first account whose service type is iMessage
-            end try
-        else if serviceHint is "RCS" then
-            try
-                set targetAccount to first account whose service type is RCS
-            end try
+        if serviceHint is not "" then
+            repeat with candidate in accounts
+                try
+                    set candidateService to service type of candidate as string
+                    if candidateService is serviceHint then
+                        set targetAccount to candidate
+                        exit repeat
+                    end if
+                end try
+            end repeat
         end if
 
         if targetAccount is missing value then
-            try
-                set targetAccount to first account whose service type is iMessage
-            end try
+            repeat with candidate in accounts
+                try
+                    set candidateService to service type of candidate as string
+                    if candidateService is "iMessage" then
+                        set targetAccount to candidate
+                        exit repeat
+                    end if
+                end try
+            end repeat
         end if
 
         if targetAccount is missing value then
@@ -95,24 +99,28 @@ enum MessagesAppleScript {
         set serviceHint to "\(serviceText)"
 
         set targetAccount to missing value
-        if serviceHint is "SMS" then
-            try
-                set targetAccount to first account whose service type is SMS
-            end try
-        else if serviceHint is "iMessage" then
-            try
-                set targetAccount to first account whose service type is iMessage
-            end try
-        else if serviceHint is "RCS" then
-            try
-                set targetAccount to first account whose service type is RCS
-            end try
+        if serviceHint is not "" then
+            repeat with candidate in accounts
+                try
+                    set candidateService to service type of candidate as string
+                    if candidateService is serviceHint then
+                        set targetAccount to candidate
+                        exit repeat
+                    end if
+                end try
+            end repeat
         end if
 
         if targetAccount is missing value then
-            try
-                set targetAccount to first account whose service type is iMessage
-            end try
+            repeat with candidate in accounts
+                try
+                    set candidateService to service type of candidate as string
+                    if candidateService is "iMessage" then
+                        set targetAccount to candidate
+                        exit repeat
+                    end if
+                end try
+            end repeat
         end if
 
         if targetAccount is missing value then
