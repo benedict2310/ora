@@ -82,6 +82,11 @@ actor ToolRegistry {
         register(MessagesSendTool())
         register(MessagesOpenChatTool())
 
+        // Mail tools
+        register(MailCreateDraftTool())
+        register(MailSendTool())
+        register(MailOpenDraftTool())
+
         // System tools
         register(SystemOpenAppTool())
         register(SystemOpenURLTool())
