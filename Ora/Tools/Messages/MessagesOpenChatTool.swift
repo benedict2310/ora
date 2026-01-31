@@ -49,11 +49,12 @@ struct MessagesOpenChatTool: Tool {
         )
 
         let script = MessagesAppleScript.openChatScript(handle: handle, service: serviceHint)
+        let arguments = [handle, serviceHint ?? ""]
 
         let result: AppleScriptResult
         do {
             result = try await ExternalFocusTracker.shared.withExternalOperation {
-                try await runner.execute(script: script, config: .json())
+                try await runner.execute(script: script, arguments: arguments, config: .json())
             }
         } catch let error as AppleScriptError {
             let details = MessagesToolError.safeLogDetails(from: error)

@@ -55,10 +55,11 @@ struct MessagesSendTool: Tool {
         )
 
         let script = MessagesAppleScript.sendMessageScript(handle: handle, message: message, service: serviceHint)
+        let arguments = [handle, message, serviceHint ?? ""]
 
         let result: AppleScriptResult
         do {
-            result = try await runner.execute(script: script, config: .json())
+            result = try await runner.execute(script: script, arguments: arguments, config: .json())
         } catch let error as AppleScriptError {
             let details = MessagesToolError.safeLogDetails(from: error)
             let message = MessagesToolError.sanitizedMessage(from: error)

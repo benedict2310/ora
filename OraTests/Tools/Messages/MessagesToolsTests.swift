@@ -84,8 +84,11 @@ final class MessagesToolsTests: XCTestCase {
         }
 
         let script = await runner.lastScript
-        XCTAssertTrue(script?.contains("set targetHandle to \"a@example.com\"") ?? false)
+        XCTAssertTrue(script?.contains("on run argv") ?? false)
         XCTAssertTrue(script?.contains("send messageText to targetParticipant") ?? false)
+
+        let args = await runner.lastArguments
+        XCTAssertEqual(args ?? [], ["a@example.com", "Hello", ""])
 
         let config = await runner.lastConfig
         XCTAssertTrue(config?.expectsJSON ?? false)
@@ -114,8 +117,11 @@ final class MessagesToolsTests: XCTestCase {
         }
 
         let script = await runner.lastScript
-        XCTAssertTrue(script?.contains("set targetHandle to \"+15551234567\"") ?? false)
+        XCTAssertTrue(script?.contains("on run argv") ?? false)
         XCTAssertTrue(script?.contains("make new chat") ?? false)
+
+        let args = await runner.lastArguments
+        XCTAssertEqual(args ?? [], ["+15551234567", "SMS"])
     }
 
     func test_parseEnvelope_mapsPermissionDenied() {
@@ -145,6 +151,7 @@ final class MessagesToolsTests: XCTestCase {
 actor MessagesMockAppleScriptRunner: AppleScriptRunning {
     private(set) var lastScript: String?
     private(set) var lastConfig: AppleScriptConfig?
+    private(set) var lastArguments: [String]?
 
     private let result: Result<AppleScriptResult, Error>
 
@@ -155,6 +162,14 @@ actor MessagesMockAppleScriptRunner: AppleScriptRunning {
     func execute(script: String, config: AppleScriptConfig) async throws -> AppleScriptResult {
         self.lastScript = script
         self.lastConfig = config
+        self.lastArguments = nil
+        return try result.get()
+    }
+
+    func execute(script: String, arguments: [String], config: AppleScriptConfig) async throws -> AppleScriptResult {
+        self.lastScript = script
+        self.lastConfig = config
+        self.lastArguments = arguments
         return try result.get()
     }
 }
