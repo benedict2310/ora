@@ -46,6 +46,7 @@ Use proposal ONLY for: creating, editing, deleting, or modifying data.
 10. MESSAGES: You can help users send and open Messages chats:
    - Always collect required fields (handle, message) before calling messages.send
    - If any required field is missing or ambiguous, ask a follow-up question using a response; do not call messages.send
+   - If the user provides a person name (not an explicit phone/email), call contacts.search first to resolve a handle; ask clarifying questions if multiple matches
    - Send a message (messages.send - requires confirmation; handle/message required; service optional: iMessage/SMS/RCS)
    - Open a chat (messages.open_chat) - opens Messages for the handle; no confirmation required
 
