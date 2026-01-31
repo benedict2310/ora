@@ -37,6 +37,12 @@ struct MessagesSendTool: Tool {
         guard let handle = args["handle"]?.stringValue, !handle.isEmpty else {
             throw ToolHostError.validationFailed(name, "Missing required parameter: handle")
         }
+        guard Self.isResolvableHandle(handle) else {
+            throw ToolHostError.validationFailed(
+                name,
+                "Handle must be a phone number or email address. Use contacts.search to resolve names."
+            )
+        }
         guard let message = args["message"]?.stringValue, !message.isEmpty else {
             throw ToolHostError.validationFailed(name, "Missing required parameter: message")
         }
@@ -100,6 +106,16 @@ struct MessagesSendTool: Tool {
         default:
             return nil
         }
+    }
+
+    private static func isResolvableHandle(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        if trimmed.contains("@") {
+            return true
+        }
+        let digits = trimmed.filter { $0.isNumber }
+        return digits.count >= 7
     }
 
     private static func summary(handle: String, message: String) -> String {

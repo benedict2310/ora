@@ -54,9 +54,28 @@ final class MessagesToolsTests: XCTestCase {
         }
     }
 
+    func test_sendTool_validate_rejectsNameHandle() {
+        let tool = MessagesSendTool()
+        XCTAssertThrowsError(try tool.validate(args: [
+            "handle": .string("Alice Johnson"),
+            "message": .string("Hi")
+        ])) { error in
+            XCTAssertTrue(error is ToolHostError)
+        }
+    }
+
     func test_openChatTool_validate_requiresHandle() {
         let tool = MessagesOpenChatTool()
         XCTAssertThrowsError(try tool.validate(args: [:])) { error in
+            XCTAssertTrue(error is ToolHostError)
+        }
+    }
+
+    func test_openChatTool_validate_rejectsNameHandle() {
+        let tool = MessagesOpenChatTool()
+        XCTAssertThrowsError(try tool.validate(args: [
+            "handle": .string("Alice Johnson")
+        ])) { error in
             XCTAssertTrue(error is ToolHostError)
         }
     }
