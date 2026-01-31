@@ -14,11 +14,11 @@ enum MessagesAppleScript {
     on json_escape(theText)
         if theText is missing value then return ""
         set theText to theText as string
-        set theText to my replace_chars(theText, "\\", "\\\\")
-        set theText to my replace_chars(theText, "\\\"", "\\\\\"")
-        set theText to my replace_chars(theText, return, "\\n")
-        set theText to my replace_chars(theText, linefeed, "\\n")
-        set theText to my replace_chars(theText, tab, "\\t")
+        set theText to my replace_chars(theText, "\\\\", "\\\\\\\\")
+        set theText to my replace_chars(theText, "\\\"", "\\\\\\\"")
+        set theText to my replace_chars(theText, return, "\\\\n")
+        set theText to my replace_chars(theText, linefeed, "\\\\n")
+        set theText to my replace_chars(theText, tab, "\\\\t")
         return theText
     end json_escape
 
