@@ -39,7 +39,7 @@ enum MessagesAppleScript {
             set targetHandle to item 1 of argv
             set messageText to item 2 of argv
             set serviceHint to ""
-            if (count of argv) >= 3 then
+            if (count of argv) is greater than or equal to 3 then
                 set serviceHint to item 3 of argv
             end if
 
@@ -103,7 +103,7 @@ enum MessagesAppleScript {
         on run argv
             set targetHandle to item 1 of argv
             set serviceHint to ""
-            if (count of argv) >= 2 then
+            if (count of argv) is greater than or equal to 2 then
                 set serviceHint to item 2 of argv
             end if
 

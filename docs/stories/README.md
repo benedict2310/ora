@@ -179,6 +179,20 @@ Cloud LLM provider support (Anthropic, OpenAI) with secure credential management
 | C.04 | [OpenAI Provider](integrations/C.04-OPENAI-PROVIDER.md) | 🚧 To Do |
 | C.05 | [Provider Preferences UI](integrations/C.05-PROVIDER-PREFERENCES-UI.md) | 🚧 To Do |
 
+### 📦 Background Tasks (BG)
+Safe background task execution with containerized isolation (HTTP fetch + parsing).
+
+| ID | Title | Status |
+|:---|:------|:-------|
+| BG.00 | [Background Tasks Overview](container-execution/BG.00-BACKGROUND-TASKS-OVERVIEW.md) | 🚧 To Do |
+| BG.01 | [Task Queue](container-execution/BG.01-TASK-QUEUE.md) | 🚧 To Do |
+| BG.02 | [Worker Abstraction](container-execution/BG.02-WORKER-ABSTRACTION.md) | 🚧 To Do |
+| BG.03 | [Network Safety Policy](container-execution/BG.03-NETWORK-SAFETY.md) | 🚧 To Do |
+| BG.04 | [Artifact Persistence](container-execution/BG.04-ARTIFACT-PERSISTENCE.md) | 🚧 To Do |
+| BG.05 | [Summary Generation](container-execution/BG.05-SUMMARY-GENERATION.md) | 🚧 To Do |
+| BG.06 | [Local Notifications](container-execution/BG.06-NOTIFICATIONS.md) | 🚧 To Do |
+| BG.07 | [Context Loading](container-execution/BG.07-CONTEXT-LOADING.md) | 🚧 To Do |
+
 ---
 
 ## Implementation Order

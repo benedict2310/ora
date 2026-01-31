@@ -202,19 +202,19 @@ BackgroundTaskManager.enqueue(task)
 - URLSession configured with 30s per-request timeout; total task timeout 120s
 - Response body limited to 5MB via `URLSessionDataDelegate` byte counting
 - Ephemeral session: no disk cache, no cookies (privacy)
-- HTML extraction should complete in <1s for typical web pages
+- HTML extraction should complete in under 1 second for typical web pages
 - Memory: peak usage during fetch is bounded by response size limit (5MB)
 
 ## 9. Risks & Mitigations
 
-- **SwiftSoup dependency size** — SwiftSoup is pure Swift (~200KB); acceptable. Alternative: use `NSAttributedString(html:)` but it's MainActor-bound and less reliable
+- **SwiftSoup dependency size** — SwiftSoup is pure Swift (~200KB); acceptable. Alternative: use NSAttributedString HTML init but it's MainActor-bound and less reliable
 - **Redirect loops** — URLSession's default redirect limit (20) is sufficient; additionally cap total redirects at 5
-- **Encoding issues** — Use `String.Encoding` detection from HTTP headers; fall back to UTF-8
+- **Encoding issues** — Detect encoding from HTTP Content-Type header; fall back to UTF-8
 - **Memory spike on large HTML** — Stream response body; abort if size limit exceeded before full download
 
 ## 10. Open Questions
 
-- Should we support following links within a page (crawling depth > 1)? (Proposed: no for v1)
+- Should we support following links within a page (crawling depth beyond 1)? (Proposed: no for v1)
 - Should we cache fetched content for re-use across tasks? (Proposed: no — ephemeral is simpler and more private)
 - Which HTML parser to use? (Proposed: SwiftSoup — needs project owner approval for new dependency)
 
