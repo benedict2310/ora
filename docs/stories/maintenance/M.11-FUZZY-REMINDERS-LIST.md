@@ -109,7 +109,7 @@ As a user, I want Ora to find my reminders list even when I say the name slightl
 
 **Date:** 2026-02-01  
 **Branch:** `feat/m11-fuzzy-reminders-list`  
-**Commits:** 4
+**Commits:** 5
 
 ### Files Changed
 - `Ora/Tools/Reminders/RemindersStoreProvider.swift` - add fuzzy fallback for list lookup with 0.85 threshold
@@ -128,11 +128,11 @@ As a user, I want Ora to find my reminders list even when I say the name slightl
 
 **Reviewer:** Codex Subagent
 **Date:** 2026-02-01T12:28:00Z
-**Commit reviewed:** 518a0e3
+**Commit reviewed:** aea567c
 **Iteration:** 1
 
 ### Summary
-- Files reviewed: 6
+- Files reviewed: 8
 - Build status: Pass
 
 ### Issues Found
