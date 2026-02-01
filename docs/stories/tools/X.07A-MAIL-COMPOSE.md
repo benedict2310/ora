@@ -133,6 +133,11 @@ As a user, I want to draft and send emails by voice so that I can process commun
 - [x] Merged to main: e16af4f
 - [x] Date: 2026-02-01
 
+## Post-Merge Fix
+- **Bug:** `mail.create_draft` required subject and body, causing validation error when LLM creates draft with only a recipient.
+- **Fix:** Made subject and body optional for `mail.create_draft` (only `to` required). `mail.send` still requires all three.
+- **Updated:** system prompt to clarify which fields are required per tool.
+
 ---
 
 ## Code Review Findings
