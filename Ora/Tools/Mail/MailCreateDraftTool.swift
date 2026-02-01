@@ -25,13 +25,13 @@ struct MailCreateDraftTool: Tool {
             description: "Create a draft email in Apple Mail. Requires confirmation.",
             parameters: [
                 "to": ParameterSchema(type: "string", description: "Comma-separated recipient email addresses"),
-                "subject": ParameterSchema(type: "string", description: "Email subject line"),
-                "body": ParameterSchema(type: "string", description: "Email body text"),
+                "subject": ParameterSchema(type: "string", description: "Email subject line (optional)"),
+                "body": ParameterSchema(type: "string", description: "Email body text (optional)"),
                 "cc": ParameterSchema(type: "string", description: "Comma-separated CC email addresses (optional)"),
                 "bcc": ParameterSchema(type: "string", description: "Comma-separated BCC email addresses (optional)"),
                 "account": ParameterSchema(type: "string", description: "Mail account name to send from (optional)")
             ],
-            requiredParameters: ["to", "subject", "body"],
+            requiredParameters: ["to"],
             requiresConfirmation: true
         )
     }
@@ -40,15 +40,7 @@ struct MailCreateDraftTool: Tool {
         guard let to = args["to"]?.stringValue, !to.isEmpty else {
             throw ToolHostError.validationFailed(name, "Missing required parameter: to")
         }
-        guard let subject = args["subject"]?.stringValue, !subject.isEmpty else {
-            throw ToolHostError.validationFailed(name, "Missing required parameter: subject")
-        }
-        guard let body = args["body"]?.stringValue, !body.isEmpty else {
-            throw ToolHostError.validationFailed(name, "Missing required parameter: body")
-        }
         _ = to
-        _ = subject
-        _ = body
     }
 
     func execute(args: [String: JSONValue]) async throws -> ToolResult {
@@ -88,7 +80,12 @@ struct MailCreateDraftTool: Tool {
         }
 
         let draftSubject = dict["subject"]?.stringValue ?? subject
-        let summary = "Created draft: '\(draftSubject)'."
+        let summary: String
+        if draftSubject.isEmpty {
+            summary = "Created draft to \(to)."
+        } else {
+            summary = "Created draft: '\(draftSubject)'."
+        }
         Self.logger.info("Created mail draft subject length: \(subject.count, privacy: .public)")
         return .success(.object(dict), summary: summary)
     }
