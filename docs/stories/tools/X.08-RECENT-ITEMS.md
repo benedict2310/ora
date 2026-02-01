@@ -94,25 +94,25 @@ As a user, I want to ask "show me my recent emails" or "what are my latest notes
 
 ## 6. Acceptance Criteria
 
-- [ ] AC-1: `mail.recent` returns message headers (subject, from, date, mailbox, message_id) but NOT body.
-- [ ] AC-2: `mail.recent` accepts optional `mailbox`, `account`, and `limit` parameters; all parameters are optional.
-- [ ] AC-3: `mail.recent` defaults to 10 results, caps at 50.
-- [ ] AC-4: `notes.recent` returns note_id, title, folder, and modification_date.
-- [ ] AC-5: `notes.recent` accepts optional `folder`, `account`, and `limit` parameters; all parameters are optional.
-- [ ] AC-6: `notes.recent` defaults to 10 results, caps at 50.
-- [ ] AC-7: Both tools are registered in `ToolRegistry`.
-- [ ] AC-8: System prompt updated with usage instructions for both tools.
-- [ ] AC-9: Unit tests cover both tools with mocked AppleScript execution.
-- [ ] AC-10: Neither tool returns full content/body (privacy constraint).
+- [x] AC-1: `mail.recent` returns message headers (subject, from, date, mailbox, message_id) but NOT body.
+- [x] AC-2: `mail.recent` accepts optional `mailbox`, `account`, and `limit` parameters; all parameters are optional.
+- [x] AC-3: `mail.recent` defaults to 10 results, caps at 50.
+- [x] AC-4: `notes.recent` returns note_id, title, folder, and modification_date.
+- [x] AC-5: `notes.recent` accepts optional `folder`, `account`, and `limit` parameters; all parameters are optional.
+- [x] AC-6: `notes.recent` defaults to 10 results, caps at 50.
+- [x] AC-7: Both tools are registered in `ToolRegistry`.
+- [x] AC-8: System prompt updated with usage instructions for both tools.
+- [x] AC-9: Unit tests cover both tools with mocked AppleScript execution.
+- [x] AC-10: Neither tool returns full content/body (privacy constraint).
 
 ## 7. Verification Plan
 
 ### Automated Tests
 
-- [ ] Unit tests for `mail.recent` schema, validation, execution with mock runner.
-- [ ] Unit tests for `notes.recent` schema, validation, execution with mock runner.
-- [ ] Unit tests for limit clamping, default values, and filter forwarding.
-- [ ] Registry tests confirm both tools are present.
+- [x] Unit tests for `mail.recent` schema, validation, execution with mock runner.
+- [x] Unit tests for `notes.recent` schema, validation, execution with mock runner.
+- [x] Unit tests for limit clamping, default values, and filter forwarding.
+- [x] Registry tests confirm both tools are present.
 
 ### Manual Tests
 
@@ -147,8 +147,27 @@ As a user, I want to ask "show me my recent emails" or "what are my latest notes
 
 ## Code Review Findings
 
-(TBD by review agent.)
+**Reviewer:** Codex Subagent
+**Date:** 2026-02-01T21:38:00+01:00
+**Commit reviewed:** 419865e
+**Iteration:** 1
 
-## Completion Status
+### Summary
+- Files reviewed: 13
+- Build status: Pass
 
-(TBD after merge.)
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- None
+
+#### P1 - Major (Should fix)
+- None
+
+#### P2 - Minor (Can defer)
+- None
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
