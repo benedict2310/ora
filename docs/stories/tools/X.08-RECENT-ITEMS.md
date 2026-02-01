@@ -143,7 +143,26 @@ As a user, I want to ask "show me my recent emails" or "what are my latest notes
 
 ## Implementation Summary
 
-(TBD after implementation.)
+**Date:** 2026-02-01
+**Branch:** `feat/X.08-recent-items`
+**Commits:** 6
+**Implemented by:** codex (complexity score: 8/10)
+**Reviewed by:** pi (1 iteration)
+
+### Files Created
+- `Ora/Tools/Mail/MailRecentTool.swift` — `mail.recent` tool (headers only, limit clamping, optional mailbox/account filters)
+- `Ora/Tools/Notes/NotesRecentTool.swift` — `notes.recent` tool (title/folder/modification_date only, limit clamping, optional folder/account filters)
+- `OraTests/Tools/Mail/MailRecentToolTests.swift` — 8 test cases for mail.recent
+- `OraTests/Tools/Notes/NotesRecentToolTests.swift` — 8 test cases for notes.recent
+
+### Files Modified
+- `Ora/Tools/Notes/NotesAppleScript.swift` — Added `recentNotesScript(folder:account:limit:)` builder
+- `Ora/Tools/ToolRegistry.swift` — Registered `MailRecentTool` and `NotesRecentTool`
+- `Ora/Resources/system-prompt.txt` — Added usage instructions for both tools
+- `OraTests/Tools/Calendar/CalendarToolsTests.swift` — Updated tool count expectations (35→37)
+- `OraTests/Tools/Mail/MailComposeToolsTests.swift` — Added mail.recent registry assertion
+- `OraTests/Tools/Notes/NotesToolsTests.swift` — Added notes.recent schema + registry tests
+- `OraTests/Tools/Reminders/RemindersToolsTests.swift` — Updated tool count expectations (35→37)
 
 ## Code Review Findings
 
