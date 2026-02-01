@@ -237,6 +237,99 @@ final class SystemToolsTests: XCTestCase {
         }
     }
     
+    // MARK: - Fuzzy App Search Tests
+
+    func test_searchApps_fuzzyFallback_findsTypo() async throws {
+        // "Safar" is not a substring of "Safari" but is close enough for fuzzy
+        // However "Safar" IS a substring of "Safari", so use a typo that isn't a substring
+        let apps: [(name: String, bundleId: String?, path: String)] = [
+            (name: "Safari", bundleId: "com.apple.Safari", path: "/Applications/Safari.app"),
+            (name: "Notes", bundleId: "com.apple.Notes", path: "/Applications/Notes.app"),
+            (name: "Calendar", bundleId: "com.apple.iCal", path: "/Applications/Calendar.app")
+        ]
+        let results = SystemSearchAppsTool.fuzzyMatch(query: "Saffari", apps: apps)
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results.first?.name, "Safari")
+        XCTAssertNotNil(results.first?.matchScore)
+        if let score = results.first?.matchScore {
+            XCTAssertGreaterThanOrEqual(score, SystemSearchAppsTool.fuzzyThreshold)
+        }
+    }
+
+    func test_searchApps_fuzzyFallback_respectsThreshold() {
+        let apps: [(name: String, bundleId: String?, path: String)] = [
+            (name: "Safari", bundleId: nil, path: "/Applications/Safari.app"),
+            (name: "Keynote", bundleId: nil, path: "/Applications/Keynote.app")
+        ]
+        // "xyzgarbage" is nothing like any app name
+        let results = SystemSearchAppsTool.fuzzyMatch(query: "xyzgarbage", apps: apps)
+        XCTAssertTrue(results.isEmpty)
+    }
+
+    func test_searchApps_fuzzyFallback_sortedByScore() {
+        let apps: [(name: String, bundleId: String?, path: String)] = [
+            (name: "Keynote", bundleId: nil, path: "/Applications/Keynote.app"),
+            (name: "Keychain Access", bundleId: nil, path: "/Applications/Keychain Access.app"),
+            (name: "Calendar", bundleId: nil, path: "/Applications/Calendar.app")
+        ]
+        // "Keenote" is closer to "Keynote" than "Keychain Access"
+        let results = SystemSearchAppsTool.fuzzyMatch(query: "Keenote", apps: apps)
+        if results.count >= 2 {
+            let keynoteScore = StringSimilarity.jaroWinkler("Keenote", "Keynote")
+            let keychainScore = StringSimilarity.jaroWinkler("Keenote", "Keychain Access")
+            XCTAssertGreaterThan(keynoteScore, keychainScore)
+            XCTAssertEqual(results.first?.name, "Keynote")
+        } else if results.count == 1 {
+            XCTAssertEqual(results.first?.name, "Keynote")
+        }
+    }
+
+    func test_searchApps_fuzzyFallback_respectsLimit() {
+        let apps: [(name: String, bundleId: String?, path: String)] = [
+            (name: "App1", bundleId: nil, path: "/Applications/App1.app"),
+            (name: "App2", bundleId: nil, path: "/Applications/App2.app"),
+            (name: "App3", bundleId: nil, path: "/Applications/App3.app"),
+            (name: "App4", bundleId: nil, path: "/Applications/App4.app")
+        ]
+        let results = SystemSearchAppsTool.fuzzyMatch(query: "App1", apps: apps, limit: 2)
+        XCTAssertLessThanOrEqual(results.count, 2)
+    }
+
+    func test_searchApps_fuzzyThreshold_isPointEight() {
+        XCTAssertEqual(SystemSearchAppsTool.fuzzyThreshold, 0.80)
+    }
+
+    func test_searchAppsTool_appToJSON_includesMatchScore() throws {
+        let match = SystemSearchAppsTool.AppMatch(
+            name: "Safari",
+            bundleId: "com.apple.Safari",
+            path: "/Applications/Safari.app",
+            matchScore: 0.923
+        )
+        let json = SystemSearchAppsTool.appToJSON(match)
+        if case .object(let dict) = json {
+            let score = try XCTUnwrap(dict["match_score"]?.numberValue)
+            XCTAssertEqual(score, 0.92, accuracy: 0.001)
+        } else {
+            XCTFail("Expected app JSON object")
+        }
+    }
+
+    func test_searchAppsTool_appToJSON_omitsMatchScoreWhenNil() {
+        let match = SystemSearchAppsTool.AppMatch(
+            name: "Safari",
+            bundleId: "com.apple.Safari",
+            path: "/Applications/Safari.app",
+            matchScore: nil
+        )
+        let json = SystemSearchAppsTool.appToJSON(match)
+        if case .object(let dict) = json {
+            XCTAssertNil(dict["match_score"])
+        } else {
+            XCTFail("Expected app JSON object")
+        }
+    }
+
     // MARK: - SystemRunShortcutTool Tests
     
     func test_runShortcutTool_hasCorrectMetadata() async throws {

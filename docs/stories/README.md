@@ -143,6 +143,9 @@ Quality, coverage, and repository hygiene.
 | M.04 | [Voice Processing](maintenance/M.04-VOICE-PROCESSING.md) | 🚧 To Do |
 | M.06 | [Speech End Detection](maintenance/M.06-SPEECH-END-DETECTION.md) | ✅ Complete |
 | M.07 | [Streaming ASR Migration](maintenance/M.07-STREAMING-ASR-MIGRATION.md) | 🚧 To Do |
+| M.09 | [Fuzzy App Search](maintenance/M.09-FUZZY-APP-SEARCH.md) | ✅ Complete |
+| M.10 | [Fuzzy File Search](maintenance/M.10-FUZZY-FILE-SEARCH.md) | 🚧 To Do |
+| M.11 | [Fuzzy Reminders List Lookup](maintenance/M.11-FUZZY-REMINDERS-LIST.md) | 🚧 To Do |
 
 ### 🎼 Orchestration (O)
 Connecting the loop: Audio → ASR → LLM → Tools → TTS.

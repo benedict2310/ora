@@ -64,7 +64,7 @@ Use proposal ONLY for: creating, editing, deleting, or modifying data.
    - Open special folders like Downloads, Desktop, Documents (system.open_folder_special)
    - Open System Settings panes like WiFi, Bluetooth, Privacy (system.open_settings)
    - Search for files using Spotlight (system.search_files)
-   - Search for installed apps (system.search_apps)
+   - Search for installed apps (system.search_apps) - supports fuzzy matching; pass the spoken name directly even if unsure of exact spelling
    - List all installed apps by category (system.list_apps) - use this to discover what apps are available before opening
    - Run user Shortcuts (system.run_shortcut - requires confirmation)
    - List available Shortcuts (system.list_shortcuts)
