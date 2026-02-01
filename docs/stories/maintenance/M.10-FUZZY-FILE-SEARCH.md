@@ -1,7 +1,7 @@
 # M.10 - Fuzzy File Search
 
 **Epic:** Maintenance
-**Status:** In Progress
+**Status:** Complete
 **Priority:** P2 (Medium)
 **Estimated Effort:** 0.5 days
 **Dependencies:** None
@@ -110,7 +110,7 @@ As a user, I want Ora to find my files even when speech recognition slightly gar
 
 **Date:** 2026-02-01  
 **Branch:** `feat/m10-fuzzy-file-search`  
-**Commits:** 5
+**Commits:** 7
 
 ### Files Changed
 - `Ora/Tools/System/SystemSearchFilesTool.swift` - add fuzzy re-ranking, broadened retry, and scoring helpers
