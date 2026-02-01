@@ -62,6 +62,7 @@ run_tests() {
   local test_scheme="$1"
   shift
   local extra_args=("$@")
+  local skip_prompts="${ORA_SKIP_PERMISSION_PROMPTS:-1}"
   
   check_xcodegen
   generate_project
@@ -73,7 +74,7 @@ run_tests() {
   echo -e "${BLUE}Running tests (${test_scheme})...${NC}"
   
   set +e
-  xcodebuild \
+  ORA_SKIP_PERMISSION_PROMPTS="$skip_prompts" xcodebuild \
     -project Ora.xcodeproj \
     -scheme "$test_scheme" \
     -derivedDataPath build \

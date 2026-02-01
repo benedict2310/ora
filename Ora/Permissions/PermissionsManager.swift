@@ -26,6 +26,7 @@ actor PermissionsManager {
     private let logger = Logger(subsystem: "com.ora.app", category: "PermissionsManager")
     private let client: PermissionsClient
     private var _state = PermissionsState()
+    private static let skipPromptEnvKey = "ORA_SKIP_PERMISSION_PROMPTS"
 
     /// Current permission state
     var state: PermissionsState {
@@ -70,7 +71,17 @@ actor PermissionsManager {
     func request(_ type: PermissionType) async -> PermissionStatus {
         logger.info("Requesting permission: \(type.rawValue)")
 
-        let shouldTrackPrompt = client.checkStatus(for: type) == .notDetermined
+        let currentStatus = client.checkStatus(for: type)
+        if currentStatus == .notDetermined,
+           Self.shouldSkipPermissionPrompts,
+           client is LivePermissionsClient {
+            logger.info("Skipping permission prompt for \(type.rawValue) during tests")
+            _state[type] = .notDetermined
+            await postStateChange()
+            return .notDetermined
+        }
+
+        let shouldTrackPrompt = currentStatus == .notDetermined
         if shouldTrackPrompt {
             await PermissionPromptTracker.shared.beginPrompt(for: type)
         }
@@ -115,5 +126,16 @@ actor PermissionsManager {
                 object: currentState
             )
         }
+    }
+
+    private static var shouldSkipPermissionPrompts: Bool {
+        let env = ProcessInfo.processInfo.environment
+        if let override = env[skipPromptEnvKey]?.lowercased() {
+            return override == "1" || override == "true"
+        }
+        if env["XCTestConfigurationFilePath"] != nil {
+            return true
+        }
+        return NSClassFromString("XCTest") != nil
     }
 }

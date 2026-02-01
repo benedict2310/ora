@@ -22,6 +22,11 @@ struct MicrophonePermission: Sendable {
     static func request() async -> PermissionStatus {
         let currentStatus = checkStatus()
 
+        if currentStatus == .notDetermined, shouldSkipPermissionPrompts {
+            logger.info("Skipping microphone permission prompt during tests")
+            return .notDetermined
+        }
+
         guard currentStatus == .notDetermined else {
             logger.debug("Microphone permission already determined: \(String(describing: currentStatus))")
             return currentStatus
@@ -42,5 +47,16 @@ struct MicrophonePermission: Sendable {
         case .restricted: return .restricted
         @unknown default: return .unknown
         }
+    }
+
+    private static var shouldSkipPermissionPrompts: Bool {
+        let env = ProcessInfo.processInfo.environment
+        if let override = env["ORA_SKIP_PERMISSION_PROMPTS"]?.lowercased() {
+            return override == "1" || override == "true"
+        }
+        if env["XCTestConfigurationFilePath"] != nil {
+            return true
+        }
+        return NSClassFromString("XCTest") != nil
     }
 }
