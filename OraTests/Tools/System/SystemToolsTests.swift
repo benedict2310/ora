@@ -250,6 +250,10 @@ final class SystemToolsTests: XCTestCase {
         let results = SystemSearchAppsTool.fuzzyMatch(query: "Saffari", apps: apps)
         XCTAssertEqual(results.count, 1)
         XCTAssertEqual(results.first?.name, "Safari")
+        XCTAssertNotNil(results.first?.matchScore)
+        if let score = results.first?.matchScore {
+            XCTAssertGreaterThanOrEqual(score, SystemSearchAppsTool.fuzzyThreshold)
+        }
     }
 
     func test_searchApps_fuzzyFallback_respectsThreshold() {
@@ -293,6 +297,37 @@ final class SystemToolsTests: XCTestCase {
 
     func test_searchApps_fuzzyThreshold_isPointEight() {
         XCTAssertEqual(SystemSearchAppsTool.fuzzyThreshold, 0.80)
+    }
+
+    func test_searchAppsTool_appToJSON_includesMatchScore() throws {
+        let match = SystemSearchAppsTool.AppMatch(
+            name: "Safari",
+            bundleId: "com.apple.Safari",
+            path: "/Applications/Safari.app",
+            matchScore: 0.923
+        )
+        let json = SystemSearchAppsTool.appToJSON(match)
+        if case .object(let dict) = json {
+            let score = try XCTUnwrap(dict["match_score"]?.numberValue)
+            XCTAssertEqual(score, 0.92, accuracy: 0.001)
+        } else {
+            XCTFail("Expected app JSON object")
+        }
+    }
+
+    func test_searchAppsTool_appToJSON_omitsMatchScoreWhenNil() {
+        let match = SystemSearchAppsTool.AppMatch(
+            name: "Safari",
+            bundleId: "com.apple.Safari",
+            path: "/Applications/Safari.app",
+            matchScore: nil
+        )
+        let json = SystemSearchAppsTool.appToJSON(match)
+        if case .object(let dict) = json {
+            XCTAssertNil(dict["match_score"])
+        } else {
+            XCTFail("Expected app JSON object")
+        }
     }
 
     // MARK: - SystemRunShortcutTool Tests

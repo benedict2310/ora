@@ -101,3 +101,8 @@ docs/review-logs
 # Local agent tools (never commit)
 agent-tools/
 scripts/__pycache__/
+
+# Node artifacts (local tooling)
+node_modules/
+package.json
+package-lock.json

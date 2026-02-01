@@ -10,6 +10,13 @@ import Foundation
 struct SystemSearchAppsTool: Tool {
     let name = "system.search_apps"
     let kind: ToolKind = .read
+
+    struct AppMatch {
+        let name: String
+        let bundleId: String?
+        let path: String
+        let matchScore: Double?
+    }
     
     var schema: ToolSchema {
         ToolSchema(
@@ -38,13 +45,7 @@ struct SystemSearchAppsTool: Tool {
         let limit = Int(args["limit"]?.numberValue ?? 5)
         let results = searchApps(query: query, limit: limit)
         
-        let resultArray = results.map { app in
-            JSONValue.object([
-                "name": .string(app.name),
-                "bundle_id": .string(app.bundleId ?? ""),
-                "path": .string(app.path)
-            ])
-        }
+        let resultArray = results.map { Self.appToJSON($0) }
         
         let summary = results.isEmpty 
             ? "No apps found matching '\(query)'."
@@ -59,14 +60,18 @@ struct SystemSearchAppsTool: Tool {
     /// Minimum Jaro-Winkler score for fuzzy app name matching.
     static let fuzzyThreshold: Double = 0.80
 
-    private func searchApps(query: String, limit: Int) -> [(name: String, bundleId: String?, path: String)] {
+    typealias AppInfo = (name: String, bundleId: String?, path: String)
+
+    private func searchApps(query: String, limit: Int) -> [AppMatch] {
         let allApps = discoverApps()
         let lowercaseQuery = query.lowercased()
 
         // Primary path: substring contains (fast, exact)
         let substringResults = allApps.filter { $0.name.lowercased().contains(lowercaseQuery) }
         if !substringResults.isEmpty {
-            return Array(substringResults.prefix(limit))
+            return substringResults
+                .prefix(limit)
+                .map { AppMatch(name: $0.name, bundleId: $0.bundleId, path: $0.path, matchScore: nil) }
         }
 
         // Fallback: Jaro-Winkler fuzzy matching
@@ -74,7 +79,7 @@ struct SystemSearchAppsTool: Tool {
     }
 
     /// Scan standard app directories and return all discovered .app bundles.
-    private func discoverApps() -> [(name: String, bundleId: String?, path: String)] {
+    private func discoverApps() -> [AppInfo] {
         let searchPaths = [
             "/Applications",
             "/System/Applications",
@@ -82,7 +87,7 @@ struct SystemSearchAppsTool: Tool {
             NSHomeDirectory() + "/Applications"
         ]
 
-        var apps: [(name: String, bundleId: String?, path: String)] = []
+        var apps: [AppInfo] = []
 
         for basePath in searchPaths {
             guard let contents = try? FileManager.default.contentsOfDirectory(atPath: basePath) else {
@@ -103,23 +108,37 @@ struct SystemSearchAppsTool: Tool {
     /// Score all apps against the query using Jaro-Winkler and return the best matches.
     static func fuzzyMatch(
         query: String,
-        apps: [(name: String, bundleId: String?, path: String)],
+        apps: [AppInfo],
         threshold: Double = fuzzyThreshold,
         limit: Int = 5
-    ) -> [(name: String, bundleId: String?, path: String)] {
+    ) -> [AppMatch] {
         apps
             .map { app in (app: app, score: StringSimilarity.jaroWinkler(query, app.name)) }
             .filter { $0.score >= threshold }
             .sorted { $0.score > $1.score }
             .prefix(limit)
-            .map { $0.app }
+            .map { AppMatch(name: $0.app.name, bundleId: $0.app.bundleId, path: $0.app.path, matchScore: $0.score) }
     }
 
     private func fuzzyMatch(
         query: String,
-        apps: [(name: String, bundleId: String?, path: String)],
+        apps: [AppInfo],
         limit: Int
-    ) -> [(name: String, bundleId: String?, path: String)] {
+    ) -> [AppMatch] {
         Self.fuzzyMatch(query: query, apps: apps, limit: limit)
+    }
+
+    static func appToJSON(_ match: AppMatch) -> JSONValue {
+        var dict: [String: JSONValue] = [
+            "name": .string(match.name),
+            "bundle_id": .string(match.bundleId ?? ""),
+            "path": .string(match.path)
+        ]
+
+        if let score = match.matchScore {
+            dict["match_score"] = .number(Double(Int(score * 100)) / 100.0)
+        }
+
+        return .object(dict)
     }
 }
