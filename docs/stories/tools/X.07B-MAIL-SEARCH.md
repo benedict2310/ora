@@ -82,25 +82,25 @@ As a user, I want to find specific emails and open them so I can read them mysel
 
 ## 6. Acceptance Criteria
 
-- [ ] AC-1: `mail.search` returns headers (Subject, From, Date, Mailbox) but NOT body.
-- [ ] AC-2: `mail.search` returns a stable message ID for opening.
-- [ ] AC-3: `mail.open_message` brings the message window to front.
-- [ ] AC-4: `mail.list_mailboxes` returns valid mailbox names.
-- [ ] AC-5: When exact/substring search returns results, fuzzy scoring does not run.
-- [ ] AC-6: When exact search returns no results, fuzzy fallback scores subject/sender using `StringSimilarity.jaroWinkler()` with threshold 0.80.
-- [ ] AC-7: Fuzzy results are sorted by descending score and include `match_score` in metadata.
-- [ ] AC-8: All three tools are registered in `ToolRegistry`.
-- [ ] AC-9: System prompt updated with mail search rules.
-- [ ] AC-10: Unit tests cover both exact and fuzzy search paths.
+- [x] AC-1: `mail.search` returns headers (Subject, From, Date, Mailbox) but NOT body.
+- [x] AC-2: `mail.search` returns a stable message ID for opening.
+- [x] AC-3: `mail.open_message` brings the message window to front.
+- [x] AC-4: `mail.list_mailboxes` returns valid mailbox names.
+- [x] AC-5: When exact/substring search returns results, fuzzy scoring does not run.
+- [x] AC-6: When exact search returns no results, fuzzy fallback scores subject/sender using `StringSimilarity.jaroWinkler()` with threshold 0.80.
+- [x] AC-7: Fuzzy results are sorted by descending score and include `match_score` in metadata.
+- [x] AC-8: All three tools are registered in `ToolRegistry`.
+- [x] AC-9: System prompt updated with mail search rules.
+- [x] AC-10: Unit tests cover both exact and fuzzy search paths.
 
 ## 7. Verification Plan
 
 ### Automated Tests
 
-- [ ] Unit tests for search result schema (ensure no body).
-- [ ] Unit tests for fuzzy fallback path (typo scenarios).
-- [ ] Unit tests for threshold filtering and score ordering.
-- [ ] Unit tests for mailbox listing and message opening.
+- [x] Unit tests for search result schema (ensure no body).
+- [x] Unit tests for fuzzy fallback path (typo scenarios).
+- [x] Unit tests for threshold filtering and score ordering.
+- [x] Unit tests for mailbox listing and message opening.
 
 ### Manual Tests
 
@@ -129,12 +129,38 @@ As a user, I want to find specific emails and open them so I can read them mysel
 
 ## Implementation Summary
 
-(TBD after implementation.)
+Implemented `mail.search`, `mail.open_message`, and `mail.list_mailboxes` tools using AppleScript. 
+- `mail.search` uses a two-tier pattern: exact/substring search via AppleScript `whose` clauses, falling back to Jaro-Winkler fuzzy matching (0.80 threshold) on recent 100 messages if no exact results found.
+- `mail.open_message` opens the specified message and activates Mail app.
+- `mail.list_mailboxes` allows discovery of available mailboxes.
+- Privacy is maintained by only returning headers (Subject, From, Date, Mailbox, MessageID) and explicitly excluding the message body from tool results.
 
 ## Code Review Findings
 
-(TBD by review agent.)
+**Reviewer:** Codex Subagent
+**Date:** 2026-02-01T15:45:00Z
+**Commit reviewed:** bc79235
+**Iteration:** 1
 
-## Completion Status
+### Summary
+- Files reviewed: 10
+- Build status: Pass (✅ Tests: 1179/1179 passed)
 
-(TBD after merge.)
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- None
+
+#### P1 - Major (Should fix)
+- None
+
+#### P2 - Minor (Can defer)
+- None
+
+### Future Considerations (Out of Scope)
+- Large mailbox performance: While Tier 1 is indexed, Tier 2 (fuzzy fallback) fetches up to 100 recent messages. If those messages have huge headers, there might be a slight delay, but it's well within acceptable limits for a fallback path.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
