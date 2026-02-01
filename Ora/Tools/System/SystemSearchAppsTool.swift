@@ -56,36 +56,70 @@ struct SystemSearchAppsTool: Tool {
         )
     }
     
+    /// Minimum Jaro-Winkler score for fuzzy app name matching.
+    static let fuzzyThreshold: Double = 0.80
+
     private func searchApps(query: String, limit: Int) -> [(name: String, bundleId: String?, path: String)] {
+        let allApps = discoverApps()
+        let lowercaseQuery = query.lowercased()
+
+        // Primary path: substring contains (fast, exact)
+        let substringResults = allApps.filter { $0.name.lowercased().contains(lowercaseQuery) }
+        if !substringResults.isEmpty {
+            return Array(substringResults.prefix(limit))
+        }
+
+        // Fallback: Jaro-Winkler fuzzy matching
+        return fuzzyMatch(query: query, apps: allApps, limit: limit)
+    }
+
+    /// Scan standard app directories and return all discovered .app bundles.
+    private func discoverApps() -> [(name: String, bundleId: String?, path: String)] {
         let searchPaths = [
             "/Applications",
             "/System/Applications",
             "/System/Applications/Utilities",
             NSHomeDirectory() + "/Applications"
         ]
-        
-        var results: [(name: String, bundleId: String?, path: String)] = []
-        let lowercaseQuery = query.lowercased()
-        
+
+        var apps: [(name: String, bundleId: String?, path: String)] = []
+
         for basePath in searchPaths {
             guard let contents = try? FileManager.default.contentsOfDirectory(atPath: basePath) else {
                 continue
             }
-            
+
             for item in contents where item.hasSuffix(".app") {
                 let appName = (item as NSString).deletingPathExtension
-                if appName.lowercased().contains(lowercaseQuery) {
-                    let fullPath = "\(basePath)/\(item)"
-                    let bundleId = Bundle(path: fullPath)?.bundleIdentifier
-                    results.append((name: appName, bundleId: bundleId, path: fullPath))
-                    
-                    if results.count >= limit {
-                        return results
-                    }
-                }
+                let fullPath = "\(basePath)/\(item)"
+                let bundleId = Bundle(path: fullPath)?.bundleIdentifier
+                apps.append((name: appName, bundleId: bundleId, path: fullPath))
             }
         }
-        
-        return results
+
+        return apps
+    }
+
+    /// Score all apps against the query using Jaro-Winkler and return the best matches.
+    static func fuzzyMatch(
+        query: String,
+        apps: [(name: String, bundleId: String?, path: String)],
+        threshold: Double = fuzzyThreshold,
+        limit: Int = 5
+    ) -> [(name: String, bundleId: String?, path: String)] {
+        apps
+            .map { app in (app: app, score: StringSimilarity.jaroWinkler(query, app.name)) }
+            .filter { $0.score >= threshold }
+            .sorted { $0.score > $1.score }
+            .prefix(limit)
+            .map { $0.app }
+    }
+
+    private func fuzzyMatch(
+        query: String,
+        apps: [(name: String, bundleId: String?, path: String)],
+        limit: Int
+    ) -> [(name: String, bundleId: String?, path: String)] {
+        Self.fuzzyMatch(query: query, apps: apps, limit: limit)
     }
 }
