@@ -12,6 +12,7 @@ import os
 enum RemindersStoreProvider {
 
     private static let logger = Logger(subsystem: "com.ora.app", category: "RemindersStoreProvider")
+    static let fuzzyThreshold: Double = 0.85
 
     enum RemindersAccessAction: Equatable {
         case authorized
@@ -71,10 +72,44 @@ enum RemindersStoreProvider {
         }
     }
 
-    /// Find a reminder list by name (case-insensitive)
+    /// Find a reminder list by name with fuzzy fallback.
     static func findReminderList(named name: String) -> EKCalendar? {
         let calendars = shared.calendars(for: .reminder)
-        return calendars.first { $0.title.lowercased() == name.lowercased() }
+        return findReminderList(named: name, in: calendars, allowFuzzy: true)
+    }
+
+    /// Find a reminder list by name using exact case-insensitive matching only.
+    static func findReminderListExact(named name: String) -> EKCalendar? {
+        let calendars = shared.calendars(for: .reminder)
+        return findReminderList(named: name, in: calendars, allowFuzzy: false)
+    }
+
+    /// Find a reminder list by name in a given set of calendars.
+    static func findReminderList(
+        named name: String,
+        in calendars: [EKCalendar],
+        allowFuzzy: Bool
+    ) -> EKCalendar? {
+        let loweredName = name.lowercased()
+        if let exactMatch = calendars.first(where: { $0.title.lowercased() == loweredName }) {
+            return exactMatch
+        }
+        guard allowFuzzy else { return nil }
+
+        let scored = calendars
+            .map { calendar in
+                (calendar: calendar, score: StringSimilarity.jaroWinkler(name, calendar.title))
+            }
+            .filter { $0.score >= fuzzyThreshold }
+            .sorted { lhs, rhs in
+                let delta = lhs.score - rhs.score
+                if abs(delta) < 0.0001 {
+                    return lhs.calendar.title.lowercased() < rhs.calendar.title.lowercased()
+                }
+                return lhs.score > rhs.score
+            }
+
+        return scored.first?.calendar
     }
 
     /// Get all reminder lists

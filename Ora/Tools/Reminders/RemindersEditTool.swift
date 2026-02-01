@@ -107,7 +107,7 @@ struct RemindersEditTool: Tool {
 
         // Move to different list if specified
         if let listName = args["list_name"]?.stringValue {
-            if let calendar = RemindersStoreProvider.findReminderList(named: listName) {
+            if let calendar = RemindersStoreProvider.findReminderListExact(named: listName) {
                 reminder.calendar = calendar
                 changes.append("list")
                 Self.logger.info("Moved to list: \(calendar.title)")

@@ -87,7 +87,7 @@ struct RemindersCreateTool: Tool {
 
         // Find list by name or use default
         if let listName = args["list_name"]?.stringValue {
-            if let calendar = RemindersStoreProvider.findReminderList(named: listName) {
+            if let calendar = RemindersStoreProvider.findReminderListExact(named: listName) {
                 reminder.calendar = calendar
                 Self.logger.info("Using specified list: \(calendar.title)")
             } else {

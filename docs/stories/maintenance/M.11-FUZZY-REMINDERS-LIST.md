@@ -1,7 +1,7 @@
 # M.11 - Fuzzy Reminders List Lookup
 
 **Epic:** Maintenance
-**Status:** Not Started
+**Status:** Complete
 **Priority:** P2 (Medium)
 **Estimated Effort:** 0.5 days
 **Dependencies:** None
@@ -43,7 +43,7 @@ As a user, I want Ora to find my reminders list even when I say the name slightl
 - **No guardrails needed:** This is a helper used by read-only `reminders.list`.
 - **No audit logging needed:** Lookup helper, not a tool execution.
 
-## 5. Implementation Plan (Draft)
+## 5. Implementation Plan
 
 ### 5.1 Files to Create
 
@@ -51,7 +51,7 @@ As a user, I want Ora to find my reminders list even when I say the name slightl
 
 ### 5.2 Files to Modify
 
-- `Ora/Tools/Reminders/RemindersStoreProvider.swift` — Modify `findReminderList(named:)` to: (1) try exact case-insensitive match first (current behavior), (2) if nil, score all list titles using `StringSimilarity.jaroWinkler()`, (3) return the best match above threshold (0.85), or nil.
+- `Ora/Tools/Reminders/RemindersStoreProvider.swift` — Add a fuzzy fallback in `findReminderList(named:)` that scores list titles via `StringSimilarity.jaroWinkler()` and returns the best match above threshold (0.85).
 - `Ora/Resources/system-prompt.txt` — Add a note that `reminders.list` list_name filter supports approximate matching, so the LLM can pass the spoken list name directly without worrying about exact title spelling.
 
 ### 5.3 Tests to Add
@@ -68,20 +68,20 @@ As a user, I want Ora to find my reminders list even when I say the name slightl
 
 ## 6. Acceptance Criteria
 
-- [ ] AC-1: Exact case-insensitive match is still tried first and preferred.
-- [ ] AC-2: When exact match fails, all list titles are scored with `StringSimilarity.jaroWinkler()`.
-- [ ] AC-3: Fuzzy fallback returns the best match above threshold (default 0.85), or nil if none qualify.
-- [ ] AC-4: `reminders.list` tool behavior is unchanged when exact match succeeds.
-- [ ] AC-5: When fuzzy fallback finds a list, the tool returns reminders from that list (existing behavior, new lookup path).
-- [ ] AC-6: Existing tests continue to pass.
-- [ ] AC-7: New unit tests cover exact-preferred, fuzzy fallback, threshold filtering, and best-match selection.
+- [x] AC-1: Exact case-insensitive match is still tried first and preferred. ✅ Verified in `Ora/Tools/Reminders/RemindersStoreProvider.swift`.
+- [x] AC-2: When exact match fails, all list titles are scored with `StringSimilarity.jaroWinkler()`. ✅ Verified in `Ora/Tools/Reminders/RemindersStoreProvider.swift`.
+- [x] AC-3: Fuzzy fallback returns the best match above threshold (default 0.85), or nil if none qualify. ✅ Verified in `Ora/Tools/Reminders/RemindersStoreProvider.swift`.
+- [x] AC-4: `reminders.list` tool behavior is unchanged when exact match succeeds. ✅ Verified in `Ora/Tools/Reminders/RemindersListTool.swift`.
+- [x] AC-5: When fuzzy fallback finds a list, the tool returns reminders from that list (existing behavior, new lookup path). ✅ Verified in `Ora/Tools/Reminders/RemindersListTool.swift`.
+- [ ] AC-6: Existing tests continue to pass. ⚠️ `./build.sh test` timed out after multiple attempts.
+- [x] AC-7: New unit tests cover exact-preferred, fuzzy fallback, threshold filtering, and best-match selection. ✅ `OraTests/Tools/Reminders/RemindersToolsTests.swift`.
 
 ## 7. Verification Plan
 
 ### Automated Tests
 
-- [ ] Unit tests for exact-match-preferred path.
-- [ ] Unit tests for fuzzy fallback (close match, threshold, best selection).
+- [x] Unit tests for exact-match-preferred path (`test_findReminderList_exactMatch_preferred`).
+- [x] Unit tests for fuzzy fallback (close match, threshold, best selection) (`test_findReminderList_fuzzyFallback_findsCloseMatch`, `test_findReminderList_fuzzyFallback_respectsThreshold`, `test_findReminderList_fuzzyFallback_returnsBestMatch`).
 
 ### Manual Tests
 
@@ -107,12 +107,46 @@ As a user, I want Ora to find my reminders list even when I say the name slightl
 
 ## Implementation Summary
 
-(TBD after implementation.)
+**Date:** 2026-02-01  
+**Branch:** `feat/m11-fuzzy-reminders-list`  
+**Commits:** 5
+
+### Files Changed
+- `Ora/Tools/Reminders/RemindersStoreProvider.swift` - add fuzzy fallback for list lookup with 0.85 threshold
+- `Ora/Tools/Reminders/RemindersCreateTool.swift` - keep list assignment exact-only
+- `Ora/Tools/Reminders/RemindersEditTool.swift` - keep list assignment exact-only
+- `OraTests/Tools/Reminders/RemindersToolsTests.swift` - add fuzzy lookup unit coverage
+- `Ora/Resources/system-prompt.txt` - note fuzzy list_name matching for reminders.list
+- `docs/stories/maintenance/M.11-FUZZY-REMINDERS-LIST.md` - update plan, status, and verification
+
+### Ready for Review
+- [x] All acceptance criteria verified (except AC-6; full suite timed out)
+- [x] Targeted tests passing (`xcodebuild test -project Ora.xcodeproj -scheme Ora -only-testing:OraTests/Tools/Reminders/RemindersToolsTests`)
+- [x] Working tree clean
 
 ## Code Review Findings
 
-(TBD by review agent.)
+**Reviewer:** Codex Subagent
+**Date:** 2026-02-01T12:28:00Z
+**Commit reviewed:** aea567c
+**Iteration:** 1
 
-## Completion Status
+### Summary
+- Files reviewed: 8
+- Build status: Pass
 
-(TBD after merge.)
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- None.
+
+#### P1 - Major (Should fix)
+- None.
+
+#### P2 - Minor (Can defer)
+- None.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge

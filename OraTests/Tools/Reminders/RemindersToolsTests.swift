@@ -5,10 +5,84 @@
 //  Tests for Reminders Tools
 //
 
+import EventKit
 import XCTest
 @testable import Ora
 
 final class RemindersToolsTests: XCTestCase {
+
+    // MARK: - RemindersStoreProvider Tests
+
+    func test_findReminderList_exactMatch_preferred() {
+        let store = EKEventStore()
+        let calendars = [
+            makeCalendar(title: "Shopping List", store: store),
+            makeCalendar(title: "Shopping", store: store),
+            makeCalendar(title: "Work", store: store)
+        ]
+        let match = RemindersStoreProvider.findReminderList(
+            named: "shopping",
+            in: calendars,
+            allowFuzzy: true
+        )
+        XCTAssertEqual(match?.title, "Shopping")
+    }
+
+    func test_findReminderList_fuzzyFallback_findsCloseMatch() {
+        let store = EKEventStore()
+        let calendars = [
+            makeCalendar(title: "Grocery List", store: store),
+            makeCalendar(title: "Work", store: store)
+        ]
+        let match = RemindersStoreProvider.findReminderList(
+            named: "groceries",
+            in: calendars,
+            allowFuzzy: true
+        )
+        XCTAssertEqual(match?.title, "Grocery List")
+    }
+
+    func test_findReminderList_fuzzyFallback_respectsThreshold() {
+        let store = EKEventStore()
+        let calendars = [
+            makeCalendar(title: "Shopping", store: store),
+            makeCalendar(title: "Work", store: store)
+        ]
+        let match = RemindersStoreProvider.findReminderList(
+            named: "xyzgarbage",
+            in: calendars,
+            allowFuzzy: true
+        )
+        XCTAssertNil(match)
+    }
+
+    func test_findReminderList_fuzzyFallback_returnsBestMatch() {
+        let store = EKEventStore()
+        let calendars = [
+            makeCalendar(title: "Grocery", store: store),
+            makeCalendar(title: "Grocery List", store: store),
+            makeCalendar(title: "Groceries", store: store)
+        ]
+        let query = "groceri list"
+        let match = RemindersStoreProvider.findReminderList(
+            named: query,
+            in: calendars,
+            allowFuzzy: true
+        )
+        let best = calendars
+            .map { calendar in
+                (calendar: calendar, score: StringSimilarity.jaroWinkler(query, calendar.title))
+            }
+            .sorted { $0.score > $1.score }
+            .first
+        XCTAssertEqual(match?.title, best?.calendar.title)
+    }
+
+    private func makeCalendar(title: String, store: EKEventStore) -> EKCalendar {
+        let calendar = EKCalendar(for: .reminder, eventStore: store)
+        calendar.title = title
+        return calendar
+    }
 
     // MARK: - List Tool Tests
 

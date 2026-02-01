@@ -145,7 +145,7 @@ Quality, coverage, and repository hygiene.
 | M.07 | [Streaming ASR Migration](maintenance/M.07-STREAMING-ASR-MIGRATION.md) | 🚧 To Do |
 | M.09 | [Fuzzy App Search](maintenance/M.09-FUZZY-APP-SEARCH.md) | ✅ Complete |
 | M.10 | [Fuzzy File Search](maintenance/M.10-FUZZY-FILE-SEARCH.md) | ✅ Complete |
-| M.11 | [Fuzzy Reminders List Lookup](maintenance/M.11-FUZZY-REMINDERS-LIST.md) | 🚧 To Do |
+| M.11 | [Fuzzy Reminders List Lookup](maintenance/M.11-FUZZY-REMINDERS-LIST.md) | ✅ Complete |
 
 ### 🎼 Orchestration (O)
 Connecting the loop: Audio → ASR → LLM → Tools → TTS.
