@@ -14,7 +14,7 @@ Stories for quality improvements, optimizations, and technical debt in Ora.
 | M.07 | [Streaming ASR Migration](M.07-STREAMING-ASR-MIGRATION.md) | P1 - High | 🚧 To Do |
 | M.09 | [Fuzzy App Search](M.09-FUZZY-APP-SEARCH.md) | P2 - Medium | ✅ Complete |
 | M.10 | [Fuzzy File Search](M.10-FUZZY-FILE-SEARCH.md) | P2 - Medium | ✅ Complete |
-| M.11 | [Fuzzy Reminders List Lookup](M.11-FUZZY-REMINDERS-LIST.md) | P2 - Medium | 🚧 To Do |
+| M.11 | [Fuzzy Reminders List Lookup](M.11-FUZZY-REMINDERS-LIST.md) | P2 - Medium | ✅ Complete |
 
 ---
 

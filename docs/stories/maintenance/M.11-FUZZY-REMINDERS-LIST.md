@@ -1,7 +1,7 @@
 # M.11 - Fuzzy Reminders List Lookup
 
 **Epic:** Maintenance
-**Status:** In Progress
+**Status:** Complete
 **Priority:** P2 (Medium)
 **Estimated Effort:** 0.5 days
 **Dependencies:** None
@@ -109,7 +109,7 @@ As a user, I want Ora to find my reminders list even when I say the name slightl
 
 **Date:** 2026-02-01  
 **Branch:** `feat/m11-fuzzy-reminders-list`  
-**Commits:** 2
+**Commits:** 4
 
 ### Files Changed
 - `Ora/Tools/Reminders/RemindersStoreProvider.swift` - add fuzzy fallback for list lookup with 0.85 threshold
