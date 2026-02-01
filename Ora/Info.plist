@@ -2,40 +2,39 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Menu bar agent (no dock icon) -->
-    <key>LSUIElement</key>
-    <true/>
-
-    <!-- App identity -->
-    <key>CFBundleName</key>
-    <string>Ora</string>
-    <key>CFBundleDisplayName</key>
-    <string>Ora</string>
-    <key>CFBundleIdentifier</key>
-    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleExecutable</key>
-    <string>$(EXECUTABLE_NAME)</string>
-
-    <!-- Permissions (descriptions) -->
-    <key>NSMicrophoneUsageDescription</key>
-    <string>Ora needs microphone access to hear your voice commands.</string>
-    <key>NSCalendarsUsageDescription</key>
-    <string>Ora needs calendar access to manage your events.</string>
-    <key>NSRemindersUsageDescription</key>
-    <string>Ora needs reminders access to create and manage tasks.</string>
-    <key>NSContactsUsageDescription</key>
-    <string>Ora needs contacts access to look up people you mention.</string>
-    <key>NSAppleEventsUsageDescription</key>
-    <string>Ora needs permission to control apps like Messages, Mail, and Notes on your behalf.</string>
-
-    <!-- Minimum system -->
-    <key>LSMinimumSystemVersion</key>
-    <string>26.0</string>
+	<key>CFBundleDisplayName</key>
+	<string>Ora</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleName</key>
+	<string>Ora</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>26.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Ora needs permission to control apps like Messages, Mail, and Notes on your behalf.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Ora needs calendar access to manage your events.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Ora needs contacts access to look up people you mention.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Ora needs microphone access to hear your voice commands.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>Ora needs reminders access to create and manage tasks.</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/benedict2310/ora-updates/main/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>raLB6FKlwAeAOyXHvePhCwGo1nJCiwiV5jcls0mg18E=</string>
 </dict>
 </plist>
