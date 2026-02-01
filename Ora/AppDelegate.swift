@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var setupObserver: NSObjectProtocol?
     private var hotkeyPressObserver: NSObjectProtocol?
     private var hotkeyReleaseObserver: NSObjectProtocol?
+    private let updateController = UpdateController.shared
 
     // MARK: - NSApplicationDelegate
 
@@ -31,6 +32,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Initialize status bar
         self.statusBarController = StatusBarController()
+
+        // Initialize Sparkle updater
+        _ = self.updateController
 
         // Set activation policy (accessory = menu bar only)
         NSApp.setActivationPolicy(.accessory)

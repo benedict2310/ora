@@ -53,6 +53,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     /// Strong reference to default handler, weak reference to injected handler
     private var defaultActionHandler: DefaultStatusBarActionHandler?
     private weak var injectedActionHandler: StatusBarActionHandler?
+    private let updateChecker: UpdateChecking
 
     private(set) var state: State = .idle {
         didSet {
@@ -62,7 +63,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     // MARK: - Initialization
 
-    init(actionHandler: StatusBarActionHandler? = nil) {
+    init(actionHandler: StatusBarActionHandler? = nil, updateChecker: UpdateChecking? = nil) {
+        self.updateChecker = updateChecker ?? UpdateController.shared
         if let handler = actionHandler {
             self.injectedActionHandler = handler
         } else {
@@ -155,12 +157,22 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         return self.statusItem?.menu?.items.first(where: { $0.title == "Conversation Mode" })?.state
     }
 
+    /// Returns the enabled state of the Check for Updates menu item. Exposed for testing.
+    var checkForUpdatesMenuItemEnabled: Bool? {
+        return self.statusItem?.menu?.items.first(where: { $0.title == "Check for Updates..." })?.isEnabled
+    }
+
     /// Simulates clicking the Conversation Mode menu item. Exposed for testing.
     func simulateConversationModeToggle() {
         guard let menuItem = self.statusItem?.menu?.items.first(where: { $0.title == "Conversation Mode" }) else {
             return
         }
         self.conversationModeClicked(menuItem)
+    }
+
+    /// Simulates clicking the Check for Updates menu item. Exposed for testing.
+    func simulateCheckForUpdates() {
+        self.checkForUpdatesClicked()
     }
 
     /// Triggers menu update delegate method. Exposed for testing.
@@ -188,6 +200,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.delegate = self
 
         menu.addItem(NSMenuItem(title: "Preferences...", action: #selector(self.preferencesClicked), keyEquivalent: ","))
+        let checkUpdatesItem = NSMenuItem(title: "Check for Updates...", action: #selector(self.checkForUpdatesClicked), keyEquivalent: "")
+        checkUpdatesItem.isEnabled = self.updateChecker.canCheckForUpdates
+        menu.addItem(checkUpdatesItem)
         menu.addItem(NSMenuItem.separator())
         
         let conversationModeItem = NSMenuItem(title: "Conversation Mode", action: #selector(self.conversationModeClicked), keyEquivalent: "")
@@ -238,6 +253,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     @objc private func preferencesClicked() {
         self.showPreferences()
     }
+
+    @objc private func checkForUpdatesClicked() {
+        self.updateChecker.checkForUpdates()
+    }
     
     @objc private func conversationModeClicked(_ sender: NSMenuItem) {
         let newState = !self.isConversationModeEnabled
@@ -253,6 +272,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     // MARK: - Menu Delegate
     
     func menuNeedsUpdate(_ menu: NSMenu) {
+        if let item = menu.items.first(where: { $0.title == "Check for Updates..." }) {
+            item.isEnabled = self.updateChecker.canCheckForUpdates
+        }
         if let item = menu.items.first(where: { $0.title == "Conversation Mode" }) {
             item.state = self.isConversationModeEnabled ? .on : .off
         }

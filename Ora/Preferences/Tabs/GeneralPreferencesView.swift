@@ -110,6 +110,9 @@ struct GeneralPreferencesView: View {
                 }
             }
 
+            // Updates Section
+            UpdatePreferencesView()
+
             // Default Calendar Section
             Section {
                 VStack(alignment: .leading, spacing: 8) {
