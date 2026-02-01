@@ -232,7 +232,7 @@ For detailed triage workflows, load the `ora-testing` skill.
 
 2.  **Commit Changes:**
     ```bash
-    git add .
+    git add <specific-files>
     git commit -m "feat: description of change"
     ```
 
