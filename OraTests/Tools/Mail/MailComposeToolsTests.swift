@@ -61,10 +61,16 @@ final class MailComposeToolsTests: XCTestCase {
         let createDraft = await ToolRegistry.shared.tool(named: "mail.create_draft")
         let send = await ToolRegistry.shared.tool(named: "mail.send")
         let openDraft = await ToolRegistry.shared.tool(named: "mail.open_draft")
+        let search = await ToolRegistry.shared.tool(named: "mail.search")
+        let openMessage = await ToolRegistry.shared.tool(named: "mail.open_message")
+        let listMailboxes = await ToolRegistry.shared.tool(named: "mail.list_mailboxes")
 
         XCTAssertNotNil(createDraft)
         XCTAssertNotNil(send)
         XCTAssertNotNil(openDraft)
+        XCTAssertNotNil(search)
+        XCTAssertNotNil(openMessage)
+        XCTAssertNotNil(listMailboxes)
     }
 
     // MARK: - Validation Tests
@@ -384,7 +390,11 @@ final class MailComposeToolsTests: XCTestCase {
         let scripts = [
             MailAppleScript.createDraftScript(),
             MailAppleScript.sendScript(),
-            MailAppleScript.openDraftScript()
+            MailAppleScript.openDraftScript(),
+            MailAppleScript.searchMessagesScript(),
+            MailAppleScript.recentMessagesScript(),
+            MailAppleScript.openMessageScript(),
+            MailAppleScript.listMailboxesScript()
         ]
         for script in scripts {
             for scalar in script.unicodeScalars {
@@ -400,7 +410,11 @@ final class MailComposeToolsTests: XCTestCase {
         let scripts = [
             MailAppleScript.createDraftScript(),
             MailAppleScript.sendScript(),
-            MailAppleScript.openDraftScript()
+            MailAppleScript.openDraftScript(),
+            MailAppleScript.searchMessagesScript(),
+            MailAppleScript.recentMessagesScript(),
+            MailAppleScript.openMessageScript(),
+            MailAppleScript.listMailboxesScript()
         ]
         for script in scripts {
             XCTAssertTrue(script.contains("json_escape"), "Script should include json_escape handler")
