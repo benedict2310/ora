@@ -108,7 +108,20 @@ As a user, I want Ora to find my files even when speech recognition slightly gar
 
 ## Implementation Summary
 
-(TBD after implementation.)
+**Date:** 2026-02-01  
+**Branch:** `feat/m10-fuzzy-file-search`  
+**Commits:** 1
+
+### Files Changed
+- `Ora/Tools/System/SystemSearchFilesTool.swift` - add fuzzy re-ranking, broadened retry, and scoring helpers
+- `OraTests/Tools/System/SystemToolsTests.swift` - add unit coverage for re-ranking and fuzzy retry paths
+- `Ora/Resources/system-prompt.txt` - note fuzzy file search in system navigation rules
+- `docs/stories/maintenance/M.10-FUZZY-FILE-SEARCH.md` - update plan, status, and verification
+
+### Ready for Review
+- [x] All acceptance criteria verified
+- [x] Tests passing (`./build.sh test`)
+- [ ] Working tree clean
 
 ## Code Review Findings
 
