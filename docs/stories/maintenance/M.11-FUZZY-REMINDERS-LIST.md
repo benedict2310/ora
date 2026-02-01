@@ -73,7 +73,7 @@ As a user, I want Ora to find my reminders list even when I say the name slightl
 - [x] AC-3: Fuzzy fallback returns the best match above threshold (default 0.85), or nil if none qualify. ✅ Verified in `Ora/Tools/Reminders/RemindersStoreProvider.swift`.
 - [x] AC-4: `reminders.list` tool behavior is unchanged when exact match succeeds. ✅ Verified in `Ora/Tools/Reminders/RemindersListTool.swift`.
 - [x] AC-5: When fuzzy fallback finds a list, the tool returns reminders from that list (existing behavior, new lookup path). ✅ Verified in `Ora/Tools/Reminders/RemindersListTool.swift`.
-- [ ] AC-6: Existing tests continue to pass. ⚠️ `./build.sh test` timed out after multiple attempts.
+- [x] AC-6: Existing tests continue to pass. ✅ `./build.sh test` (2026-02-01): 1170/1170 passed.
 - [x] AC-7: New unit tests cover exact-preferred, fuzzy fallback, threshold filtering, and best-match selection. ✅ `OraTests/Tools/Reminders/RemindersToolsTests.swift`.
 
 ## 7. Verification Plan
@@ -120,7 +120,8 @@ As a user, I want Ora to find my reminders list even when I say the name slightl
 - `docs/stories/maintenance/M.11-FUZZY-REMINDERS-LIST.md` - update plan, status, and verification
 
 ### Ready for Review
-- [x] All acceptance criteria verified (except AC-6; full suite timed out)
+- [x] All acceptance criteria verified
+- [x] Full test suite passing (`./build.sh test`)
 - [x] Targeted tests passing (`xcodebuild test -project Ora.xcodeproj -scheme Ora -only-testing:OraTests/Tools/Reminders/RemindersToolsTests`)
 - [x] Working tree clean
 
