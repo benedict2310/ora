@@ -155,4 +155,8 @@ As a user, I want Ora to find my files even when speech recognition slightly gar
 
 ## Completion Status
 
-(TBD after merge.)
+- [x] Implementation complete
+- [x] Code review passed (2 iterations)
+- [x] PR merged: https://github.com/benedict2310/ora/pull/93
+- [x] Merged to main: b296104
+- [x] Date: 2026-02-01
