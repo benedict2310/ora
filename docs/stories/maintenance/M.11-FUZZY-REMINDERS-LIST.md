@@ -107,7 +107,22 @@ As a user, I want Ora to find my reminders list even when I say the name slightl
 
 ## Implementation Summary
 
-(TBD after implementation.)
+**Date:** 2026-02-01  
+**Branch:** `feat/m11-fuzzy-reminders-list`  
+**Commits:** 1
+
+### Files Changed
+- `Ora/Tools/Reminders/RemindersStoreProvider.swift` - add fuzzy fallback for list lookup with 0.85 threshold
+- `Ora/Tools/Reminders/RemindersCreateTool.swift` - keep list assignment exact-only
+- `Ora/Tools/Reminders/RemindersEditTool.swift` - keep list assignment exact-only
+- `OraTests/Tools/Reminders/RemindersToolsTests.swift` - add fuzzy lookup unit coverage
+- `Ora/Resources/system-prompt.txt` - note fuzzy list_name matching for reminders.list
+- `docs/stories/maintenance/M.11-FUZZY-REMINDERS-LIST.md` - update plan, status, and verification
+
+### Ready for Review
+- [x] All acceptance criteria verified (except AC-6; full suite timed out)
+- [x] Targeted tests passing (`xcodebuild test -project Ora.xcodeproj -scheme Ora -only-testing:OraTests/Tools/Reminders/RemindersToolsTests`)
+- [ ] Working tree clean
 
 ## Code Review Findings
 
