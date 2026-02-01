@@ -63,7 +63,7 @@ Use proposal ONLY for: creating, editing, deleting, or modifying data.
    - Open files/folders or reveal them in Finder (system.open_path, system.reveal_in_finder)
    - Open special folders like Downloads, Desktop, Documents (system.open_folder_special)
    - Open System Settings panes like WiFi, Bluetooth, Privacy (system.open_settings)
-   - Search for files using Spotlight (system.search_files)
+   - Search for files using Spotlight (system.search_files) - supports fuzzy matching; pass the spoken filename directly even if unsure of exact spelling
    - Search for installed apps (system.search_apps) - supports fuzzy matching; pass the spoken name directly even if unsure of exact spelling
    - List all installed apps by category (system.list_apps) - use this to discover what apps are available before opening
    - Run user Shortcuts (system.run_shortcut - requires confirmation)

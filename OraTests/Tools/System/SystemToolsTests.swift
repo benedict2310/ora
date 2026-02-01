@@ -192,6 +192,65 @@ final class SystemToolsTests: XCTestCase {
         // Valid query should pass
         XCTAssertNoThrow(try tool.validate(args: ["query": .string("test")]))
     }
+
+    func test_searchFiles_reranking_ordersByRelevance() {
+        let results: [SystemSearchFilesTool.FileResult] = [
+            .init(name: "Meeting Notes.txt", path: "/tmp/Meeting Notes.txt"),
+            .init(name: "Budget Report.xlsx", path: "/tmp/Budget Report.xlsx"),
+            .init(name: "Budget Draft.docx", path: "/tmp/Budget Draft.docx")
+        ]
+        let reranked = SystemSearchFilesTool.rerank(query: "budget report", results: results)
+        let expected = results.sorted { lhs, rhs in
+            let lhsScore = SystemSearchFilesTool.matchScore(query: "budget report", filename: lhs.name)
+            let rhsScore = SystemSearchFilesTool.matchScore(query: "budget report", filename: rhs.name)
+            let delta = lhsScore - rhsScore
+            if abs(delta) < 0.0001 {
+                return lhs.name.lowercased() < rhs.name.lowercased()
+            }
+            return lhsScore > rhsScore
+        }
+        XCTAssertEqual(reranked.map(\.name), expected.map(\.name))
+    }
+
+    func test_searchFiles_fuzzyRetry_findsTypo() {
+        let results: [SystemSearchFilesTool.FileResult] = [
+            .init(name: "Budget Report.xlsx", path: "/tmp/Budget Report.xlsx"),
+            .init(name: "Meeting Notes.txt", path: "/tmp/Meeting Notes.txt")
+        ]
+        let filtered = SystemSearchFilesTool.fuzzyFilter(query: "Budjet Report", results: results)
+        XCTAssertEqual(filtered.count, 1)
+        XCTAssertEqual(filtered.first?.name, "Budget Report.xlsx")
+    }
+
+    func test_searchFiles_fuzzyRetry_respectsThreshold() {
+        let results: [SystemSearchFilesTool.FileResult] = [
+            .init(name: "Budget Report.xlsx", path: "/tmp/Budget Report.xlsx"),
+            .init(name: "Meeting Notes.txt", path: "/tmp/Meeting Notes.txt")
+        ]
+        let filtered = SystemSearchFilesTool.fuzzyFilter(query: "xyzgarbage", results: results)
+        XCTAssertTrue(filtered.isEmpty)
+    }
+
+    func test_searchFiles_fuzzyRetry_respectsLimit() {
+        let results: [SystemSearchFilesTool.FileResult] = [
+            .init(name: "Budget Report.xlsx", path: "/tmp/Budget Report.xlsx"),
+            .init(name: "Budget Report Final.xlsx", path: "/tmp/Budget Report Final.xlsx"),
+            .init(name: "Budget Report Q4.xlsx", path: "/tmp/Budget Report Q4.xlsx")
+        ]
+        let filtered = SystemSearchFilesTool.fuzzyFilter(query: "budget report", results: results, limit: 2)
+        XCTAssertLessThanOrEqual(filtered.count, 2)
+    }
+
+    func test_searchFiles_broadenedQueryTerms_splitsWords() {
+        let terms = SystemSearchFilesTool.broadenedQueryTerms(for: "budget report 2025")
+        XCTAssertEqual(terms, ["budget", "report", "2025"])
+    }
+
+    func test_searchFiles_retryCandidateLimit_scalesUp() {
+        XCTAssertEqual(SystemSearchFilesTool.retryCandidateLimit(for: 3), 20)
+        XCTAssertEqual(SystemSearchFilesTool.retryCandidateLimit(for: 5), 20)
+        XCTAssertEqual(SystemSearchFilesTool.retryCandidateLimit(for: 10), 40)
+    }
     
     // MARK: - SystemSearchAppsTool Tests
     

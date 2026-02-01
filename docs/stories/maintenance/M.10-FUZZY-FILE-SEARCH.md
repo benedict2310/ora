@@ -1,7 +1,7 @@
 # M.10 - Fuzzy File Search
 
 **Epic:** Maintenance
-**Status:** Not Started
+**Status:** Complete
 **Priority:** P2 (Medium)
 **Estimated Effort:** 0.5 days
 **Dependencies:** None
@@ -43,7 +43,7 @@ As a user, I want Ora to find my files even when speech recognition slightly gar
 - **No guardrails needed:** Read-only tool.
 - **No audit logging needed:** Search tools don't modify state.
 
-## 5. Implementation Plan (Draft)
+## 5. Implementation Plan
 
 ### 5.1 Files to Create
 
@@ -51,7 +51,7 @@ As a user, I want Ora to find my files even when speech recognition slightly gar
 
 ### 5.2 Files to Modify
 
-- `Ora/Tools/System/SystemSearchFilesTool.swift` — After Spotlight returns results, re-rank by `StringSimilarity.jaroWinkler(query, filename)`. If Spotlight returns zero results, retry by splitting the query into words and using an OR predicate, then fuzzy-filter above threshold.
+- `Ora/Tools/System/SystemSearchFilesTool.swift` — Add helper functions for Spotlight predicates, fuzzy scoring, re-ranking, and threshold filtering. Re-rank results from the initial Spotlight query. If zero results, retry with an OR predicate built from query terms, then filter by Jaro-Winkler threshold.
 - `Ora/Resources/system-prompt.txt` — Update rule 12 (SYSTEM NAVIGATION) to note that `system.search_files` supports fuzzy matching, so the LLM can pass voice-transcribed filenames directly.
 
 ### 5.3 Tests to Add
@@ -67,21 +67,21 @@ As a user, I want Ora to find my files even when speech recognition slightly gar
 
 ## 6. Acceptance Criteria
 
-- [ ] AC-1: When Spotlight returns results, they are re-ranked by Jaro-Winkler similarity to the query.
-- [ ] AC-2: When Spotlight returns zero results, a broadened retry is attempted using individual query words.
-- [ ] AC-3: Broadened retry results are filtered by Jaro-Winkler threshold (default 0.80).
-- [ ] AC-4: Results respect the `limit` parameter.
-- [ ] AC-5: The 5-second Spotlight timeout is preserved.
-- [ ] AC-6: Existing tests continue to pass.
-- [ ] AC-7: New unit tests cover re-ranking and retry paths.
+- [x] AC-1: When Spotlight returns results, they are re-ranked by Jaro-Winkler similarity to the query. ✅ Verified in `Ora/Tools/System/SystemSearchFilesTool.swift`.
+- [x] AC-2: When Spotlight returns zero results, a broadened retry is attempted using individual query words. ✅ Verified in `Ora/Tools/System/SystemSearchFilesTool.swift`.
+- [x] AC-3: Broadened retry results are filtered by Jaro-Winkler threshold (default 0.80). ✅ Verified in `Ora/Tools/System/SystemSearchFilesTool.swift`.
+- [x] AC-4: Results respect the `limit` parameter. ✅ Verified in `Ora/Tools/System/SystemSearchFilesTool.swift` and `OraTests/Tools/System/SystemToolsTests.swift`.
+- [x] AC-5: The 5-second Spotlight timeout is preserved. ✅ Verified in `Ora/Tools/System/SystemSearchFilesTool.swift`.
+- [x] AC-6: Existing tests continue to pass. ✅ `./build.sh test`.
+- [x] AC-7: New unit tests cover re-ranking and retry paths. ✅ `OraTests/Tools/System/SystemToolsTests.swift`.
 
 ## 7. Verification Plan
 
 ### Automated Tests
 
-- [ ] Unit tests for re-ranking with mock Spotlight results.
-- [ ] Unit tests for broadened retry path.
-- [ ] Unit tests for threshold filtering.
+- [x] Unit tests for re-ranking with mock Spotlight results (`test_searchFiles_reranking_ordersByRelevance`).
+- [x] Unit tests for broadened retry path (`test_searchFiles_broadenedQueryTerms_splitsWords`, `test_searchFiles_fuzzyRetry_findsTypo`).
+- [x] Unit tests for threshold filtering (`test_searchFiles_fuzzyRetry_respectsThreshold`).
 
 ### Manual Tests
 
@@ -108,11 +108,50 @@ As a user, I want Ora to find my files even when speech recognition slightly gar
 
 ## Implementation Summary
 
-(TBD after implementation.)
+**Date:** 2026-02-01  
+**Branch:** `feat/m10-fuzzy-file-search`  
+**Commits:** 7
+
+### Files Changed
+- `Ora/Tools/System/SystemSearchFilesTool.swift` - add fuzzy re-ranking, broadened retry, and scoring helpers
+- `OraTests/Tools/System/SystemToolsTests.swift` - add unit coverage for re-ranking and fuzzy retry paths
+- `Ora/Resources/system-prompt.txt` - note fuzzy file search in system navigation rules
+- `docs/stories/maintenance/M.10-FUZZY-FILE-SEARCH.md` - update plan, status, and verification
+
+### Ready for Review
+- [x] All acceptance criteria verified
+- [x] Tests passing (`./build.sh test`)
+- [x] Working tree clean
 
 ## Code Review Findings
 
-(TBD by review agent.)
+**Reviewer:** Codex Subagent
+**Date:** 2026-02-01T11:45:00Z
+**Commit reviewed:** 3f454e2
+**Iteration:** 2
+
+### Summary
+- Files reviewed: 4
+- Build status: Pass
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- None
+
+#### P1 - Major (Should fix)
+- None
+
+#### P2 - Minor (Can defer)
+- None
+
+### Future Considerations (Out of Scope)
+- None
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
 
 ## Completion Status
 
