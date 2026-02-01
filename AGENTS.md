@@ -57,6 +57,7 @@ Voice → (FluidAudio Parakeet) → (MLX + Qwen 2.5) → (Kokoro TTS) → Voice/
 | `./build.sh clean` | Fresh start (removes DerivedData) |
 | `./build.sh reset-perms` | Reset TCC permissions (Accessibility, Calendar, Reminders, Contacts) |
 | `./build.sh test` | Run tests with token-optimized output |
+| `./build.sh test-perms` | Run tests with permission prompts enabled |
 | `./build.sh test-tsan` | Run tests with Thread Sanitizer enabled |
 | `./build.sh logs` | Stream unified logs (includes debug level) |
 | `./build.sh logs --category <name>` | Stream logs for specific category (e.g., `chunker`, `tts`, `llm`) |
@@ -154,6 +155,7 @@ For detailed triage workflows, load the `ora-testing` skill.
 - Always run tests before handoff; add fixtures for new parsing/formatting scenarios.
 - After any code change, rebuild and test before declaring completion.
 - **Preferred test command:** `./build.sh test` (token-optimized output, saves artifacts to `.artifacts/`)
+- **Permission prompts in tests:** `./build.sh test` sets `ORA_SKIP_PERMISSION_PROMPTS=1` to avoid interactive OS dialogs. Use `./build.sh test-perms` or `ORA_SKIP_PERMISSION_PROMPTS=0` when you need to verify real prompts.
 - **Thread Sanitizer:** `./build.sh test-tsan` or use the `Ora-TSan` scheme directly.
 - **Debugging failures:** `./build.sh open-results` to inspect `.xcresult` bundle.
 
@@ -166,6 +168,7 @@ For detailed triage workflows, load the `ora-testing` skill.
 - Implement required/optional permission requests as specified; keep docs and code aligned.
 - Cover request flows and settings opening in tests; record manual E2E checklists for permission/menu flows.
 - **Permission prompt tracking (CRITICAL):** Permission requests MUST go through `PermissionsManager.shared.request()` which handles `PermissionPromptTracker` calls centrally. Do NOT add tracker calls to individual permission files (`MicrophonePermission`, `EventKitPermission`, `ContactsPermission`) - this causes double tracking which breaks focus recovery. The tool-level providers (`EventStoreProvider`, `RemindersStoreProvider`) have their own tracker calls for when tools bypass `PermissionsManager`.
+- **Tests + permissions:** Default test runs skip interactive permission prompts via `ORA_SKIP_PERMISSION_PROMPTS=1`. Use `./build.sh test-perms` when you need to exercise real OS permission dialogs.
 - **MLX GPU memory (CRITICAL):** MLX caches Metal GPU buffers for reuse, but without limits this cache grows unbounded (15GB+ observed). Always: (1) Set `GPU.set(cacheLimit:)` on model load (512MB recommended), (2) Call `GPU.clearCache()` after each LLM/TTS generation. See `LLMService.swift` and `KokoroEngine.swift` for examples.
 - **macOS Logger privacy:** By default, macOS redacts dynamic string interpolation in `Logger` calls as `<private>`. To see actual values during debugging, use `privacy: .public`: `logger.error("Result: '\(String(text), privacy: .public)'")`). **IMPORTANT:** Remove `.public` privacy modifiers before merging - they should only be used temporarily for debugging, never in production code.
 - **ASR transcription is never exact (CRITICAL):** Ora is a voice assistant — all user input passes through ASR, which regularly introduces spelling errors, homophones, and phonetic approximations. Every tool that performs search or lookup against user-provided text **must** include a fuzzy matching fallback (Jaro-Winkler via `StringSimilarity`). Pattern: try exact/substring match first, then fall back to fuzzy scoring if no results. See `ContactsSearchTool` for the canonical two-tier implementation.

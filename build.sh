@@ -9,6 +9,7 @@
 #   ./build.sh clean        # Clean build
 #   ./build.sh reset-perms  # Reset TCC permissions (after rebuild)
 #   ./build.sh test         # Run tests with token-optimized output
+#   ./build.sh test-perms   # Run tests with permission prompts enabled
 #   ./build.sh test-tts     # Run on-demand TTS integration tests (audio)
 #   ./build.sh test-tsan    # Run tests with Thread Sanitizer
 #   ./build.sh logs         # Tail unified logs for Ora
@@ -219,6 +220,11 @@ case "${1:-build}" in
     run_tests "$SCHEME"
     ;;
 
+  test-perms|test-permissions)
+    rm -f "$HOME/Library/Application Support/Ora/run-tts-tests.flag"
+    ORA_SKIP_PERMISSION_PROMPTS=0 run_tests "$SCHEME"
+    ;;
+
   test-tsan)
     rm -f "$HOME/Library/Application Support/Ora/run-tts-tests.flag"
     run_tests "$SCHEME_TSAN"
@@ -265,7 +271,7 @@ case "${1:-build}" in
     ;;
 
   *)
-    echo "Usage: $0 {build|run|clean|reset-perms|test|test-tsan|test-tts|logs|open-results}"
+    echo "Usage: $0 {build|run|clean|reset-perms|test|test-perms|test-tsan|test-tts|logs|open-results}"
     echo ""
     echo "Commands:"
     echo "  build         Build the app (default)"
@@ -273,6 +279,7 @@ case "${1:-build}" in
     echo "  clean         Remove build artifacts and generated project"
     echo "  reset-perms   Reset TCC permissions (use after rebuild)"
     echo "  test          Run tests with token-optimized output"
+    echo "  test-perms    Run tests with permission prompts enabled"
     echo "  test-tsan     Run tests with Thread Sanitizer enabled"
     echo "  test-tts      Run on-demand TTS integration tests (audio)"
     echo "  logs          Tail unified logs (Ctrl+C to stop; --category <name> or --predicate <expr>)"
