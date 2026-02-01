@@ -245,6 +245,12 @@ final class SystemToolsTests: XCTestCase {
         let terms = SystemSearchFilesTool.broadenedQueryTerms(for: "budget report 2025")
         XCTAssertEqual(terms, ["budget", "report", "2025"])
     }
+
+    func test_searchFiles_retryCandidateLimit_scalesUp() {
+        XCTAssertEqual(SystemSearchFilesTool.retryCandidateLimit(for: 3), 20)
+        XCTAssertEqual(SystemSearchFilesTool.retryCandidateLimit(for: 5), 20)
+        XCTAssertEqual(SystemSearchFilesTool.retryCandidateLimit(for: 10), 40)
+    }
     
     // MARK: - SystemSearchAppsTool Tests
     

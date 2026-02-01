@@ -68,9 +68,10 @@ struct SystemSearchFilesTool: Tool {
             return Self.rerank(query: query, results: primaryResults)
         }
 
+        let retryCandidateLimit = Self.retryCandidateLimit(for: limit)
         let retryResults = await searchWithSpotlight(
             predicate: Self.broadenedPredicate(for: query),
-            limit: limit
+            limit: retryCandidateLimit
         )
         return Self.fuzzyFilter(query: query, results: retryResults, limit: limit)
     }
@@ -163,6 +164,16 @@ struct SystemSearchFilesTool: Tool {
             }
         }
         return terms
+    }
+
+    static func retryCandidateLimit(for limit: Int) -> Int {
+        let scaled: Int
+        if limit > (Int.max / 4) {
+            scaled = Int.max
+        } else {
+            scaled = limit * 4
+        }
+        return max(scaled, 20)
     }
 
     static func rerank(query: String, results: [FileResult]) -> [FileResult] {
