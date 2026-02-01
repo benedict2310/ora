@@ -110,7 +110,7 @@ As a user, I want Ora to find my files even when speech recognition slightly gar
 
 **Date:** 2026-02-01  
 **Branch:** `feat/m10-fuzzy-file-search`  
-**Commits:** 4
+**Commits:** 5
 
 ### Files Changed
 - `Ora/Tools/System/SystemSearchFilesTool.swift` - add fuzzy re-ranking, broadened retry, and scoring helpers
@@ -121,14 +121,14 @@ As a user, I want Ora to find my files even when speech recognition slightly gar
 ### Ready for Review
 - [x] All acceptance criteria verified
 - [x] Tests passing (`./build.sh test`)
-- [ ] Working tree clean
+- [x] Working tree clean
 
 ## Code Review Findings
 
 **Reviewer:** Codex Subagent
-**Date:** 2026-02-01T11:40:00Z
-**Commit reviewed:** 737f96b
-**Iteration:** 1
+**Date:** 2026-02-01T11:45:00Z
+**Commit reviewed:** 3f454e2
+**Iteration:** 2
 
 ### Summary
 - Files reviewed: 4
@@ -140,7 +140,7 @@ As a user, I want Ora to find my files even when speech recognition slightly gar
 - None
 
 #### P1 - Major (Should fix)
-- [x] `Ora/Tools/System/SystemSearchFilesTool.swift:59` - The broadened retry uses the output `limit` (default 5) for the candidate search. Since the broadened predicate uses `OR`, the target file may not appear in the top 5 Spotlight results if there are many partial matches. **Recommendation:** Fetch a larger pool of candidates (e.g., `limit * 4` or `20`) in `retryResults`, then let `fuzzyFilter` reduce it to the requested `limit`. **Fixed:** use `retryCandidateLimit` to widen the candidate pool before filtering.
+- None
 
 #### P2 - Minor (Can defer)
 - None
@@ -151,7 +151,7 @@ As a user, I want Ora to find my files even when speech recognition slightly gar
 ### Approval Status
 - [x] All P0 issues resolved
 - [x] All P1 issues resolved
-- [ ] Ready for merge
+- [x] Ready for merge
 
 ## Completion Status
 
