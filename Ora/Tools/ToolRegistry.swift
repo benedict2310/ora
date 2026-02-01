@@ -86,6 +86,9 @@ actor ToolRegistry {
         register(MailCreateDraftTool())
         register(MailSendTool())
         register(MailOpenDraftTool())
+        register(MailSearchTool())
+        register(MailOpenMessageTool())
+        register(MailListMailboxesTool())
 
         // System tools
         register(SystemOpenAppTool())

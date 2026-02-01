@@ -32,6 +32,13 @@ enum MailAppleScript {
         return this_text
     end replace_chars
 
+    on join_list(item_list, delimiter)
+        set AppleScript's text item delimiters to delimiter
+        set joined to item_list as string
+        set AppleScript's text item delimiters to ""
+        return joined
+    end join_list
+
     on split_recipients(theText)
         set AppleScript's text item delimiters to ","
         set theItems to every text item of theText
@@ -51,6 +58,75 @@ enum MailAppleScript {
         end repeat
         return trimmedItems
     end split_recipients
+    """
+
+    private static let mailboxHelpers = """
+    on resolve_account(accountName)
+        if accountName is not "" then
+            if exists account accountName then
+                return account accountName
+            else
+                error "Account not found: " & accountName number 1001
+            end if
+        else
+            try
+                return default account
+            on error
+                if (count of accounts) > 0 then
+                    return first account
+                else
+                    error "No Mail account available" number 1001
+                end if
+            end try
+        end if
+    end resolve_account
+
+    on find_mailbox_by_name(accountRef, mailboxName)
+        if mailboxName is "" then return missing value
+        set matchBox to my search_mailboxes(mailboxes of accountRef, mailboxName)
+        return matchBox
+    end find_mailbox_by_name
+
+    on search_mailboxes(mailboxList, mailboxName)
+        repeat with candidate in mailboxList
+            try
+                if (name of candidate as string) is mailboxName then
+                    return candidate
+                end if
+            end try
+            try
+                set childBoxes to mailboxes of candidate
+                if (count of childBoxes) > 0 then
+                    set childMatch to my search_mailboxes(childBoxes, mailboxName)
+                    if childMatch is not missing value then
+                        return childMatch
+                    end if
+                end if
+            end try
+        end repeat
+        return missing value
+    end search_mailboxes
+
+    on collect_mailboxes(mailboxList, accountName)
+        set collected to {}
+        repeat with candidate in mailboxList
+            set boxName to ""
+            try
+                set boxName to name of candidate as string
+            end try
+            if boxName is not "" then
+                set end of collected to "{\\\"name\\\":\\\"" & my json_escape(boxName) & "\\\",\\\"account\\\":\\\"" & my json_escape(accountName) & "\\\"}"
+            end if
+            try
+                set childBoxes to mailboxes of candidate
+                if (count of childBoxes) > 0 then
+                    set childItems to my collect_mailboxes(childBoxes, accountName)
+                    set collected to collected & childItems
+                end if
+            end try
+        end repeat
+        return collected
+    end collect_mailboxes
     """
 
     // MARK: - Script Builders
@@ -209,6 +285,229 @@ enum MailAppleScript {
                     activate
 
                     set jsonText to "{\\\"draft_id\\\":\\\"" & my json_escape(draftId) & "\\\",\\\"subject\\\":\\\"" & my json_escape(draftSubject) & "\\\"}"
+                    set result to jsonText
+                end tell
+                return "{\\\"success\\\":true,\\\"data\\\":" & result & "}"
+            on error errMsg number errNum
+                return "{\\\"success\\\":false,\\\"error\\\":\\\"" & my json_escape(errMsg) & "\\\",\\\"code\\\":" & errNum & "}"
+            end try
+        end run
+        """
+    }
+
+    /// Build script to search Mail messages by subject/sender.
+    /// argv: [query, mailbox, account, limit]
+    static func searchMessagesScript() -> String {
+        return """
+        \(Self.jsonHelpers)
+        \(Self.mailboxHelpers)
+        on run argv
+            set queryText to item 1 of argv
+            set mailboxName to ""
+            if (count of argv) >= 2 then set mailboxName to item 2 of argv
+            set accountName to ""
+            if (count of argv) >= 3 then set accountName to item 3 of argv
+            set limitCount to 5
+            if (count of argv) >= 4 then
+                try
+                    set limitCount to (item 4 of argv) as integer
+                on error
+                    set limitCount to 5
+                end try
+            end if
+
+            try
+                tell application "Mail"
+                    set targetAccount to my resolve_account(accountName)
+                    set targetMailbox to missing value
+                    if mailboxName is not "" then
+                        set targetMailbox to my find_mailbox_by_name(targetAccount, mailboxName)
+                        if targetMailbox is missing value then
+                            error "Mailbox not found: " & mailboxName number 1002
+                        end if
+                    end if
+
+                    set jsonItems to {}
+                    set foundMessages to {}
+
+                    if queryText is not "" then
+                        if targetMailbox is missing value then
+                            set foundMessages to (messages of targetAccount whose subject contains queryText or sender contains queryText)
+                        else
+                            set foundMessages to (messages of targetMailbox whose subject contains queryText or sender contains queryText)
+                        end if
+                    end if
+
+                    repeat with msg in foundMessages
+                        if (count of jsonItems) >= limitCount then exit repeat
+                        set msgSubject to ""
+                        try
+                            set msgSubject to subject of msg as string
+                        end try
+                        set msgSender to ""
+                        try
+                            set msgSender to sender of msg as string
+                        end try
+                        set msgDate to ""
+                        try
+                            set msgDate to date received of msg as string
+                        end try
+                        set msgMailbox to ""
+                        try
+                            set msgMailbox to name of mailbox of msg as string
+                        end try
+                        set msgId to ""
+                        try
+                            set msgId to message id of msg as string
+                        end try
+                        set end of jsonItems to "{\\\"message_id\\\":\\\"" & my json_escape(msgId) & "\\\",\\\"subject\\\":\\\"" & my json_escape(msgSubject) & "\\\",\\\"from\\\":\\\"" & my json_escape(msgSender) & "\\\",\\\"date\\\":\\\"" & my json_escape(msgDate) & "\\\",\\\"mailbox\\\":\\\"" & my json_escape(msgMailbox) & "\\\"}"
+                    end repeat
+
+                    set jsonText to "[" & my join_list(jsonItems, ",") & "]"
+                    set result to jsonText
+                end tell
+                return "{\\\"success\\\":true,\\\"data\\\":" & result & "}"
+            on error errMsg number errNum
+                return "{\\\"success\\\":false,\\\"error\\\":\\\"" & my json_escape(errMsg) & "\\\",\\\"code\\\":" & errNum & "}"
+            end try
+        end run
+        """
+    }
+
+    /// Build script to fetch recent Mail messages (for fuzzy fallback).
+    /// argv: [mailbox, account, limit]
+    static func recentMessagesScript() -> String {
+        return """
+        \(Self.jsonHelpers)
+        \(Self.mailboxHelpers)
+        on run argv
+            set mailboxName to ""
+            if (count of argv) >= 1 then set mailboxName to item 1 of argv
+            set accountName to ""
+            if (count of argv) >= 2 then set accountName to item 2 of argv
+            set limitCount to 100
+            if (count of argv) >= 3 then
+                try
+                    set limitCount to (item 3 of argv) as integer
+                on error
+                    set limitCount to 100
+                end try
+            end if
+
+            try
+                tell application "Mail"
+                    set targetAccount to my resolve_account(accountName)
+                    set targetMailbox to missing value
+                    if mailboxName is not "" then
+                        set targetMailbox to my find_mailbox_by_name(targetAccount, mailboxName)
+                        if targetMailbox is missing value then
+                            error "Mailbox not found: " & mailboxName number 1002
+                        end if
+                    end if
+
+                    if targetMailbox is missing value then
+                        set sourceMessages to messages of targetAccount
+                    else
+                        set sourceMessages to messages of targetMailbox
+                    end if
+
+                    set jsonItems to {}
+                    repeat with msg in sourceMessages
+                        if (count of jsonItems) >= limitCount then exit repeat
+                        set msgSubject to ""
+                        try
+                            set msgSubject to subject of msg as string
+                        end try
+                        set msgSender to ""
+                        try
+                            set msgSender to sender of msg as string
+                        end try
+                        set msgDate to ""
+                        try
+                            set msgDate to date received of msg as string
+                        end try
+                        set msgMailbox to ""
+                        try
+                            set msgMailbox to name of mailbox of msg as string
+                        end try
+                        set msgId to ""
+                        try
+                            set msgId to message id of msg as string
+                        end try
+                        set end of jsonItems to "{\\\"message_id\\\":\\\"" & my json_escape(msgId) & "\\\",\\\"subject\\\":\\\"" & my json_escape(msgSubject) & "\\\",\\\"from\\\":\\\"" & my json_escape(msgSender) & "\\\",\\\"date\\\":\\\"" & my json_escape(msgDate) & "\\\",\\\"mailbox\\\":\\\"" & my json_escape(msgMailbox) & "\\\"}"
+                    end repeat
+
+                    set jsonText to "[" & my join_list(jsonItems, ",") & "]"
+                    set result to jsonText
+                end tell
+                return "{\\\"success\\\":true,\\\"data\\\":" & result & "}"
+            on error errMsg number errNum
+                return "{\\\"success\\\":false,\\\"error\\\":\\\"" & my json_escape(errMsg) & "\\\",\\\"code\\\":" & errNum & "}"
+            end try
+        end run
+        """
+    }
+
+    /// Build script to open a Mail message by message-id.
+    /// argv: [message_id]
+    static func openMessageScript() -> String {
+        return """
+        \(Self.jsonHelpers)
+        on run argv
+            set messageId to item 1 of argv
+
+            try
+                tell application "Mail"
+                    set foundMessages to (messages whose message id is messageId)
+                    if (count of foundMessages) is 0 then
+                        error "Message not found: " & messageId number 1003
+                    end if
+
+                    set targetMsg to item 1 of foundMessages
+                    open targetMsg
+                    activate
+
+                    set msgSubject to ""
+                    try
+                        set msgSubject to subject of targetMsg as string
+                    end try
+
+                    set jsonText to "{\\\"message_id\\\":\\\"" & my json_escape(messageId) & "\\\",\\\"subject\\\":\\\"" & my json_escape(msgSubject) & "\\\"}"
+                    set result to jsonText
+                end tell
+                return "{\\\"success\\\":true,\\\"data\\\":" & result & "}"
+            on error errMsg number errNum
+                return "{\\\"success\\\":false,\\\"error\\\":\\\"" & my json_escape(errMsg) & "\\\",\\\"code\\\":" & errNum & "}"
+            end try
+        end run
+        """
+    }
+
+    /// Build script to list Mail mailboxes (with optional account filter).
+    /// argv: [account]
+    static func listMailboxesScript() -> String {
+        return """
+        \(Self.jsonHelpers)
+        \(Self.mailboxHelpers)
+        on run argv
+            set accountName to ""
+            if (count of argv) >= 1 then set accountName to item 1 of argv
+
+            try
+                tell application "Mail"
+                    set jsonItems to {}
+                    if accountName is not "" then
+                        set targetAccount to my resolve_account(accountName)
+                        set accountTitle to name of targetAccount as string
+                        set jsonItems to my collect_mailboxes(mailboxes of targetAccount, accountTitle)
+                    else
+                        repeat with theAccount in accounts
+                            set accountTitle to name of theAccount as string
+                            set jsonItems to jsonItems & my collect_mailboxes(mailboxes of theAccount, accountTitle)
+                        end repeat
+                    end if
+
+                    set jsonText to "[" & my join_list(jsonItems, ",") & "]"
                     set result to jsonText
                 end tell
                 return "{\\\"success\\\":true,\\\"data\\\":" & result & "}"
