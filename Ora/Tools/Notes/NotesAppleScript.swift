@@ -160,6 +160,85 @@ enum NotesAppleScript {
         return Self.buildScript(commands: commands)
     }
 
+    static func recentNotesScript(folder: String?, account: String?, limit: Int) -> String {
+        let accountName = Self.escapedOrEmpty(account)
+        let folderName = Self.escapedOrEmpty(folder)
+        let limitValue = max(1, limit)
+
+        let commands = """
+        set accountName to "\(accountName)"
+        set folderName to "\(folderName)"
+        set limitCount to \(limitValue)
+
+        set notesList to {}
+
+        if accountName is not "" then
+            if exists account accountName then
+                set targetAccount to account accountName
+            else
+                error "Account not found: " & accountName number 1001
+            end if
+
+            if folderName is not "" then
+                if exists folder folderName of targetAccount then
+                    set targetFolders to {folder folderName of targetAccount}
+                else
+                    error "Folder not found: " & folderName number 1002
+                end if
+            else
+                set targetFolders to folders of targetAccount
+            end if
+
+            repeat with theFolder in targetFolders
+                set notesList to notesList & (notes of theFolder)
+            end repeat
+        else
+            if folderName is not "" then
+                set matchingFolders to {}
+                repeat with theAccount in accounts
+                    if exists folder folderName of theAccount then
+                        set end of matchingFolders to folder folderName of theAccount
+                    end if
+                end repeat
+
+                if (count of matchingFolders) is 0 then
+                    error "Folder not found: " & folderName number 1002
+                end if
+
+                repeat with theFolder in matchingFolders
+                    set notesList to notesList & (notes of theFolder)
+                end repeat
+            else
+                set notesList to notes
+            end if
+        end if
+
+        set jsonItems to {}
+        repeat with theNote in notesList
+            if (count of jsonItems) >= limitCount then exit repeat
+
+            set noteId to id of theNote as string
+            set noteTitle to name of theNote as string
+            set folderTitle to ""
+            try
+                set folderItem to container of theNote
+                set folderTitle to name of folderItem as string
+            end try
+            set modDate to ""
+            try
+                set modDate to modification date of theNote as string
+            end try
+
+            set end of jsonItems to "{\\\"note_id\\\":\\\"" & my json_escape(noteId) & "\\\",\\\"title\\\":\\\"" & my json_escape(noteTitle) & "\\\",\\\"folder\\\":\\\"" & my json_escape(folderTitle) & "\\\",\\\"modification_date\\\":\\\"" & my json_escape(modDate) & "\\\"}"
+        end repeat
+
+        set jsonText to "[" & my join_list(jsonItems, ",") & "]"
+        set result to jsonText
+        """
+
+        return Self.buildScript(commands: commands)
+    }
+
     static func openNoteScript(noteID: String) -> String {
         let noteIdValue = Self.escape(Self.normalizeNoteID(noteID))
 

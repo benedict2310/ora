@@ -32,6 +32,17 @@ final class NotesToolsTests: XCTestCase {
         XCTAssertNotNil(tool.schema.parameters["limit"])
     }
 
+    func test_recentTool_schema() {
+        let tool = NotesRecentTool()
+        XCTAssertEqual(tool.name, "notes.recent")
+        XCTAssertEqual(tool.kind, .read)
+        XCTAssertFalse(tool.requiresConfirmation)
+        XCTAssertTrue(tool.schema.requiredParameters.isEmpty)
+        XCTAssertNotNil(tool.schema.parameters["folder"])
+        XCTAssertNotNil(tool.schema.parameters["account"])
+        XCTAssertNotNil(tool.schema.parameters["limit"])
+    }
+
     func test_openTool_schema() {
         let tool = NotesOpenTool()
         XCTAssertEqual(tool.name, "notes.open_note")
@@ -77,6 +88,7 @@ final class NotesToolsTests: XCTestCase {
 
         let create = await ToolRegistry.shared.tool(named: "notes.create_note")
         let search = await ToolRegistry.shared.tool(named: "notes.search_notes")
+        let recent = await ToolRegistry.shared.tool(named: "notes.recent")
         let open = await ToolRegistry.shared.tool(named: "notes.open_note")
         let read = await ToolRegistry.shared.tool(named: "notes.read_note")
         let edit = await ToolRegistry.shared.tool(named: "notes.edit_note")
@@ -84,6 +96,7 @@ final class NotesToolsTests: XCTestCase {
 
         XCTAssertNotNil(create)
         XCTAssertNotNil(search)
+        XCTAssertNotNil(recent)
         XCTAssertNotNil(open)
         XCTAssertNotNil(read)
         XCTAssertNotNil(edit)

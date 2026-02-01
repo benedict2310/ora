@@ -62,6 +62,7 @@ final class MailComposeToolsTests: XCTestCase {
         let send = await ToolRegistry.shared.tool(named: "mail.send")
         let openDraft = await ToolRegistry.shared.tool(named: "mail.open_draft")
         let search = await ToolRegistry.shared.tool(named: "mail.search")
+        let recent = await ToolRegistry.shared.tool(named: "mail.recent")
         let openMessage = await ToolRegistry.shared.tool(named: "mail.open_message")
         let listMailboxes = await ToolRegistry.shared.tool(named: "mail.list_mailboxes")
 
@@ -69,6 +70,7 @@ final class MailComposeToolsTests: XCTestCase {
         XCTAssertNotNil(send)
         XCTAssertNotNil(openDraft)
         XCTAssertNotNil(search)
+        XCTAssertNotNil(recent)
         XCTAssertNotNil(openMessage)
         XCTAssertNotNil(listMailboxes)
     }

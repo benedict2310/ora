@@ -62,40 +62,45 @@ enum MailAppleScript {
 
     private static let mailboxHelpers = """
     on resolve_account(accountName)
-        if accountName is not "" then
-            if exists account accountName then
-                return account accountName
+        tell application "Mail"
+            if accountName is not "" then
+                if exists account accountName then
+                    return account accountName
+                else
+                    error "Account not found: " & accountName number 1001
+                end if
             else
-                error "Account not found: " & accountName number 1001
-            end if
-        else
-            try
-                return default account
-            on error
-                if (count of accounts) > 0 then
-                    return first account
+                set allAccounts to every account
+                if (count of allAccounts) > 0 then
+                    return item 1 of allAccounts
                 else
                     error "No Mail account available" number 1001
                 end if
-            end try
-        end if
+            end if
+        end tell
     end resolve_account
 
     on find_mailbox_by_name(accountRef, mailboxName)
         if mailboxName is "" then return missing value
-        set matchBox to my search_mailboxes(mailboxes of accountRef, mailboxName)
+        tell application "Mail"
+            set matchBox to my search_mailboxes(mailboxes of accountRef, mailboxName)
+        end tell
         return matchBox
     end find_mailbox_by_name
 
     on search_mailboxes(mailboxList, mailboxName)
         repeat with candidate in mailboxList
             try
-                if (name of candidate as string) is mailboxName then
-                    return candidate
-                end if
+                tell application "Mail"
+                    if (name of candidate as string) is mailboxName then
+                        return candidate
+                    end if
+                end tell
             end try
             try
-                set childBoxes to mailboxes of candidate
+                tell application "Mail"
+                    set childBoxes to mailboxes of candidate
+                end tell
                 if (count of childBoxes) > 0 then
                     set childMatch to my search_mailboxes(childBoxes, mailboxName)
                     if childMatch is not missing value then
@@ -112,13 +117,17 @@ enum MailAppleScript {
         repeat with candidate in mailboxList
             set boxName to ""
             try
-                set boxName to name of candidate as string
+                tell application "Mail"
+                    set boxName to name of candidate as string
+                end tell
             end try
             if boxName is not "" then
                 set end of collected to "{\\\"name\\\":\\\"" & my json_escape(boxName) & "\\\",\\\"account\\\":\\\"" & my json_escape(accountName) & "\\\"}"
             end if
             try
-                set childBoxes to mailboxes of candidate
+                tell application "Mail"
+                    set childBoxes to mailboxes of candidate
+                end tell
                 if (count of childBoxes) > 0 then
                     set childItems to my collect_mailboxes(childBoxes, accountName)
                     set collected to collected & childItems

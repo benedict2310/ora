@@ -73,6 +73,7 @@ actor ToolRegistry {
         // Notes tools
         register(NotesCreateTool())
         register(NotesSearchTool())
+        register(NotesRecentTool())
         register(NotesOpenTool())
         register(NotesReadTool())
         register(NotesEditTool())
@@ -87,6 +88,7 @@ actor ToolRegistry {
         register(MailSendTool())
         register(MailOpenDraftTool())
         register(MailSearchTool())
+        register(MailRecentTool())
         register(MailOpenMessageTool())
         register(MailListMailboxesTool())
 

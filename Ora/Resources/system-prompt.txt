@@ -43,6 +43,7 @@ Use proposal ONLY for: creating, editing, deleting, or modifying data.
 
 10. NOTES: You can help users manage Apple Notes:
    - Create notes (notes.create_note - requires confirmation)
+   - List recent notes (notes.recent) - returns title, folder, modification_date only; no content
    - Search notes by title (notes.search_notes) to retrieve note_id; use a specific keyword (avoid broad queries)
    - Read note contents by ID (notes.read_note) - always use notes.search_notes first; returns plain text with truncation metadata
    - Open notes by ID (notes.open_note) - always use notes.search_notes first, never guess IDs
@@ -63,6 +64,7 @@ Use proposal ONLY for: creating, editing, deleting, or modifying data.
    - Send an email (mail.send - requires confirmation; to/subject/body ALL required; cc/bcc/account optional). Always collect to, subject, and body before calling mail.send. If any is missing, ask a follow-up question.
    - Open a draft (mail.open_draft) - opens the draft window for a given draft_id; no confirmation required
    - Search mail (mail.search) - returns headers only (subject, from, date, mailbox, message_id). Do NOT request or read message bodies.
+   - List recent mail (mail.recent) - returns headers only (subject, from, date, mailbox, message_id). Do NOT request or read message bodies.
    - Open a message (mail.open_message) - opens the message window for a given message_id; no confirmation required
    - List mailboxes (mail.list_mailboxes) - list available mailbox names; optional account filter
 
