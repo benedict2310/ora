@@ -17,7 +17,7 @@ final class MailComposeToolsTests: XCTestCase {
         XCTAssertEqual(tool.name, "mail.create_draft")
         XCTAssertEqual(tool.kind, .mutate)
         XCTAssertTrue(tool.requiresConfirmation)
-        XCTAssertEqual(tool.schema.requiredParameters, ["to", "subject", "body"])
+        XCTAssertEqual(tool.schema.requiredParameters, ["to"])
         XCTAssertNotNil(tool.schema.parameters["to"])
         XCTAssertNotNil(tool.schema.parameters["subject"])
         XCTAssertNotNil(tool.schema.parameters["body"])
@@ -69,25 +69,26 @@ final class MailComposeToolsTests: XCTestCase {
 
     // MARK: - Validation Tests
 
-    func test_createDraftTool_validate_requiresFields() {
+    func test_createDraftTool_validate_requiresTo() {
         let tool = MailCreateDraftTool()
         XCTAssertThrowsError(try tool.validate(args: [:])) { error in
             XCTAssertTrue(error is ToolHostError)
         }
         XCTAssertThrowsError(try tool.validate(args: [
-            "to": .string("a@example.com")
-        ])) { error in
-            XCTAssertTrue(error is ToolHostError)
-        }
-        XCTAssertThrowsError(try tool.validate(args: [
-            "to": .string("a@example.com"),
-            "subject": .string("Hi")
+            "to": .string("")
         ])) { error in
             XCTAssertTrue(error is ToolHostError)
         }
     }
 
-    func test_createDraftTool_validate_acceptsValidArgs() {
+    func test_createDraftTool_validate_acceptsToOnly() {
+        let tool = MailCreateDraftTool()
+        XCTAssertNoThrow(try tool.validate(args: [
+            "to": .string("a@example.com")
+        ]))
+    }
+
+    func test_createDraftTool_validate_acceptsAllFields() {
         let tool = MailCreateDraftTool()
         XCTAssertNoThrow(try tool.validate(args: [
             "to": .string("a@example.com"),
@@ -168,6 +169,25 @@ final class MailComposeToolsTests: XCTestCase {
 
         let config = await runner.lastConfig
         XCTAssertTrue(config?.expectsJSON ?? false)
+    }
+
+    func test_createDraft_execute_withToOnly() async throws {
+        let stdout = """
+        {"success": true, "data": {"draft_id": "draft-minimal", "subject": ""}}
+        """
+        let runner = MailMockAppleScriptRunner(result: .success(Self.makeResult(stdout: stdout)))
+        let tool = MailCreateDraftTool(runner: runner)
+
+        let result = try await tool.execute(args: [
+            "to": .string("a@example.com")
+        ])
+
+        XCTAssertEqual(result.humanSummary, "Created draft to a@example.com.")
+
+        let args = await runner.lastArguments
+        XCTAssertEqual(args?[0], "a@example.com")
+        XCTAssertEqual(args?[1], "")
+        XCTAssertEqual(args?[2], "")
     }
 
     func test_createDraft_execute_passesOptionalFields() async throws {
