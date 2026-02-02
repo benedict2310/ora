@@ -374,6 +374,7 @@ actor AgentLoop {
                     // Include full JSON data so LLM can see details like event IDs
                     let jsonString = result.json.compactJSON
                     let resultText = "Tool \(tool) returned: \(jsonString)"
+                    logger.info("Tool result for \(tool, privacy: .public): \(String(jsonString.prefix(300)), privacy: .public)")
                     await conversationManager.addToolResult(resultText)
 
                 } catch {

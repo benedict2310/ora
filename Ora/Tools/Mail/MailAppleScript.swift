@@ -340,6 +340,7 @@ enum MailAppleScript {
                     end if
 
                     set mailboxFound to false
+                    set skippedAccounts to {}
 
                     repeat with theAccount in accountsToSearch
                         if (count of jsonItems) >= limitCount then exit repeat
@@ -370,8 +371,8 @@ enum MailAppleScript {
                                     else
                                         set foundMessages to (messages of targetMailbox whose subject contains queryText or sender contains queryText)
                                     end if
-                                on error
-                                    set foundMessages to {}
+                                on error errMsg
+                                    set end of skippedAccounts to accountTitle & ": " & errMsg
                                 end try
                             end if
 
@@ -407,7 +408,12 @@ enum MailAppleScript {
                     end if
 
                     set jsonText to "[" & my join_list(jsonItems, ",") & "]"
-                    set result to jsonText
+                    if (count of skippedAccounts) > 0 then
+                        set errList to my join_list(skippedAccounts, "; ")
+                        set result to "{\\\"messages\\\":" & jsonText & ",\\\"errors\\\":\\\"" & my json_escape(errList) & "\\\"}"
+                    else
+                        set result to jsonText
+                    end if
                 end tell
                 return "{\\\"success\\\":true,\\\"data\\\":" & result & "}"
             on error errMsg number errNum
@@ -452,6 +458,7 @@ enum MailAppleScript {
                     end if
 
                     set mailboxFound to false
+                    set skippedAccounts to {}
 
                     repeat with theAccount in accountsToSearch
                         if (count of jsonItems) >= limitCount then exit repeat
@@ -474,17 +481,18 @@ enum MailAppleScript {
                         if mailboxName is not "" and targetMailbox is missing value then
                             -- mailbox not in this account
                         else
+                            set sourceMessages to {}
                             if targetMailbox is missing value then
                                 try
                                     set sourceMessages to messages of theAccount
-                                on error
-                                    set sourceMessages to {}
+                                on error errMsg
+                                    set end of skippedAccounts to accountTitle & ": " & errMsg
                                 end try
                             else
                                 try
                                     set sourceMessages to messages of targetMailbox
-                                on error
-                                    set sourceMessages to {}
+                                on error errMsg
+                                    set end of skippedAccounts to accountTitle & ": " & errMsg
                                 end try
                             end if
 
@@ -520,7 +528,12 @@ enum MailAppleScript {
                     end if
 
                     set jsonText to "[" & my join_list(jsonItems, ",") & "]"
-                    set result to jsonText
+                    if (count of skippedAccounts) > 0 then
+                        set errList to my join_list(skippedAccounts, "; ")
+                        set result to "{\\\"messages\\\":" & jsonText & ",\\\"errors\\\":\\\"" & my json_escape(errList) & "\\\"}"
+                    else
+                        set result to jsonText
+                    end if
                 end tell
                 return "{\\\"success\\\":true,\\\"data\\\":" & result & "}"
             on error errMsg number errNum
