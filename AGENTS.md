@@ -62,6 +62,7 @@ Voice → (FluidAudio Parakeet) → (MLX + Qwen 2.5) → (Kokoro TTS) → Voice/
 | `./build.sh logs` | Stream unified logs (includes debug level) |
 | `./build.sh logs --category <name>` | Stream logs for specific category (e.g., `chunker`, `tts`, `llm`) |
 | `./build.sh open-results` | Open `.xcresult` bundle in Xcode |
+| `./build.sh sign` | Build, sign with Developer ID, notarize, and optionally create DMG (for distribution) |
 
 ### Viewing Logs (macOS Unified Logging)
 
@@ -133,6 +134,59 @@ defaults delete com.ora.app "com.ora.hotkeyConfiguration"
 **Other commands:**
 - **Run tests:** `./build.sh test` (preferred) or `xcodebuild test -project Ora.xcodeproj -scheme Ora`.
 - **Restart app manually:** `killall Ora 2>/dev/null || true; open -n build/Build/Products/Release/Ora.app`.
+
+### Local Signing for Distribution
+
+**When to use local signing:**
+- Testing the full signing/notarization flow before pushing to CI
+- Creating manual releases outside of CI/CD
+- Debugging signing or notarization issues
+
+**Quick workflow (interactive):**
+```bash
+./build.sh sign
+# Prompts for: Apple ID, app-specific password, Team ID, signing identity
+# Builds, signs, notarizes, and optionally creates DMG
+```
+
+**Manual workflow (for advanced use):**
+```bash
+# 1. Build
+./build.sh
+
+APP_PATH="build/Build/Products/Release/Ora.app"
+
+# 2. Sign with Developer ID
+scripts/ci-release.sh codesign "$APP_PATH"
+
+# 3. Notarize (takes 2-5 minutes)
+scripts/ci-release.sh notarize "$APP_PATH" \
+  "your@email.com" \
+  "app-specific-password" \
+  "TEAM_ID"
+
+# 4. (Optional) Create DMG
+scripts/ci-release.sh create-dmg "$APP_PATH" "/tmp/Ora-1.0.0.dmg"
+scripts/ci-release.sh codesign-dmg "/tmp/Ora-1.0.0.dmg"
+```
+
+**Available helper commands:**
+```bash
+scripts/ci-release.sh
+  codesign <app-path>                     # Deep-sign app bundle
+  codesign-dmg <dmg-path>                 # Sign DMG file
+  notarize <app> <id> <pw> <team>         # Notarize with Apple
+  create-dmg <app-path> <dmg-path>        # Create DMG from app
+  sparkle-sign <dmg> <tools> <key>        # Sign with Sparkle EdDSA
+  generate-appcast <dmg> <tools> <ver> <key>  # Generate appcast.xml
+```
+
+**Requirements for local signing:**
+- Developer ID Application certificate installed in Keychain
+- Apple ID with app-specific password (generate at appleid.apple.com)
+- Team ID from developer.apple.com/account
+
+**Note:** The `./build.sh sign` command uses ad-hoc signing for the initial build, then applies Developer ID signing afterward. This is faster than signing during the xcodebuild step.
 
 ### Test Output Policy (Token Optimization)
 

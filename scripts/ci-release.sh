@@ -28,6 +28,7 @@ die() { echo "ERROR: $*" >&2; exit 1; }
 # ── Keychain ─────────────────────────────────────────────────────────────
 
 cmd_setup_keychain() {
+    [ $# -eq 2 ] || die "Usage: setup-keychain <base64-p12> <password>"
     local p12_base64="$1"
     local p12_password="$2"
 
@@ -64,6 +65,7 @@ cmd_teardown_keychain() {
 # ── Code Signing ─────────────────────────────────────────────────────────
 
 cmd_codesign() {
+    [ $# -eq 1 ] || die "Usage: codesign <app-path>"
     local app_path="$1"
 
     [ -d "$app_path" ] || die "App not found: $app_path"
@@ -80,6 +82,7 @@ cmd_codesign() {
 }
 
 cmd_codesign_dmg() {
+    [ $# -eq 1 ] || die "Usage: codesign-dmg <dmg-path>"
     local dmg_path="$1"
 
     [ -f "$dmg_path" ] || die "DMG not found: $dmg_path"
@@ -95,6 +98,7 @@ cmd_codesign_dmg() {
 # ── Notarization ─────────────────────────────────────────────────────────
 
 cmd_notarize() {
+    [ $# -eq 4 ] || die "Usage: notarize <app-path> <apple-id> <app-password> <team-id>"
     local app_path="$1"
     local apple_id="$2"
     local app_password="$3"
@@ -126,6 +130,7 @@ cmd_notarize() {
 # ── DMG Creation ─────────────────────────────────────────────────────────
 
 cmd_create_dmg() {
+    [ $# -eq 2 ] || die "Usage: create-dmg <app-path> <dmg-path>"
     local app_path="$1"
     local dmg_path="$2"
 
@@ -157,6 +162,7 @@ cmd_create_dmg() {
 # ── Sparkle Signing ──────────────────────────────────────────────────────
 
 cmd_sparkle_sign() {
+    [ $# -eq 3 ] || die "Usage: sparkle-sign <dmg-path> <tools-dir> <private-key>"
     local dmg_path="$1"
     local tools_dir="$2"
     local private_key="$3"
@@ -182,6 +188,7 @@ cmd_sparkle_sign() {
 # ── Appcast Generation ───────────────────────────────────────────────────
 
 cmd_generate_appcast() {
+    [ $# -eq 4 ] || die "Usage: generate-appcast <dmg-path> <tools-dir> <version> <private-key>"
     local dmg_path="$1"
     local tools_dir="$2"
     local version="$3"

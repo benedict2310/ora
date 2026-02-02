@@ -270,8 +270,70 @@ case "${1:-build}" in
     fi
     ;;
 
+  sign)
+    echo -e "${BLUE}Building and signing Ora for distribution...${NC}"
+    echo ""
+
+    # Prompt for credentials
+    read -p "Apple ID: " APPLE_ID
+    read -sp "App-specific password: " APP_PASSWORD
+    echo ""
+    read -p "Team ID: " TEAM_ID
+    read -p "Signing identity (or press Enter for 'Developer ID Application'): " SIGN_IDENTITY
+    SIGN_IDENTITY="${SIGN_IDENTITY:-Developer ID Application}"
+
+    echo ""
+    echo -e "${YELLOW}Note: You may be prompted for your keychain password to access the signing certificate.${NC}"
+    echo ""
+
+    # Build
+    check_xcodegen
+    generate_project
+
+    echo -e "${BLUE}Building Release configuration...${NC}"
+    xcodebuild -project Ora.xcodeproj \
+      -scheme "$SCHEME" \
+      -configuration "$CONFIGURATION" \
+      -arch "$ARCH" \
+      -derivedDataPath build \
+      ONLY_ACTIVE_ARCH=YES \
+      CODE_SIGN_IDENTITY="-" \
+      build 2>&1 | grep -E "(BUILD|error:|warning:.*error)" || true
+
+    BUILD_STATUS=${PIPESTATUS[0]}
+    [ $BUILD_STATUS -eq 0 ] || { echo -e "${RED}Build failed${NC}"; exit 1; }
+
+    APP_PATH="build/Build/Products/${CONFIGURATION}/${SCHEME}.app"
+
+    # Sign
+    echo -e "${BLUE}Signing app bundle...${NC}"
+    scripts/ci-release.sh codesign "$APP_PATH" || exit 1
+
+    # Notarize
+    echo -e "${BLUE}Notarizing (this takes 2-5 minutes)...${NC}"
+    scripts/ci-release.sh notarize "$APP_PATH" "$APPLE_ID" "$APP_PASSWORD" "$TEAM_ID" || exit 1
+
+    # Ask about DMG
+    echo ""
+    read -p "Create DMG? (y/N): " CREATE_DMG
+    if [[ "$CREATE_DMG" =~ ^[Yy]$ ]]; then
+      VERSION=$(defaults read "$APP_PATH/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null || echo "1.0.0")
+      DMG_PATH="$PWD/Ora-${VERSION}.dmg"
+
+      echo -e "${BLUE}Creating DMG...${NC}"
+      scripts/ci-release.sh create-dmg "$APP_PATH" "$DMG_PATH" || exit 1
+      scripts/ci-release.sh codesign-dmg "$DMG_PATH" || exit 1
+
+      echo -e "${GREEN}DMG created and signed: $DMG_PATH${NC}"
+    fi
+
+    echo ""
+    echo -e "${GREEN}✅ Signed and notarized app: $APP_PATH${NC}"
+    echo -e "${YELLOW}You can now distribute this build or test it locally.${NC}"
+    ;;
+
   *)
-    echo "Usage: $0 {build|run|clean|reset-perms|test|test-perms|test-tsan|test-tts|logs|open-results}"
+    echo "Usage: $0 {build|run|clean|reset-perms|test|test-perms|test-tsan|test-tts|logs|open-results|sign}"
     echo ""
     echo "Commands:"
     echo "  build         Build the app (default)"
@@ -284,6 +346,7 @@ case "${1:-build}" in
     echo "  test-tts      Run on-demand TTS integration tests (audio)"
     echo "  logs          Tail unified logs (Ctrl+C to stop; --category <name> or --predicate <expr>)"
     echo "  open-results  Open the .xcresult bundle in Xcode"
+    echo "  sign          Build, sign with Developer ID, notarize, and optionally create DMG"
     exit 1
     ;;
 esac
