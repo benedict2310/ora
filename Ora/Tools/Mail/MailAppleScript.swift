@@ -327,50 +327,84 @@ enum MailAppleScript {
 
             try
                 tell application "Mail"
-                    set targetAccount to my resolve_account(accountName)
-                    set targetMailbox to missing value
-                    if mailboxName is not "" then
-                        set targetMailbox to my find_mailbox_by_name(targetAccount, mailboxName)
-                        if targetMailbox is missing value then
-                            error "Mailbox not found: " & mailboxName number 1002
-                        end if
-                    end if
-
                     set jsonItems to {}
-                    set foundMessages to {}
-
-                    if queryText is not "" then
-                        if targetMailbox is missing value then
-                            set foundMessages to (messages of targetAccount whose subject contains queryText or sender contains queryText)
-                        else
-                            set foundMessages to (messages of targetMailbox whose subject contains queryText or sender contains queryText)
+                    set accountsToSearch to {}
+                    if accountName is not "" then
+                        set targetAccount to my resolve_account(accountName)
+                        set accountsToSearch to {targetAccount}
+                    else
+                        set accountsToSearch to every account
+                        if (count of accountsToSearch) is 0 then
+                            error "No Mail account available" number 1001
                         end if
                     end if
 
-                    repeat with msg in foundMessages
+                    set mailboxFound to false
+
+                    repeat with theAccount in accountsToSearch
                         if (count of jsonItems) >= limitCount then exit repeat
-                        set msgSubject to ""
+                        set accountTitle to ""
                         try
-                            set msgSubject to subject of msg as string
+                            set accountTitle to name of theAccount as string
                         end try
-                        set msgSender to ""
-                        try
-                            set msgSender to sender of msg as string
-                        end try
-                        set msgDate to ""
-                        try
-                            set msgDate to date received of msg as string
-                        end try
-                        set msgMailbox to ""
-                        try
-                            set msgMailbox to name of mailbox of msg as string
-                        end try
-                        set msgId to ""
-                        try
-                            set msgId to message id of msg as string
-                        end try
-                        set end of jsonItems to "{\\\"message_id\\\":\\\"" & my json_escape(msgId) & "\\\",\\\"subject\\\":\\\"" & my json_escape(msgSubject) & "\\\",\\\"from\\\":\\\"" & my json_escape(msgSender) & "\\\",\\\"date\\\":\\\"" & my json_escape(msgDate) & "\\\",\\\"mailbox\\\":\\\"" & my json_escape(msgMailbox) & "\\\"}"
+                        if accountTitle is "" then set accountTitle to accountName
+
+                        set targetMailbox to missing value
+                        if mailboxName is not "" then
+                            try
+                                set targetMailbox to my find_mailbox_by_name(theAccount, mailboxName)
+                            end try
+                            if targetMailbox is not missing value then
+                                set mailboxFound to true
+                            end if
+                        end if
+
+                        if mailboxName is not "" and targetMailbox is missing value then
+                            -- mailbox not in this account
+                        else
+                            set foundMessages to {}
+                            if queryText is not "" then
+                                try
+                                    if targetMailbox is missing value then
+                                        set foundMessages to (messages of theAccount whose subject contains queryText or sender contains queryText)
+                                    else
+                                        set foundMessages to (messages of targetMailbox whose subject contains queryText or sender contains queryText)
+                                    end if
+                                on error
+                                    set foundMessages to {}
+                                end try
+                            end if
+
+                            repeat with msg in foundMessages
+                                if (count of jsonItems) >= limitCount then exit repeat
+                                set msgSubject to ""
+                                try
+                                    set msgSubject to subject of msg as string
+                                end try
+                                set msgSender to ""
+                                try
+                                    set msgSender to sender of msg as string
+                                end try
+                                set msgDate to ""
+                                try
+                                    set msgDate to date received of msg as string
+                                end try
+                                set msgMailbox to ""
+                                try
+                                    set msgMailbox to name of mailbox of msg as string
+                                end try
+                                set msgId to ""
+                                try
+                                    set msgId to message id of msg as string
+                                end try
+                                set end of jsonItems to "{\\\"message_id\\\":\\\"" & my json_escape(msgId) & "\\\",\\\"subject\\\":\\\"" & my json_escape(msgSubject) & "\\\",\\\"from\\\":\\\"" & my json_escape(msgSender) & "\\\",\\\"date\\\":\\\"" & my json_escape(msgDate) & "\\\",\\\"mailbox\\\":\\\"" & my json_escape(msgMailbox) & "\\\",\\\"account\\\":\\\"" & my json_escape(accountTitle) & "\\\"}"
+                            end repeat
+                        end if
                     end repeat
+
+                    if mailboxName is not "" and mailboxFound is false then
+                        error "Mailbox not found: " & mailboxName number 1002
+                    end if
 
                     set jsonText to "[" & my join_list(jsonItems, ",") & "]"
                     set result to jsonText
@@ -405,46 +439,85 @@ enum MailAppleScript {
 
             try
                 tell application "Mail"
-                    set targetAccount to my resolve_account(accountName)
-                    set targetMailbox to missing value
-                    if mailboxName is not "" then
-                        set targetMailbox to my find_mailbox_by_name(targetAccount, mailboxName)
-                        if targetMailbox is missing value then
-                            error "Mailbox not found: " & mailboxName number 1002
+                    set jsonItems to {}
+                    set accountsToSearch to {}
+                    if accountName is not "" then
+                        set targetAccount to my resolve_account(accountName)
+                        set accountsToSearch to {targetAccount}
+                    else
+                        set accountsToSearch to every account
+                        if (count of accountsToSearch) is 0 then
+                            error "No Mail account available" number 1001
                         end if
                     end if
 
-                    if targetMailbox is missing value then
-                        set sourceMessages to messages of targetAccount
-                    else
-                        set sourceMessages to messages of targetMailbox
-                    end if
+                    set mailboxFound to false
 
-                    set jsonItems to {}
-                    repeat with msg in sourceMessages
+                    repeat with theAccount in accountsToSearch
                         if (count of jsonItems) >= limitCount then exit repeat
-                        set msgSubject to ""
+                        set accountTitle to ""
                         try
-                            set msgSubject to subject of msg as string
+                            set accountTitle to name of theAccount as string
                         end try
-                        set msgSender to ""
-                        try
-                            set msgSender to sender of msg as string
-                        end try
-                        set msgDate to ""
-                        try
-                            set msgDate to date received of msg as string
-                        end try
-                        set msgMailbox to ""
-                        try
-                            set msgMailbox to name of mailbox of msg as string
-                        end try
-                        set msgId to ""
-                        try
-                            set msgId to message id of msg as string
-                        end try
-                        set end of jsonItems to "{\\\"message_id\\\":\\\"" & my json_escape(msgId) & "\\\",\\\"subject\\\":\\\"" & my json_escape(msgSubject) & "\\\",\\\"from\\\":\\\"" & my json_escape(msgSender) & "\\\",\\\"date\\\":\\\"" & my json_escape(msgDate) & "\\\",\\\"mailbox\\\":\\\"" & my json_escape(msgMailbox) & "\\\"}"
+                        if accountTitle is "" then set accountTitle to accountName
+
+                        set targetMailbox to missing value
+                        if mailboxName is not "" then
+                            try
+                                set targetMailbox to my find_mailbox_by_name(theAccount, mailboxName)
+                            end try
+                            if targetMailbox is not missing value then
+                                set mailboxFound to true
+                            end if
+                        end if
+
+                        if mailboxName is not "" and targetMailbox is missing value then
+                            -- mailbox not in this account
+                        else
+                            if targetMailbox is missing value then
+                                try
+                                    set sourceMessages to messages of theAccount
+                                on error
+                                    set sourceMessages to {}
+                                end try
+                            else
+                                try
+                                    set sourceMessages to messages of targetMailbox
+                                on error
+                                    set sourceMessages to {}
+                                end try
+                            end if
+
+                            repeat with msg in sourceMessages
+                                if (count of jsonItems) >= limitCount then exit repeat
+                                set msgSubject to ""
+                                try
+                                    set msgSubject to subject of msg as string
+                                end try
+                                set msgSender to ""
+                                try
+                                    set msgSender to sender of msg as string
+                                end try
+                                set msgDate to ""
+                                try
+                                    set msgDate to date received of msg as string
+                                end try
+                                set msgMailbox to ""
+                                try
+                                    set msgMailbox to name of mailbox of msg as string
+                                end try
+                                set msgId to ""
+                                try
+                                    set msgId to message id of msg as string
+                                end try
+                                set end of jsonItems to "{\\\"message_id\\\":\\\"" & my json_escape(msgId) & "\\\",\\\"subject\\\":\\\"" & my json_escape(msgSubject) & "\\\",\\\"from\\\":\\\"" & my json_escape(msgSender) & "\\\",\\\"date\\\":\\\"" & my json_escape(msgDate) & "\\\",\\\"mailbox\\\":\\\"" & my json_escape(msgMailbox) & "\\\",\\\"account\\\":\\\"" & my json_escape(accountTitle) & "\\\"}"
+                            end repeat
+                        end if
                     end repeat
+
+                    if mailboxName is not "" and mailboxFound is false then
+                        error "Mailbox not found: " & mailboxName number 1002
+                    end if
 
                     set jsonText to "[" & my join_list(jsonItems, ",") & "]"
                     set result to jsonText

@@ -120,6 +120,7 @@ private struct MessageHeader: Sendable {
     let from: String
     let date: String
     let mailbox: String
+    let account: String
 
     init?(json: JSONValue) {
         guard case .object(let dict) = json else {
@@ -136,6 +137,7 @@ private struct MessageHeader: Sendable {
         self.from = dict["from"]?.stringValue ?? ""
         self.date = dict["date"]?.stringValue ?? ""
         self.mailbox = dict["mailbox"]?.stringValue ?? ""
+        self.account = dict["account"]?.stringValue ?? ""
     }
 
     func toJSON() -> JSONValue {
@@ -144,7 +146,8 @@ private struct MessageHeader: Sendable {
             "subject": .string(self.subject),
             "from": .string(self.from),
             "date": .string(self.date),
-            "mailbox": .string(self.mailbox)
+            "mailbox": .string(self.mailbox),
+            "account": .string(self.account)
         ])
     }
 }

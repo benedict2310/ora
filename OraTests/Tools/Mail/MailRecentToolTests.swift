@@ -37,6 +37,33 @@ final class MailRecentToolTests: XCTestCase {
         XCTAssertEqual(dict["from"]?.stringValue, "John")
     }
 
+    func test_recent_accountFieldInResults() async throws {
+        // Given
+        let stdout = """
+        {"success": true, "data": [{"message_id": "<id-1>", "subject": "Subject", "from": "John", "date": "2026-02-01", "mailbox": "Inbox", "account": "Work"}]}
+        """
+        let runner = MailRecentMockAppleScriptRunner(results: [
+            .success(Self.makeResult(stdout: stdout))
+        ])
+        let tool = MailRecentTool(runner: runner)
+
+        // When
+        let result = try await tool.execute(args: [:])
+
+        // Then
+        guard case .array(let items) = result.json,
+              case .object(let dict) = items.first else {
+            return XCTFail("Expected array with object")
+        }
+        XCTAssertEqual(dict["account"]?.stringValue, "Work")
+    }
+
+    func test_recent_noAccountQueriesAllAccounts() {
+        let script = MailAppleScript.recentMessagesScript()
+        XCTAssertTrue(script.contains("set accountsToSearch to every account"))
+        XCTAssertTrue(script.contains("repeat with theAccount in accountsToSearch"))
+    }
+
     func test_recent_returnsMessageId() async throws {
         // Given
         let stdout = """
