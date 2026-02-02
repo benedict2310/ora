@@ -120,6 +120,9 @@ Agentic tools for system integration.
 | X.04 | [Contacts Tools](tools/X.04-CONTACTS-TOOLS.md) | 🚧 To Do |
 | X.05 | [System Tools](tools/X.05-SYSTEM-TOOLS.md) | 🚧 To Do |
 | X.06C | [Messages: Send & Open](tools/X.06C-MESSAGES.md) | 🚧 To Do |
+| X.07B | [Mail: Search & Open](tools/X.07B-MAIL-SEARCH.md) | ✅ Complete |
+| X.08 | [Recent Items: Mail & Notes](tools/X.08-RECENT-ITEMS.md) | ✅ Complete |
+| X.09 | [Mail Multi-Account](tools/X.09-MAIL-MULTI-ACCOUNT.md) | 🚧 To Do |
 
 ### 🧰 Background Tasks (BG)
 Safe, containerized background task execution for Ora.
