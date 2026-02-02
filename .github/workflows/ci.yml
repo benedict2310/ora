@@ -1,0 +1,91 @@
+# CI — Build + Test on every PR and push to main
+#
+# Runner: macos-15 (Apple Silicon, macOS 26 SDK via Xcode 26.2)
+# No secrets required — uses ad-hoc code signing.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SCHEME: Ora
+  CONFIGURATION: Release
+  ARCH: arm64
+  DERIVED_DATA: build
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Select Xcode 26.2
+        run: sudo xcode-select -s /Applications/Xcode_26.2.app
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Cache SPM packages
+        uses: actions/cache@v4
+        with:
+          path: build/SourcePackages
+          key: spm-${{ hashFiles('project.yml', 'Vendor/kokoro-ios/Package.swift', 'Vendor/MisakiSwift/Package.swift') }}
+          restore-keys: |
+            spm-
+
+      - name: Resolve packages
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project Ora.xcodeproj \
+            -scheme "$SCHEME" \
+            -clonedSourcePackagesDirPath "$DERIVED_DATA/SourcePackages"
+
+      - name: Build
+        run: |
+          xcodebuild build \
+            -project Ora.xcodeproj \
+            -scheme "$SCHEME" \
+            -configuration "$CONFIGURATION" \
+            -arch "$ARCH" \
+            -derivedDataPath "$DERIVED_DATA" \
+            -destination "platform=macOS,arch=$ARCH" \
+            CODE_SIGN_IDENTITY="-" \
+            ENABLE_HARDENED_RUNTIME=NO \
+            ONLY_ACTIVE_ARCH=YES
+
+      - name: Test
+        run: |
+          ORA_SKIP_PERMISSION_PROMPTS=1 xcodebuild test \
+            -project Ora.xcodeproj \
+            -scheme "$SCHEME" \
+            -derivedDataPath "$DERIVED_DATA" \
+            -resultBundlePath .artifacts/TestResults.xcresult \
+            -destination "platform=macOS,arch=$ARCH" \
+            CODE_SIGN_IDENTITY="-" \
+            ENABLE_HARDENED_RUNTIME=NO
+
+      - name: Parse test results
+        if: always()
+        run: python3 scripts/xcresult_summary.py .artifacts/TestResults.xcresult
+
+      - name: Upload test results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TestResults
+          path: .artifacts/TestResults.xcresult
+          retention-days: 7
