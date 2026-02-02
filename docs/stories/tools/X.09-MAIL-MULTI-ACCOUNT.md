@@ -149,6 +149,27 @@ As a user with multiple email accounts, I want "search my email for the invoice 
 
 ---
 
+## Follow-up Fix (Post-Merge)
+**Date:** 2026-02-02  
+**Reason:** Gmail `messages of account` and `messages of inbox of account` return 0, while `mailbox "INBOX" of account` returns messages. This caused `mail.recent` / `mail.search` to return empty arrays for Google inbox queries even though messages existed.
+
+### Changes
+- `Ora/Tools/Mail/MailAppleScript.swift`
+  - Normalize mailbox names containing "inbox" to `INBOX` before searching.
+  - When no mailbox is provided and account-level queries return 0, fall back to mailbox `INBOX`/`Inbox`.
+  - Case-insensitive mailbox name matching in `search_mailboxes`.
+- `Ora/Resources/system-prompt.txt`
+  - When a mailbox name is mentioned (e.g., "Inbox", Gmail labels), use `mail.recent` with `mailbox` instead of `mail.search`.
+- Tests
+  - `OraTests/Tools/Mail/MailSearchToolTests.swift` — ensure inbox normalization logic is present in the script.
+  - `OraTests/Tools/Mail/MailRecentToolTests.swift` — ensure inbox normalization logic is present in the script.
+
+### Verification
+- Automated: `./build.sh test`
+- Manual: “Show me my recent emails in Google inbox” returns messages.
+
+---
+
 ## Code Review Findings
 
 **Reviewer:** Codex Subagent

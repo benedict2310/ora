@@ -64,15 +64,15 @@ struct MailRecentTool: Tool {
             throw MailToolError.fromAppleScriptError(error)
         }
 
-        let data = try MailAppleScript.parseEnvelope(result)
-        guard case .array(let items) = data else {
-            throw MailToolError.invalidResponse
+        let parsed = try MailAppleScript.parseMessageList(result)
+        if let errors = parsed.errors {
+            Self.logger.warning("mail.recent partial failures: \(errors, privacy: .private)")
         }
 
-        let headers = items.compactMap { MessageHeader(json: $0) }
+        let headers = parsed.messages.compactMap { MessageHeader(json: $0) }
         let limited = Array(headers.prefix(limit))
 
-        let summary = Self.summary(count: limited.count, mailbox: mailbox, account: account)
+        let summary = Self.summary(count: limited.count, mailbox: mailbox, account: account, hadErrors: parsed.errors != nil)
         Self.logger.info("mail.recent returned \(limited.count) messages")
 
         return .success(.array(limited.map { $0.toJSON() }), summary: summary)
@@ -92,7 +92,7 @@ struct MailRecentTool: Tool {
         return value
     }
 
-    private static func summary(count: Int, mailbox: String?, account: String?) -> String {
+    private static func summary(count: Int, mailbox: String?, account: String?, hadErrors: Bool) -> String {
         var filters: [String] = []
         if let mailbox = mailbox {
             filters.append("mailbox \(mailbox)")
@@ -101,14 +101,15 @@ struct MailRecentTool: Tool {
             filters.append("account \(account)")
         }
         let filterClause = filters.isEmpty ? "" : " for \(filters.joined(separator: ", "))"
+        let errorClause = hadErrors ? " Some accounts could not be queried." : ""
 
         if count == 0 {
-            return "No recent emails found\(filterClause)."
+            return "No recent emails found\(filterClause).\(errorClause)"
         }
         if count == 1 {
-            return "Found 1 recent email\(filterClause)."
+            return "Found 1 recent email\(filterClause).\(errorClause)"
         }
-        return "Found \(count) recent emails\(filterClause)."
+        return "Found \(count) recent emails\(filterClause).\(errorClause)"
     }
 }
 

@@ -57,28 +57,29 @@ struct MailSearchTool: Tool {
             "mail.search start queryLength=\(normalizedQuery.count, privacy: .public) mailboxLength=\(mailbox?.count ?? 0, privacy: .public) accountLength=\(account?.count ?? 0, privacy: .public) limit=\(limit, privacy: .public)"
         )
 
-        let exactMatches = try await self.fetchExactMatches(
+        let exactResult = try await self.fetchExactMatches(
             query: normalizedQuery,
             mailbox: mailbox,
             account: account,
             limit: limit
         )
 
-        if !exactMatches.isEmpty {
-            let summary = Self.summary(count: exactMatches.count, query: normalizedQuery, isFuzzy: false)
-            Self.logger.info("mail.search exactResults=\(exactMatches.count, privacy: .public)")
-            return .success(.array(exactMatches.map { $0.toJSON() }), summary: summary)
+        if !exactResult.headers.isEmpty {
+            let summary = Self.summary(count: exactResult.headers.count, query: normalizedQuery, isFuzzy: false, hadErrors: exactResult.hadErrors)
+            Self.logger.info("mail.search exactResults=\(exactResult.headers.count, privacy: .public)")
+            return .success(.array(exactResult.headers.map { $0.toJSON() }), summary: summary)
         }
 
-        let candidates = try await self.fetchRecentMessages(
+        let recentResult = try await self.fetchRecentMessages(
             mailbox: mailbox,
             account: account,
             limit: Self.fuzzyCandidateLimit
         )
-        let fuzzyMatches = Self.fuzzyMatches(query: normalizedQuery, candidates: candidates, limit: limit)
-        let summary = Self.summary(count: fuzzyMatches.count, query: normalizedQuery, isFuzzy: true)
+        let fuzzyMatches = Self.fuzzyMatches(query: normalizedQuery, candidates: recentResult.headers, limit: limit)
+        let hadErrors = exactResult.hadErrors || recentResult.hadErrors
+        let summary = Self.summary(count: fuzzyMatches.count, query: normalizedQuery, isFuzzy: true, hadErrors: hadErrors)
         Self.logger.info(
-            "mail.search fuzzyCandidates=\(candidates.count, privacy: .public) fuzzyResults=\(fuzzyMatches.count, privacy: .public)"
+            "mail.search fuzzyCandidates=\(recentResult.headers.count, privacy: .public) fuzzyResults=\(fuzzyMatches.count, privacy: .public)"
         )
         return .success(
             .array(fuzzyMatches.map { $0.header.toJSON(matchScore: $0.score) }),
@@ -93,25 +94,25 @@ struct MailSearchTool: Tool {
         mailbox: String?,
         account: String?,
         limit: Int
-    ) async throws -> [MessageHeader] {
+    ) async throws -> (headers: [MessageHeader], hadErrors: Bool) {
         let script = MailAppleScript.searchMessagesScript()
         let arguments = [query, mailbox ?? "", account ?? "", "\(limit)"]
 
-        let headers = try await self.runScript(script: script, arguments: arguments)
-        return Array(headers.prefix(limit))
+        let result = try await self.runScript(script: script, arguments: arguments)
+        return (Array(result.headers.prefix(limit)), result.hadErrors)
     }
 
     private func fetchRecentMessages(
         mailbox: String?,
         account: String?,
         limit: Int
-    ) async throws -> [MessageHeader] {
+    ) async throws -> (headers: [MessageHeader], hadErrors: Bool) {
         let script = MailAppleScript.recentMessagesScript()
         let arguments = [mailbox ?? "", account ?? "", "\(limit)"]
         return try await self.runScript(script: script, arguments: arguments)
     }
 
-    private func runScript(script: String, arguments: [String]) async throws -> [MessageHeader] {
+    private func runScript(script: String, arguments: [String]) async throws -> (headers: [MessageHeader], hadErrors: Bool) {
         let result: AppleScriptResult
         do {
             result = try await runner.execute(script: script, arguments: arguments, config: .json())
@@ -124,12 +125,13 @@ struct MailSearchTool: Tool {
             throw MailToolError.fromAppleScriptError(error)
         }
 
-        let data = try MailAppleScript.parseEnvelope(result)
-        guard case .array(let items) = data else {
-            throw MailToolError.invalidResponse
+        let parsed = try MailAppleScript.parseMessageList(result)
+        if let errors = parsed.errors {
+            Self.logger.warning("mail.search partial failures: \(errors, privacy: .private)")
         }
 
-        return items.compactMap { MessageHeader(json: $0) }
+        let headers = parsed.messages.compactMap { MessageHeader(json: $0) }
+        return (headers, parsed.errors != nil)
     }
 
     private static func fuzzyMatches(
@@ -169,15 +171,16 @@ struct MailSearchTool: Tool {
         return value
     }
 
-    private static func summary(count: Int, query: String, isFuzzy: Bool) -> String {
+    private static func summary(count: Int, query: String, isFuzzy: Bool, hadErrors: Bool) -> String {
+        let errorClause = hadErrors ? " Some accounts could not be queried." : ""
         if count == 0 {
-            return "No emails found matching '\(query)'."
+            return "No emails found matching '\(query)'.\(errorClause)"
         }
         let prefix = isFuzzy ? "possible " : ""
         if count == 1 {
-            return "Found 1 \(prefix)email matching '\(query)'."
+            return "Found 1 \(prefix)email matching '\(query)'.\(errorClause)"
         }
-        return "Found \(count) \(prefix)emails matching '\(query)'."
+        return "Found \(count) \(prefix)emails matching '\(query)'.\(errorClause)"
     }
 }
 
