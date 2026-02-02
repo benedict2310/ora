@@ -1,0 +1,181 @@
+# Release — Full automated release on version tags (v*)
+#
+# Trigger: push tag matching v* (e.g., v1.1.0)
+# Runner: macos-26 (Apple Silicon, macOS 26 Tahoe - beta)
+#
+# Required secrets (7):
+#   DEVELOPER_ID_P12        — Base64-encoded .p12 certificate
+#   DEVELOPER_ID_PASSWORD   — .p12 import password
+#   APPLE_ID                — Apple ID email for notarization
+#   APPLE_ID_APP_PASSWORD   — App-specific password (appleid.apple.com)
+#   APPLE_TEAM_ID           — 10-char team ID (developer.apple.com)
+#   SPARKLE_PRIVATE_KEY     — EdDSA private key (from generate_keys -x)
+#   ORA_UPDATES_TOKEN       — Fine-grained PAT with push to benedict2310/ora-updates
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+env:
+  SCHEME: Ora
+  CONFIGURATION: Release
+  ARCH: arm64
+  DERIVED_DATA: build
+  APP_NAME: Ora
+  BUNDLE_ID: com.ora.app
+
+jobs:
+  release:
+    name: Build, Sign & Release
+    runs-on: macos-26
+
+    steps:
+      # ── Setup ──────────────────────────────────────────────────────────
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Select Xcode 26.2
+        run: sudo xcode-select -s /Applications/Xcode_26.2.app
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Release version: $VERSION (tag: $TAG)"
+
+      # ── Build ──────────────────────────────────────────────────────────
+
+      - name: Cache SPM packages
+        uses: actions/cache@v4
+        with:
+          path: build/SourcePackages
+          key: spm-${{ hashFiles('project.yml', 'Vendor/kokoro-ios/Package.swift', 'Vendor/MisakiSwift/Package.swift') }}
+          restore-keys: |
+            spm-
+
+      - name: Resolve packages
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project Ora.xcodeproj \
+            -scheme "$SCHEME" \
+            -clonedSourcePackagesDirPath "$DERIVED_DATA/SourcePackages"
+
+      - name: Build release
+        run: |
+          xcodebuild build \
+            -project Ora.xcodeproj \
+            -scheme "$SCHEME" \
+            -configuration "$CONFIGURATION" \
+            -arch "$ARCH" \
+            -derivedDataPath "$DERIVED_DATA" \
+            -destination "platform=macOS,arch=$ARCH" \
+            CODE_SIGN_IDENTITY="Developer ID Application" \
+            ENABLE_HARDENED_RUNTIME=YES \
+            OTHER_CODE_SIGN_FLAGS="--options runtime" \
+            MARKETING_VERSION="${{ steps.version.outputs.version }}" \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            ONLY_ACTIVE_ARCH=YES
+
+      # ── Code Sign & Notarize ───────────────────────────────────────────
+
+      - name: Import signing certificate
+        run: |
+          scripts/ci-release.sh setup-keychain \
+            "${{ secrets.DEVELOPER_ID_P12 }}" \
+            "${{ secrets.DEVELOPER_ID_PASSWORD }}"
+
+      - name: Deep-sign app bundle
+        run: |
+          APP_PATH="$DERIVED_DATA/Build/Products/$CONFIGURATION/$APP_NAME.app"
+          scripts/ci-release.sh codesign "$APP_PATH"
+
+      - name: Notarize app
+        run: |
+          APP_PATH="$DERIVED_DATA/Build/Products/$CONFIGURATION/$APP_NAME.app"
+          scripts/ci-release.sh notarize "$APP_PATH" \
+            "${{ secrets.APPLE_ID }}" \
+            "${{ secrets.APPLE_ID_APP_PASSWORD }}" \
+            "${{ secrets.APPLE_TEAM_ID }}"
+
+      # ── Package ────────────────────────────────────────────────────────
+
+      - name: Create DMG
+        id: dmg
+        run: |
+          APP_PATH="$DERIVED_DATA/Build/Products/$CONFIGURATION/$APP_NAME.app"
+          VERSION="${{ steps.version.outputs.version }}"
+          DMG_NAME="${APP_NAME}-${VERSION}.dmg"
+          DMG_PATH="$DERIVED_DATA/$DMG_NAME"
+
+          scripts/ci-release.sh create-dmg "$APP_PATH" "$DMG_PATH"
+          scripts/ci-release.sh codesign-dmg "$DMG_PATH"
+
+          echo "dmg_path=$DMG_PATH" >> "$GITHUB_OUTPUT"
+          echo "dmg_name=$DMG_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Sign DMG with Sparkle EdDSA
+        id: sparkle
+        run: |
+          TOOLS_DIR="$DERIVED_DATA/SourcePackages/artifacts/sparkle/Sparkle/bin"
+          DMG_PATH="${{ steps.dmg.outputs.dmg_path }}"
+
+          scripts/ci-release.sh sparkle-sign "$DMG_PATH" "$TOOLS_DIR" \
+            "${{ secrets.SPARKLE_PRIVATE_KEY }}"
+
+      # ── Appcast ────────────────────────────────────────────────────────
+
+      - name: Generate appcast
+        run: |
+          TOOLS_DIR="$DERIVED_DATA/SourcePackages/artifacts/sparkle/Sparkle/bin"
+          DMG_PATH="${{ steps.dmg.outputs.dmg_path }}"
+          VERSION="${{ steps.version.outputs.version }}"
+
+          scripts/ci-release.sh generate-appcast \
+            "$DMG_PATH" "$TOOLS_DIR" "$VERSION" \
+            "${{ secrets.SPARKLE_PRIVATE_KEY }}"
+
+      # ── Publish ────────────────────────────────────────────────────────
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Ora ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+          generate_release_notes: true
+          files: ${{ steps.dmg.outputs.dmg_path }}
+
+      - name: Push appcast to ora-updates
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.tag }}"
+
+          git clone https://x-access-token:${{ secrets.ORA_UPDATES_TOKEN }}@github.com/benedict2310/ora-updates.git /tmp/ora-updates
+
+          cp "$DERIVED_DATA/appcast/appcast.xml" /tmp/ora-updates/appcast.xml
+
+          cd /tmp/ora-updates
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add appcast.xml
+          git commit -m "release: update appcast for $TAG" || echo "No changes to commit"
+          git push
+
+      # ── Cleanup ────────────────────────────────────────────────────────
+
+      - name: Cleanup keychain
+        if: always()
+        run: scripts/ci-release.sh teardown-keychain
