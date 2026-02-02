@@ -38,6 +38,32 @@ final class MailSearchToolTests: XCTestCase {
         XCTAssertEqual(dict["from"]?.stringValue, "John")
     }
 
+    func test_search_accountFieldInResults() async throws {
+        let stdout = """
+        {"success": true, "data": [{"message_id": "<id-1>", "subject": "Subject", "from": "John", "date": "2026-02-01", "mailbox": "Inbox", "account": "Work"}]}
+        """
+        let runner = MailSearchMockAppleScriptRunner(results: [
+            .success(Self.makeResult(stdout: stdout))
+        ])
+        let tool = MailSearchTool(runner: runner)
+
+        let result = try await tool.execute(args: [
+            "query": .string("Subject")
+        ])
+
+        guard case .array(let items) = result.json,
+              case .object(let dict) = items.first else {
+            return XCTFail("Expected array with object")
+        }
+        XCTAssertEqual(dict["account"]?.stringValue, "Work")
+    }
+
+    func test_search_noAccountQueriesAllAccounts() {
+        let script = MailAppleScript.searchMessagesScript()
+        XCTAssertTrue(script.contains("set accountsToSearch to every account"))
+        XCTAssertTrue(script.contains("repeat with theAccount in accountsToSearch"))
+    }
+
     func test_search_returnsStableMessageId() async throws {
         let stdout = """
         {"success": true, "data": [{"message_id": "<id-123>", "subject": "Hello", "from": "Alice", "date": "2026-02-01", "mailbox": "Inbox"}]}
@@ -57,6 +83,24 @@ final class MailSearchToolTests: XCTestCase {
         }
 
         XCTAssertEqual(dict["message_id"]?.stringValue, "<id-123>")
+    }
+
+    func test_search_withAccountFiltersToSingleAccount() async throws {
+        let stdout = """
+        {"success": true, "data": [{"message_id": "<id-1>", "subject": "Hello", "from": "Alice", "date": "2026-02-01", "mailbox": "Inbox", "account": "Work"}]}
+        """
+        let runner = MailSearchMockAppleScriptRunner(results: [
+            .success(Self.makeResult(stdout: stdout))
+        ])
+        let tool = MailSearchTool(runner: runner)
+
+        _ = try await tool.execute(args: [
+            "query": .string("Hello"),
+            "account": .string("Work")
+        ])
+
+        let lastArguments = await runner.lastArguments
+        XCTAssertEqual(lastArguments?[2], "Work")
     }
 
     func test_search_exactResults_skipFuzzyFallback() async throws {
