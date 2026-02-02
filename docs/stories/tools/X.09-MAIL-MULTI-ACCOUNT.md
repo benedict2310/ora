@@ -48,9 +48,13 @@ As a user with multiple email accounts, I want "search my email for the invoice 
 - **No guardrails needed:** All affected tools are read-only (`ToolKind.read`).
 - **Audit logging:** Handled automatically by `ToolHost.execute()`.
 
-## 5. Implementation Plan
+## 5. Implementation Plan (Draft)
 
-### 5.1 Files to Modify
+### 5.1 Files to Create
+
+- None.
+
+### 5.2 Files to Modify
 
 - **`Ora/Tools/Mail/MailAppleScript.swift`**
   - `searchMessagesScript()`: When `accountName` is empty, loop over `every account` and collect matching messages from each, merging into a single result array capped at `limitCount`. Include account name in each message JSON object.
@@ -66,11 +70,7 @@ As a user with multiple email accounts, I want "search my email for the invoice 
   - Update `MessageHeader` to parse and include the new `account` field.
   - Update `toJSON()` to emit `account`.
 
-### 5.2 Files to Create
-
-- None.
-
-### 5.3 Tests to Add/Update
+### 5.3 Tests to Add
 
 - **`OraTests/Tools/Mail/MailSearchToolTests.swift`**
   - `test_search_noAccountQueriesAllAccounts` — Mock runner returns results tagged with different account names; verify all appear.

@@ -1,7 +1,7 @@
 # X.08 - Recent Items: Mail & Notes
 
 **Epic:** Tools
-**Status:** Not Started
+**Status:** Complete
 **Priority:** P1 (High)
 **Estimated Effort:** 1 day
 **Dependencies:** X.07B (Mail Search), X.06A (Notes Capture)
