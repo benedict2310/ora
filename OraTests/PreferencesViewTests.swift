@@ -30,6 +30,16 @@ final class PreferencesViewTests: XCTestCase {
         _ = view.body
     }
 
+    func test_updatePreferencesView_bodyBuilds() {
+        let view = UpdatePreferencesView(updateController: UpdateController(updater: MockUpdateDriver(
+            canCheckForUpdates: true,
+            lastUpdateCheckDate: nil,
+            automaticallyChecksForUpdates: true,
+            updateCheckInterval: UpdateCheckInterval.daily.rawValue
+        )))
+        _ = view.body
+    }
+
     func test_auditFilter_displayNames() {
         XCTAssertEqual(AuditFilter.all.displayName, "All")
         XCTAssertEqual(AuditFilter.tools.displayName, "Tools")

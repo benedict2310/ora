@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Ora Updates</title>
+    <link>https://github.com/benedict2310/ora</link>
+    <description>Most recent updates to Ora</description>
+    <language>en</language>
+    <item>
+      <title>Version 1.0.0</title>
+      <sparkle:version>1.0.0</sparkle:version>
+      <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <pubDate>Sun, 01 Feb 2026 00:00:00 +0000</pubDate>
+      <sparkle:releaseNotesLink>
+        https://raw.githubusercontent.com/benedict2310/ora-updates/main/notes/1.0.0.html
+      </sparkle:releaseNotesLink>
+      <enclosure
+        url="https://github.com/benedict2310/ora/releases/download/v1.0.0/Ora-1.0.0.dmg"
+        sparkle:edSignature="REPLACE_WITH_SIGNATURE"
+        length="0"
+        type="application/octet-stream" />
+    </item>
+  </channel>
+</rss>

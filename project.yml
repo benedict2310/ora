@@ -21,6 +21,9 @@ packages:
     from: "1.1.0"
   kokoro-ios:
     path: Vendor/kokoro-ios
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.8.0"
 
 settings:
   base:
@@ -69,6 +72,8 @@ targets:
       - package: kokoro-ios
         product: KokoroSwift
         embed: true
+      - package: Sparkle
+        product: Sparkle
 
   OraTests:
     type: bundle.unit-test

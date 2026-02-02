@@ -24,6 +24,20 @@ final class MockStatusBarActionHandler: StatusBarActionHandler {
     }
 }
 
+@MainActor
+final class MockUpdateChecker: UpdateChecking {
+    var canCheckForUpdates: Bool
+    var checkCallCount = 0
+
+    init(canCheckForUpdates: Bool) {
+        self.canCheckForUpdates = canCheckForUpdates
+    }
+
+    func checkForUpdates() {
+        self.checkCallCount += 1
+    }
+}
+
 // MARK: - StatusBarController Tests
 
 @MainActor
@@ -32,27 +46,27 @@ final class StatusBarControllerTests: XCTestCase {
     // MARK: - State Tests
 
     func test_initialState_isIdle() {
-        let controller = StatusBarController()
+        let controller = self.makeController()
         XCTAssertEqual(controller.state, .idle)
         controller.shutdown()
     }
 
     func test_setState_updatesState() {
-        let controller = StatusBarController()
+        let controller = self.makeController()
         controller.setState(.listening)
         XCTAssertEqual(controller.state, .listening)
         controller.shutdown()
     }
 
     func test_setState_sameState_noChange() {
-        let controller = StatusBarController()
+        let controller = self.makeController()
         controller.setState(.idle)
         XCTAssertEqual(controller.state, .idle)
         controller.shutdown()
     }
 
     func test_errorState_hasMessage() {
-        let controller = StatusBarController()
+        let controller = self.makeController()
         controller.setState(.error("Test error"))
         if case .error(let message) = controller.state {
             XCTAssertEqual(message, "Test error")
@@ -63,7 +77,7 @@ final class StatusBarControllerTests: XCTestCase {
     }
 
     func test_allStates_areReachable() {
-        let controller = StatusBarController()
+        let controller = self.makeController()
 
         controller.setState(.idle)
         XCTAssertEqual(controller.state, .idle)
@@ -161,19 +175,20 @@ final class StatusBarControllerTests: XCTestCase {
     // MARK: - Menu Construction Tests
 
     func test_menuItemTitles_containsPreferencesAndQuit() {
-        let controller = StatusBarController()
+        let controller = self.makeController()
         let titles = controller.menuItemTitles
 
         XCTAssertTrue(titles.contains("Preferences..."), "Menu should contain Preferences...")
+        XCTAssertTrue(titles.contains("Check for Updates..."), "Menu should contain Check for Updates...")
         XCTAssertTrue(titles.contains("Conversation Mode"), "Menu should contain Conversation Mode")
         XCTAssertTrue(titles.contains("Quit Ora"), "Menu should contain Quit Ora")
-        XCTAssertEqual(titles.count, 3, "Menu should have exactly 3 non-separator items")
+        XCTAssertEqual(titles.count, 4, "Menu should have exactly 4 non-separator items")
 
         controller.shutdown()
     }
 
     func test_menuKeyEquivalents_areCorrect() {
-        let controller = StatusBarController()
+        let controller = self.makeController()
         let keyEquivalents = controller.menuItemKeyEquivalents
 
         XCTAssertEqual(keyEquivalents["Preferences..."], ",", "Preferences should have ',' shortcut")
@@ -186,7 +201,7 @@ final class StatusBarControllerTests: XCTestCase {
 
     func test_showPreferences_callsActionHandler() {
         let mockHandler = MockStatusBarActionHandler()
-        let controller = StatusBarController(actionHandler: mockHandler)
+        let controller = self.makeController(actionHandler: mockHandler)
 
         XCTAssertEqual(mockHandler.preferencesCallCount, 0)
         controller.showPreferences()
@@ -197,7 +212,7 @@ final class StatusBarControllerTests: XCTestCase {
 
     func test_showPreferences_calledMultipleTimes_incrementsCount() {
         let mockHandler = MockStatusBarActionHandler()
-        let controller = StatusBarController(actionHandler: mockHandler)
+        let controller = self.makeController(actionHandler: mockHandler)
 
         controller.showPreferences()
         controller.showPreferences()
@@ -208,10 +223,35 @@ final class StatusBarControllerTests: XCTestCase {
         controller.shutdown()
     }
 
+    func test_checkForUpdates_callsUpdateChecker() {
+        let updateChecker = MockUpdateChecker(canCheckForUpdates: true)
+        let controller = StatusBarController(updateChecker: updateChecker)
+
+        XCTAssertEqual(updateChecker.checkCallCount, 0)
+        controller.simulateCheckForUpdates()
+        XCTAssertEqual(updateChecker.checkCallCount, 1)
+
+        controller.shutdown()
+    }
+
+    func test_checkForUpdatesMenuItemEnabled_reflectsUpdaterState() {
+        let updateChecker = MockUpdateChecker(canCheckForUpdates: false)
+        let controller = StatusBarController(updateChecker: updateChecker)
+
+        controller.triggerMenuUpdate()
+        XCTAssertEqual(controller.checkForUpdatesMenuItemEnabled, false)
+
+        updateChecker.canCheckForUpdates = true
+        controller.triggerMenuUpdate()
+        XCTAssertEqual(controller.checkForUpdatesMenuItemEnabled, true)
+
+        controller.shutdown()
+    }
+
     // MARK: - Shutdown Tests
 
     func test_shutdown_canBeCalledSafely() {
-        let controller = StatusBarController()
+        let controller = self.makeController()
 
         // Should not crash
         controller.shutdown()
@@ -221,7 +261,7 @@ final class StatusBarControllerTests: XCTestCase {
     }
 
     func test_shutdown_clearsMenuItems() {
-        let controller = StatusBarController()
+        let controller = self.makeController()
         XCTAssertFalse(controller.menuItemTitles.isEmpty, "Menu should have items before shutdown")
 
         controller.shutdown()
@@ -232,7 +272,7 @@ final class StatusBarControllerTests: XCTestCase {
     // MARK: - Conversation Mode Tests
 
     func test_conversationModeMenuItemState_reflectsSetting() {
-        let controller = StatusBarController()
+        let controller = self.makeController()
 
         // Get initial state from persistence
         let initialEnabled = PersistenceManager.shared.settings.conversationModeEnabled
@@ -244,7 +284,7 @@ final class StatusBarControllerTests: XCTestCase {
     }
 
     func test_simulateConversationModeToggle_togglesSetting() {
-        let controller = StatusBarController()
+        let controller = self.makeController()
 
         // Get initial state
         let initialEnabled = PersistenceManager.shared.settings.conversationModeEnabled
@@ -268,7 +308,7 @@ final class StatusBarControllerTests: XCTestCase {
     }
 
     func test_simulateConversationModeToggle_multipleTimes_alternatesState() {
-        let controller = StatusBarController()
+        let controller = self.makeController()
 
         let initial = PersistenceManager.shared.settings.conversationModeEnabled
 
@@ -290,7 +330,7 @@ final class StatusBarControllerTests: XCTestCase {
     }
 
     func test_triggerMenuUpdate_updatesMenuItemState() {
-        let controller = StatusBarController()
+        let controller = self.makeController()
 
         // Change the setting directly via PersistenceManager
         let initialEnabled = PersistenceManager.shared.settings.conversationModeEnabled
@@ -314,11 +354,21 @@ final class StatusBarControllerTests: XCTestCase {
     }
 
     func test_conversationModeMenuItemState_afterShutdown_isNil() {
-        let controller = StatusBarController()
+        let controller = self.makeController()
         XCTAssertNotNil(controller.conversationModeMenuItemState)
 
         controller.shutdown()
 
         XCTAssertNil(controller.conversationModeMenuItemState)
+    }
+
+    // MARK: - Helpers
+
+    private func makeController(
+        actionHandler: StatusBarActionHandler? = nil,
+        canCheckForUpdates: Bool = true
+    ) -> StatusBarController {
+        let updateChecker = MockUpdateChecker(canCheckForUpdates: canCheckForUpdates)
+        return StatusBarController(actionHandler: actionHandler, updateChecker: updateChecker)
     }
 }
