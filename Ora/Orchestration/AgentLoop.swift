@@ -315,6 +315,7 @@ actor AgentLoop {
             await notifyDelegateActivity(.planning)
 
             let messages = await conversationManager.getMessagesForLLM()
+            logger.info("Agent step \(steps): sending \(messages.count) messages to LLM")
 
             // Generate structured response
             let output: LLMOutput
@@ -331,15 +332,17 @@ actor AgentLoop {
                 return .error("I had trouble understanding that. Could you try again?")
             }
 
+            logger.info("Agent step \(steps): LLM decided \(output.typeLabel)")
+
             switch output {
             case .response(let text):
                 // Direct response - we're done
                 // Emit composing activity before returning response
                 await notifyDelegateActivity(.composing)
-                logger.info("Agent produced response: \(text.prefix(50))...")
+                logger.info("Agent produced response (no tool call): \(String(text.prefix(100)))")
                 await conversationManager.addAssistantMessage(text)
                 return .response(text: text)
-                
+
             case .toolCall(let tool, let args):
                 // Read-only tool call - execute automatically
                 guard toolCalls < maxToolCallsPerTurn else {
@@ -348,7 +351,7 @@ actor AgentLoop {
                 }
                 toolCalls += 1
 
-                logger.info("Executing tool: \(tool)")
+                logger.info("Executing tool: \(tool) args=\(args.keys.sorted().joined(separator: ","))")
 
                 // Emit toolCall activity before execution
                 await notifyDelegateActivity(.toolCall(name: tool))

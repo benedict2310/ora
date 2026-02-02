@@ -20,6 +20,16 @@ enum LLMOutput: Sendable, Equatable {
     
     /// Error in parsing
     case error(message: String)
+
+    /// Short label for logging (e.g. "response", "tool_call:mail.recent")
+    var typeLabel: String {
+        switch self {
+        case .response: return "response"
+        case .toolCall(let tool, _): return "tool_call:\(tool)"
+        case .proposal(_, let tool, _): return "proposal:\(tool)"
+        case .error: return "error"
+        }
+    }
 }
 
 /// JSON value for tool arguments

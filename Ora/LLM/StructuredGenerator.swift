@@ -53,14 +53,18 @@ actor StructuredGenerator {
                 }
             }
             
+            // Log raw LLM output for debugging
+            let truncated = fullResponse.prefix(300)
+            logger.info("LLM raw output (attempt \(attempts), \(fullResponse.count) chars): \(truncated)")
+
             // Validate JSON
             let result = JSONValidator.parse(fullResponse)
-            
+
             switch result {
             case .success(let output):
-                logger.debug("Structured output parsed on attempt \(attempts)")
+                logger.info("Parsed LLM output: type=\(output.typeLabel) attempt=\(attempts)")
                 return output
-                
+
             case .failure(let error):
                 lastError = error
                 logger.warning("Validation failed (attempt \(attempts)): \(error.localizedDescription)")
