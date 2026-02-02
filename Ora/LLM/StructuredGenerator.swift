@@ -54,15 +54,16 @@ actor StructuredGenerator {
             }
             
             // Log raw LLM output for debugging
-            let truncated = fullResponse.prefix(300)
-            logger.info("LLM raw output (attempt \(attempts), \(fullResponse.count) chars): \(truncated)")
+            // NOTE: privacy: .public is temporary for debugging — remove before shipping
+            let truncated = String(fullResponse.prefix(300))
+            logger.info("LLM raw output (attempt \(attempts, privacy: .public), \(fullResponse.count, privacy: .public) chars): \(truncated, privacy: .public)")
 
             // Validate JSON
             let result = JSONValidator.parse(fullResponse)
 
             switch result {
             case .success(let output):
-                logger.info("Parsed LLM output: type=\(output.typeLabel) attempt=\(attempts)")
+                logger.info("Parsed LLM output: type=\(output.typeLabel, privacy: .public) attempt=\(attempts, privacy: .public)")
                 return output
 
             case .failure(let error):

@@ -315,7 +315,8 @@ actor AgentLoop {
             await notifyDelegateActivity(.planning)
 
             let messages = await conversationManager.getMessagesForLLM()
-            logger.info("Agent step \(steps): sending \(messages.count) messages to LLM")
+            // NOTE: privacy: .public is temporary for debugging — remove before shipping
+            logger.info("Agent step \(steps, privacy: .public): sending \(messages.count, privacy: .public) messages to LLM")
 
             // Generate structured response
             let output: LLMOutput
@@ -332,14 +333,14 @@ actor AgentLoop {
                 return .error("I had trouble understanding that. Could you try again?")
             }
 
-            logger.info("Agent step \(steps): LLM decided \(output.typeLabel)")
+            logger.info("Agent step \(steps, privacy: .public): LLM decided \(output.typeLabel, privacy: .public)")
 
             switch output {
             case .response(let text):
                 // Direct response - we're done
                 // Emit composing activity before returning response
                 await notifyDelegateActivity(.composing)
-                logger.info("Agent produced response (no tool call): \(String(text.prefix(100)))")
+                logger.info("Agent produced response (no tool call): \(String(text.prefix(100)), privacy: .public)")
                 await conversationManager.addAssistantMessage(text)
                 return .response(text: text)
 
