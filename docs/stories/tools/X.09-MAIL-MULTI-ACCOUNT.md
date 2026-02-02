@@ -1,7 +1,7 @@
 # X.09 - Mail Multi-Account Support
 
 **Epic:** Tools
-**Status:** Not Started
+**Status:** Complete
 **Priority:** P1 (High)
 **Estimated Effort:** 0.5 day
 **Dependencies:** X.07B (Mail Search), X.08 (Recent Items)
@@ -89,14 +89,14 @@ As a user with multiple email accounts, I want "search my email for the invoice 
 
 ## 6. Acceptance Criteria
 
-- [ ] AC-1: `mail.search` with no `account` parameter returns results from all Mail accounts, not just the first.
-- [ ] AC-2: `mail.recent` with no `account` parameter returns results from all Mail accounts, not just the first.
-- [ ] AC-3: Each message in `mail.search` and `mail.recent` results includes an `account` field identifying which account it belongs to.
-- [ ] AC-4: When an `account` parameter is explicitly provided, both tools filter to that single account (existing behavior preserved).
-- [ ] AC-5: `mail.search` fuzzy fallback also spans all accounts (since it calls `recentMessagesScript`).
-- [ ] AC-6: Result count respects the `limit` parameter even when aggregating across multiple accounts.
-- [ ] AC-7: Unit tests verify multi-account aggregation and the `account` field.
-- [ ] AC-8: No changes to `mail.list_mailboxes`, `mail.create_draft`, `mail.send`, or `mail.open_message`.
+- [x] AC-1: `mail.search` with no `account` parameter returns results from all Mail accounts, not just the first.
+- [x] AC-2: `mail.recent` with no `account` parameter returns results from all Mail accounts, not just the first.
+- [x] AC-3: Each message in `mail.search` and `mail.recent` results includes an `account` field identifying which account it belongs to.
+- [x] AC-4: When an `account` parameter is explicitly provided, both tools filter to that single account (existing behavior preserved).
+- [x] AC-5: `mail.search` fuzzy fallback also spans all accounts (since it calls `recentMessagesScript`).
+- [x] AC-6: Result count respects the `limit` parameter even when aggregating across multiple accounts.
+- [x] AC-7: Unit tests verify multi-account aggregation and the `account` field.
+- [x] AC-8: No changes to `mail.list_mailboxes`, `mail.create_draft`, `mail.send`, or `mail.open_message`.
 
 ## 7. Verification Plan
 
@@ -130,3 +130,51 @@ As a user with multiple email accounts, I want "search my email for the invoice 
 ## 10. Open Questions
 
 - None.
+
+---
+
+## Implementation Summary
+**Date:** 2026-02-02
+**Branch:** `feat/x09-mail-multi-account`
+**Commits:** 2
+**Implemented by:** codex (complexity score: 7/10)
+**Reviewed by:** pi (1 iteration)
+
+### Files Changed
+- `Ora/Tools/Mail/MailAppleScript.swift` - Modified `searchMessagesScript()` and `recentMessagesScript()` to iterate all accounts when no account specified; added `account` field to message JSON
+- `Ora/Tools/Mail/MailSearchTool.swift` - Added `account` property to `MessageHeader`, emitted in `toJSON()`
+- `Ora/Tools/Mail/MailRecentTool.swift` - Added `account` property to `MessageHeader`, emitted in `toJSON()`
+- `OraTests/Tools/Mail/MailSearchToolTests.swift` - Added tests for multi-account iteration, account field, single-account filter
+- `OraTests/Tools/Mail/MailRecentToolTests.swift` - Added tests for multi-account iteration, account field
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-02-02T11:29:03+01:00
+**Commit reviewed:** c8e08ca
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 5
+- Build status: Pass
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [ ] None
+
+#### P1 - Major (Should fix)
+- [ ] None
+
+#### P2 - Minor (Can defer)
+- [ ] None
+
+### Future Considerations (Out of Scope)
+- Global sorting of "recent" messages across accounts is not implemented (concatenation strategy used). This is explicitly accepted by the story requirements (Section 8) but may lead to "shadowing" of accounts if the limit is low (e.g. Account A fills the limit before Account B is queried).
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
