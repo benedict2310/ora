@@ -382,8 +382,9 @@ actor AgentLoop {
                     await notifyDelegateActivity(.toolResult(name: tool))
 
                     // Tool failed, add error to context and continue
+                    // NOTE: privacy: .public is temporary for debugging — remove before shipping
                     let errorText = "Tool \(tool) failed: \(error.localizedDescription)"
-                    logger.warning("Tool failed: \(errorText)")
+                    logger.error("Tool failed: \(errorText, privacy: .public)")
                     await conversationManager.addToolResult(errorText)
                 }
 
