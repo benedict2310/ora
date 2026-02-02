@@ -64,6 +64,12 @@ final class MailSearchToolTests: XCTestCase {
         XCTAssertTrue(script.contains("repeat with theAccount in accountsToSearch"))
     }
 
+    func test_search_normalizesInboxMailboxName() {
+        let script = MailAppleScript.searchMessagesScript()
+        XCTAssertTrue(script.contains("if mailboxName contains \"inbox\""))
+        XCTAssertTrue(script.contains("set mailboxName to \"INBOX\""))
+    }
+
     func test_search_returnsStableMessageId() async throws {
         let stdout = """
         {"success": true, "data": [{"message_id": "<id-123>", "subject": "Hello", "from": "Alice", "date": "2026-02-01", "mailbox": "Inbox"}]}
@@ -233,6 +239,27 @@ final class MailSearchToolTests: XCTestCase {
             return XCTFail("Expected array result")
         }
         XCTAssertEqual(items.count, 2)
+    }
+
+    func test_search_handlesPartialFailuresEnvelope() async throws {
+        let stdout = """
+        {"success": true, "data": {"messages": [{"message_id": "<id-1>", "subject": "Hello", "from": "Alice", "date": "2026-02-01", "mailbox": "Inbox", "account": "Work"}], "errors": "Other: timeout"}}
+        """
+        let runner = MailSearchMockAppleScriptRunner(results: [
+            .success(Self.makeResult(stdout: stdout))
+        ])
+        let tool = MailSearchTool(runner: runner)
+
+        let result = try await tool.execute(args: [
+            "query": .string("Hello")
+        ])
+
+        guard case .array(let items) = result.json,
+              case .object(let dict) = items.first else {
+            return XCTFail("Expected array with object")
+        }
+        XCTAssertEqual(dict["message_id"]?.stringValue, "<id-1>")
+        XCTAssertTrue(result.humanSummary.contains("Some accounts could not be queried."))
     }
 
     // MARK: - Open/List Tests

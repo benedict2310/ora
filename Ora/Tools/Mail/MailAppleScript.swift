@@ -92,9 +92,11 @@ enum MailAppleScript {
         repeat with candidate in mailboxList
             try
                 tell application "Mail"
-                    if (name of candidate as string) is mailboxName then
-                        return candidate
-                    end if
+                    ignoring case
+                        if (name of candidate as string) is mailboxName then
+                            return candidate
+                        end if
+                    end ignoring
                 end tell
             end try
             try
@@ -325,6 +327,16 @@ enum MailAppleScript {
                 end try
             end if
 
+            set wantsInbox to false
+            if mailboxName is not "" then
+                ignoring case
+                    if mailboxName contains "inbox" then
+                        set wantsInbox to true
+                    end if
+                end ignoring
+                if wantsInbox then set mailboxName to "INBOX"
+            end if
+
             try
                 tell application "Mail"
                     set jsonItems to {}
@@ -350,10 +362,10 @@ enum MailAppleScript {
                         end try
                         if accountTitle is "" then set accountTitle to accountName
 
-                        set targetMailbox to missing value
-                        if mailboxName is not "" then
-                            try
-                                set targetMailbox to my find_mailbox_by_name(theAccount, mailboxName)
+                    set targetMailbox to missing value
+                    if mailboxName is not "" then
+                        try
+                            set targetMailbox to my find_mailbox_by_name(theAccount, mailboxName)
                             end try
                             if targetMailbox is not missing value then
                                 set mailboxFound to true
@@ -373,6 +385,22 @@ enum MailAppleScript {
                                     end if
                                 on error errMsg
                                     set end of skippedAccounts to accountTitle & ": " & errMsg
+                                end try
+                            end if
+
+                            if mailboxName is "" and (count of foundMessages) is 0 then
+                                try
+                                    set inboxBox to my find_mailbox_by_name(theAccount, "INBOX")
+                                    if inboxBox is missing value then
+                                        set inboxBox to my find_mailbox_by_name(theAccount, "Inbox")
+                                    end if
+                                    if inboxBox is not missing value then
+                                        set foundMessages to (messages of inboxBox whose subject contains queryText or sender contains queryText)
+                                    end if
+                                on error errMsg
+                                    if errMsg is not "" then
+                                        set end of skippedAccounts to accountTitle & ": " & errMsg
+                                    end if
                                 end try
                             end if
 
@@ -443,6 +471,16 @@ enum MailAppleScript {
                 end try
             end if
 
+            set wantsInbox to false
+            if mailboxName is not "" then
+                ignoring case
+                    if mailboxName contains "inbox" then
+                        set wantsInbox to true
+                    end if
+                end ignoring
+                if wantsInbox then set mailboxName to "INBOX"
+            end if
+
             try
                 tell application "Mail"
                     set jsonItems to {}
@@ -493,6 +531,22 @@ enum MailAppleScript {
                                     set sourceMessages to messages of targetMailbox
                                 on error errMsg
                                     set end of skippedAccounts to accountTitle & ": " & errMsg
+                                end try
+                            end if
+
+                            if mailboxName is "" and (count of sourceMessages) is 0 then
+                                try
+                                    set inboxBox to my find_mailbox_by_name(theAccount, "INBOX")
+                                    if inboxBox is missing value then
+                                        set inboxBox to my find_mailbox_by_name(theAccount, "Inbox")
+                                    end if
+                                    if inboxBox is not missing value then
+                                        set sourceMessages to messages of inboxBox
+                                    end if
+                                on error errMsg
+                                    if errMsg is not "" then
+                                        set end of skippedAccounts to accountTitle & ": " & errMsg
+                                    end if
                                 end try
                             end if
 
@@ -632,6 +686,11 @@ enum MailAppleScript {
         throw MailToolError.invalidResponse
     }
 
+    static func parseMessageList(_ result: AppleScriptResult) throws -> (messages: [JSONValue], errors: String?) {
+        let data = try Self.parseEnvelope(result)
+        return try Self.extractMessageList(from: data)
+    }
+
     private static func extractData(from envelope: AppleScriptJSONEnvelope, output: String) throws -> JSONValue {
         guard envelope.success else {
             let message = envelope.error ?? "Mail error"
@@ -658,6 +717,21 @@ enum MailAppleScript {
         }
 
         return data
+    }
+
+    private static func extractMessageList(from data: JSONValue) throws -> (messages: [JSONValue], errors: String?) {
+        switch data {
+        case .array(let items):
+            return (items, nil)
+        case .object(let dict):
+            if let messageData = dict["messages"], case .array(let items) = messageData {
+                let errors = dict["errors"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+                return (items, errors?.isEmpty == true ? nil : errors)
+            }
+            throw MailToolError.invalidResponse
+        default:
+            throw MailToolError.invalidResponse
+        }
     }
 
     private static func normalizeEnvelopeOutput(_ output: String) -> String {

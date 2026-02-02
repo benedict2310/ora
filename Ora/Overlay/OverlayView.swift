@@ -246,11 +246,14 @@ struct OverlayView: View {
             proxy.scrollTo(self.scrollAnchorID, anchor: .bottom)
         }
 
-        if self.reduceMotion {
-            action()
-        } else {
-            withAnimation(.easeOut(duration: 0.2)) {
+        // Defer to the next run loop so newly inserted bubbles are laid out first.
+        DispatchQueue.main.async {
+            if self.reduceMotion {
                 action()
+            } else {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    action()
+                }
             }
         }
     }
