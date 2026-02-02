@@ -25,6 +25,9 @@ This epic provides the tools that Ora can execute on behalf of the user:
 | **X.05** | [System Tools](X.05-SYSTEM-TOOLS.md) | App launching, URL opening | X.01 |
 | **X.06** | [List Apps Tool](X.06-LIST-APPS-TOOL.md) | List installed applications | X.05 |
 | **X.06C** | [Messages: Send & Open](X.06C-MESSAGES.md) | Send iMessage/SMS and open chats | X.00 |
+| **X.07B** | [Mail: Search & Open](X.07B-MAIL-SEARCH.md) | Search mail, open messages, list mailboxes | X.07A |
+| **X.08** | [Recent Items: Mail & Notes](X.08-RECENT-ITEMS.md) | Browse recent mail messages and notes | X.07B, X.06A |
+| **X.09** | [Mail Multi-Account](X.09-MAIL-MULTI-ACCOUNT.md) | Query all accounts when none specified | X.07B, X.08 |
 
 ## Dependency Graph
 
