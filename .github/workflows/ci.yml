@@ -1,6 +1,6 @@
 # CI — Build + Test on every PR and push to main
 #
-# Runner: macos-15 (Apple Silicon, macOS 26 SDK via Xcode 26.2)
+# Runner: macos-26 (Apple Silicon, macOS 26 Tahoe - beta)
 # No secrets required — uses ad-hoc code signing.
 
 name: CI
@@ -24,7 +24,7 @@ env:
 jobs:
   build-and-test:
     name: Build & Test
-    runs-on: macos-15
+    runs-on: macos-26
 
     steps:
       - name: Checkout

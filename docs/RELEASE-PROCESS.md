@@ -9,7 +9,7 @@ Ora uses GitHub Actions for continuous integration and automated releases:
 | **CI** | PR to `main`, push to `main` | None | `.github/workflows/ci.yml` |
 | **Release** | Tag push (`v*`) | 7 secrets | `.github/workflows/release.yml` |
 
-Runner: `macos-15` with Xcode 26.2 (`/Applications/Xcode_26.2.app`).
+Runner: `macos-26` (Apple Silicon, macOS 26 Tahoe - currently in beta).
 
 Helper script: `scripts/ci-release.sh` — consolidates signing, notarization, DMG creation, and appcast generation for CI.
 

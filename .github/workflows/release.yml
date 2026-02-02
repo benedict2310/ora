@@ -1,7 +1,7 @@
 # Release — Full automated release on version tags (v*)
 #
 # Trigger: push tag matching v* (e.g., v1.1.0)
-# Runner: macos-15 (Apple Silicon, macOS 26 SDK via Xcode 26.2)
+# Runner: macos-26 (Apple Silicon, macOS 26 Tahoe - beta)
 #
 # Required secrets (7):
 #   DEVELOPER_ID_P12        — Base64-encoded .p12 certificate
@@ -29,7 +29,7 @@ env:
 jobs:
   release:
     name: Build, Sign & Release
-    runs-on: macos-15
+    runs-on: macos-26
 
     steps:
       # ── Setup ──────────────────────────────────────────────────────────
