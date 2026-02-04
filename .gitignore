@@ -102,4 +102,7 @@ docs/review-logs
 agent-tools/
 scripts/__pycache__/
 
-.envRELEASE.md
+.env
+
+# Private release workflow
+RELEASE.md
