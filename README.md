@@ -39,65 +39,6 @@ brew install xcodegen
 | `./build.sh run` | Build and launch (kills previous instance) |
 | `./build.sh clean` | Clean build artifacts and regenerate project |
 | `./build.sh reset-perms` | Reset TCC permissions after rebuild |
-| `./build.sh sign` | Build, sign with Developer ID, and notarize for distribution |
-
-## Releases
-
-Ora uses a local signing workflow for creating releases:
-
-### Creating a Release
-
-```bash
-# 1. Sign and notarize the app (takes 2-5 min for notarization)
-./build.sh sign
-
-# You'll be prompted for:
-# - Apple ID (your developer account email)
-# - App-specific password (from appleid.apple.com)
-# - Team ID (from developer.apple.com)
-
-# 2. The script will:
-#    - Build the app
-#    - Sign with Developer ID
-#    - Notarize with Apple
-#    - Create and sign a DMG
-
-# 3. Create GitHub Release
-VERSION="1.0.1"
-gh release create "v${VERSION}" "./Ora-${VERSION}.dmg" \
-  --title "Ora v${VERSION}" \
-  --notes "Release notes here"
-
-# 4. Update Sparkle appcast (for auto-updates)
-TOOLS_DIR=$(./scripts/generate-appcast.sh --print-tools-dir)
-PRIVATE_KEY="<your-sparkle-private-key>"
-
-# Sign DMG with Sparkle
-scripts/ci-release.sh sparkle-sign "./Ora-${VERSION}.dmg" "$TOOLS_DIR" "$PRIVATE_KEY"
-
-# Generate appcast
-mkdir -p build/appcast
-cp "./Ora-${VERSION}.dmg" build/appcast/
-scripts/ci-release.sh generate-appcast \
-  "build/appcast/Ora-${VERSION}.dmg" "$TOOLS_DIR" "$VERSION" "$PRIVATE_KEY"
-
-# Push to ora-updates repository
-cd /tmp
-git clone https://github.com/benedict2310/ora-updates.git
-cd ora-updates
-cp /path/to/ora/build/appcast/appcast.xml .
-git add appcast.xml
-git commit -m "release: update appcast for v${VERSION}"
-git push
-```
-
-### Auto-Updates
-
-Ora includes Sparkle for automatic updates:
-- **Appcast URL:** https://raw.githubusercontent.com/benedict2310/ora-updates/main/appcast.xml
-- **Updates Repository:** https://github.com/benedict2310/ora-updates
-
-Users will be notified of new releases automatically when launching the app.
 
 ## Project Structure
 
