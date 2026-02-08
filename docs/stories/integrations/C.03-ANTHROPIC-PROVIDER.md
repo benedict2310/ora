@@ -389,3 +389,36 @@ enum AnthropicModel: String, Sendable, CaseIterable {
 | Model availability | Claude Sonnet 4 is the default. Users with only Haiku access should be able to configure this. |
 | Large responses | Anthropic supports up to 128K output. Ora's default 800 tokens is conservative but works. Cloud-specific defaults could be higher. |
 | Rate limits | Anthropic has per-model rate limits. The retry logic handles this, but heavy usage may hit limits. |
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-02-08T18:05:33Z
+**Commit reviewed:** ac1a367
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 7
+- Build status: Pass (`./build.sh`)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [x] None.
+
+#### P1 - Major (Should fix)
+- [ ] `Ora/Cloud/LLMProviderManager.swift:125` - AC-7 is not implemented in production code: `AnthropicProviderFactory` is defined but not registered anywhere, so switching to `.anthropic` can fail with `ProviderError.providerNotRegistered`.
+- [ ] `OraTests/Cloud/Anthropic/AnthropicProviderTests.swift:21` - Core Anthropic behaviors in AC-2 through AC-6 are untested. The suite only verifies initialization/factory/model metadata and does not cover SSE token streaming, system-message mapping, tool-role mapping, error classification, retry/backoff, or cancellation.
+
+#### P2 - Minor (Can defer)
+- [ ] `Vendor/kokoro-ios/Sources/KokoroSwift/TTSEngine/KokoroTTS.swift:173` - This story’s diff comments out `BenchmarkTimer` calls in Kokoro TTS. It is unrelated to Anthropic provider scope and removes TTS performance instrumentation.
+
+### Future Considerations (Out of Scope)
+- None.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [ ] All P1 issues resolved
+- [ ] Ready for merge
