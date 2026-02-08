@@ -11,7 +11,7 @@ import XCTest
 // MARK: - Mock Implementation
 
 /// Mock credential store for testing (no real Keychain access)
-actor MockCredentialStore: CredentialStore {
+actor CredentialStoreMock: CredentialStore {
     
     private var storage: [String: String] = [:]
     
@@ -40,10 +40,10 @@ actor MockCredentialStore: CredentialStore {
 
 final class CredentialStoreTests: XCTestCase {
     
-    var store: MockCredentialStore!
+    var store: CredentialStoreMock!
     
     override func setUp() async throws {
-        self.store = MockCredentialStore()
+        self.store = CredentialStoreMock()
     }
     
     override func tearDown() async throws {

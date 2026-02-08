@@ -64,6 +64,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func onSetupComplete() {
         self.logger.info("Setup complete, initializing main functionality")
 
+        // Register cloud LLM provider factories
+        Task {
+            await LLMProviderManager.shared.register(
+                factory: AnthropicProviderFactory(),
+                for: .anthropic
+            )
+            self.logger.info("Cloud provider factories registered")
+        }
+
         // Register default tools (calendar, etc.) for the agent loop
         Task {
             await ToolRegistry.shared.registerDefaultToolsIfNeeded()

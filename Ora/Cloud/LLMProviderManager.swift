@@ -38,16 +38,20 @@ actor LLMProviderManager: LLMServicing {
         
         // Restore saved provider if not local
         if savedType != .local {
-            Task {
-                do {
-                    try await self.switchProvider(to: savedType)
-                } catch {
-                    self.logger.error("Failed to restore provider \(savedType.rawValue): \(error.localizedDescription)")
-                    // Fallback to local
-                    self.selectedProviderType = .local
-                    UserDefaults.standard.selectedLLMProvider = .local
-                }
+            Task { [weak self] in
+                await self?.restoreProvider(savedType)
             }
+        }
+    }
+
+    private func restoreProvider(_ type: LLMProviderType) async {
+        do {
+            try await self.switchProvider(to: type)
+        } catch {
+            self.logger.error("Failed to restore provider \(type.rawValue): \(error.localizedDescription)")
+            // Fallback to local
+            self.selectedProviderType = .local
+            UserDefaults.standard.selectedLLMProvider = .local
         }
     }
 
