@@ -30,6 +30,8 @@ struct PreferencesWindow: View {
                 switch coordinator.selectedTab {
                 case .general:
                     GeneralPreferencesView()
+                case .providers:
+                    ProviderPreferencesView()
                 case .models:
                     ModelsPreferencesView()
                 case .permissions:
