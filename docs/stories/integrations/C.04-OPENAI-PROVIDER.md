@@ -291,3 +291,58 @@ enum OpenAIModel: String, Sendable, CaseIterable {
 | Tool role mapping | OpenAI has native function calling, but we use JSON-based for now. Tool results go as user messages. |
 | o3-mini reasoning | o3-mini uses reasoning tokens (not visible). Token counts may include reasoning overhead. |
 | `max_tokens` vs `max_completion_tokens` | Newer models use `max_completion_tokens`. May need model-specific parameter name. |
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-02-08T21:55:00Z
+**Commit reviewed:** 78e9164
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 8
+- Build status: Pass
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+None.
+
+#### P1 - Major (Should fix)
+None.
+
+#### P2 - Minor (Can defer)
+None.
+
+### Future Considerations (Out of Scope)
+- The current implementation maps tool calls to user messages as requested. Future native tool calling support would require `tool_calls` parsing in `OpenAIProvider`.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
+
+---
+
+## Implementation Summary
+**Date:** 2026-02-08
+**Branch:** `feat/C.04-openai-provider`
+**Commits:** 4
+**Implemented by:** codex (complexity score: 7/10)
+**Reviewed by:** pi (1 iteration)
+
+### Files Changed
+- `Ora/Cloud/OpenAI/OpenAIProvider.swift` - Created: LLMServicing implementation for OpenAI Chat Completions API
+- `Ora/Cloud/OpenAI/OpenAIModels.swift` - Created: Model enum (GPT-4o, GPT-4o Mini, o3-mini)
+- `Ora/Cloud/OpenAI/OpenAIProviderFactory.swift` - Created: Factory for LLMProviderManager
+- `Ora/Cloud/CloudLLMBase.swift` - Modified: Extended base class for OpenAI support
+- `Ora/AppDelegate.swift` - Modified: Register OpenAI provider factory
+- `OraTests/Cloud/OpenAI/OpenAIProviderTests.swift` - Created: Unit tests with mocked HTTP
+- `OraTests/Cloud/LLMProviderManagerTests.swift` - Modified: Updated for OpenAI provider
+
+## Completion Status
+- [x] Implementation complete
+- [x] Code review passed (1 iteration)
+- [x] Build: 1247/1247 tests passing
