@@ -15,19 +15,19 @@ actor MockCredentialStore: CredentialStore {
     
     private var storage: [String: String] = [:]
     
-    func save(provider: CloudProvider, apiKey: String) async throws {
+    func save(provider: CloudProvider, apiKey: String) throws {
         self.storage[provider.rawValue] = apiKey
     }
     
-    func retrieve(provider: CloudProvider) async throws -> String? {
+    func retrieve(provider: CloudProvider) throws -> String? {
         return self.storage[provider.rawValue]
     }
     
-    func delete(provider: CloudProvider) async throws {
+    func delete(provider: CloudProvider) throws {
         self.storage.removeValue(forKey: provider.rawValue)
     }
     
-    func hasCredential(for provider: CloudProvider) async -> Bool {
+    func hasCredential(for provider: CloudProvider) -> Bool {
         return self.storage[provider.rawValue] != nil
     }
     

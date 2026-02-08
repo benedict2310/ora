@@ -13,10 +13,10 @@ import os
 
 /// Protocol for credential storage (enables testing with mock)
 protocol CredentialStore: Sendable {
-    func save(provider: CloudProvider, apiKey: String) async throws
-    func retrieve(provider: CloudProvider) async throws -> String?
-    func delete(provider: CloudProvider) async throws
-    func hasCredential(for provider: CloudProvider) async -> Bool
+    func save(provider: CloudProvider, apiKey: String) throws
+    func retrieve(provider: CloudProvider) throws -> String?
+    func delete(provider: CloudProvider) throws
+    func hasCredential(for provider: CloudProvider) -> Bool
 }
 
 // MARK: - Error Types
@@ -51,17 +51,17 @@ actor KeychainCredentialStore: CredentialStore {
     private let logger = Logger(subsystem: "com.ora.app", category: "credentials")
     
     /// Keychain service name - scoped to Ora
-    private let service = "com.ora.app.credentials"
+    private static let service = "com.ora.app.credentials"
     
     // MARK: - Public API
     
-    func save(provider: CloudProvider, apiKey: String) async throws {
+    func save(provider: CloudProvider, apiKey: String) throws {
         let account = provider.rawValue
         let data = Data(apiKey.utf8)
         
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: self.service,
+            kSecAttrService as String: Self.service,
             kSecAttrAccount as String: account,
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
@@ -79,10 +79,10 @@ actor KeychainCredentialStore: CredentialStore {
         self.logger.info("Saved credential for \(account)")
     }
     
-    func retrieve(provider: CloudProvider) async throws -> String? {
+    func retrieve(provider: CloudProvider) throws -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: self.service,
+            kSecAttrService as String: Self.service,
             kSecAttrAccount as String: provider.rawValue,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
@@ -103,10 +103,10 @@ actor KeychainCredentialStore: CredentialStore {
         return String(data: data, encoding: .utf8)
     }
     
-    func delete(provider: CloudProvider) async throws {
+    func delete(provider: CloudProvider) throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: self.service,
+            kSecAttrService as String: Self.service,
             kSecAttrAccount as String: provider.rawValue,
         ]
         
@@ -119,10 +119,10 @@ actor KeychainCredentialStore: CredentialStore {
         self.logger.info("Deleted credential for \(provider.rawValue)")
     }
     
-    func hasCredential(for provider: CloudProvider) async -> Bool {
+    nonisolated func hasCredential(for provider: CloudProvider) -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: self.service,
+            kSecAttrService as String: Self.service,
             kSecAttrAccount as String: provider.rawValue,
             kSecReturnData as String: false,
         ]
