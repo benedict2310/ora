@@ -9,15 +9,15 @@
 
 ---
 
-## Objective
+## 1. Objective
 
 Introduce a provider abstraction layer that allows Ora to switch between local MLX inference and cloud LLM providers (Anthropic, OpenAI) at runtime. The key design goal is **zero changes to the agent loop, structured generator, or tool pipeline** - cloud providers plug in through the existing `LLMServicing` protocol.
 
-## User Story
+## 2. User Story
 
 As a **user**, I want to **choose between local AI models and cloud providers like Claude or GPT** so that I can **get higher-quality responses when I'm willing to use a cloud API, or stay fully local when I prefer privacy**.
 
-## Architecture Context & Reuse Guidance
+## 3. Architecture Context & Reuse Guidance
 
 ### MUST REUSE
 - **`LLMServicing` protocol** (`Ora/LLM/Types.swift`) - Cloud providers MUST implement this. The existing protocol signature is sufficient.
@@ -38,7 +38,7 @@ AgentLoop → StructuredGenerator(llm: LLMServicing) → llm.generate(messages:m
 
 ---
 
-## Scope
+## 3. Scope
 
 ### In Scope
 - `LLMProviderManager` actor for runtime provider switching
@@ -56,9 +56,43 @@ AgentLoop → StructuredGenerator(llm: LLMServicing) → llm.generate(messages:m
 
 ---
 
-## Design
+## 4. Architecture Alignment
 
-### Provider Manager
+This story aligns with Ora's architecture by:
+- Implementing the existing `LLMServicing` protocol for cloud providers
+- Using dependency injection through `StructuredGenerator`
+- Maintaining the agent loop without changes
+- Following the actor-based concurrency model
+
+## 5. Implementation Plan (Draft)
+
+### 5.1 Files to Create
+
+| File | Purpose |
+|:-----|:--------|
+| `Ora/Cloud/LLMProviderType.swift` | Provider type enum |
+| `Ora/Cloud/LLMProviderManager.swift` | Central provider switching logic |
+| `Ora/Cloud/LLMProviderFactory.swift` | Factory protocol |
+| `Ora/Cloud/CloudLLMBase.swift` | Shared cloud provider infrastructure |
+| `Ora/Cloud/CloudProviderError.swift` | Error types for cloud providers |
+| `OraTests/Cloud/LLMProviderManagerTests.swift` | Provider switching tests |
+
+### 5.2 Files to Modify
+
+| File | Change | Rationale |
+|:-----|:-------|:----------|
+| `Ora/Orchestration/AgentLoop.swift` | Accept provider from LLMProviderManager | Enable runtime provider switching |
+
+### 5.3 Tests to Add
+
+- Unit tests for provider switching
+- Error classification tests
+- Factory registration tests
+- Persistence tests
+
+### Design Details
+
+#### Provider Manager
 
 The central coordinator for provider lifecycle:
 
@@ -320,23 +354,21 @@ extension UserDefaults {
 
 ---
 
-## File Touch List
+## 6. Acceptance Criteria
 
-| File | Action | Rationale |
-|:-----|:-------|:----------|
-| `Ora/Cloud/LLMProviderType.swift` | Create | Provider type enum |
-| `Ora/Cloud/LLMProviderManager.swift` | Create | Central provider switching logic |
-| `Ora/Cloud/LLMProviderFactory.swift` | Create | Factory protocol |
-| `Ora/Cloud/CloudLLMBase.swift` | Create | Shared cloud provider infrastructure (SSE, errors) |
-| `Ora/Cloud/CloudProviderError.swift` | Create | Error types for cloud providers |
-| `Ora/Orchestration/AgentLoop.swift` | Modify | Accept provider from LLMProviderManager |
-| `OraTests/Cloud/LLMProviderManagerTests.swift` | Create | Provider switching tests |
+- [ ] **AC-1:** `LLMProviderType` enum with `.local`, `.anthropic`, `.openai` cases
+- [ ] **AC-2:** `LLMProviderManager` can switch between providers at runtime
+- [ ] **AC-3:** Cloud providers implement `LLMServicing` (warmup/prepare/unload/clearCache are no-ops)
+- [ ] **AC-4:** `CloudLLMBase` provides shared SSE parsing and error classification
+- [ ] **AC-5:** Provider selection persisted in UserDefaults
+- [ ] **AC-6:** `AgentLoop`/`StructuredGenerator` work with cloud providers without code changes beyond init wiring
+- [ ] **AC-7:** `CloudProviderError` classifies 401/402/429/5xx correctly
 
 ---
 
-## Tests and Validation
+## 7. Verification Plan
 
-### Unit Tests
+### Automated Tests
 
 - `test_defaultProvider_isLocal` - Fresh init uses LLMService
 - `test_switchToCloud_requiresCredential` - Throws if no API key
@@ -346,24 +378,12 @@ extension UserDefaults {
 - `test_providerType_persistence` - UserDefaults round-trip
 - `test_register_factory` - Factory registration and lookup
 
-### Integration Test (Manual)
+### Manual Tests
 
 1. Start Ora with local provider (default)
 2. Switch to Anthropic (with valid key in Keychain)
 3. Ask a question, verify response comes from Claude
 4. Switch back to local, verify response comes from Qwen
-
----
-
-## Acceptance Criteria
-
-- [ ] **AC-1:** `LLMProviderType` enum with `.local`, `.anthropic`, `.openai` cases
-- [ ] **AC-2:** `LLMProviderManager` can switch between providers at runtime
-- [ ] **AC-3:** Cloud providers implement `LLMServicing` (warmup/prepare/unload/clearCache are no-ops)
-- [ ] **AC-4:** `CloudLLMBase` provides shared SSE parsing and error classification
-- [ ] **AC-5:** Provider selection persisted in UserDefaults
-- [ ] **AC-6:** `AgentLoop`/`StructuredGenerator` work with cloud providers without code changes beyond init wiring
-- [ ] **AC-7:** `CloudProviderError` classifies 401/402/429/5xx correctly
 
 ---
 
