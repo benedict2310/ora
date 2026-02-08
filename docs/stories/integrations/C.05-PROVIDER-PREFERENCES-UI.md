@@ -207,3 +207,58 @@ if providerType.isCloud {
 | Secure text field | SwiftUI's `SecureField` shows dots. Consider a "reveal" toggle for verification. |
 | Tab ordering | Providers tab should appear after General, before or after Models. Follow information hierarchy. |
 | Model list freshness | Hardcoded model lists via `AnthropicModel` / `OpenAIModel` enums. Needs manual update when providers release new models. |
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Pi Subagent
+**Date:** 2026-02-08T22:58:00Z
+**Commit reviewed:** 54f2bd2
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 13
+- Build status: Pass
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [x] None
+
+#### P1 - Major (Should fix)
+- [x] None
+
+#### P2 - Minor (Can defer)
+- [x] None
+
+### Future Considerations (Out of Scope)
+- None
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
+
+---
+
+## Implementation Summary
+**Date:** 2026-02-08
+**Branch:** `feat/C.05-provider-preferences-ui`
+**Commits:** 5
+**Implemented by:** codex (complexity score: 9/10)
+**Reviewed by:** pi (1 iteration)
+
+### Files Changed
+- `Ora/Preferences/Tabs/ProviderPreferencesView.swift` - Created: Provider settings UI with radio group, secure fields, model pickers
+- `Ora/Preferences/Tabs/ProviderPreferencesViewModel.swift` - Created: View model for keychain state, provider switching, model persistence
+- `Ora/UI/Components/CloudIndicator.swift` - Created: Badge shown in overlay when cloud provider active
+- `Ora/Preferences/PreferencesCoordinator.swift` - Modified: Added `.providers` case to `PreferencesTab` enum
+- `Ora/Preferences/PreferencesWindow.swift` - Modified: Added `ProviderPreferencesView` to tab switch
+- `Ora/Overlay/OverlayView.swift` - Modified: Added `CloudIndicator` when cloud provider active
+- `Ora/Cloud/LLMProviderManager.swift` - Modified: Added model selection persistence via UserDefaults
+- `Ora/AppDelegate.swift` - Modified: Register provider factories on launch
+- `OraTests/Preferences/ProviderPreferencesViewModelTests.swift` - Created: 7 tests covering load, save, delete, switch, persistence
+- `OraTests/Cloud/LLMProviderManagerTests.swift` - Modified: Updated for new initializer
+- `OraTests/OverlayViewsTests.swift` - Modified: Added cloud indicator test
+- `OraTests/PreferencesTests.swift` - Modified: Updated for providers tab
