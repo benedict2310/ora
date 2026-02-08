@@ -14,13 +14,14 @@ final class PreferencesTabTests: XCTestCase {
 
     // MARK: - Tab Properties Tests
 
-    func test_allCases_hasFourTabs() {
-        XCTAssertEqual(PreferencesTab.allCases.count, 4)
+    func test_allCases_hasFiveTabs() {
+        XCTAssertEqual(PreferencesTab.allCases.count, 5)
     }
 
     func test_allCases_containsExpectedTabs() {
         let allCases = PreferencesTab.allCases
         XCTAssertTrue(allCases.contains(.general))
+        XCTAssertTrue(allCases.contains(.providers))
         XCTAssertTrue(allCases.contains(.models))
         XCTAssertTrue(allCases.contains(.permissions))
         XCTAssertTrue(allCases.contains(.about))
@@ -32,6 +33,10 @@ final class PreferencesTabTests: XCTestCase {
 
     func test_title_models_returnsModels() {
         XCTAssertEqual(PreferencesTab.models.title, "Models")
+    }
+
+    func test_title_providers_returnsProviders() {
+        XCTAssertEqual(PreferencesTab.providers.title, "Providers")
     }
 
     func test_title_permissions_returnsPermissions() {
@@ -50,6 +55,10 @@ final class PreferencesTabTests: XCTestCase {
         XCTAssertEqual(PreferencesTab.models.icon, "cpu")
     }
 
+    func test_icon_providers_returnsICloud() {
+        XCTAssertEqual(PreferencesTab.providers.icon, "icloud")
+    }
+
     func test_icon_permissions_returnsLockShield() {
         XCTAssertEqual(PreferencesTab.permissions.icon, "lock.shield")
     }
@@ -60,6 +69,7 @@ final class PreferencesTabTests: XCTestCase {
 
     func test_rawValue_matchesExpected() {
         XCTAssertEqual(PreferencesTab.general.rawValue, "general")
+        XCTAssertEqual(PreferencesTab.providers.rawValue, "providers")
         XCTAssertEqual(PreferencesTab.models.rawValue, "models")
         XCTAssertEqual(PreferencesTab.permissions.rawValue, "permissions")
         XCTAssertEqual(PreferencesTab.about.rawValue, "about")
@@ -91,6 +101,9 @@ final class PreferencesCoordinatorTests: XCTestCase {
     func test_selectedTab_canBeChanged() {
         let coordinator = PreferencesCoordinator.shared
 
+        coordinator.selectedTab = .providers
+        XCTAssertEqual(coordinator.selectedTab, .providers)
+
         coordinator.selectedTab = .models
         XCTAssertEqual(coordinator.selectedTab, .models)
 
@@ -106,6 +119,9 @@ final class PreferencesCoordinatorTests: XCTestCase {
 
     func test_selectTab_updatesSelectedTab() {
         let coordinator = PreferencesCoordinator.shared
+
+        coordinator.selectTab(.providers)
+        XCTAssertEqual(coordinator.selectedTab, .providers)
 
         coordinator.selectTab(.models)
         XCTAssertEqual(coordinator.selectedTab, .models)

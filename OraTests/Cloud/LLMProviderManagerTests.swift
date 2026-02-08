@@ -14,11 +14,11 @@ final class LLMProviderManagerTests: XCTestCase {
     var mockCredentialStore: MockCredentialStore!
 
     override func setUp() async throws {
+        // Reset UserDefaults before manager initialization
+        UserDefaults.standard.removeObject(forKey: "com.ora.selectedLLMProvider")
+
         mockCredentialStore = MockCredentialStore()
         manager = LLMProviderManager(credentialStore: mockCredentialStore)
-        
-        // Reset UserDefaults
-        UserDefaults.standard.removeObject(forKey: "com.ora.selectedLLMProvider")
     }
     
     func test_defaultProvider_isLocal() async {

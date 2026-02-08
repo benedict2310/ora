@@ -14,6 +14,7 @@ struct OverlayView: View {
     @EnvironmentObject var viewModel: OverlayViewModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @State private var currentProviderType: LLMProviderType = .local
 
     @Namespace private var inputGlassNamespace
 
@@ -31,6 +32,14 @@ struct OverlayView: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(self.voiceInputAccessibilityLabel)
 
+                if self.currentProviderType.isCloud {
+                    HStack {
+                        Spacer()
+                        CloudIndicator(providerType: self.currentProviderType)
+                    }
+                    .padding(.trailing, 4)
+                }
+
                 self.chatScrollView
             }
             .frame(maxWidth: OverlayLayout.contentMaxWidth, maxHeight: .infinity, alignment: .top)
@@ -39,6 +48,16 @@ struct OverlayView: View {
         .frame(width: OverlayLayout.panelWidth, height: OverlayLayout.panelHeight)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Ora Assistant")
+        .onAppear {
+            self.refreshProviderType()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .llmProviderChanged)) { notification in
+            if let type = notification.userInfo?["type"] as? LLMProviderType {
+                self.currentProviderType = type
+            } else {
+                self.refreshProviderType()
+            }
+        }
     }
 
     private var chatScrollView: some View {
@@ -264,6 +283,12 @@ struct OverlayView: View {
         // Delay slightly to let SwiftUI complete its layout pass
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             OverlayWindowController.shared.invalidateShadow()
+        }
+    }
+
+    private func refreshProviderType() {
+        Task { @MainActor in
+            self.currentProviderType = await LLMProviderManager.shared.getSelectedProviderType()
         }
     }
 }

@@ -66,14 +66,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Register cloud LLM provider factories
         Task {
+            let anthropicModel = UserDefaults.standard.selectedAnthropicModel
+            let openAIModel = UserDefaults.standard.selectedOpenAIModel
+
             await LLMProviderManager.shared.register(
-                factory: AnthropicProviderFactory(),
+                factory: AnthropicProviderFactory(model: anthropicModel.rawValue),
                 for: .anthropic
             )
             await LLMProviderManager.shared.register(
-                factory: OpenAIProviderFactory(),
+                factory: OpenAIProviderFactory(model: openAIModel.rawValue),
                 for: .openai
             )
+            await LLMProviderManager.shared.restoreSelectedProviderIfNeeded()
             self.logger.info("Cloud provider factories registered")
         }
 

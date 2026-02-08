@@ -35,20 +35,17 @@ actor LLMProviderManager: LLMServicing {
         
         // Default to local initially
         self.activeProvider = LLMService.shared
-        
-        // Restore saved provider if not local
-        if savedType != .local {
-            Task { [weak self] in
-                await self?.restoreProvider(savedType)
-            }
-        }
     }
 
-    private func restoreProvider(_ type: LLMProviderType) async {
+    func restoreSelectedProviderIfNeeded() async {
+        guard self.selectedProviderType != .local else {
+            return
+        }
+
         do {
-            try await self.switchProvider(to: type)
+            try await self.switchProvider(to: self.selectedProviderType)
         } catch {
-            self.logger.error("Failed to restore provider \(type.rawValue): \(error.localizedDescription)")
+            self.logger.error("Failed to restore provider \(self.selectedProviderType.rawValue): \(error.localizedDescription)")
             // Fallback to local
             self.selectedProviderType = .local
             UserDefaults.standard.selectedLLMProvider = .local
@@ -167,6 +164,32 @@ extension UserDefaults {
         }
         set {
             set(newValue.rawValue, forKey: "com.ora.selectedLLMProvider")
+        }
+    }
+
+    var selectedAnthropicModel: AnthropicModel {
+        get {
+            guard let raw = string(forKey: "com.ora.selectedAnthropicModel"),
+                  let model = AnthropicModel(rawValue: raw) else {
+                return .sonnet
+            }
+            return model
+        }
+        set {
+            set(newValue.rawValue, forKey: "com.ora.selectedAnthropicModel")
+        }
+    }
+
+    var selectedOpenAIModel: OpenAIModel {
+        get {
+            guard let raw = string(forKey: "com.ora.selectedOpenAIModel"),
+                  let model = OpenAIModel(rawValue: raw) else {
+                return .gpt4o
+            }
+            return model
+        }
+        set {
+            set(newValue.rawValue, forKey: "com.ora.selectedOpenAIModel")
         }
     }
 }
