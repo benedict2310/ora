@@ -12,7 +12,7 @@ import os
 // MARK: - Protocol
 
 /// Protocol for credential storage (enables testing with mock)
-protocol CredentialStore: Sendable {
+protocol CredentialStore: Actor {
     func save(provider: CloudProvider, apiKey: String) throws
     func retrieve(provider: CloudProvider) throws -> String?
     func delete(provider: CloudProvider) throws
