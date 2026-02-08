@@ -70,6 +70,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 factory: AnthropicProviderFactory(),
                 for: .anthropic
             )
+            await LLMProviderManager.shared.register(
+                factory: OpenAIProviderFactory(),
+                for: .openai
+            )
             self.logger.info("Cloud provider factories registered")
         }
 
