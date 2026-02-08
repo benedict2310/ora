@@ -107,7 +107,7 @@ cmd_notarize() {
     [ -d "$app_path" ] || die "App not found: $app_path"
 
     local zip_path
-    zip_path=$(mktemp /tmp/notarize.XXXXXX.zip)
+    zip_path="$(mktemp /tmp/notarize-XXXXXX).zip"
 
     log "Creating ZIP for notarization"
     ditto -c -k --keepParent "$app_path" "$zip_path"

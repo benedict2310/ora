@@ -33,6 +33,120 @@ let appIconSizes: [(name: String, size: Int)] = [
 
 // MARK: - Image Resizing
 
+func bitmapRep(for image: NSImage) -> NSBitmapImageRep? {
+    if let rep = image.representations.compactMap({ $0 as? NSBitmapImageRep }).first {
+        return rep
+    }
+    guard let tiff = image.tiffRepresentation else {
+        return nil
+    }
+    return NSBitmapImageRep(data: tiff)
+}
+
+func alphaBoundingBox(for rep: NSBitmapImageRep) -> CGRect? {
+    guard rep.samplesPerPixel >= 4,
+          let data = rep.bitmapData else {
+        return nil
+    }
+
+    let width = rep.pixelsWide
+    let height = rep.pixelsHigh
+    let bytesPerRow = rep.bytesPerRow
+    let samplesPerPixel = rep.samplesPerPixel
+    var minX = width
+    var minY = height
+    var maxX = -1
+    var maxY = -1
+
+    for y in 0..<height {
+        let row = data + y * bytesPerRow
+        for x in 0..<width {
+            let pixel = row + x * samplesPerPixel
+            if pixel[3] > 2 { // ~1% alpha threshold
+                if x < minX { minX = x }
+                if y < minY { minY = y }
+                if x > maxX { maxX = x }
+                if y > maxY { maxY = y }
+            }
+        }
+    }
+
+    guard maxX >= 0, maxY >= 0 else {
+        return nil
+    }
+
+    return CGRect(
+        x: CGFloat(minX),
+        y: CGFloat(minY),
+        width: CGFloat(maxX - minX + 1),
+        height: CGFloat(maxY - minY + 1)
+    )
+}
+
+func centeredImage(_ image: NSImage) -> NSImage {
+    guard let rep = bitmapRep(for: image),
+          let bbox = alphaBoundingBox(for: rep),
+          let srcData = rep.bitmapData else {
+        return image
+    }
+
+    let width = rep.pixelsWide
+    let height = rep.pixelsHigh
+    let pixelSize = CGSize(width: width, height: height)
+    let targetCenter = CGPoint(x: pixelSize.width / 2.0, y: pixelSize.height / 2.0)
+    let bboxCenter = CGPoint(x: bbox.midX, y: bbox.midY)
+    let dx = Int(round(targetCenter.x - bboxCenter.x))
+    let dy = Int(round(targetCenter.y - bboxCenter.y))
+
+    if dx == 0 && dy == 0 {
+        return image
+    }
+
+    guard let newRep = NSBitmapImageRep(
+        bitmapDataPlanes: nil,
+        pixelsWide: width,
+        pixelsHigh: height,
+        bitsPerSample: rep.bitsPerSample,
+        samplesPerPixel: rep.samplesPerPixel,
+        hasAlpha: rep.hasAlpha,
+        isPlanar: false,
+        colorSpaceName: rep.colorSpaceName,
+        bytesPerRow: 0,
+        bitsPerPixel: 0
+    ), let dstData = newRep.bitmapData else {
+        return image
+    }
+
+    let srcBytesPerRow = rep.bytesPerRow
+    let dstBytesPerRow = newRep.bytesPerRow
+    let samplesPerPixel = rep.samplesPerPixel
+    memset(dstData, 0, dstBytesPerRow * height)
+
+    for y in 0..<height {
+        let newY = y + dy
+        if newY < 0 || newY >= height { continue }
+        let srcRow = srcData + y * srcBytesPerRow
+        let dstRow = dstData + newY * dstBytesPerRow
+        if dx == 0 {
+            memcpy(dstRow, srcRow, width * samplesPerPixel)
+        } else {
+            for x in 0..<width {
+                let newX = x + dx
+                if newX < 0 || newX >= width { continue }
+                let srcPixel = srcRow + x * samplesPerPixel
+                let dstPixel = dstRow + newX * samplesPerPixel
+                for channel in 0..<samplesPerPixel {
+                    dstPixel[channel] = srcPixel[channel]
+                }
+            }
+        }
+    }
+
+    let newImage = NSImage(size: pixelSize)
+    newImage.addRepresentation(newRep)
+    return newImage
+}
+
 func resizeImage(_ image: NSImage, to size: NSSize) -> NSImage {
     let newImage = NSImage(size: size)
     newImage.lockFocus()
@@ -72,7 +186,7 @@ func savePNG(_ image: NSImage, to url: URL, size: Int, is2x: Bool) throws {
     NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmapRep)
     NSGraphicsContext.current?.imageInterpolation = .high
 
-    image.draw(in: NSRect(x: 0, y: 0, width: size, height: size),
+    image.draw(in: NSRect(x: 0, y: 0, width: pointSize, height: pointSize),
                from: NSRect(origin: .zero, size: image.size),
                operation: .copy,
                fraction: 1.0)
@@ -105,14 +219,19 @@ guard let sourceImage = NSImage(contentsOf: sourcePath) else {
     exit(1)
 }
 
+let centeredSourceImage = centeredImage(sourceImage)
+
 print("Source image size: \(Int(sourceImage.size.width))x\(Int(sourceImage.size.height))")
+if centeredSourceImage !== sourceImage {
+    print("Centering source image based on alpha bounds.")
+}
 print("")
 
 for iconSize in appIconSizes {
     let outputPath = appIconPath.appendingPathComponent("\(iconSize.name).png")
     let is2x = iconSize.name.contains("@2x")
     do {
-        try savePNG(sourceImage, to: outputPath, size: iconSize.size, is2x: is2x)
+        try savePNG(centeredSourceImage, to: outputPath, size: iconSize.size, is2x: is2x)
         print("Created: \(iconSize.name).png (\(iconSize.size)x\(iconSize.size) px)")
     } catch {
         print("Error creating \(iconSize.name).png: \(error)")
