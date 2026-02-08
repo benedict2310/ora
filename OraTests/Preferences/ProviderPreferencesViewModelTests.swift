@@ -28,7 +28,7 @@ final class ProviderPreferencesViewModelTests: XCTestCase {
         )
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         UserDefaults.standard.removeObject(forKey: "com.ora.selectedLLMProvider")
         UserDefaults.standard.removeObject(forKey: "com.ora.selectedAnthropicModel")
         UserDefaults.standard.removeObject(forKey: "com.ora.selectedOpenAIModel")
@@ -36,7 +36,7 @@ final class ProviderPreferencesViewModelTests: XCTestCase {
         self.viewModel = nil
         self.providerManager = nil
         self.credentialStore = nil
-        super.tearDown()
+        try await super.tearDown()
     }
 
     func test_loadState_detectsSavedKeys() async throws {
