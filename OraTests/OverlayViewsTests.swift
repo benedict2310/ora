@@ -114,4 +114,12 @@ final class OverlayViewsTests: XCTestCase {
         let executingReduced = ToolStateView(mode: .executing(label: "Executing..."), reduceTransparency: true, reduceMotion: true)
         _ = executingReduced.body
     }
+
+    func test_cloudIndicator_bodyBuilds_forCloudProviders() {
+        let anthropic = CloudIndicator(providerType: .anthropic)
+        _ = anthropic.body
+
+        let openAI = CloudIndicator(providerType: .openai)
+        _ = openAI.body
+    }
 }
