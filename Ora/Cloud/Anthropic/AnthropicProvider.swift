@@ -9,7 +9,7 @@ import Foundation
 import os
 
 /// Anthropic Claude provider implementing LLMServicing
-public final class AnthropicProvider: CloudLLMBase {
+public final class AnthropicProvider: CloudLLMBase, @unchecked Sendable {
 
     private let model: String
     private let baseURL = URL(string: "https://api.anthropic.com/v1/messages")!
