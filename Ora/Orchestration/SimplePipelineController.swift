@@ -422,7 +422,7 @@ final class SimplePipelineController: ObservableObject {
         
         do {
             // Ensure LLM is ready
-            try await LLMService.shared.prepare()
+            try await LLMProviderManager.shared.prepare()
             
             // Process through agent loop (session preserves conversation context)
             let result = try await self.agentLoop.process(userText: self.currentTranscript)
