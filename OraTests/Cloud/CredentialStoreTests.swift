@@ -94,6 +94,22 @@ final class CredentialStoreTests: XCTestCase {
         try await self.store.delete(provider: .openai)
     }
     
+    // MARK: - Has Credential Tests
+    
+    func test_hasCredential_true_when_stored() async throws {
+        let testKey = "sk-ant-test-key"
+        
+        try await self.store.save(provider: .anthropic, apiKey: testKey)
+        
+        let hasCredential = await self.store.hasCredential(for: .anthropic)
+        XCTAssertTrue(hasCredential)
+    }
+    
+    func test_hasCredential_false_when_missing() async {
+        let hasCredential = await self.store.hasCredential(for: .openai)
+        XCTAssertFalse(hasCredential)
+    }
+    
     // MARK: - Multiple Provider Tests
     
     func test_multiple_providers_independent() async throws {
