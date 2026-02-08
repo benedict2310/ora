@@ -122,9 +122,9 @@ final class MockProviderFactory: LLMProviderFactory {
     }
 }
 
-class MockCloudProvider: CloudLLMBase {
-    override init(apiKey: String, category: String = "mock") {
-        super.init(apiKey: apiKey, category: category)
+class MockCloudProvider: CloudLLMBase, @unchecked Sendable {
+    init(apiKey: String) {
+        super.init(apiKey: apiKey, category: "mock")
     }
     
     override func generate(messages: [LLMMessage], maxTokens: Int) async -> AsyncThrowingStream<LLMDelta, Error> {

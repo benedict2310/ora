@@ -20,14 +20,17 @@ open class CloudLLMBase: LLMServicing, @unchecked Sendable {
     public let apiKey: String
     public let session: URLSession
 
-    public init(apiKey: String, category: String) {
+    public init(apiKey: String, category: String, session: URLSession? = nil) {
         self.apiKey = apiKey
         self.logger = Logger(subsystem: "com.ora.app", category: category)
-
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 30
-        config.timeoutIntervalForResource = 120
-        self.session = URLSession(configuration: config)
+        if let session {
+            self.session = session
+        } else {
+            let config = URLSessionConfiguration.default
+            config.timeoutIntervalForRequest = 30
+            config.timeoutIntervalForResource = 120
+            self.session = URLSession(configuration: config)
+        }
     }
 
     // MARK: - LLMServicing Protocol

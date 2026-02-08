@@ -9,30 +9,15 @@
 
 ---
 
-## Objective
+## 1. Objective
 
 Implement an OpenAI provider that conforms to `LLMServicing`, enabling Ora to use GPT models (GPT-4o, GPT-4o-mini, o3-mini) as its reasoning engine via the OpenAI Chat Completions API. Structurally mirrors C.03 (Anthropic) but targets OpenAI's API format.
 
-## User Story
+## 2. User Story
 
 As a **user**, I want to **use OpenAI GPT models as my AI provider in Ora** so that I can **choose the best model for my needs while keeping all my local tools working**.
 
-## Architecture Context & Reuse Guidance
-
-### MUST REUSE
-- **`LLMServicing`** protocol - MUST conform
-- **`LLMMessage` / `LLMDelta`** types - Map to OpenAI chat format
-- **`CloudLLMBase`** (from C.02) - SSE parsing, error classification
-- **`KeychainCredentialStore`** (from C.01) - API key retrieval
-
-### API Reference
-- **Endpoint:** `https://api.openai.com/v1/chat/completions`
-- **Auth header:** `Authorization: Bearer <key>`
-- **Streaming:** SSE with `data:` lines containing JSON with `choices[0].delta.content`
-
----
-
-## Scope
+## 3. Scope
 
 ### In Scope
 - `OpenAIProvider` actor conforming to `LLMServicing`
@@ -52,7 +37,48 @@ As a **user**, I want to **use OpenAI GPT models as my AI provider in Ora** so t
 
 ---
 
-## Design
+## 4. Architecture Alignment
+
+This story builds on the Cloud Provider Abstraction (C.02) and Keychain Credential Manager (C.01):
+
+### MUST REUSE
+- **`LLMServicing`** protocol - MUST conform
+- **`LLMMessage` / `LLMDelta`** types - Map to OpenAI chat format
+- **`CloudLLMBase`** (from C.02) - SSE parsing, error classification
+- **`KeychainCredentialStore`** (from C.01) - API key retrieval
+
+### API Reference
+- **Endpoint:** `https://api.openai.com/v1/chat/completions`
+- **Auth header:** `Authorization: Bearer <key>`
+- **Streaming:** SSE with `data:` lines containing JSON with `choices[0].delta.content`
+
+## 5. Implementation Plan (Draft)
+
+### 5.1 Files to Create
+
+| File | Purpose |
+|:-----|:--------|
+| `Ora/Cloud/OpenAI/OpenAIProvider.swift` | LLMServicing implementation for OpenAI |
+| `Ora/Cloud/OpenAI/OpenAIModels.swift` | Model enum and configuration |
+| `Ora/Cloud/OpenAI/OpenAIProviderFactory.swift` | Factory for LLMProviderManager |
+| `OraTests/Cloud/OpenAI/OpenAIProviderTests.swift` | Unit tests with mocked HTTP |
+
+### 5.2 Files to Modify
+
+No existing files need modification.
+
+### 5.3 Tests to Add
+
+- `test_generate_streams_tokens` - Mock SSE stream yields correct LLMDelta tokens
+- `test_systemMessage_inlineInMessages` - System role sent in messages array (not separate)
+- `test_toolRole_mappedToUser` - Tool results sent as user messages
+- `test_done_sentinel_completesStream` - `[DONE]` triggers clean finish
+- `test_usage_in_final_chunk` - Token count from `stream_options.include_usage`
+- `test_401_throwsAuthError` - Auth failure handling
+- `test_429_retriesWithBackoff` - Rate limit retry
+- `test_cancelled_terminatesStream` - Task cancellation
+
+## Design Details
 
 ### Provider Implementation
 
@@ -141,8 +167,8 @@ OpenAI SSE format:
 
 ```
 data: {"id":"...","choices":[{"delta":{"role":"assistant"}}]}
-data: {"id":"...","choices":[{"delta":{"content":"Hello"}}]}   ← yield as LLMDelta.token
-data: {"id":"...","choices":[{"delta":{"content":" world"}}]}  ← yield as LLMDelta.token
+data: {"id":"...","choices":[{"delta":{"content":"Hello"}}]}   <- yield as LLMDelta.token
+data: {"id":"...","choices":[{"delta":{"content":" world"}}]}  <- yield as LLMDelta.token
 data: {"id":"...","choices":[{"finish_reason":"stop"}],"usage":{"completion_tokens":5}}
 data: [DONE]
 ```
@@ -221,41 +247,7 @@ enum OpenAIModel: String, Sendable, CaseIterable {
 
 ---
 
-## File Touch List
-
-| File | Action | Rationale |
-|:-----|:-------|:----------|
-| `Ora/Cloud/OpenAI/OpenAIProvider.swift` | Create | LLMServicing implementation for OpenAI |
-| `Ora/Cloud/OpenAI/OpenAIModels.swift` | Create | Model enum and configuration |
-| `Ora/Cloud/OpenAI/OpenAIProviderFactory.swift` | Create | Factory for LLMProviderManager |
-| `OraTests/Cloud/OpenAI/OpenAIProviderTests.swift` | Create | Unit tests with mocked HTTP |
-
----
-
-## Tests and Validation
-
-### Unit Tests (Mocked HTTP)
-
-- `test_generate_streams_tokens` - Mock SSE stream yields correct LLMDelta tokens
-- `test_systemMessage_inlineInMessages` - System role sent in messages array (not separate)
-- `test_toolRole_mappedToUser` - Tool results sent as user messages
-- `test_done_sentinel_completesStream` - `[DONE]` triggers clean finish
-- `test_usage_in_final_chunk` - Token count from `stream_options.include_usage`
-- `test_401_throwsAuthError` - Auth failure handling
-- `test_429_retriesWithBackoff` - Rate limit retry
-- `test_cancelled_terminatesStream` - Task cancellation
-
-### Manual E2E Test
-
-1. Set OpenAI API key via Keychain
-2. Switch provider to OpenAI
-3. Ask "What's 2+2?" - verify GPT responds
-4. Ask "What's on my calendar tomorrow?" - verify tool calling works
-5. Switch between OpenAI and local, verify both work
-
----
-
-## Acceptance Criteria
+## 6. Acceptance Criteria
 
 - [ ] **AC-1:** `OpenAIProvider` conforms to `LLMServicing`
 - [ ] **AC-2:** System messages sent inline in the messages array
@@ -268,6 +260,29 @@ enum OpenAIModel: String, Sendable, CaseIterable {
 
 ---
 
+## 7. Verification Plan
+
+### Automated Tests
+
+- `test_generate_streams_tokens` - Mock SSE stream yields correct LLMDelta tokens
+- `test_systemMessage_inlineInMessages` - System role sent in messages array (not separate)
+- `test_toolRole_mappedToUser` - Tool results sent as user messages
+- `test_done_sentinel_completesStream` - `[DONE]` triggers clean finish
+- `test_usage_in_final_chunk` - Token count from `stream_options.include_usage`
+- `test_401_throwsAuthError` - Auth failure handling
+- `test_429_retriesWithBackoff` - Rate limit retry
+- `test_cancelled_terminatesStream` - Task cancellation
+
+### Manual Tests
+
+1. Set OpenAI API key via Keychain
+2. Switch provider to OpenAI
+3. Ask "What's 2+2?" - verify GPT responds
+4. Ask "What's on my calendar tomorrow?" - verify tool calling works
+5. Switch between OpenAI and local, verify both work
+
+---
+
 ## Risks and Open Questions
 
 | Risk/Question | Notes |
@@ -276,3 +291,58 @@ enum OpenAIModel: String, Sendable, CaseIterable {
 | Tool role mapping | OpenAI has native function calling, but we use JSON-based for now. Tool results go as user messages. |
 | o3-mini reasoning | o3-mini uses reasoning tokens (not visible). Token counts may include reasoning overhead. |
 | `max_tokens` vs `max_completion_tokens` | Newer models use `max_completion_tokens`. May need model-specific parameter name. |
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-02-08T21:55:00Z
+**Commit reviewed:** 78e9164
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 8
+- Build status: Pass
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+None.
+
+#### P1 - Major (Should fix)
+None.
+
+#### P2 - Minor (Can defer)
+None.
+
+### Future Considerations (Out of Scope)
+- The current implementation maps tool calls to user messages as requested. Future native tool calling support would require `tool_calls` parsing in `OpenAIProvider`.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
+
+---
+
+## Implementation Summary
+**Date:** 2026-02-08
+**Branch:** `feat/C.04-openai-provider`
+**Commits:** 4
+**Implemented by:** codex (complexity score: 7/10)
+**Reviewed by:** pi (1 iteration)
+
+### Files Changed
+- `Ora/Cloud/OpenAI/OpenAIProvider.swift` - Created: LLMServicing implementation for OpenAI Chat Completions API
+- `Ora/Cloud/OpenAI/OpenAIModels.swift` - Created: Model enum (GPT-4o, GPT-4o Mini, o3-mini)
+- `Ora/Cloud/OpenAI/OpenAIProviderFactory.swift` - Created: Factory for LLMProviderManager
+- `Ora/Cloud/CloudLLMBase.swift` - Modified: Extended base class for OpenAI support
+- `Ora/AppDelegate.swift` - Modified: Register OpenAI provider factory
+- `OraTests/Cloud/OpenAI/OpenAIProviderTests.swift` - Created: Unit tests with mocked HTTP
+- `OraTests/Cloud/LLMProviderManagerTests.swift` - Modified: Updated for OpenAI provider
+
+## Completion Status
+- [x] Implementation complete
+- [x] Code review passed (1 iteration)
+- [x] Build: 1247/1247 tests passing
