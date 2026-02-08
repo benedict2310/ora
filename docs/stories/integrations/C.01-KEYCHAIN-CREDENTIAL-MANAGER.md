@@ -9,28 +9,15 @@
 
 ---
 
-## Objective
+## 1. Objective
 
 Provide a secure, reusable credential storage layer using the macOS Keychain so Ora can persist API keys for cloud LLM providers (Anthropic, OpenAI, and future providers) without storing secrets in plaintext files, UserDefaults, or environment variables.
 
-## User Story
+## 2. User Story
 
 As a **user**, I want to **securely store my API keys for cloud AI providers** so that I can **use Ora with Anthropic Claude or OpenAI without re-entering keys every session, and trust that my secrets are protected by the OS**.
 
-## Architecture Context & Reuse Guidance
-
-### MUST REUSE
-- **`Logger`** subsystem pattern (`com.ora.app`, new category `credentials`)
-- **Actor isolation** pattern used throughout (ModelManager, LLMService, etc.)
-- **Error enum pattern** with `LocalizedError` conformance (see `LLMServiceError`, `ModelError`)
-
-### NEW
-- **Security.framework** - `SecItemAdd`, `SecItemCopyMatching`, `SecItemUpdate`, `SecItemDelete`
-- No third-party dependencies needed; Keychain Services API is sufficient
-
----
-
-## Scope
+## 3. Scope
 
 ### In Scope
 - Keychain wrapper actor for CRUD operations on API key credentials
@@ -44,6 +31,17 @@ As a **user**, I want to **securely store my API keys for cloud AI providers** s
 - Token refresh / expiry tracking (not needed for API keys)
 - iCloud Keychain sync (local-only for privacy)
 - Biometric authentication for key access (macOS handles this at the Keychain level)
+
+## 4. Architecture Alignment
+
+### MUST REUSE
+- **`Logger`** subsystem pattern (`com.ora.app`, new category `credentials`)
+- **Actor isolation** pattern used throughout (ModelManager, LLMService, etc.)
+- **Error enum pattern** with `LocalizedError` conformance (see `LLMServiceError`, `ModelError`)
+
+### NEW
+- **Security.framework** - `SecItemAdd`, `SecItemCopyMatching`, `SecItemUpdate`, `SecItemDelete`
+- No third-party dependencies needed; Keychain Services API is sufficient
 
 ---
 
@@ -194,20 +192,23 @@ enum CredentialStoreError: LocalizedError {
 
 ---
 
-## File Touch List
+## 5. Implementation Plan (Draft)
 
-| File | Action | Rationale |
-|:-----|:-------|:----------|
-| `Ora/Cloud/CloudProvider.swift` | Create | Provider enum and shared types |
-| `Ora/Cloud/CredentialStore.swift` | Create | Protocol + Keychain implementation |
-| `OraTests/Cloud/CredentialStoreTests.swift` | Create | Unit tests with mock store |
+### 5.1 Files to Create
 
----
+| File | Purpose |
+|:-----|:--------|
+| `Ora/Cloud/CloudProvider.swift` | Provider enum and shared types |
+| `Ora/Cloud/CredentialStore.swift` | Protocol + Keychain implementation |
+| `OraTests/Cloud/CredentialStoreTests.swift` | Unit tests with mock store |
 
-## Tests and Validation
+### 5.2 Files to Modify
 
-### Unit Tests
+None (new component, no existing file modifications needed).
 
+### 5.3 Tests to Add
+
+Unit tests in `OraTests/Cloud/CredentialStoreTests.swift`:
 - `test_save_and_retrieve_returns_key` - Round-trip save/retrieve
 - `test_retrieve_missing_returns_nil` - No key stored returns nil
 - `test_save_overwrites_existing` - Second save replaces first
@@ -217,18 +218,9 @@ enum CredentialStoreError: LocalizedError {
 - `test_hasCredential_false_when_missing` - Boolean check for missing
 - `test_multiple_providers_independent` - Anthropic key doesn't affect OpenAI key
 
-Tests should use a `MockCredentialStore` conforming to `CredentialStore` for isolation (no real Keychain in CI).
-
-### Manual Verification
-
-1. Build and run Ora
-2. Open Preferences > Providers (once C.05 UI exists)
-3. Enter an Anthropic API key, quit and relaunch, verify key persists
-4. Delete the key, verify it's gone
-
 ---
 
-## Acceptance Criteria
+## 6. Acceptance Criteria
 
 - [ ] **AC-1:** `CredentialStore` protocol defined with save/retrieve/delete/hasCredential
 - [ ] **AC-2:** `KeychainCredentialStore` implements the protocol using Security.framework
@@ -237,6 +229,29 @@ Tests should use a `MockCredentialStore` conforming to `CredentialStore` for iso
 - [ ] **AC-5:** Error types cover save/retrieve/delete failures with OSStatus codes
 - [ ] **AC-6:** Unit tests pass using mock credential store
 - [ ] **AC-7:** No plaintext API keys in UserDefaults, files, or logs
+
+## 7. Verification Plan
+
+### Automated Tests
+
+Unit tests using `MockCredentialStore` conforming to `CredentialStore` for isolation (no real Keychain in CI):
+- `test_save_and_retrieve_returns_key` - Round-trip save/retrieve
+- `test_retrieve_missing_returns_nil` - No key stored returns nil
+- `test_save_overwrites_existing` - Second save replaces first
+- `test_delete_removes_key` - Delete then retrieve returns nil
+- `test_delete_nonexistent_succeeds` - Delete missing key doesn't throw
+- `test_hasCredential_true_when_stored` - Boolean check works
+- `test_hasCredential_false_when_missing` - Boolean check for missing
+- `test_multiple_providers_independent` - Anthropic key doesn't affect OpenAI key
+
+Run with: `./build.sh test`
+
+### Manual Tests
+
+1. Build and run Ora
+2. Open Preferences > Providers (once C.05 UI exists)
+3. Enter an Anthropic API key, quit and relaunch, verify key persists
+4. Delete the key, verify it's gone
 
 ---
 
