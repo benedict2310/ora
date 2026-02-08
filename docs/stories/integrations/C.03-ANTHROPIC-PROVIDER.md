@@ -9,31 +9,16 @@
 
 ---
 
-## Objective
+## 1. Objective
 
 Implement an Anthropic Claude provider that conforms to `LLMServicing`, enabling Ora to use Claude (Sonnet/Haiku/Opus) as its reasoning engine via the Anthropic Messages API. The provider streams tokens through Ora's existing pipeline - the agent loop, structured generator, and tool system work unchanged.
 
-## User Story
+## 2. User Story
 
 As a **user**, I want to **use Anthropic Claude as my AI provider in Ora** so that I can **get high-quality responses powered by Claude while keeping all my local tools (calendar, reminders, contacts) working**.
 
-## Architecture Context & Reuse Guidance
 
-### MUST REUSE
-- **`LLMServicing`** protocol - MUST conform to this
-- **`LLMMessage` / `LLMDelta`** types - Map to Anthropic Messages API format
-- **`CloudLLMBase`** (from C.02) - SSE parsing, error handling, HTTP session
-- **`KeychainCredentialStore`** (from C.01) - API key retrieval
-
-### API Reference
-- **Endpoint:** `https://api.anthropic.com/v1/messages`
-- **Auth header:** `x-api-key: <key>`
-- **Streaming:** SSE with `event: content_block_delta` carrying text deltas
-- **Version header:** `anthropic-version: 2023-06-01`
-
----
-
-## Scope
+## 3. Scope
 
 ### In Scope
 - `AnthropicProvider` actor conforming to `LLMServicing`
@@ -53,7 +38,50 @@ As a **user**, I want to **use Anthropic Claude as my AI provider in Ora** so th
 
 ---
 
-## Design
+## 4. Architecture Alignment
+
+This story builds on the Cloud Provider Abstraction (C.02) and Keychain Credential Manager (C.01):
+
+### MUST REUSE
+- **`LLMServicing`** protocol - MUST conform to this
+- **`LLMMessage` / `LLMDelta`** types - Map to Anthropic Messages API format
+- **`CloudLLMBase`** (from C.02) - SSE parsing, error handling, HTTP session
+- **`KeychainCredentialStore`** (from C.01) - API key retrieval
+
+### API Reference
+- **Endpoint:** `https://api.anthropic.com/v1/messages`
+- **Auth header:** `x-api-key: <key>`
+- **Streaming:** SSE with `event: content_block_delta` carrying text deltas
+- **Version header:** `anthropic-version: 2023-06-01`
+
+## 5. Implementation Plan (Draft)
+
+### 5.1 Files to Create
+
+| File | Purpose |
+|:-----|:--------|
+| `Ora/Cloud/Anthropic/AnthropicProvider.swift` | LLMServicing implementation for Anthropic |
+| `Ora/Cloud/Anthropic/AnthropicModels.swift` | Model enum and configuration |
+| `Ora/Cloud/Anthropic/AnthropicProviderFactory.swift` | Factory for LLMProviderManager |
+| `OraTests/Cloud/Anthropic/AnthropicProviderTests.swift` | Unit tests with mocked HTTP |
+
+### 5.2 Files to Modify
+
+No existing files need modification.
+
+### 5.3 Tests to Add
+
+- `test_generate_streams_tokens` - Mock SSE stream yields correct LLMDelta tokens
+- `test_systemMessage_sentAsSeparateField` - System prompt uses Anthropic's `system` parameter
+- `test_toolRole_mappedToUser` - Tool results sent as user messages
+- `test_401_throwsAuthError` - Authentication failure classified correctly
+- `test_429_retriesWithBackoff` - Rate limit triggers retry
+- `test_429_maxRetriesExhausted_throws` - Eventually gives up
+- `test_500_throwsServerError` - Server errors classified correctly
+- `test_messageStop_completesStream` - Clean stream termination
+- `test_cancelled_terminatesStream` - Task cancellation stops streaming
+
+## Design Details
 
 ### Provider Implementation
 
@@ -314,42 +342,7 @@ enum AnthropicModel: String, Sendable, CaseIterable {
 
 ---
 
-## File Touch List
-
-| File | Action | Rationale |
-|:-----|:-------|:----------|
-| `Ora/Cloud/Anthropic/AnthropicProvider.swift` | Create | LLMServicing implementation for Anthropic |
-| `Ora/Cloud/Anthropic/AnthropicModels.swift` | Create | Model enum and configuration |
-| `Ora/Cloud/Anthropic/AnthropicProviderFactory.swift` | Create | Factory for LLMProviderManager |
-| `OraTests/Cloud/Anthropic/AnthropicProviderTests.swift` | Create | Unit tests with mocked HTTP |
-
----
-
-## Tests and Validation
-
-### Unit Tests (Mocked HTTP)
-
-- `test_generate_streams_tokens` - Mock SSE stream yields correct LLMDelta tokens
-- `test_systemMessage_sentAsSeparateField` - System prompt uses Anthropic's `system` parameter
-- `test_toolRole_mappedToUser` - Tool results sent as user messages (Anthropic doesn't have tool role in basic mode)
-- `test_401_throwsAuthError` - Authentication failure classified correctly
-- `test_429_retriesWithBackoff` - Rate limit triggers retry
-- `test_429_maxRetriesExhausted_throws` - Eventually gives up
-- `test_500_throwsServerError` - Server errors classified correctly
-- `test_messageStop_completesStream` - Clean stream termination
-- `test_cancelled_terminatesStream` - Task cancellation stops streaming
-
-### Manual E2E Test
-
-1. Set Anthropic API key via Keychain (or future preferences UI)
-2. Switch provider to Anthropic
-3. Ask "What's 2+2?" - verify Claude responds
-4. Ask "What's on my calendar tomorrow?" - verify tool calling works through existing pipeline
-5. Remove API key, verify auth error is surfaced to user
-
----
-
-## Acceptance Criteria
+## 6. Acceptance Criteria
 
 - [ ] **AC-1:** `AnthropicProvider` conforms to `LLMServicing`
 - [ ] **AC-2:** System messages sent via Anthropic's `system` parameter (not in messages array)
@@ -359,6 +352,30 @@ enum AnthropicModel: String, Sendable, CaseIterable {
 - [ ] **AC-6:** 401/402 errors surface as `CloudProviderError.authenticationFailed`/`.billingError`
 - [ ] **AC-7:** Factory registered with `LLMProviderManager`
 - [ ] **AC-8:** Tool calling works through existing `StructuredGenerator` pipeline (no native tool use API)
+
+---
+
+## 7. Verification Plan
+
+### Automated Tests
+
+- `test_generate_streams_tokens` - Mock SSE stream yields correct LLMDelta tokens
+- `test_systemMessage_sentAsSeparateField` - System prompt uses Anthropic's `system` parameter
+- `test_toolRole_mappedToUser` - Tool results sent as user messages
+- `test_401_throwsAuthError` - Authentication failure classified correctly
+- `test_429_retriesWithBackoff` - Rate limit triggers retry
+- `test_429_maxRetriesExhausted_throws` - Eventually gives up
+- `test_500_throwsServerError` - Server errors classified correctly
+- `test_messageStop_completesStream` - Clean stream termination
+- `test_cancelled_terminatesStream` - Task cancellation stops streaming
+
+### Manual Tests
+
+1. Set Anthropic API key via Keychain (or future preferences UI)
+2. Switch provider to Anthropic
+3. Ask "What's 2+2?" - verify Claude responds
+4. Ask "What's on my calendar tomorrow?" - verify tool calling works through existing pipeline
+5. Remove API key, verify auth error is surfaced to user
 
 ---
 
