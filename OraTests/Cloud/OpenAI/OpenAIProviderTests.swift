@@ -244,23 +244,34 @@ final class OpenAIProviderTests: XCTestCase {
             messages: [LLMMessage(role: .user, content: "cancel me")],
             maxTokens: 64
         )
-        let consumerTask = Task {
+        let consumerTask = Task<Int, Never> {
             var didSignal = false
-            for try await delta in stream {
-                if case .token = delta, !didSignal {
-                    didSignal = true
-                    firstTokenExpectation.fulfill()
+            var tokenCount = 0
+            do {
+                for try await delta in stream {
+                    if case .token = delta, !didSignal {
+                        didSignal = true
+                        firstTokenExpectation.fulfill()
+                    }
+                    if case .token = delta {
+                        tokenCount += 1
+                    }
                 }
+            } catch {
+                // Expected when the consumer task is cancelled.
             }
+            return tokenCount
         }
 
         await fulfillment(of: [firstTokenExpectation], timeout: 2.0)
+        let cancelStart = Date()
         consumerTask.cancel()
-        _ = await consumerTask.result
-        try await Task.sleep(for: .milliseconds(50))
+        let consumedTokenCount = await consumerTask.value
+        let cancellationElapsed = Date().timeIntervalSince(cancelStart)
 
         // Then
-        XCTAssertGreaterThan(OpenAIMockURLProtocol.stopLoadingCount, 0)
+        XCTAssertLessThan(cancellationElapsed, 1.0)
+        XCTAssertLessThan(consumedTokenCount, 3)
     }
 
     func test_structuredGenerator_withOpenAIProvider_streamParsesToolCall() async throws {
@@ -450,13 +461,7 @@ private final class OpenAIMockURLProtocol: URLProtocol {
 
             self.client?.urlProtocol(self, didReceive: httpResponse, cacheStoragePolicy: .notAllowed)
 
-            if mockResponse.chunkDelay > 0 {
-                DispatchQueue.global().async { [weak self] in
-                    self?.emit(chunks: mockResponse.bodyChunks, delay: mockResponse.chunkDelay)
-                }
-            } else {
-                self.emit(chunks: mockResponse.bodyChunks, delay: 0)
-            }
+            self.emit(chunks: mockResponse.bodyChunks, delay: mockResponse.chunkDelay)
         } catch {
             self.client?.urlProtocol(self, didFailWithError: error)
         }
