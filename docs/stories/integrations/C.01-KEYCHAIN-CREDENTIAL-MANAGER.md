@@ -283,14 +283,14 @@ Run with: `./build.sh test`
 None
 
 #### P1 - Major (Should fix)
-- [ ] `OraTests/Cloud/CredentialStoreTests.swift` - **Missing required tests**: Two tests specified in AC-6 and Verification Plan are not implemented: `test_hasCredential_true_when_stored` and `test_hasCredential_false_when_missing`. These are explicitly listed in the acceptance criteria and should be present.
+- [x] `OraTests/Cloud/CredentialStoreTests.swift` - **Missing required tests**: Two tests specified in AC-6 and Verification Plan are not implemented: `test_hasCredential_true_when_stored` and `test_hasCredential_false_when_missing`. These are explicitly listed in the acceptance criteria and should be present.
 
-- [ ] `Ora/Cloud/CredentialStore.swift:15-19` - **Protocol signature mismatch with story spec**: The protocol methods use `async throws` instead of synchronous `throws` as shown in the story design section. While this works correctly with the actor implementation, it deviates from the specification. Story spec shows `func save(provider: CloudProvider, apiKey: String) throws` but implementation has `async throws` for all methods.
+- [x] `Ora/Cloud/CredentialStore.swift:15-19` - **Protocol signature mismatch with story spec**: The protocol methods use `async throws` instead of synchronous `throws` as shown in the story design section. While this works correctly with the actor implementation, it deviates from the specification. Story spec shows `func save(provider: CloudProvider, apiKey: String) throws` but implementation has `async throws` for all methods.
 
-- [ ] `Ora/Cloud/CredentialStore.swift:18` - **`hasCredential` signature inconsistency**: Story design shows this method as `nonisolated func hasCredential(for provider: CloudProvider) -> Bool` (synchronous), but implementation uses `async -> Bool` (asynchronous and actor-isolated). This makes the API less convenient for callers who need synchronous checking. Consider making `service` a static constant and implementing `hasCredential` as `nonisolated` to match the spec.
+- [x] `Ora/Cloud/CredentialStore.swift:18` - **`hasCredential` signature inconsistency**: Story design shows this method as `nonisolated func hasCredential(for provider: CloudProvider) -> Bool` (synchronous), but implementation uses `async -> Bool` (asynchronous and actor-isolated). This makes the API less convenient for callers who need synchronous checking. Consider making `service` a static constant and implementing `hasCredential` as `nonisolated` to match the spec.
 
 #### P2 - Minor (Can defer)
-- [ ] `Ora/Cloud/CredentialStore.swift:53` - **Consider making service a static constant**: Since the service string `"com.ora.app.credentials"` is constant for all instances, it could be `private static let service` instead of `private let service`. This would enable a `nonisolated` implementation of `hasCredential` as shown in the story spec, and slightly reduce memory footprint.
+- [x] `Ora/Cloud/CredentialStore.swift:53` - **Consider making service a static constant**: Since the service string `"com.ora.app.credentials"` is constant for all instances, it could be `private static let service` instead of `private let service`. This would enable a `nonisolated` implementation of `hasCredential` as shown in the story spec, and slightly reduce memory footprint.
 
 - [ ] `Ora/Cloud/CredentialStore.swift:102` - **Silent nil return on UTF-8 decode failure**: If `String(data: data, encoding: .utf8)` returns nil (corrupted data in Keychain), the method silently returns nil instead of logging or throwing. While unlikely, consider logging a warning for diagnosability.
 
@@ -298,6 +298,88 @@ None
 None identified - implementation is focused and scoped correctly.
 
 ### Approval Status
-- [ ] All P0 issues resolved (no P0 issues found)
-- [ ] All P1 issues resolved
-- [ ] Ready for merge
+- [x] All P0 issues resolved (no P0 issues found)
+- [x] All P1 issues resolved
+- [ ] Ready for merge (iteration 2 review required)
+
+---
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-02-08T16:43:00Z
+**Commit reviewed:** fbc5850
+**Iteration:** 2
+
+### Summary
+- Files reviewed: 3 (CloudProvider.swift, CredentialStore.swift, CredentialStoreTests.swift)
+- Build status: ✅ Pass
+- Test status: ✅ Pass (1228/1228)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+None
+
+#### P1 - Major (Should fix)
+None - all issues from iteration 1 have been resolved.
+
+#### P2 - Minor (Can defer)
+- [ ] `Ora/Cloud/CredentialStore.swift:102` - **Silent nil return on UTF-8 decode failure**: If `String(data: data, encoding: .utf8)` returns nil (corrupted data in Keychain), the method silently returns nil instead of logging or throwing. While unlikely in practice, consider logging a warning for diagnosability. Can be deferred to future work.
+
+### Verification Against Acceptance Criteria
+
+- [x] **AC-1:** `CredentialStore` protocol defined with save/retrieve/delete/hasCredential (lines 14-19)
+- [x] **AC-2:** `KeychainCredentialStore` implements the protocol using Security.framework (lines 46-131)
+- [x] **AC-3:** Keys stored with `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` (line 67)
+- [x] **AC-4:** `CloudProvider` enum defines `anthropic` and `openai` cases (CloudProvider.swift:11-12)
+- [x] **AC-5:** Error types cover save/retrieve/delete failures with OSStatus codes (lines 23-41)
+- [x] **AC-6:** Unit tests pass using mock credential store (8 required tests present, all 1228 tests pass)
+- [x] **AC-7:** No plaintext API keys in UserDefaults, files, or logs (only account names logged, keys in Keychain)
+
+### Changes Since Iteration 1
+
+All P1 issues have been successfully resolved:
+1. ✅ Added missing tests `test_hasCredential_true_when_stored` and `test_hasCredential_false_when_missing`
+2. ✅ Protocol methods now use synchronous `throws` instead of `async throws`
+3. ✅ `hasCredential` is now `nonisolated` and synchronous
+4. ✅ Service constant is now `private static let` instead of instance property
+
+### Future Considerations (Out of Scope)
+None identified - implementation is focused and scoped correctly.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
+
+**Recommendation:** ✅ **APPROVED** - All acceptance criteria met, build and tests pass, all critical and major issues resolved. The single P2 issue can be addressed in future work if needed.
+
+---
+
+## Implementation Summary
+
+**Date:** 2026-02-08
+**Branch:** `feat/c01-keychain-credentials`
+**Commits:** 5
+**Implemented by:** codex (complexity score: 6/10)
+**Reviewed by:** pi (2 iterations)
+
+### Files Created
+- `Ora/Cloud/CloudProvider.swift` - Cloud LLM provider enum (anthropic, openai)
+- `Ora/Cloud/CredentialStore.swift` - Protocol and Keychain implementation
+- `OraTests/Cloud/CredentialStoreTests.swift` - Comprehensive unit tests with mock store
+
+### Key Features
+- Secure API key storage using macOS Keychain Services
+- Actor-isolated KeychainCredentialStore with protocol abstraction
+- Keys stored with `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` (no iCloud sync)
+- Protocol-based design enables testability with MockCredentialStore
+- All required tests present (8 tests covering CRUD operations and edge cases)
+
+### Review Iterations
+1. **Iteration 1**: Found 3 P1 issues (missing tests, protocol signature mismatch, hasCredential isolation)
+2. **Iteration 2**: All P1 issues resolved, approved for merge
+
+### Test Results
+- Build: ✅ Pass
+- Tests: ✅ Pass (1228/1228)
+- All 7 acceptance criteria met
