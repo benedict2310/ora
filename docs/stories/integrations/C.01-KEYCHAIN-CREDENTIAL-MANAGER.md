@@ -262,3 +262,42 @@ Run with: `./build.sh test`
 | Keychain prompts in CI | Use `MockCredentialStore` for all tests; real Keychain only in manual testing |
 | App sandbox restrictions | Keychain Services work within sandbox; no entitlement changes needed |
 | Key format changes | Prefix validation is advisory only (log warning, don't reject) |
+
+---
+
+## Code Review Findings
+
+**Reviewer:** Codex Subagent
+**Date:** 2026-02-08T16:14:00Z
+**Commit reviewed:** e2ba063
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 4 (CloudProvider.swift, CredentialStore.swift, CredentialStoreTests.swift, story doc updates)
+- Build status: ✅ Pass
+- Test status: ✅ Pass (1226/1226)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+None
+
+#### P1 - Major (Should fix)
+- [ ] `OraTests/Cloud/CredentialStoreTests.swift` - **Missing required tests**: Two tests specified in AC-6 and Verification Plan are not implemented: `test_hasCredential_true_when_stored` and `test_hasCredential_false_when_missing`. These are explicitly listed in the acceptance criteria and should be present.
+
+- [ ] `Ora/Cloud/CredentialStore.swift:15-19` - **Protocol signature mismatch with story spec**: The protocol methods use `async throws` instead of synchronous `throws` as shown in the story design section. While this works correctly with the actor implementation, it deviates from the specification. Story spec shows `func save(provider: CloudProvider, apiKey: String) throws` but implementation has `async throws` for all methods.
+
+- [ ] `Ora/Cloud/CredentialStore.swift:18` - **`hasCredential` signature inconsistency**: Story design shows this method as `nonisolated func hasCredential(for provider: CloudProvider) -> Bool` (synchronous), but implementation uses `async -> Bool` (asynchronous and actor-isolated). This makes the API less convenient for callers who need synchronous checking. Consider making `service` a static constant and implementing `hasCredential` as `nonisolated` to match the spec.
+
+#### P2 - Minor (Can defer)
+- [ ] `Ora/Cloud/CredentialStore.swift:53` - **Consider making service a static constant**: Since the service string `"com.ora.app.credentials"` is constant for all instances, it could be `private static let service` instead of `private let service`. This would enable a `nonisolated` implementation of `hasCredential` as shown in the story spec, and slightly reduce memory footprint.
+
+- [ ] `Ora/Cloud/CredentialStore.swift:102` - **Silent nil return on UTF-8 decode failure**: If `String(data: data, encoding: .utf8)` returns nil (corrupted data in Keychain), the method silently returns nil instead of logging or throwing. While unlikely, consider logging a warning for diagnosability.
+
+### Future Considerations (Out of Scope)
+None identified - implementation is focused and scoped correctly.
+
+### Approval Status
+- [ ] All P0 issues resolved (no P0 issues found)
+- [ ] All P1 issues resolved
+- [ ] Ready for merge
