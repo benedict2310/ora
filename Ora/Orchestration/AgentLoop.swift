@@ -98,7 +98,7 @@ actor AgentLoop {
         maxStepsPerTurn: Int = 6,
         maxToolCallsPerTurn: Int = 3,
         maxTokensPerTurn: Int = 800,
-        structuredGenerator: StructuredGenerator = StructuredGenerator(),
+        structuredGenerator: StructuredGenerator = StructuredGenerator(llm: LLMProviderManager.shared),
         toolHost: ToolHost = .shared,
         toolRegistry: ToolRegistry = .shared,
         conversationManager: ConversationManager = .shared
@@ -162,7 +162,7 @@ actor AgentLoop {
         await conversationManager.clear()
         
         // Clear KV cache to free GPU memory
-        await LLMService.shared.clearCache()
+        await LLMProviderManager.shared.clearCache()
         
         logger.debug("Agent session ended")
     }
