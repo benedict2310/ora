@@ -1,7 +1,7 @@
 # C.07 - Menubar Model Selection & OpenAI Model Discovery
 
 **Epic:** Cloud Integrations (C)
-**Status:** Not Started
+**Status:** Complete
 **Priority:** P1
 **Estimated Effort:** 2-3 days
 **Dependencies:** C.02 (Cloud Provider Abstraction), C.04 (OpenAI Provider), C.05 (Provider Preferences UI), F.01 (App Shell & Menu Bar), F.06 (Preferences Window)
@@ -109,25 +109,25 @@ As a **user**, I want to **select provider and model from the menubar and only s
 
 ## 6. Acceptance Criteria
 
-- [ ] **AC-1:** Menubar dropdown includes a dedicated "Select Model" section that shows current provider and current model.
-- [ ] **AC-2:** Users can switch to Local model `Qwen 3 4B` directly from the menubar without opening Preferences.
-- [ ] **AC-3:** Anthropic models shown in selection UI are exactly `Sonnet`, `Haiku`, and `Opus` (Claude 4 variants), with valid persistence.
-- [ ] **AC-4:** OpenAI uses `GPT-5.2` as the preferred default model for new OpenAI selections.
-- [ ] **AC-5:** OpenAI model discovery lists additional available models when valid OpenAI credentials are present.
-- [ ] **AC-6:** If OpenAI models are not available (no credential/disconnected), the UI shows `Set Up Connection…` instead of a broken/empty model picker.
-- [ ] **AC-7:** Selecting `Set Up Connection…` opens Preferences directly to the Providers tab.
-- [ ] **AC-8:** Conversation start no longer fails with generic config confusion; configuration issues produce an actionable recovery message.
-- [ ] **AC-9:** Model/provider selection state persists across restart and survives temporary discovery failures.
+- [x] **AC-1:** Menubar dropdown includes a dedicated "Select Model" section that shows current provider and current model.
+- [x] **AC-2:** Users can switch to Local model `Qwen 3 4B` directly from the menubar without opening Preferences.
+- [x] **AC-3:** Anthropic models shown in selection UI are exactly `Sonnet`, `Haiku`, and `Opus` (Claude 4 variants), with valid persistence.
+- [x] **AC-4:** OpenAI uses `GPT-5.2` as the preferred default model for new OpenAI selections.
+- [x] **AC-5:** OpenAI model discovery lists additional available models when valid OpenAI credentials are present.
+- [x] **AC-6:** If OpenAI models are not available (no credential/disconnected), the UI shows `Set Up Connection…` instead of a broken/empty model picker.
+- [x] **AC-7:** Selecting `Set Up Connection…` opens Preferences directly to the Providers tab.
+- [x] **AC-8:** Conversation start no longer fails with generic config confusion; configuration issues produce an actionable recovery message.
+- [x] **AC-9:** Model/provider selection state persists across restart and survives temporary discovery failures.
 
 ## 7. Verification Plan
 
 ### Automated Tests
 
-- [ ] Unit tests for menu composition and model-switch action routing in `StatusBarControllerTests`.
-- [ ] Unit tests for OpenAI model discovery parsing/filtering/caching behavior.
-- [ ] Unit tests for provider/model fallback and defaulting logic in `LLMProviderManagerTests`.
-- [ ] Unit tests for Provider Preferences availability-state UI model.
-- [ ] Regression test that configuration errors return guidance instead of generic misunderstanding copy.
+- [x] Unit tests for menu composition and model-switch action routing in `StatusBarControllerTests`.
+- [x] Unit tests for OpenAI model discovery parsing/filtering/caching behavior.
+- [x] Unit tests for provider/model fallback and defaulting logic in `LLMProviderManagerTests`.
+- [x] Unit tests for Provider Preferences availability-state UI model.
+- [x] Regression test that configuration errors return guidance instead of generic misunderstanding copy.
 
 ### Manual Tests
 
@@ -166,15 +166,56 @@ As a **user**, I want to **select provider and model from the menubar and only s
 
 ## Implementation Summary
 
-Not implemented yet.
+**Date:** 2026-02-09
+**Branch:** `feat/c07-menubar-model-selection`
+**Commits:** 5
+**Implemented by:** codex (complexity score: 10/10)
+**Reviewed by:** pi (2 iterations)
+
+### Files Created
+- `Ora/Cloud/OpenAI/OpenAIModelDiscoveryService.swift` - OpenAI model discovery with TTL caching, filtering, and graceful fallback
+- `Ora/UI/ModelSelectionMenuState.swift` - Canonical menu state model for provider/model sections
+- `OraTests/Cloud/OpenAI/OpenAIModelDiscoveryServiceTests.swift` - Discovery service tests with mock URLProtocol
+
+### Files Modified
+- `Ora/UI/StatusBarController.swift` - Added "Select Model" section with provider/model items, "Set Up Connection..." routing
+- `Ora/Cloud/OpenAI/OpenAIModels.swift` - Added GPT-5.2 as preferred default, OpenAIModelOption for dynamic models
+- `Ora/Cloud/OpenAI/OpenAIProvider.swift` - Updated default model to GPT-5.2
+- `Ora/Cloud/OpenAI/OpenAIProviderFactory.swift` - Updated default model to GPT-5.2
+- `Ora/Cloud/LLMProviderManager.swift` - Added preflight readiness check, dynamic model persistence, local fallback
+- `Ora/Cloud/CloudProviderError.swift` - Added configurationError case
+- `Ora/Orchestration/AgentLoop.swift` - Improved config-error messaging with actionable guidance
+- `Ora/Orchestration/SimplePipelineController.swift` - Added preflight before conversation generation
+- `Ora/Preferences/Tabs/ProviderPreferencesViewModel.swift` - Added discovery integration, availability states, model reconciliation
+- `Ora/Preferences/Tabs/ProviderPreferencesView.swift` - Updated OpenAI section for discovery-driven model list
+- `Ora/AppDelegate.swift` - Updated provider registration wiring
+- `OraTests/StatusBarControllerTests.swift` - Added menu composition, model section, setup routing tests
+- `OraTests/Preferences/ProviderPreferencesViewModelTests.swift` - Added discovery and availability state tests
+- `OraTests/Cloud/LLMProviderManagerTests.swift` - Added preflight, fallback, and persistence tests
+- `OraTests/Orchestration/AgentLoopTests.swift` - Added config-error guidance regression test
+- `OraTests/Cloud/OpenAI/OpenAIProviderTests.swift` - Added GPT-5.2 display name test
 
 ## Code Review Findings
 
-Not reviewed yet.
+**Reviewer:** pi
+**Date:** 2026-02-09
+**Iterations:** 2
+
+### Iteration 1
+- P2: `scheduleMenuModelRefresh` used `forceRefresh: true`, bypassing cache TTL on every menu open. **Fixed** in commit `09138ed`.
+
+### Iteration 2
+- P2 (deferred): `refreshOpenAIAvailability` sets `.loading` state immediately which briefly clears model list during background refresh. Minor UX concern, acceptable for v1.
+- No P0 or P1 issues.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
 
 ## Completion Status
 
-- [ ] Implementation complete
-- [ ] Review findings addressed
-- [ ] Build verified
-- [ ] Tests passed
+- [x] Implementation complete
+- [x] Review findings addressed
+- [x] Build verified
+- [x] Tests passed (1266/1266)
