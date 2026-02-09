@@ -82,12 +82,45 @@ struct ProviderPreferencesView: View {
                     .disabled(self.viewModel.openAIKeyStatus == .noKey || self.viewModel.openAIKeyStatus == .checking)
                 }
 
-                Picker("Model", selection: self.openAIModelSelection) {
-                    ForEach(OpenAIModel.allCases, id: \.self) { model in
-                        Text(model.displayName)
-                            .tag(model)
+                switch self.viewModel.openAIAvailability {
+                case .loading:
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Loading available models...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                case .available(let models, let isStale):
+                    Picker("Model", selection: self.openAIModelSelection) {
+                        ForEach(models, id: \.identifier) { model in
+                            Text(model.displayName)
+                                .tag(model.identifier)
+                        }
+                    }
+                    if isStale {
+                        Text("Showing last known model list.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                case .setupRequired(let message):
+                    Text(message)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                if let unavailableNote = self.viewModel.openAIUnavailableNote {
+                    Text(unavailableNote)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Button("Refresh Models") {
+                    Task {
+                        await self.viewModel.refreshModelAvailability(forceRefresh: true)
                     }
                 }
+                .disabled(self.viewModel.openAIKeyStatus != .saved)
 
                 KeyStatusRow(status: self.viewModel.openAIKeyStatus)
             } header: {
@@ -134,10 +167,10 @@ struct ProviderPreferencesView: View {
         )
     }
 
-    private var openAIModelSelection: Binding<OpenAIModel> {
+    private var openAIModelSelection: Binding<String> {
         Binding(
             get: {
-                self.viewModel.openAIModel
+                self.viewModel.openAISelectedModelIdentifier
             },
             set: { newValue in
                 Task {

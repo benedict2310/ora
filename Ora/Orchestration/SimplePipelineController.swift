@@ -421,6 +421,13 @@ final class SimplePipelineController: ObservableObject {
         OverlayWindowController.shared.mode = .thinking
         
         do {
+            // Preflight provider/model readiness to avoid generic startup failures.
+            let preflight = await LLMProviderManager.shared.preflightForConversationStart()
+            if case .guidance(let guidance) = preflight {
+                self.handleAgentError(guidance)
+                return
+            }
+
             // Ensure LLM is ready
             try await LLMProviderManager.shared.prepare()
             
