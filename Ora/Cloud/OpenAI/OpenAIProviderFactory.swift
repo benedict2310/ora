@@ -11,7 +11,7 @@ import Foundation
 public struct OpenAIProviderFactory: LLMProviderFactory {
     public let model: String
 
-    public init(model: String = OpenAIModel.gpt4o.rawValue) {
+    public init(model: String = OpenAIModel.preferredDefault.rawValue) {
         self.model = model
     }
 

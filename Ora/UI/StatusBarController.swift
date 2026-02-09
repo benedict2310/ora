@@ -11,18 +11,23 @@ import SwiftData
 
 // MARK: - Action Handler Protocol
 
-/// Protocol for handling menu bar actions, enabling dependency injection for testing
+/// Protocol for handling menu bar actions, enabling dependency injection for testing.
 @MainActor
 protocol StatusBarActionHandler: AnyObject {
     func handlePreferences()
+    func handleOpenProviderSetup()
     func handleQuit()
 }
 
-/// Default action handler that performs actual app actions
+/// Default action handler that performs actual app actions.
 @MainActor
 final class DefaultStatusBarActionHandler: StatusBarActionHandler {
     func handlePreferences() {
         PreferencesCoordinator.shared.showPreferences()
+    }
+
+    func handleOpenProviderSetup() {
+        PreferencesCoordinator.shared.selectTab(.providers)
     }
 
     func handleQuit() {
@@ -46,14 +51,20 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         case setupRequired
     }
 
+    private struct ModelSelectionPayload: Sendable {
+        let provider: LLMProviderType
+        let modelIdentifier: String
+    }
+
     // MARK: - Properties
 
     private var statusItem: NSStatusItem?
     private let logger = Logger(subsystem: "com.ora.app", category: "StatusBar")
-    /// Strong reference to default handler, weak reference to injected handler
     private var defaultActionHandler: DefaultStatusBarActionHandler?
     private weak var injectedActionHandler: StatusBarActionHandler?
     private let updateChecker: UpdateChecking
+    private let providerPreferencesViewModel: ProviderPreferencesViewModel
+    private var modelRefreshTask: Task<Void, Never>?
 
     private(set) var state: State = .idle {
         didSet {
@@ -63,8 +74,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     // MARK: - Initialization
 
-    init(actionHandler: StatusBarActionHandler? = nil, updateChecker: UpdateChecking? = nil) {
+    init(
+        actionHandler: StatusBarActionHandler? = nil,
+        updateChecker: UpdateChecking? = nil,
+        providerPreferencesViewModel: ProviderPreferencesViewModel? = nil
+    ) {
         self.updateChecker = updateChecker ?? UpdateController.shared
+        self.providerPreferencesViewModel = providerPreferencesViewModel ?? ProviderPreferencesViewModel()
         if let handler = actionHandler {
             self.injectedActionHandler = handler
         } else {
@@ -72,11 +88,16 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         }
         super.init()
         self.setupStatusItem()
+
+        Task { @MainActor in
+            await self.providerPreferencesViewModel.loadState()
+            self.rebuildMenu()
+        }
     }
 
-    /// Returns the active action handler
+    /// Returns the active action handler.
     private var actionHandler: StatusBarActionHandler? {
-        injectedActionHandler ?? defaultActionHandler
+        self.injectedActionHandler ?? self.defaultActionHandler
     }
 
     // MARK: - Public API
@@ -93,6 +114,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     /// Removes the status item from the menu bar. Called during cleanup.
     func shutdown() {
+        self.modelRefreshTask?.cancel()
+        self.modelRefreshTask = nil
+
         if let item = self.statusItem {
             NSStatusBar.system.removeStatusItem(item)
             self.statusItem = nil
@@ -162,6 +186,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         return self.statusItem?.menu?.items.first(where: { $0.title == "Check for Updates..." })?.isEnabled
     }
 
+    /// Returns whether the setup connection item is present.
+    var hasSetUpConnectionMenuItem: Bool {
+        return self.statusItem?.menu?.items.contains(where: { $0.title == "Set Up Connection..." }) ?? false
+    }
+
     /// Simulates clicking the Conversation Mode menu item. Exposed for testing.
     func simulateConversationModeToggle() {
         guard let menuItem = self.statusItem?.menu?.items.first(where: { $0.title == "Conversation Mode" }) else {
@@ -173,6 +202,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     /// Simulates clicking the Check for Updates menu item. Exposed for testing.
     func simulateCheckForUpdates() {
         self.checkForUpdatesClicked()
+    }
+
+    /// Simulates clicking Set Up Connection menu item.
+    func simulateSetUpConnectionClick() {
+        self.setUpConnectionClicked()
     }
 
     /// Triggers menu update delegate method. Exposed for testing.
@@ -191,41 +225,113 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             return
         }
 
-        // Set initial icon
         button.image = self.iconForState(.idle)
         button.image?.isTemplate = true
 
-        // Create menu
         let menu = NSMenu()
         menu.delegate = self
+        self.statusItem?.menu = menu
+        self.rebuildMenu()
 
+        self.logger.debug("Status bar initialized")
+    }
+
+    private func rebuildMenu() {
+        guard let menu = self.statusItem?.menu else { return }
+
+        menu.removeAllItems()
+
+        let selectionState = self.providerPreferencesViewModel.modelSelectionMenuState
+
+        let sectionHeader = NSMenuItem(title: "Select Model", action: nil, keyEquivalent: "")
+        sectionHeader.isEnabled = false
+        menu.addItem(sectionHeader)
+
+        let currentItem = NSMenuItem(
+            title: "Current: \(selectionState.activeProvider.displayName) - \(selectionState.activeModelDisplayName)",
+            action: nil,
+            keyEquivalent: ""
+        )
+        currentItem.isEnabled = false
+        menu.addItem(currentItem)
+
+        for section in selectionState.sections {
+            for option in section.options {
+                let item = NSMenuItem(
+                    title: "\(section.title): \(option.displayName)",
+                    action: #selector(self.modelSelectionClicked(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.state = option.isSelected ? .on : .off
+                item.representedObject = ModelSelectionPayload(
+                    provider: option.provider,
+                    modelIdentifier: option.identifier
+                )
+                menu.addItem(item)
+            }
+        }
+
+        if selectionState.showsOpenAISetupAction {
+            menu.addItem(
+                NSMenuItem(
+                    title: "Set Up Connection...",
+                    action: #selector(self.setUpConnectionClicked),
+                    keyEquivalent: ""
+                )
+            )
+        }
+
+        if let unavailableMessage = selectionState.openAIUnavailableMessage {
+            let noteItem = NSMenuItem(title: unavailableMessage, action: nil, keyEquivalent: "")
+            noteItem.isEnabled = false
+            menu.addItem(noteItem)
+        }
+
+        menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Preferences...", action: #selector(self.preferencesClicked), keyEquivalent: ","))
-        let checkUpdatesItem = NSMenuItem(title: "Check for Updates...", action: #selector(self.checkForUpdatesClicked), keyEquivalent: "")
+
+        let checkUpdatesItem = NSMenuItem(
+            title: "Check for Updates...",
+            action: #selector(self.checkForUpdatesClicked),
+            keyEquivalent: ""
+        )
         checkUpdatesItem.isEnabled = self.updateChecker.canCheckForUpdates
         menu.addItem(checkUpdatesItem)
+
         menu.addItem(NSMenuItem.separator())
-        
-        let conversationModeItem = NSMenuItem(title: "Conversation Mode", action: #selector(self.conversationModeClicked), keyEquivalent: "")
+
+        let conversationModeItem = NSMenuItem(
+            title: "Conversation Mode",
+            action: #selector(self.conversationModeClicked),
+            keyEquivalent: ""
+        )
         conversationModeItem.state = self.isConversationModeEnabled ? .on : .off
         menu.addItem(conversationModeItem)
-        
+
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit Ora", action: #selector(self.quitClicked), keyEquivalent: "q"))
 
-        // Set targets
         for item in menu.items {
             item.target = self
         }
+    }
 
-        self.statusItem?.menu = menu
-
-        self.logger.debug("Status bar initialized")
+    private func scheduleMenuModelRefresh() {
+        self.modelRefreshTask?.cancel()
+        self.modelRefreshTask = Task { [weak self] in
+            guard let self else { return }
+            await self.providerPreferencesViewModel.refreshModelAvailability(forceRefresh: false)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self.rebuildMenu()
+            }
+        }
     }
 
     private func updateIcon() {
         guard let button = self.statusItem?.button else { return }
         button.image = self.iconForState(self.state)
-        // Use template mode for all states except error
         if case .error = self.state {
             button.image?.isTemplate = false
         } else {
@@ -234,14 +340,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     private func iconForState(_ state: State) -> NSImage? {
-        // Prefer custom asset from asset catalog
         let assetName = Self.assetName(for: state)
         if let customImage = NSImage(named: assetName) {
             customImage.isTemplate = true
             return customImage
         }
 
-        // Fall back to SF Symbol
         let symbolName = Self.symbolName(for: state)
         let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
         return NSImage(systemSymbolName: symbolName, accessibilityDescription: "Ora")?
@@ -254,34 +358,48 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         self.showPreferences()
     }
 
+    @objc private func setUpConnectionClicked() {
+        self.actionHandler?.handleOpenProviderSetup()
+    }
+
     @objc private func checkForUpdatesClicked() {
         self.updateChecker.checkForUpdates()
     }
-    
+
     @objc private func conversationModeClicked(_ sender: NSMenuItem) {
         let newState = !self.isConversationModeEnabled
         self.setConversationModeEnabled(newState)
         sender.state = newState ? .on : .off
     }
 
+    @objc private func modelSelectionClicked(_ sender: NSMenuItem) {
+        guard let payload = sender.representedObject as? ModelSelectionPayload else {
+            return
+        }
+
+        Task { @MainActor in
+            await self.providerPreferencesViewModel.selectModel(
+                provider: payload.provider,
+                identifier: payload.modelIdentifier
+            )
+            self.rebuildMenu()
+        }
+    }
+
     @objc private func quitClicked() {
         self.logger.info("Quit requested by user")
         self.actionHandler?.handleQuit()
     }
-    
+
     // MARK: - Menu Delegate
-    
+
     func menuNeedsUpdate(_ menu: NSMenu) {
-        if let item = menu.items.first(where: { $0.title == "Check for Updates..." }) {
-            item.isEnabled = self.updateChecker.canCheckForUpdates
-        }
-        if let item = menu.items.first(where: { $0.title == "Conversation Mode" }) {
-            item.state = self.isConversationModeEnabled ? .on : .off
-        }
+        self.rebuildMenu()
+        self.scheduleMenuModelRefresh()
     }
-    
+
     // MARK: - Private Helpers
-    
+
     private var isConversationModeEnabled: Bool {
         return PersistenceManager.shared.settings.conversationModeEnabled
     }

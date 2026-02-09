@@ -8,6 +8,11 @@
 import Foundation
 import os
 
+enum ProviderPreflightStatus: Sendable, Equatable {
+    case ready
+    case guidance(message: String)
+}
+
 /// Manages active LLM provider selection and lifecycle
 /// Conforms to LLMServicing to allow transparent injection into AgentLoop
 actor LLMProviderManager: LLMServicing {
@@ -42,13 +47,9 @@ actor LLMProviderManager: LLMServicing {
             return
         }
 
-        do {
-            try await self.switchProvider(to: self.selectedProviderType)
-        } catch {
-            self.logger.error("Failed to restore provider \(self.selectedProviderType.rawValue): \(error.localizedDescription)")
-            // Fallback to local
-            self.selectedProviderType = .local
-            UserDefaults.standard.selectedLLMProvider = .local
+        let preflight = await self.preflightForConversationStart()
+        if case .guidance(let message) = preflight {
+            self.logger.notice("Provider restore used fallback: \(message)")
         }
     }
 
@@ -83,34 +84,121 @@ actor LLMProviderManager: LLMServicing {
     
     /// Get the currently selected provider type
     func getSelectedProviderType() -> LLMProviderType {
-        return selectedProviderType
+        return self.selectedProviderType
+    }
+
+    /// Get selected model identifier for a provider
+    func getSelectedModelIdentifier(for provider: LLMProviderType) -> String {
+        switch provider {
+        case .local:
+            return ModelIdentifier.qwen3_4B.rawValue
+        case .anthropic:
+            return UserDefaults.standard.selectedAnthropicModel.rawValue
+        case .openai:
+            return UserDefaults.standard.selectedOpenAIModelIdentifier
+        }
+    }
+
+    /// Get selected model display name for a provider
+    func getSelectedModelDisplayName(for provider: LLMProviderType) -> String {
+        switch provider {
+        case .local:
+            return ModelIdentifier.qwen3_4B.displayName
+        case .anthropic:
+            return UserDefaults.standard.selectedAnthropicModel.displayName
+        case .openai:
+            let identifier = UserDefaults.standard.selectedOpenAIModelIdentifier
+            return OpenAIModel.displayName(for: identifier)
+        }
+    }
+
+    /// Update selected model and reconnect active provider if needed
+    func updateModelSelection(
+        for provider: LLMProviderType,
+        modelIdentifier: String
+    ) async throws {
+        switch provider {
+        case .local:
+            return
+        case .anthropic:
+            guard let model = AnthropicModel(rawValue: modelIdentifier) else {
+                throw ProviderError.invalidModel(provider, modelIdentifier)
+            }
+            UserDefaults.standard.selectedAnthropicModel = model
+            self.factories[.anthropic] = AnthropicProviderFactory(model: model.rawValue)
+        case .openai:
+            let trimmed = modelIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                throw ProviderError.invalidModel(provider, modelIdentifier)
+            }
+            UserDefaults.standard.selectedOpenAIModelIdentifier = trimmed
+            self.factories[.openai] = OpenAIProviderFactory(model: trimmed)
+        }
+
+        guard self.selectedProviderType == provider else { return }
+        try await self.switchProvider(to: provider)
+    }
+
+    /// Validate provider/model readiness before generation begins.
+    func preflightForConversationStart() async -> ProviderPreflightStatus {
+        let selectedType = self.selectedProviderType
+        guard selectedType.isCloud else {
+            return .ready
+        }
+
+        if selectedType == .openai {
+            self.reconcileOpenAIModelSelectionIfNeeded()
+        }
+
+        do {
+            try await self.ensureCredentialExists(for: selectedType)
+        } catch {
+            return await self.fallbackToLocal(
+                reason: "Missing credential for \(selectedType.rawValue): \(error.localizedDescription)",
+                guidance: "\(selectedType.displayName) is not configured. I switched to Local (Qwen 3 4B). Open Preferences > Providers to reconnect."
+            )
+        }
+
+        do {
+            if self.isActiveProviderAligned(with: selectedType) {
+                try await self.activeProvider.prepare()
+            } else {
+                try await self.switchProvider(to: selectedType)
+            }
+            return .ready
+        } catch {
+            return await self.fallbackToLocal(
+                reason: "Provider preflight failed for \(selectedType.rawValue): \(error.localizedDescription)",
+                guidance: "I could not connect to \(selectedType.displayName), so I switched to Local (Qwen 3 4B). Open Preferences > Providers to fix the connection."
+            )
+        }
     }
 
     /// Switch to a different provider
     func switchProvider(to type: LLMProviderType) async throws {
         // Skip if already on the requested type (unless we want to force reload)
         // Note: We don't skip if we are initializing (activeProvider might be local default)
-        if type == selectedProviderType && type == .local && activeProvider is LLMService {
+        if type == self.selectedProviderType && type == .local && self.activeProvider is LLMService {
             return
         }
 
         // Unload current if it's local (cloud providers don't need unload)
-        if selectedProviderType == .local {
-            await activeProvider.unload()
+        if self.selectedProviderType == .local {
+            await self.activeProvider.unload()
         }
 
         // Resolve new provider
-        let provider = try await resolveProvider(type)
+        let provider = try await self.resolveProvider(type)
 
         // Update state
-        activeProvider = provider
-        selectedProviderType = type
+        self.activeProvider = provider
+        self.selectedProviderType = type
         UserDefaults.standard.selectedLLMProvider = type
 
         // Prepare the new provider
         try await provider.prepare()
 
-        logger.info("Switched to provider: \(type.rawValue)")
+        self.logger.info("Switched to provider: \(type.rawValue)")
         
         // Post notification
         await MainActor.run {
@@ -120,7 +208,7 @@ actor LLMProviderManager: LLMServicing {
 
     /// Register a provider factory
     func register(factory: LLMProviderFactory, for type: LLMProviderType) {
-        factories[type] = factory
+        self.factories[type] = factory
     }
 
     private func resolveProvider(_ type: LLMProviderType) async throws -> LLMServicing {
@@ -128,7 +216,7 @@ actor LLMProviderManager: LLMServicing {
         case .local:
             return LLMService.shared
         case .anthropic, .openai:
-            guard let factory = factories[type] else {
+            guard let factory = self.factories[type] else {
                 throw ProviderError.providerNotRegistered(type)
             }
             
@@ -138,12 +226,77 @@ actor LLMProviderManager: LLMServicing {
                 throw ProviderError.switchFailed(type, CloudProviderError.invalidResponse("Invalid provider type"))
             }
             
-            guard let apiKey = try await credentialStore.retrieve(provider: cloudProvider) else {
+            guard let apiKey = try await self.credentialStore.retrieve(provider: cloudProvider),
+                  !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 throw ProviderError.noCredential(type)
             }
             
             return try factory.create(apiKey: apiKey)
         }
+    }
+
+    private func ensureCredentialExists(for type: LLMProviderType) async throws {
+        guard let cloudProvider = type.cloudProvider else { return }
+        let apiKey = try await self.credentialStore.retrieve(provider: cloudProvider)
+        guard let apiKey, !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw ProviderError.noCredential(type)
+        }
+    }
+
+    private func isActiveProviderAligned(with type: LLMProviderType) -> Bool {
+        switch type {
+        case .local:
+            return self.activeProvider is LLMService
+        case .anthropic:
+            return self.activeProvider is AnthropicProvider
+        case .openai:
+            return self.activeProvider is OpenAIProvider
+        }
+    }
+
+    private func fallbackToLocal(
+        reason: String,
+        guidance: String
+    ) async -> ProviderPreflightStatus {
+        self.logger.error("Provider fallback to local: \(reason)")
+        self.selectedProviderType = .local
+        self.activeProvider = LLMService.shared
+        UserDefaults.standard.selectedLLMProvider = .local
+
+        await MainActor.run {
+            NotificationCenter.default.post(
+                name: .llmProviderChanged,
+                object: nil,
+                userInfo: ["type": LLMProviderType.local]
+            )
+        }
+
+        return .guidance(message: guidance)
+    }
+
+    private func reconcileOpenAIModelSelectionIfNeeded() {
+        let discoveredModelIDs = UserDefaults.standard.openAIDiscoveredModelIdentifiers
+        guard !discoveredModelIDs.isEmpty else { return }
+
+        let selectedModelID = UserDefaults.standard.selectedOpenAIModelIdentifier
+        guard !discoveredModelIDs.contains(selectedModelID) else { return }
+
+        let fallbackModelID: String
+        if discoveredModelIDs.contains(OpenAIModel.preferredDefault.rawValue) {
+            fallbackModelID = OpenAIModel.preferredDefault.rawValue
+        } else {
+            fallbackModelID = discoveredModelIDs[0]
+        }
+
+        self.logger.warning(
+            "Selected OpenAI model unavailable: \(selectedModelID). Falling back to \(fallbackModelID)"
+        )
+        UserDefaults.standard.selectedOpenAIModelIdentifier = fallbackModelID
+
+        if let existingFactory = self.factories[.openai], !(existingFactory is OpenAIProviderFactory) {
+            return
+        }
+        self.factories[.openai] = OpenAIProviderFactory(model: fallbackModelID)
     }
 }
 
@@ -154,42 +307,87 @@ extension Notification.Name {
 }
 
 extension UserDefaults {
+    private enum Key {
+        static let selectedLLMProvider = "com.ora.selectedLLMProvider"
+        static let selectedAnthropicModel = "com.ora.selectedAnthropicModel"
+        static let selectedOpenAIModel = "com.ora.selectedOpenAIModel"
+        static let selectedOpenAIModelIdentifier = "com.ora.selectedOpenAIModelIdentifier"
+        static let openAIDiscoveredModelIdentifiers = "com.ora.openAI.discoveredModelIdentifiers"
+    }
+
     var selectedLLMProvider: LLMProviderType {
         get {
-            guard let raw = string(forKey: "com.ora.selectedLLMProvider"),
+            guard let raw = string(forKey: Key.selectedLLMProvider),
                   let type = LLMProviderType(rawValue: raw) else {
                 return .local
             }
             return type
         }
         set {
-            set(newValue.rawValue, forKey: "com.ora.selectedLLMProvider")
+            set(newValue.rawValue, forKey: Key.selectedLLMProvider)
         }
     }
 
     var selectedAnthropicModel: AnthropicModel {
         get {
-            guard let raw = string(forKey: "com.ora.selectedAnthropicModel"),
+            guard let raw = string(forKey: Key.selectedAnthropicModel),
                   let model = AnthropicModel(rawValue: raw) else {
                 return .sonnet
             }
             return model
         }
         set {
-            set(newValue.rawValue, forKey: "com.ora.selectedAnthropicModel")
+            set(newValue.rawValue, forKey: Key.selectedAnthropicModel)
+        }
+    }
+
+    var selectedOpenAIModelIdentifier: String {
+        get {
+            if let raw = string(forKey: Key.selectedOpenAIModelIdentifier),
+               !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return raw
+            }
+            if let legacyRaw = string(forKey: Key.selectedOpenAIModel),
+               !legacyRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return legacyRaw
+            }
+            return OpenAIModel.preferredDefault.rawValue
+        }
+        set {
+            set(newValue, forKey: Key.selectedOpenAIModelIdentifier)
+            set(newValue, forKey: Key.selectedOpenAIModel)
         }
     }
 
     var selectedOpenAIModel: OpenAIModel {
         get {
-            guard let raw = string(forKey: "com.ora.selectedOpenAIModel"),
-                  let model = OpenAIModel(rawValue: raw) else {
-                return .gpt4o
+            guard let raw = OpenAIModel(rawValue: self.selectedOpenAIModelIdentifier) else {
+                return .preferredDefault
             }
-            return model
+            return raw
         }
         set {
-            set(newValue.rawValue, forKey: "com.ora.selectedOpenAIModel")
+            self.selectedOpenAIModelIdentifier = newValue.rawValue
+        }
+    }
+
+    var openAIDiscoveredModelIdentifiers: [String] {
+        get {
+            guard let raw = array(forKey: Key.openAIDiscoveredModelIdentifiers) as? [String] else {
+                return []
+            }
+            return raw.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        }
+        set {
+            var seen: Set<String> = []
+            let deduped = newValue.filter { identifier in
+                let trimmed = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return false }
+                guard !seen.contains(trimmed) else { return false }
+                seen.insert(trimmed)
+                return true
+            }
+            set(deduped, forKey: Key.openAIDiscoveredModelIdentifiers)
         }
     }
 }

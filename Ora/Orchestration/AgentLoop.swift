@@ -315,8 +315,7 @@ actor AgentLoop {
             await notifyDelegateActivity(.planning)
 
             let messages = await conversationManager.getMessagesForLLM()
-            // NOTE: privacy: .public is temporary for debugging — remove before shipping
-            logger.info("Agent step \(steps, privacy: .public): sending \(messages.count, privacy: .public) messages to LLM")
+            logger.info("Agent step \(steps): sending \(messages.count) messages to LLM")
 
             // Generate structured response
             let output: LLMOutput
@@ -330,17 +329,20 @@ actor AgentLoop {
                 )
             } catch {
                 logger.error("Generation failed: \(error.localizedDescription)")
-                return .error("I had trouble understanding that. Could you try again?")
+                if let guidance = self.userFacingConfigurationMessage(for: error) {
+                    return .error(guidance)
+                }
+                return .error("I had trouble generating a response. Please try again.")
             }
 
-            logger.info("Agent step \(steps, privacy: .public): LLM decided \(output.typeLabel, privacy: .public)")
+            logger.info("Agent step \(steps): LLM decided \(output.typeLabel)")
 
             switch output {
             case .response(let text):
                 // Direct response - we're done
                 // Emit composing activity before returning response
                 await notifyDelegateActivity(.composing)
-                logger.info("Agent produced response (no tool call): \(String(text.prefix(100)), privacy: .public)")
+                logger.info("Agent produced direct response")
                 await conversationManager.addAssistantMessage(text)
                 return .response(text: text)
 
@@ -374,7 +376,7 @@ actor AgentLoop {
                     // Include full JSON data so LLM can see details like event IDs
                     let jsonString = result.json.compactJSON
                     let resultText = "Tool \(tool) returned: \(jsonString)"
-                    logger.info("Tool result for \(tool, privacy: .public): \(String(jsonString.prefix(300)), privacy: .public)")
+                    logger.info("Tool result received for \(tool)")
                     await conversationManager.addToolResult(resultText)
 
                 } catch {
@@ -382,9 +384,8 @@ actor AgentLoop {
                     await notifyDelegateActivity(.toolResult(name: tool))
 
                     // Tool failed, add error to context and continue
-                    // NOTE: privacy: .public is temporary for debugging — remove before shipping
                     let errorText = "Tool \(tool) failed: \(error.localizedDescription)"
-                    logger.error("Tool failed: \(errorText, privacy: .public)")
+                    logger.error("Tool failed: \(errorText)")
                     await conversationManager.addToolResult(errorText)
                 }
 
@@ -434,5 +435,35 @@ actor AgentLoop {
         await MainActor.run {
             self._delegate?.agentLoop(self, didUpdateActivity: activity)
         }
+    }
+
+    private func userFacingConfigurationMessage(for error: Error) -> String? {
+        if let providerError = error as? ProviderError {
+            switch providerError {
+            case .providerNotRegistered(let type):
+                return "\(type.displayName) is not ready. Open Preferences > Providers, or switch to Local (Qwen 3 4B)."
+            case .noCredential(let type):
+                return "\(type.displayName) is not configured. Open Preferences > Providers to set up a connection."
+            case .invalidModel(let type, _):
+                return "The selected \(type.displayName) model is unavailable. Choose another model in Preferences > Providers."
+            case .switchFailed(let type, _):
+                return "I could not connect to \(type.displayName). Open Preferences > Providers, or switch to Local (Qwen 3 4B)."
+            }
+        }
+
+        if let cloudError = error as? CloudProviderError {
+            switch cloudError {
+            case .authenticationFailed:
+                return "Your cloud provider credential appears invalid. Open Preferences > Providers to reconnect."
+            case .billingError:
+                return "Your cloud provider account needs billing attention. Open Preferences > Providers or switch to Local (Qwen 3 4B)."
+            case .connectionFailed:
+                return "I could not reach the cloud provider. Check your connection or switch to Local (Qwen 3 4B)."
+            case .invalidResponse, .requestFailed, .rateLimited, .serverError:
+                return nil
+            }
+        }
+
+        return nil
     }
 }
