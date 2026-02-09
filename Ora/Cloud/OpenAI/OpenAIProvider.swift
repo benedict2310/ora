@@ -20,7 +20,7 @@ public final class OpenAIProvider: CloudLLMBase, @unchecked Sendable {
 
     public init(
         apiKey: String,
-        model: String = OpenAIModel.gpt4o.rawValue,
+        model: String = OpenAIModel.preferredDefault.rawValue,
         session: URLSession? = nil,
         maxRetries: Int = 2,
         baseRetryDelay: TimeInterval = 1.0

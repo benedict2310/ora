@@ -44,12 +44,14 @@ public enum CloudProviderError: LocalizedError {
 public enum ProviderError: LocalizedError {
     case providerNotRegistered(LLMProviderType)
     case noCredential(LLMProviderType)
+    case invalidModel(LLMProviderType, String)
     case switchFailed(LLMProviderType, Error)
 
     public var errorDescription: String? {
         switch self {
         case .providerNotRegistered(let type): return "Provider \(type) not registered"
         case .noCredential(let type): return "No credential found for \(type)"
+        case .invalidModel(let type, let model): return "Invalid model '\(model)' for \(type)"
         case .switchFailed(let type, let error): return "Failed to switch to \(type): \(error.localizedDescription)"
         }
     }
