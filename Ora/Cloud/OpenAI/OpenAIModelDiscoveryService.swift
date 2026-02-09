@@ -100,9 +100,15 @@ actor OpenAIModelDiscoveryService: OpenAIModelDiscovering {
                 UserDefaults.standard.openAIDiscoveredModelIdentifiers = filtered.map(\.identifier)
                 return .available(models: filtered, isStale: false)
             case 401:
+                self.logDiscoveryFailure(statusCode: 401, body: String(data: data, encoding: .utf8) ?? "", usesCodexOAuth: requestAuthorization.usesCodexOAuth)
                 return self.cachedOrUnavailable(.unauthorized)
             default:
                 let responseBody = String(data: data, encoding: .utf8) ?? ""
+                self.logDiscoveryFailure(
+                    statusCode: httpResponse.statusCode,
+                    body: responseBody,
+                    usesCodexOAuth: requestAuthorization.usesCodexOAuth
+                )
                 let message = responseBody.isEmpty
                     ? "HTTP \(httpResponse.statusCode)"
                     : "HTTP \(httpResponse.statusCode): \(responseBody)"
@@ -242,6 +248,87 @@ actor OpenAIModelDiscoveryService: OpenAIModelDiscovering {
             "search",
         ]
         return !excludedTokens.contains(where: { lowercased.contains($0) })
+    }
+
+    private func logDiscoveryFailure(statusCode: Int, body: String, usesCodexOAuth: Bool) {
+        if usesCodexOAuth {
+            self.logger.error("OPENAI_DISCOVERY_CODEX_REQUEST_FAILED")
+        } else {
+            self.logger.error("OPENAI_DISCOVERY_APIKEY_REQUEST_FAILED")
+        }
+
+        switch statusCode {
+        case 400:
+            self.logger.error("OPENAI_DISCOVERY_HTTP_400")
+        case 401:
+            self.logger.error("OPENAI_DISCOVERY_HTTP_401")
+        case 403:
+            self.logger.error("OPENAI_DISCOVERY_HTTP_403")
+        case 404:
+            self.logger.error("OPENAI_DISCOVERY_HTTP_404")
+        case 408:
+            self.logger.error("OPENAI_DISCOVERY_HTTP_408")
+        case 429:
+            self.logger.error("OPENAI_DISCOVERY_HTTP_429")
+        case 500...599:
+            self.logger.error("OPENAI_DISCOVERY_HTTP_5XX")
+        default:
+            self.logger.error("OPENAI_DISCOVERY_HTTP_OTHER")
+        }
+
+        switch Self.classifyDiscoveryFailureBody(body) {
+        case .invalidModel:
+            self.logger.error("OPENAI_DISCOVERY_BODY_INVALID_MODEL")
+        case .requestShape:
+            self.logger.error("OPENAI_DISCOVERY_BODY_REQUEST_SHAPE")
+        case .tokenParameter:
+            self.logger.error("OPENAI_DISCOVERY_BODY_TOKEN_PARAMETER")
+        case .contextLength:
+            self.logger.error("OPENAI_DISCOVERY_BODY_CONTEXT_LENGTH")
+        case .unknown:
+            self.logger.error("OPENAI_DISCOVERY_BODY_UNKNOWN")
+        }
+    }
+
+    private enum DiscoveryFailureBodyCategory {
+        case invalidModel
+        case requestShape
+        case tokenParameter
+        case contextLength
+        case unknown
+    }
+
+    private static func classifyDiscoveryFailureBody(_ body: String) -> DiscoveryFailureBodyCategory {
+        let normalized = body.lowercased()
+        if normalized.contains("model") &&
+            (normalized.contains("not found") ||
+                normalized.contains("does not exist") ||
+                normalized.contains("invalid model") ||
+                normalized.contains("unsupported")) {
+            return .invalidModel
+        }
+        if normalized.contains("max_tokens") ||
+            normalized.contains("max_output_tokens") ||
+            normalized.contains("max_completion_tokens") {
+            return .tokenParameter
+        }
+        if normalized.contains("context length") ||
+            normalized.contains("maximum context") ||
+            normalized.contains("too many tokens") {
+            return .contextLength
+        }
+        if normalized.contains("invalid_request_error") ||
+            normalized.contains("invalid value") ||
+            normalized.contains("unsupported value") ||
+            normalized.contains("invalid type") ||
+            normalized.contains("validation") ||
+            normalized.contains("\"role\"") ||
+            normalized.contains("messages") ||
+            normalized.contains("input") ||
+            normalized.contains("tool_choice") {
+            return .requestShape
+        }
+        return .unknown
     }
 
     private static var clientVersion: String {

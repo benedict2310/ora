@@ -274,3 +274,53 @@ When Codex is authorized, the user can select OpenAI as active provider and it w
 ## Completion Status
 
 (TBD after merge.)
+
+---
+
+## Regression Investigation Round 3 (2026-02-09)
+
+### Live Symptoms Reported
+
+- Intermittent turn failure with generic user error: `I had trouble generating a response. Please try again.`
+- Log pattern:
+  - `STRUCTURED_ATTEMPT_1_COMPLETED_WITH_FRAGMENTS`
+  - `STRUCTURED_ATTEMPT_1_VALIDATION_FAILED`
+  - `STRUCTURED_ATTEMPT_2_STARTED`
+  - immediate generation failure (no successful attempt completion)
+- UI occasionally showed both a partial/working-looking response and an error response in the same turn.
+
+### Findings
+
+1. Structured retry path mixed two failure classes without clear diagnostics:
+   - JSON validation failures (expected occasionally on first attempt)
+   - transport/request failures on retry attempts (not clearly classified)
+2. Retry context included a synthetic assistant message containing invalid JSON output, which increases request-shape fragility on cloud paths.
+3. Provider/discovery logs were too opaque for triage (status/body details redacted into generic failure path).
+
+### Implemented in this round
+
+- `Ora/LLM/StructuredGenerator.swift`
+  - Added per-attempt stream failure logging markers (`STRUCTURED_ATTEMPT_*_STREAM_FAILED` + cloud failure category markers).
+  - Retry strategy updated:
+    - On validation failure: append a single user retry instruction with a bounded snippet of invalid output.
+    - On stream/request failure: reset retry context to base messages before next attempt.
+  - Keeps streaming fragments gated to successful validated attempts only.
+- `Ora/Cloud/OpenAI/CodexProvider.swift`
+  - Added deterministic HTTP/status/body-category failure markers for stream failures.
+- `Ora/Cloud/OpenAI/OpenAIProvider.swift`
+  - Added deterministic HTTP/status/body-category failure markers for stream failures.
+- `Ora/Cloud/OpenAI/OpenAIModelDiscoveryService.swift`
+  - Added deterministic discovery failure markers (API key vs Codex path + status/body category).
+- `Ora/Orchestration/AgentLoop.swift`
+  - Expanded `CloudProviderError.requestFailed` guidance for 400/403/404 and request-shape/context-limit cases, reducing fallback to generic error copy.
+
+### Verification
+
+- Automated:
+  - `✅ Tests: 1292/1292 passed`
+  - Includes updated regressions in:
+    - `OraTests/StructuredGeneratorTests.swift`
+    - `OraTests/Orchestration/AgentLoopTests.swift`
+- Manual live validation still required for:
+  - repeated retries on `gpt-5.2` and `gpt-5.2-codex`
+  - discovery refresh under Codex-only auth

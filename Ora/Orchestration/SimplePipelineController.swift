@@ -414,9 +414,11 @@ final class SimplePipelineController: ObservableObject {
     
     private func processTranscript() async {
         self.logger.info("Processing transcript: \(self.currentTranscript.prefix(50))...")
+        self.logger.notice("PIPELINE_TURN_PROCESSING_STARTED")
         
         self.currentResponse = ""
         self.resetStreamingResponse()
+        OverlayWindowController.shared.model.discardTrailingPartialAssistantMessage()
         self.transition(to: .thinking)
         OverlayWindowController.shared.mode = .thinking
         
@@ -458,6 +460,7 @@ final class SimplePipelineController: ObservableObject {
     
     private func handleAgentResponse(_ text: String) {
         self.logger.info("Agent response: \(text.prefix(50))...")
+        self.logger.notice("PIPELINE_TURN_RECEIVED_RESPONSE")
         
         self.currentResponse = text
 
@@ -493,8 +496,14 @@ final class SimplePipelineController: ObservableObject {
     
     private func handleAgentError(_ message: String) {
         self.logger.warning("Agent error: \(message)")
+        self.logger.notice("PIPELINE_TURN_RECEIVED_ERROR")
         
         self.currentResponse = message
+        if self.isStreamingResponse {
+            self.logger.notice("PIPELINE_TURN_ERROR_DURING_STREAMING")
+        }
+        self.resetStreamingResponse()
+        OverlayWindowController.shared.model.discardTrailingPartialAssistantMessage()
         
         // Show error in overlay (no TTS for errors)
         self.transition(to: .error(message))
@@ -596,6 +605,13 @@ final class SimplePipelineController: ObservableObject {
 
     private func handleStreamingToken(_ token: String) {
         guard !token.isEmpty else { return }
+        switch self.state {
+        case .thinking, .responding, .speaking:
+            break
+        default:
+            self.logger.notice("PIPELINE_IGNORED_STREAM_TOKEN_OUTSIDE_RESPONSE_STATE")
+            return
+        }
 
         self.beginStreamingResponseIfNeeded()
         self.currentResponse += token
@@ -612,6 +628,7 @@ final class SimplePipelineController: ObservableObject {
         guard !self.isStreamingResponse else { return }
 
         self.isStreamingResponse = true
+        self.logger.notice("PIPELINE_STREAMING_RESPONSE_STARTED")
         self.transition(to: .responding)
         OverlayWindowController.shared.mode = .responding
 
@@ -639,6 +656,7 @@ final class SimplePipelineController: ObservableObject {
     private func finishStreamingResponse() {
         guard self.isStreamingResponse else { return }
         self.isStreamingResponse = false
+        self.logger.notice("PIPELINE_STREAMING_RESPONSE_FINISHED")
 
         if self.usesStreamingTTS {
             if var chunker = self.sentenceChunker {
@@ -656,6 +674,9 @@ final class SimplePipelineController: ObservableObject {
     }
 
     private func resetStreamingResponse() {
+        if self.isStreamingResponse {
+            self.logger.notice("PIPELINE_STREAMING_RESPONSE_RESET")
+        }
         self.sentenceStreamContinuation?.finish()
         self.sentenceStreamContinuation = nil
         self.sentenceChunker = nil
@@ -744,11 +765,13 @@ final class SimplePipelineController: ObservableObject {
     private func handleError(_ error: Error) {
         let message = error.localizedDescription
         self.logger.error("Pipeline error: \(message)")
+        self.logger.notice("PIPELINE_TURN_PROCESSING_FAILED")
         
         // Cancel any running session task
         self.sessionTask?.cancel()
         self.sessionTask = nil
         self.resetStreamingResponse()
+        OverlayWindowController.shared.model.discardTrailingPartialAssistantMessage()
         
         // Stop audio capture to prevent resource leak
         Task {

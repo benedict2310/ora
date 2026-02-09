@@ -199,6 +199,21 @@ final class OverlayViewModelTests: XCTestCase {
         XCTAssertFalse(viewModel.messages[0].isPartial)
     }
 
+    func test_discardTrailingPartialAssistantMessage_removesPartialOnly() {
+        let viewModel = OverlayViewModel()
+        viewModel.addAssistantMessage("Partial", isPartial: true)
+        viewModel.discardTrailingPartialAssistantMessage()
+
+        XCTAssertTrue(viewModel.messages.isEmpty)
+
+        viewModel.addAssistantMessage("Final", isPartial: false)
+        viewModel.discardTrailingPartialAssistantMessage()
+
+        XCTAssertEqual(viewModel.messages.count, 1)
+        XCTAssertEqual(viewModel.messages[0].content, "Final")
+        XCTAssertFalse(viewModel.messages[0].isPartial)
+    }
+
     // MARK: - Mixed Messages Tests
 
     func test_mixedMessages_alternateCorrectly() {

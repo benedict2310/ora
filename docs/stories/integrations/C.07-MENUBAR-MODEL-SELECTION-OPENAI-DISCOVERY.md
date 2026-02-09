@@ -342,3 +342,47 @@ As a **user**, I want to **select provider and model from the menubar and only s
 ### Verification
 - `./build.sh test` — 1278/1278 tests passed
 - XcodeGen project regenerated to include new files
+
+---
+
+## Regression Investigation Round 3 (2026-02-09)
+
+### New Repro Captured
+
+- During turn processing with OpenAI/Codex models, logs show:
+  - `STRUCTURED_ATTEMPT_1_VALIDATION_FAILED`
+  - immediate failure after `STRUCTURED_ATTEMPT_2_STARTED`
+- User-visible outcome sometimes returned generic generation error.
+- UI could briefly render both a partial assistant response and an error state for one turn.
+
+### Findings
+
+1. Generic error messaging masked request-shape/model compatibility failures (especially HTTP 400 class failures).
+2. Structured retry context on failed JSON attempts increased cloud request-shape sensitivity.
+3. Discovery/model-refresh failures lacked stable, non-redacted diagnostics to explain 400/401/other failures.
+
+### Fixes landed in this round
+
+- `Ora/Orchestration/AgentLoop.swift`
+  - Expanded request-failure guidance:
+    - request-shape rejection
+    - context-length rejection
+    - status-based handling for 400/401/403/404
+  - Reduces fallback into generic `I had trouble generating a response` path.
+- `Ora/LLM/StructuredGenerator.swift`
+  - Added attempt-level stream failure classification markers.
+  - Retry behavior now resets to base messages after stream/request failure.
+  - Retry prompt now uses user-instruction + bounded invalid-response snippet (no synthetic assistant retry message).
+- `Ora/Cloud/OpenAI/OpenAIModelDiscoveryService.swift`
+  - Added discovery failure markers by auth path (API key vs Codex OAuth), HTTP status class, and coarse error-body category.
+- `Ora/Cloud/OpenAI/CodexProvider.swift`
+- `Ora/Cloud/OpenAI/OpenAIProvider.swift`
+  - Added stream-failure diagnostic markers for HTTP status/body categories.
+
+### Test Coverage Update
+
+- `OraTests/StructuredGeneratorTests.swift`
+  - validates retry-message shape and base-message reset after stream failure
+- `OraTests/Orchestration/AgentLoopTests.swift`
+  - validates actionable guidance for HTTP 400 request-shape rejections
+- Latest run: `✅ Tests: 1292/1292 passed`
