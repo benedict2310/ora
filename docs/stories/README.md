@@ -184,6 +184,7 @@ Cloud LLM provider support (Anthropic, OpenAI) with secure credential management
 | C.03 | [Anthropic Claude Provider](integrations/C.03-ANTHROPIC-PROVIDER.md) | 🚧 To Do |
 | C.04 | [OpenAI Provider](integrations/C.04-OPENAI-PROVIDER.md) | 🚧 To Do |
 | C.05 | [Provider Preferences UI](integrations/C.05-PROVIDER-PREFERENCES-UI.md) | 🚧 To Do |
+| C.06 | [OpenAI Codex OAuth Support](integrations/C.06-CODEX-SUPPORT.md) | 🚧 To Do |
 
 ### 📦 Background Tasks (BG)
 Safe background task execution with containerized isolation (HTTP fetch + parsing).
