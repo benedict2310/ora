@@ -1,7 +1,7 @@
 # C.05 - Provider Preferences UI
 
 **Epic:** Cloud Integrations (C)
-**Status:** To Do
+**Status:** Complete
 **Priority:** P1
 **Estimated Effort:** 1-2 days
 **Dependencies:** C.01 (Keychain Credential Manager), C.02 (Cloud Provider Abstraction)
