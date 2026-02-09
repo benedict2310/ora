@@ -11,7 +11,7 @@ import Foundation
 public enum LLMProviderType: String, Codable, Sendable, CaseIterable {
     case local       // MLX on-device (default)
     case anthropic   // Anthropic Claude API
-    case openai      // OpenAI API
+    case openai      // OpenAI API key or Codex OAuth
 
     public var displayName: String {
         switch self {

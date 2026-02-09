@@ -139,23 +139,27 @@ final class CloudProviderTests: XCTestCase {
     func test_displayName_returns_correct_values() {
         XCTAssertEqual(CloudProvider.anthropic.displayName, "Anthropic")
         XCTAssertEqual(CloudProvider.openai.displayName, "OpenAI")
+        XCTAssertEqual(CloudProvider.openaiCodex.displayName, "OpenAI Codex OAuth")
     }
     
     func test_keyPrefix_returns_expected_prefixes() {
         XCTAssertEqual(CloudProvider.anthropic.keyPrefix, "sk-ant-")
         XCTAssertEqual(CloudProvider.openai.keyPrefix, "sk-")
+        XCTAssertNil(CloudProvider.openaiCodex.keyPrefix)
     }
     
     func test_rawValue_is_lowercase() {
         XCTAssertEqual(CloudProvider.anthropic.rawValue, "anthropic")
         XCTAssertEqual(CloudProvider.openai.rawValue, "openai")
+        XCTAssertEqual(CloudProvider.openaiCodex.rawValue, "openaiCodex")
     }
     
     func test_caseIterable_includes_all_cases() {
         let allCases = CloudProvider.allCases
-        XCTAssertEqual(allCases.count, 2)
+        XCTAssertEqual(allCases.count, 3)
         XCTAssertTrue(allCases.contains(.anthropic))
         XCTAssertTrue(allCases.contains(.openai))
+        XCTAssertTrue(allCases.contains(.openaiCodex))
     }
 }
 
@@ -165,21 +169,21 @@ final class CredentialStoreErrorTests: XCTestCase {
     
     func test_saveFailed_error_message() {
         let error = CredentialStoreError.saveFailed(provider: .anthropic, status: -25300)
-        XCTAssertEqual(error.errorDescription, "Failed to save Anthropic API key (OSStatus: -25300)")
+        XCTAssertEqual(error.errorDescription, "Failed to save Anthropic credential (OSStatus: -25300)")
     }
     
     func test_retrieveFailed_error_message() {
         let error = CredentialStoreError.retrieveFailed(provider: .openai, status: -25308)
-        XCTAssertEqual(error.errorDescription, "Failed to retrieve OpenAI API key (OSStatus: -25308)")
+        XCTAssertEqual(error.errorDescription, "Failed to retrieve OpenAI credential (OSStatus: -25308)")
     }
     
     func test_deleteFailed_error_message() {
         let error = CredentialStoreError.deleteFailed(provider: .anthropic, status: -25291)
-        XCTAssertEqual(error.errorDescription, "Failed to delete Anthropic API key (OSStatus: -25291)")
+        XCTAssertEqual(error.errorDescription, "Failed to delete Anthropic credential (OSStatus: -25291)")
     }
     
     func test_invalidKey_error_message() {
         let error = CredentialStoreError.invalidKey(provider: .openai, reason: "Empty string")
-        XCTAssertEqual(error.errorDescription, "Invalid OpenAI API key: Empty string")
+        XCTAssertEqual(error.errorDescription, "Invalid OpenAI credential: Empty string")
     }
 }

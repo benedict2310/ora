@@ -90,6 +90,34 @@ struct ProviderPreferencesView: View {
                 }
 
                 KeyStatusRow(status: self.viewModel.openAIKeyStatus)
+
+                Divider()
+
+                Text("Have ChatGPT Pro?")
+                    .font(.subheadline)
+
+                HStack(spacing: 8) {
+                    Button("Authorize Codex") {
+                        Task {
+                            await self.viewModel.authorizeCodex()
+                        }
+                    }
+                    .disabled(self.viewModel.codexAuthStatus == .connecting)
+
+                    if self.viewModel.codexAuthStatus.isConnected {
+                        Button("Disconnect", role: .destructive) {
+                            Task {
+                                await self.viewModel.disconnectCodex()
+                            }
+                        }
+                    }
+                }
+
+                CodexAuthStatusRow(status: self.viewModel.codexAuthStatus)
+
+                Text(self.viewModel.openAICredentialSummary)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             } header: {
                 Text("OpenAI")
             }
@@ -145,6 +173,59 @@ struct ProviderPreferencesView: View {
                 }
             }
         )
+    }
+}
+
+private struct CodexAuthStatusRow: View {
+    let status: ProviderPreferencesViewModel.CodexAuthStatus
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: self.iconName)
+                .foregroundColor(self.tintColor)
+            Text(self.message)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private var iconName: String {
+        switch self.status {
+        case .disconnected:
+            return "minus.circle"
+        case .connecting:
+            return "clock"
+        case .connected:
+            return "checkmark.circle.fill"
+        case .error:
+            return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var tintColor: Color {
+        switch self.status {
+        case .disconnected:
+            return .secondary
+        case .connecting:
+            return .orange
+        case .connected:
+            return .green
+        case .error:
+            return .red
+        }
+    }
+
+    private var message: String {
+        switch self.status {
+        case .disconnected:
+            return "Not connected"
+        case .connecting:
+            return "Waiting for authorization"
+        case .connected(let account):
+            return "Signed in (\(account))"
+        case .error(let message):
+            return message
+        }
     }
 }
 

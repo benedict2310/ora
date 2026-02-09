@@ -30,13 +30,13 @@ enum CredentialStoreError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .saveFailed(let provider, let status):
-            return "Failed to save \(provider.displayName) API key (OSStatus: \(status))"
+            return "Failed to save \(provider.displayName) credential (OSStatus: \(status))"
         case .retrieveFailed(let provider, let status):
-            return "Failed to retrieve \(provider.displayName) API key (OSStatus: \(status))"
+            return "Failed to retrieve \(provider.displayName) credential (OSStatus: \(status))"
         case .deleteFailed(let provider, let status):
-            return "Failed to delete \(provider.displayName) API key (OSStatus: \(status))"
+            return "Failed to delete \(provider.displayName) credential (OSStatus: \(status))"
         case .invalidKey(let provider, let reason):
-            return "Invalid \(provider.displayName) API key: \(reason)"
+            return "Invalid \(provider.displayName) credential: \(reason)"
         }
     }
 }

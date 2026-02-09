@@ -68,6 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task {
             let anthropicModel = UserDefaults.standard.selectedAnthropicModel
             let openAIModel = UserDefaults.standard.selectedOpenAIModel
+            await CodexOAuthManager.shared.importCLIAuthIfNeeded()
 
             await LLMProviderManager.shared.register(
                 factory: AnthropicProviderFactory(model: anthropicModel.rawValue),
