@@ -94,6 +94,30 @@ final class OpenAIProviderTests: XCTestCase {
         XCTAssertEqual(messages[1]["role"] as? String, "user")
     }
 
+    func test_generate_usesMaxCompletionTokens() async throws {
+        // Given
+        var capturedBody: [String: Any]?
+        OpenAIMockURLProtocol.setHandler { request, _ in
+            if let body = self.requestBodyData(from: request) {
+                capturedBody = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+            }
+            return .sse(events: ["[DONE]"])
+        }
+        let provider = self.makeProvider()
+
+        // When
+        _ = try await self.collectDeltas(
+            from: await provider.generate(
+                messages: [LLMMessage(role: .user, content: "Hi")],
+                maxTokens: 128
+            )
+        )
+
+        // Then
+        XCTAssertEqual(capturedBody?["max_completion_tokens"] as? Int, 128)
+        XCTAssertNil(capturedBody?["max_tokens"])
+    }
+
     func test_toolRole_mappedToUser() async throws {
         // Given
         var capturedBody: [String: Any]?

@@ -104,6 +104,73 @@ final class OpenAIModelDiscoveryServiceTests: XCTestCase {
         XCTAssertEqual(secondModels.map(\.identifier), firstModels.map(\.identifier))
     }
 
+    func test_openAIModelDiscovery_withCodexCredential_fetchesCodexModels() async throws {
+        let credentialStore = OpenAIModelDiscoveryCredentialStore(apiKey: nil)
+        let codexOAuthManager = OpenAIModelDiscoveryCodexOAuthManagerMock()
+        await codexOAuthManager.setCredential(
+            CodexOAuthCredential(
+                accessToken: "codex-access",
+                refreshToken: "codex-refresh",
+                accountID: "acct_codex",
+                accountEmail: "codex@example.com",
+                expiresAt: Date().addingTimeInterval(3600),
+                updatedAt: Date()
+            )
+        )
+
+        var capturedAuthorization: String?
+        var capturedAccountID: String?
+        var capturedOriginator: String?
+        var capturedVersion: String?
+        var capturedUserAgent: String?
+        var capturedURL: URL?
+        OpenAIModelDiscoveryURLProtocol.setHandler { request in
+            capturedAuthorization = request.value(forHTTPHeaderField: "Authorization")
+            capturedAccountID = request.value(forHTTPHeaderField: "chatgpt-account-id")
+            capturedOriginator = request.value(forHTTPHeaderField: "originator")
+            capturedVersion = request.value(forHTTPHeaderField: "version")
+            capturedUserAgent = request.value(forHTTPHeaderField: "User-Agent")
+            capturedURL = request.url
+            return .json(
+                statusCode: 200,
+                body: """
+                {
+                  "models": [
+                    { "slug": "gpt-5.2-codex" },
+                    { "slug": "gpt-5.2" },
+                    { "slug": "whisper-1" }
+                  ]
+                }
+                """
+            )
+        }
+
+        let service = OpenAIModelDiscoveryService(
+            credentialStore: credentialStore,
+            codexOAuthManager: codexOAuthManager,
+            session: self.makeSession(),
+            cacheTTL: 300
+        )
+
+        let state = await service.fetchModelAvailability(forceRefresh: true)
+
+        guard case .available(let models, let isStale) = state else {
+            return XCTFail("Expected available models")
+        }
+        XCTAssertFalse(isStale)
+        XCTAssertEqual(capturedAuthorization, "Bearer codex-access")
+        XCTAssertEqual(capturedAccountID, "acct_codex")
+        XCTAssertEqual(capturedOriginator, CodexOAuthManager.originator)
+        XCTAssertNotNil(capturedVersion)
+        XCTAssertTrue((capturedUserAgent ?? "").contains(CodexOAuthManager.originator))
+        let url = try XCTUnwrap(capturedURL)
+        XCTAssertEqual(url.host, "chatgpt.com")
+        XCTAssertEqual(url.path, "/backend-api/codex/models")
+        let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertNotNil(queryItems.first(where: { $0.name == "client_version" && ($0.value?.isEmpty == false) }))
+        XCTAssertEqual(models.map(\.identifier), ["gpt-5.2", "gpt-5.2-codex"])
+    }
+
     // MARK: - Helpers
 
     private func makeSession() -> URLSession {
@@ -202,5 +269,34 @@ private extension NSLock {
         self.lock()
         defer { self.unlock() }
         return try body()
+    }
+}
+
+private actor OpenAIModelDiscoveryCodexOAuthManagerMock: CodexOAuthManaging {
+    private var credential: CodexOAuthCredential?
+
+    func authorize() async throws -> CodexOAuthCredential {
+        guard let credential else {
+            throw CodexOAuthError.invalidTokenResponse("No credential available")
+        }
+        return credential
+    }
+
+    func disconnect() async throws {
+        self.credential = nil
+    }
+
+    func currentCredential() async throws -> CodexOAuthCredential? {
+        return self.credential
+    }
+
+    func validCredentialIfAvailable() async throws -> CodexOAuthCredential? {
+        return self.credential
+    }
+
+    func importCLIAuthIfNeeded() async {}
+
+    func setCredential(_ credential: CodexOAuthCredential?) {
+        self.credential = credential
     }
 }

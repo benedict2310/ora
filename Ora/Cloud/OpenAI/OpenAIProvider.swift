@@ -73,7 +73,7 @@ public final class OpenAIProvider: CloudLLMBase, @unchecked Sendable {
 
         let body: [String: Any] = [
             "model": self.model,
-            "max_tokens": maxTokens,
+            "max_completion_tokens": maxTokens,
             "stream": true,
             "stream_options": ["include_usage": true],
             "messages": mappedMessages,

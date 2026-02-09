@@ -12,6 +12,7 @@ final class LLMProviderManagerTests: XCTestCase {
 
     private var manager: LLMProviderManager!
     private var mockCredentialStore: MockCredentialStore!
+    private var mockCodexOAuthManager: MockCodexOAuthManager!
 
     override func setUp() async throws {
         UserDefaults.standard.removeObject(forKey: "com.ora.selectedLLMProvider")
@@ -21,11 +22,16 @@ final class LLMProviderManagerTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "com.ora.openAI.discoveredModelIdentifiers")
 
         self.mockCredentialStore = MockCredentialStore()
-        self.manager = LLMProviderManager(credentialStore: self.mockCredentialStore)
+        self.mockCodexOAuthManager = MockCodexOAuthManager()
+        self.manager = LLMProviderManager(
+            credentialStore: self.mockCredentialStore,
+            codexOAuthManager: self.mockCodexOAuthManager
+        )
     }
 
     override func tearDown() async throws {
         self.manager = nil
+        self.mockCodexOAuthManager = nil
         self.mockCredentialStore = nil
         try await super.tearDown()
     }
@@ -79,7 +85,10 @@ final class LLMProviderManagerTests: XCTestCase {
 
     func test_preflight_withMissingCredential_fallsBackToLocalWithGuidance() async {
         UserDefaults.standard.selectedLLMProvider = .openai
-        let manager = LLMProviderManager(credentialStore: self.mockCredentialStore)
+        let manager = LLMProviderManager(
+            credentialStore: self.mockCredentialStore,
+            codexOAuthManager: self.mockCodexOAuthManager
+        )
         await manager.register(factory: MockProviderFactory(), for: .openai)
 
         let preflight = await manager.preflightForConversationStart()
@@ -99,13 +108,38 @@ final class LLMProviderManagerTests: XCTestCase {
         UserDefaults.standard.selectedOpenAIModelIdentifier = "unavailable-model"
         UserDefaults.standard.openAIDiscoveredModelIdentifiers = [OpenAIModel.gpt4o.rawValue]
 
-        let manager = LLMProviderManager(credentialStore: self.mockCredentialStore)
+        let manager = LLMProviderManager(
+            credentialStore: self.mockCredentialStore,
+            codexOAuthManager: self.mockCodexOAuthManager
+        )
         try await self.mockCredentialStore.save(provider: .openai, apiKey: "sk-test")
         await manager.register(factory: MockProviderFactory(), for: .openai)
 
         let preflight = await manager.preflightForConversationStart()
         XCTAssertEqual(preflight, .ready)
         XCTAssertEqual(UserDefaults.standard.selectedOpenAIModelIdentifier, OpenAIModel.gpt4o.rawValue)
+    }
+
+    func test_switchToOpenAI_prefersCodexCredentialWhenAvailable() async throws {
+        // Given
+        await self.manager.register(factory: MockProviderFactory(), for: .openai)
+        await self.mockCodexOAuthManager.setCredential(
+            CodexOAuthCredential(
+                accessToken: "access",
+                refreshToken: "refresh",
+                accountID: "acct_123",
+                accountEmail: "user@example.com",
+                expiresAt: Date().addingTimeInterval(3600),
+                updatedAt: Date()
+            )
+        )
+
+        // When
+        try await self.manager.switchProvider(to: .openai)
+
+        // Then
+        let provider = await self.manager.currentProvider()
+        XCTAssertTrue(provider is CodexProvider)
     }
 }
 
@@ -128,6 +162,35 @@ actor MockCredentialStore: CredentialStore {
 
     func hasCredential(for provider: CloudProvider) -> Bool {
         return self.storage[provider] != nil
+    }
+}
+
+actor MockCodexOAuthManager: CodexOAuthManaging {
+    private var credential: CodexOAuthCredential?
+
+    func authorize() async throws -> CodexOAuthCredential {
+        guard let credential else {
+            throw CodexOAuthError.invalidTokenResponse("No credential")
+        }
+        return credential
+    }
+
+    func disconnect() async throws {
+        self.credential = nil
+    }
+
+    func currentCredential() async throws -> CodexOAuthCredential? {
+        return self.credential
+    }
+
+    func validCredentialIfAvailable() async throws -> CodexOAuthCredential? {
+        return self.credential
+    }
+
+    func importCLIAuthIfNeeded() async {}
+
+    func setCredential(_ credential: CodexOAuthCredential?) {
+        self.credential = credential
     }
 }
 

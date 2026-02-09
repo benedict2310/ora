@@ -459,7 +459,26 @@ actor AgentLoop {
                 return "Your cloud provider account needs billing attention. Open Preferences > Providers or switch to Local (Qwen 3 4B)."
             case .connectionFailed:
                 return "I could not reach the cloud provider. Check your connection or switch to Local (Qwen 3 4B)."
-            case .invalidResponse, .requestFailed, .rateLimited, .serverError:
+            case .requestFailed(_, let body):
+                let normalized = body.lowercased()
+                if normalized.contains("model") &&
+                    (normalized.contains("not found") ||
+                        normalized.contains("does not exist") ||
+                        normalized.contains("invalid model") ||
+                        normalized.contains("unsupported")) {
+                    return "The selected cloud model is unavailable for this account. Choose another model in Preferences > Providers."
+                }
+                if normalized.contains("max_tokens") || normalized.contains("max_output_tokens") {
+                    return "The selected cloud model rejected this request format. Try another model in Preferences > Providers."
+                }
+                return nil
+            case .invalidResponse(let reason):
+                let normalized = reason.lowercased()
+                if normalized.contains("model") && normalized.contains("unsupported") {
+                    return "The selected cloud model is unavailable for this account. Choose another model in Preferences > Providers."
+                }
+                return nil
+            case .rateLimited, .serverError:
                 return nil
             }
         }

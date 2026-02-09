@@ -14,6 +14,7 @@ final class ProviderPreferencesViewModelTests: XCTestCase {
     private var credentialStore: ProviderPreferencesCredentialStoreMock!
     private var providerManager: LLMProviderManager!
     private var discoveryService: ProviderPreferencesDiscoveryServiceMock!
+    private var codexOAuthManager: ProviderPreferencesCodexOAuthManagerMock!
     private var viewModel: ProviderPreferencesViewModel!
 
     override func setUp() async throws {
@@ -24,11 +25,16 @@ final class ProviderPreferencesViewModelTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "com.ora.openAI.discoveredModelIdentifiers")
 
         self.credentialStore = ProviderPreferencesCredentialStoreMock()
-        self.providerManager = LLMProviderManager(credentialStore: self.credentialStore)
+        self.codexOAuthManager = ProviderPreferencesCodexOAuthManagerMock()
+        self.providerManager = LLMProviderManager(
+            credentialStore: self.credentialStore,
+            codexOAuthManager: self.codexOAuthManager
+        )
         self.discoveryService = ProviderPreferencesDiscoveryServiceMock()
         self.viewModel = ProviderPreferencesViewModel(
             credentialStore: self.credentialStore,
             providerManager: self.providerManager,
+            codexOAuthManager: self.codexOAuthManager,
             modelDiscoveryService: self.discoveryService
         )
     }
@@ -42,6 +48,7 @@ final class ProviderPreferencesViewModelTests: XCTestCase {
 
         self.viewModel = nil
         self.discoveryService = nil
+        self.codexOAuthManager = nil
         self.providerManager = nil
         self.credentialStore = nil
         try await super.tearDown()
@@ -160,6 +167,88 @@ final class ProviderPreferencesViewModelTests: XCTestCase {
         XCTAssertEqual(selected, .local)
         XCTAssertEqual(self.viewModel.selectedProvider, .local)
     }
+
+    func test_authorizeCodex_updatesStatus() async {
+        // Given
+        await self.codexOAuthManager.setAuthorizeCredential(
+            CodexOAuthCredential(
+                accessToken: "access",
+                refreshToken: "refresh",
+                accountID: "acct_123",
+                accountEmail: "user@example.com",
+                expiresAt: Date().addingTimeInterval(3600),
+                updatedAt: Date()
+            )
+        )
+
+        // When
+        await self.viewModel.authorizeCodex()
+
+        // Then
+        XCTAssertEqual(
+            self.viewModel.codexAuthStatus,
+            .connected(account: "user@example.com")
+        )
+    }
+
+    func test_loadState_codexConnectedWithoutAPIKey_showsCuratedModels() async {
+        // Given - Codex credential available, no API key, discovery returns missing credential
+        await self.codexOAuthManager.setCurrentCredential(
+            CodexOAuthCredential(
+                accessToken: "access",
+                refreshToken: "refresh",
+                accountID: "acct_123",
+                accountEmail: "user@example.com",
+                expiresAt: Date().addingTimeInterval(3600),
+                updatedAt: Date()
+            )
+        )
+        await self.discoveryService.setState(.unavailable(.missingCredential))
+
+        // When
+        await self.viewModel.loadState()
+
+        // Then - should show curated models instead of setup required
+        XCTAssertFalse(self.viewModel.openAIShowsSetupAction)
+        XCTAssertGreaterThanOrEqual(self.viewModel.openAISelectableModels.count, OpenAIModel.allCases.count)
+        XCTAssertTrue(self.viewModel.openAISelectableModels.contains(where: { $0.identifier == "gpt-5.2-codex" }))
+        XCTAssertTrue(self.viewModel.codexAuthStatus.isConnected)
+    }
+
+    func test_loadState_codexDisconnectedWithoutAPIKey_showsSetupRequired() async {
+        // Given - no Codex, no API key
+        await self.discoveryService.setState(.unavailable(.missingCredential))
+
+        // When
+        await self.viewModel.loadState()
+
+        // Then - should show setup required
+        XCTAssertTrue(self.viewModel.openAIShowsSetupAction)
+        XCTAssertEqual(self.viewModel.openAISelectableModels, [])
+    }
+
+    func test_disconnectCodex_clearsTokens() async throws {
+        // Given
+        await self.codexOAuthManager.setCurrentCredential(
+            CodexOAuthCredential(
+                accessToken: "access",
+                refreshToken: "refresh",
+                accountID: "acct_123",
+                accountEmail: "user@example.com",
+                expiresAt: Date().addingTimeInterval(3600),
+                updatedAt: Date()
+            )
+        )
+        await self.viewModel.loadState()
+
+        // When
+        await self.viewModel.disconnectCodex()
+
+        // Then
+        XCTAssertEqual(self.viewModel.codexAuthStatus, .disconnected)
+        let stored = try await self.codexOAuthManager.currentCredential()
+        XCTAssertNil(stored)
+    }
 }
 
 // MARK: - Mocks
@@ -220,5 +309,41 @@ private final class ProviderPreferencesMockProvider: CloudLLMBase, @unchecked Se
 
     override func prepare() async throws {
         // No-op for test provider.
+    }
+}
+
+private actor ProviderPreferencesCodexOAuthManagerMock: CodexOAuthManaging {
+    private var current: CodexOAuthCredential?
+    private var authorizeCredential: CodexOAuthCredential?
+
+    func authorize() async throws -> CodexOAuthCredential {
+        let credential = self.authorizeCredential ?? self.current
+        guard let credential else {
+            throw CodexOAuthError.invalidTokenResponse("No authorize credential configured")
+        }
+        self.current = credential
+        return credential
+    }
+
+    func disconnect() async throws {
+        self.current = nil
+    }
+
+    func currentCredential() async throws -> CodexOAuthCredential? {
+        return self.current
+    }
+
+    func validCredentialIfAvailable() async throws -> CodexOAuthCredential? {
+        return self.current
+    }
+
+    func importCLIAuthIfNeeded() async {}
+
+    func setCurrentCredential(_ credential: CodexOAuthCredential?) {
+        self.current = credential
+    }
+
+    func setAuthorizeCredential(_ credential: CodexOAuthCredential?) {
+        self.authorizeCredential = credential
     }
 }
