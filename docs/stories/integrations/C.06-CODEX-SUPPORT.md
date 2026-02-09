@@ -1,7 +1,7 @@
 # C.06 - OpenAI Codex OAuth Support
 
 **Epic:** Cloud Integrations (C)
-**Status:** Not Started
+**Status:** Complete
 **Priority:** P2
 **Estimated Effort:** 2-3 days
 **Dependencies:** C.04 (OpenAI Provider), C.05 (Provider Preferences UI)
