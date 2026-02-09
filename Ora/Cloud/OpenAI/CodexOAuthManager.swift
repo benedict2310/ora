@@ -80,6 +80,9 @@ protocol CodexWebAuthenticating: Sendable {
 }
 
 final class ASWebAuthenticationSessionAuthenticator: CodexWebAuthenticating, @unchecked Sendable {
+    private var activeSession: ASWebAuthenticationSession?
+    private var activePresentationContextProvider: AuthenticationPresentationContextProvider?
+
     func authenticate(url: URL, callbackURLScheme: String) async throws -> URL {
         return try await self.authenticateOnMainActor(url: url, callbackURLScheme: callbackURLScheme)
     }
@@ -87,11 +90,15 @@ final class ASWebAuthenticationSessionAuthenticator: CodexWebAuthenticating, @un
     @MainActor
     private func authenticateOnMainActor(url: URL, callbackURLScheme: String) async throws -> URL {
         return try await withCheckedThrowingContinuation { continuation in
-            let presentationContextProvider = AuthenticationPresentationContextProvider()
             let session = ASWebAuthenticationSession(
                 url: url,
                 callbackURLScheme: callbackURLScheme
-            ) { callbackURL, error in
+            ) { [weak self] callbackURL, error in
+                Task { @MainActor in
+                    self?.activeSession = nil
+                    self?.activePresentationContextProvider = nil
+                }
+
                 if let error {
                     if let authError = error as? ASWebAuthenticationSessionError,
                        authError.code == .canceledLogin {
@@ -110,8 +117,10 @@ final class ASWebAuthenticationSessionAuthenticator: CodexWebAuthenticating, @un
                 continuation.resume(returning: callbackURL)
             }
 
-            session.presentationContextProvider = presentationContextProvider
+            self.activePresentationContextProvider = AuthenticationPresentationContextProvider()
+            session.presentationContextProvider = self.activePresentationContextProvider
             session.prefersEphemeralWebBrowserSession = true
+            self.activeSession = session
             session.start()
         }
     }
