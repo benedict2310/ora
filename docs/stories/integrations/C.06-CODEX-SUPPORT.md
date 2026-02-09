@@ -138,16 +138,16 @@ When Codex is authorized, the user can select OpenAI as active provider and it w
 
 ## 6. Acceptance Criteria
 
-- [ ] **AC-1:** "Have ChatGPT Pro?" label and "Authorize Codex" button appear below the OpenAI API key section in Provider Preferences
-- [ ] **AC-2:** Clicking "Authorize Codex" opens a browser-based OAuth flow via `ASWebAuthenticationSession`
-- [ ] **AC-3:** After successful authentication, status shows "Signed in" with account identifier
-- [ ] **AC-4:** OAuth tokens (access, refresh, account ID) are stored securely in macOS Keychain
-- [ ] **AC-5:** "Disconnect" button clears stored tokens and resets status
-- [ ] **AC-6:** When Codex OAuth is available, selecting the OpenAI provider uses the Codex endpoint (`chatgpt.com/backend-api/`)
-- [ ] **AC-7:** Tokens are automatically refreshed before expiry
-- [ ] **AC-8:** If Codex CLI is installed and authenticated, Ora can read its credentials from `~/.codex/auth.json` as a quick-start
-- [ ] **AC-9:** LLM responses stream correctly through the Codex endpoint
-- [ ] **AC-10:** Settings persist across app restarts
+- [x] **AC-1:** "Have ChatGPT Pro?" label and "Authorize Codex" button appear below the OpenAI API key section in Provider Preferences
+- [x] **AC-2:** Clicking "Authorize Codex" opens a browser-based OAuth flow via `ASWebAuthenticationSession`
+- [x] **AC-3:** After successful authentication, status shows "Signed in" with account identifier
+- [x] **AC-4:** OAuth tokens (access, refresh, account ID) are stored securely in macOS Keychain
+- [x] **AC-5:** "Disconnect" button clears stored tokens and resets status
+- [x] **AC-6:** When Codex OAuth is available, selecting the OpenAI provider uses the Codex endpoint (`chatgpt.com/backend-api/`)
+- [x] **AC-7:** Tokens are automatically refreshed before expiry
+- [x] **AC-8:** If Codex CLI is installed and authenticated, Ora can read its credentials from `~/.codex/auth.json` as a quick-start
+- [x] **AC-9:** LLM responses stream correctly through the Codex endpoint
+- [x] **AC-10:** Settings persist across app restarts
 
 ---
 
@@ -207,12 +207,70 @@ When Codex is authorized, the user can select OpenAI as active provider and it w
 
 ## Implementation Summary
 
-(TBD after implementation.)
+**Date:** 2026-02-09  
+**Branch:** `feat/c06-codex-support`  
+**Commits:** 2  
+**Implemented by:** codex  
+**Reviewed by:** pi
+
+### Files Changed
+- `Ora/Cloud/OpenAI/CodexOAuthManager.swift` - PKCE/OAuth session, token exchange/refresh, keychain persistence
+- `Ora/Cloud/OpenAI/CodexProvider.swift` - ChatGPT backend streaming provider with Codex OAuth headers
+- `Ora/Cloud/OpenAI/CodexProviderFactory.swift` - Factory for Codex provider creation
+- `Ora/Cloud/OpenAI/CodexCredentialReader.swift` - `~/.codex/auth.json` credential import
+- `Ora/Cloud/LLMProviderManager.swift` - OpenAI path prefers Codex OAuth, falls back to API key
+- `Ora/Preferences/Tabs/ProviderPreferencesViewModel.swift` - Codex auth state/actions and OpenAI credential selection logic
+- `Ora/Preferences/Tabs/ProviderPreferencesView.swift` - "Have ChatGPT Pro?" UI, authorize/disconnect controls, status display
+- `Ora/Cloud/CloudProvider.swift` - Added `openaiCodex` credential type
+- `Ora/AppDelegate.swift` - Startup import of existing Codex CLI credentials
+- `Ora/Info.plist` - Added `ora://` URL scheme for OAuth callback
+- `OraTests/Cloud/OpenAI/CodexOAuthManagerTests.swift` - PKCE, token exchange, refresh behavior
+- `OraTests/Cloud/OpenAI/CodexProviderTests.swift` - header and streaming behavior
+- `OraTests/Cloud/OpenAI/CodexCredentialReaderTests.swift` - Codex CLI auth file parsing
+- `OraTests/Preferences/ProviderPreferencesViewModelTests.swift` - authorize/disconnect state coverage
+- `OraTests/Cloud/LLMProviderManagerTests.swift` - OpenAI routing to Codex provider
+
+### Verification
+- `./build.sh` ✅
+- `xcodebuild test ... -only-testing:OraTests/CodexOAuthManagerTests -only-testing:OraTests/CodexProviderTests -only-testing:OraTests/CodexCredentialReaderTests -only-testing:OraTests/ProviderPreferencesViewModelTests -only-testing:OraTests/LLMProviderManagerTests` ✅
+- `./build.sh run` ✅
+- `./build.sh test` was started but stalled without progress output after compilation; targeted tests above were run to completion.
+
+---
 
 ## Code Review Findings
 
-(TBD by review agent.)
+**Reviewer:** pi
+**Date:** 2026-02-09T09:10:00Z
+**Commit reviewed:** f828bcb
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 18
+- Build status: Pass
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [x] `CodexOAuthManager.swift:112` - Fixed in `b257185` by retaining both `ASWebAuthenticationSession` and `AuthenticationPresentationContextProvider` for the lifetime of the auth flow.
+
+#### P1 - Major (Should fix)
+- [ ] None
+
+#### P2 - Minor (Can defer)
+- [ ] `CodexProvider.swift:91` - Retry logic handles `rateLimited` (429) but does not retry on initial connection failures (e.g. timeout, DNS) before streaming starts. Consider retrying on `URLError` if `attempt < maxRetries` before streaming begins.
+- [ ] `CodexProvider.swift:28` - Initializes superclass with `apiKey: "<oauth>"`. While acceptable for a custom provider, ensure this placeholder doesn't cause issues if `CloudLLMBase` logic relies on it (e.g. for logging masked keys).
+
+### Future Considerations (Out of Scope)
+- `LLMProviderManager.swift` - Hardcodes `CodexProviderFactory` logic inside `createProvider`. In the future, might want a more dynamic "ProviderResolver" pattern if more variants are added.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
 
 ## Completion Status
-
-(TBD after merge.)
+- [x] Implementation complete
+- [x] Review findings addressed
+- [x] Build verified
+- [x] Targeted test suites passed
