@@ -13,10 +13,15 @@ import XCTest
 @MainActor
 final class MockStatusBarActionHandler: StatusBarActionHandler {
     var preferencesCallCount = 0
+    var openProviderSetupCallCount = 0
     var quitCallCount = 0
 
     func handlePreferences() {
         self.preferencesCallCount += 1
+    }
+
+    func handleOpenProviderSetup() {
+        self.openProviderSetupCallCount += 1
     }
 
     func handleQuit() {
@@ -38,10 +43,53 @@ final class MockUpdateChecker: UpdateChecking {
     }
 }
 
+actor StatusBarCredentialStoreMock: CredentialStore {
+    private var storage: [CloudProvider: String] = [:]
+
+    func save(provider: CloudProvider, apiKey: String) throws {
+        self.storage[provider] = apiKey
+    }
+
+    func retrieve(provider: CloudProvider) throws -> String? {
+        return self.storage[provider]
+    }
+
+    func delete(provider: CloudProvider) throws {
+        self.storage.removeValue(forKey: provider)
+    }
+
+    func hasCredential(for provider: CloudProvider) -> Bool {
+        return self.storage[provider] != nil
+    }
+}
+
+actor StatusBarDiscoveryServiceMock: OpenAIModelDiscovering {
+    private var state: OpenAIModelDiscoveryState = .unavailable(.missingCredential)
+
+    func fetchModelAvailability(forceRefresh: Bool) async -> OpenAIModelDiscoveryState {
+        return self.state
+    }
+}
+
 // MARK: - StatusBarController Tests
 
 @MainActor
 final class StatusBarControllerTests: XCTestCase {
+
+    override func setUp() async throws {
+        UserDefaults.standard.removeObject(forKey: "com.ora.selectedLLMProvider")
+        UserDefaults.standard.removeObject(forKey: "com.ora.selectedOpenAIModel")
+        UserDefaults.standard.removeObject(forKey: "com.ora.selectedOpenAIModelIdentifier")
+        UserDefaults.standard.removeObject(forKey: "com.ora.openAI.discoveredModelIdentifiers")
+    }
+
+    override func tearDown() async throws {
+        UserDefaults.standard.removeObject(forKey: "com.ora.selectedLLMProvider")
+        UserDefaults.standard.removeObject(forKey: "com.ora.selectedOpenAIModel")
+        UserDefaults.standard.removeObject(forKey: "com.ora.selectedOpenAIModelIdentifier")
+        UserDefaults.standard.removeObject(forKey: "com.ora.openAI.discoveredModelIdentifiers")
+        try await super.tearDown()
+    }
 
     // MARK: - State Tests
 
@@ -178,11 +226,41 @@ final class StatusBarControllerTests: XCTestCase {
         let controller = self.makeController()
         let titles = controller.menuItemTitles
 
+        XCTAssertTrue(titles.contains("Select Model"), "Menu should contain Select Model section")
         XCTAssertTrue(titles.contains("Preferences..."), "Menu should contain Preferences...")
         XCTAssertTrue(titles.contains("Check for Updates..."), "Menu should contain Check for Updates...")
         XCTAssertTrue(titles.contains("Conversation Mode"), "Menu should contain Conversation Mode")
         XCTAssertTrue(titles.contains("Quit Ora"), "Menu should contain Quit Ora")
-        XCTAssertEqual(titles.count, 4, "Menu should have exactly 4 non-separator items")
+
+        controller.shutdown()
+    }
+
+    func test_statusBarMenu_showsActiveProviderAndModel() async {
+        UserDefaults.standard.selectedLLMProvider = .local
+        UserDefaults.standard.selectedAnthropicModel = .sonnet
+        UserDefaults.standard.selectedOpenAIModelIdentifier = OpenAIModel.preferredDefault.rawValue
+        UserDefaults.standard.removeObject(forKey: "com.ora.openAI.discoveredModelIdentifiers")
+
+        let controller = self.makeController()
+        try? await Task.sleep(for: .milliseconds(80))
+        controller.triggerMenuUpdate()
+
+        let currentItems = controller.menuItemTitles.filter { $0.hasPrefix("Current: ") }
+        XCTAssertEqual(currentItems.count, 1)
+        XCTAssertTrue(currentItems[0].contains("Local (On-Device)"))
+        XCTAssertTrue(currentItems[0].contains("Qwen 3 4B"))
+
+        controller.shutdown()
+    }
+
+    func test_statusBarMenu_openAIWithoutCredential_showsSetUpConnection() async {
+        UserDefaults.standard.removeObject(forKey: "com.ora.openAI.discoveredModelIdentifiers")
+
+        let controller = self.makeController()
+        try? await Task.sleep(for: .milliseconds(80))
+        controller.triggerMenuUpdate()
+
+        XCTAssertTrue(controller.hasSetUpConnectionMenuItem)
 
         controller.shutdown()
     }
@@ -219,6 +297,17 @@ final class StatusBarControllerTests: XCTestCase {
         controller.showPreferences()
 
         XCTAssertEqual(mockHandler.preferencesCallCount, 3)
+
+        controller.shutdown()
+    }
+
+    func test_setUpConnection_routesToProvidersTab() {
+        let mockHandler = MockStatusBarActionHandler()
+        let controller = self.makeController(actionHandler: mockHandler)
+
+        XCTAssertEqual(mockHandler.openProviderSetupCallCount, 0)
+        controller.simulateSetUpConnectionClick()
+        XCTAssertEqual(mockHandler.openProviderSetupCallCount, 1)
 
         controller.shutdown()
     }
@@ -369,6 +458,18 @@ final class StatusBarControllerTests: XCTestCase {
         canCheckForUpdates: Bool = true
     ) -> StatusBarController {
         let updateChecker = MockUpdateChecker(canCheckForUpdates: canCheckForUpdates)
-        return StatusBarController(actionHandler: actionHandler, updateChecker: updateChecker)
+        let credentialStore = StatusBarCredentialStoreMock()
+        let providerManager = LLMProviderManager(credentialStore: credentialStore)
+        let discoveryService = StatusBarDiscoveryServiceMock()
+        let viewModel = ProviderPreferencesViewModel(
+            credentialStore: credentialStore,
+            providerManager: providerManager,
+            modelDiscoveryService: discoveryService
+        )
+        return StatusBarController(
+            actionHandler: actionHandler,
+            updateChecker: updateChecker,
+            providerPreferencesViewModel: viewModel
+        )
     }
 }

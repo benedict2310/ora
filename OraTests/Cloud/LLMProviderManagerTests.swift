@@ -2,7 +2,7 @@
 //  LLMProviderManagerTests.swift
 //  OraTests
 //
-//  Tests for LLM provider abstraction and switching
+//  Tests for LLM provider abstraction and switching.
 //
 
 import XCTest
@@ -10,33 +10,40 @@ import XCTest
 
 final class LLMProviderManagerTests: XCTestCase {
 
-    var manager: LLMProviderManager!
-    var mockCredentialStore: MockCredentialStore!
+    private var manager: LLMProviderManager!
+    private var mockCredentialStore: MockCredentialStore!
 
     override func setUp() async throws {
-        // Reset UserDefaults before manager initialization
         UserDefaults.standard.removeObject(forKey: "com.ora.selectedLLMProvider")
+        UserDefaults.standard.removeObject(forKey: "com.ora.selectedAnthropicModel")
+        UserDefaults.standard.removeObject(forKey: "com.ora.selectedOpenAIModel")
+        UserDefaults.standard.removeObject(forKey: "com.ora.selectedOpenAIModelIdentifier")
+        UserDefaults.standard.removeObject(forKey: "com.ora.openAI.discoveredModelIdentifiers")
 
-        mockCredentialStore = MockCredentialStore()
-        manager = LLMProviderManager(credentialStore: mockCredentialStore)
+        self.mockCredentialStore = MockCredentialStore()
+        self.manager = LLMProviderManager(credentialStore: self.mockCredentialStore)
     }
-    
+
+    override func tearDown() async throws {
+        self.manager = nil
+        self.mockCredentialStore = nil
+        try await super.tearDown()
+    }
+
     func test_defaultProvider_isLocal() async {
-        let type = await manager.getSelectedProviderType()
+        let type = await self.manager.getSelectedProviderType()
         XCTAssertEqual(type, .local)
-        
-        let provider = await manager.currentProvider()
+
+        let provider = await self.manager.currentProvider()
         XCTAssertTrue(provider is LLMService)
     }
-    
+
     func test_switchToCloud_requiresCredential() async {
-        // Register a mock factory
         let factory = MockProviderFactory()
-        await manager.register(factory: factory, for: .anthropic)
-        
-        // No credential in store -> should fail
+        await self.manager.register(factory: factory, for: .anthropic)
+
         do {
-            try await manager.switchProvider(to: .anthropic)
+            try await self.manager.switchProvider(to: .anthropic)
             XCTFail("Should have failed")
         } catch let error as ProviderError {
             if case .noCredential(let type) = error {
@@ -48,93 +55,101 @@ final class LLMProviderManagerTests: XCTestCase {
             XCTFail("Wrong error type: \(error)")
         }
     }
-    
+
     func test_switchToCloud_withCredential_succeeds() async throws {
-        // Register factory
         let factory = MockProviderFactory()
-        await manager.register(factory: factory, for: .anthropic)
-        
-        // Add credential
-        try await mockCredentialStore.save(provider: .anthropic, apiKey: "sk-ant-test")
-        
-        // Switch
-        try await manager.switchProvider(to: .anthropic)
-        
-        // Verify
-        let type = await manager.getSelectedProviderType()
+        await self.manager.register(factory: factory, for: .anthropic)
+        try await self.mockCredentialStore.save(provider: .anthropic, apiKey: "sk-ant-test")
+
+        try await self.manager.switchProvider(to: .anthropic)
+
+        let type = await self.manager.getSelectedProviderType()
         XCTAssertEqual(type, .anthropic)
-        
-        let provider = await manager.currentProvider()
+
+        let provider = await self.manager.currentProvider()
         XCTAssertTrue(provider is MockCloudProvider)
     }
-    
-    func test_switchBackToLocal_works() async throws {
-        // Setup cloud
-        let factory = MockProviderFactory()
-        await manager.register(factory: factory, for: .anthropic)
-        try await mockCredentialStore.save(provider: .anthropic, apiKey: "sk-ant-test")
-        try await manager.switchProvider(to: .anthropic)
-        
-        // Switch back
-        try await manager.switchProvider(to: .local)
-        
-        let type = await manager.getSelectedProviderType()
-        XCTAssertEqual(type, .local)
-        
-        let provider = await manager.currentProvider()
-        XCTAssertTrue(provider is LLMService)
+
+    func test_openAIDefaultModel_usesGPT52() {
+        UserDefaults.standard.removeObject(forKey: "com.ora.selectedOpenAIModel")
+        UserDefaults.standard.removeObject(forKey: "com.ora.selectedOpenAIModelIdentifier")
+
+        XCTAssertEqual(UserDefaults.standard.selectedOpenAIModelIdentifier, OpenAIModel.preferredDefault.rawValue)
     }
 
-    func test_providerType_persistence() {
+    func test_preflight_withMissingCredential_fallsBackToLocalWithGuidance() async {
         UserDefaults.standard.selectedLLMProvider = .openai
-        XCTAssertEqual(UserDefaults.standard.selectedLLMProvider, .openai)
-        
-        UserDefaults.standard.selectedLLMProvider = .local
-        XCTAssertEqual(UserDefaults.standard.selectedLLMProvider, .local)
+        let manager = LLMProviderManager(credentialStore: self.mockCredentialStore)
+        await manager.register(factory: MockProviderFactory(), for: .openai)
+
+        let preflight = await manager.preflightForConversationStart()
+
+        if case .guidance(let message) = preflight {
+            XCTAssertFalse(message.isEmpty)
+        } else {
+            XCTFail("Expected guidance preflight result")
+        }
+
+        let selected = await manager.getSelectedProviderType()
+        XCTAssertEqual(selected, .local)
+    }
+
+    func test_selectedModelUnavailable_keepsAppUsableWithFallback() async throws {
+        UserDefaults.standard.selectedLLMProvider = .openai
+        UserDefaults.standard.selectedOpenAIModelIdentifier = "unavailable-model"
+        UserDefaults.standard.openAIDiscoveredModelIdentifiers = [OpenAIModel.gpt4o.rawValue]
+
+        let manager = LLMProviderManager(credentialStore: self.mockCredentialStore)
+        try await self.mockCredentialStore.save(provider: .openai, apiKey: "sk-test")
+        await manager.register(factory: MockProviderFactory(), for: .openai)
+
+        let preflight = await manager.preflightForConversationStart()
+        XCTAssertEqual(preflight, .ready)
+        XCTAssertEqual(UserDefaults.standard.selectedOpenAIModelIdentifier, OpenAIModel.gpt4o.rawValue)
     }
 }
 
 // MARK: - Mocks
 
 actor MockCredentialStore: CredentialStore {
-    var storage: [CloudProvider: String] = [:]
-    
+    private var storage: [CloudProvider: String] = [:]
+
     func save(provider: CloudProvider, apiKey: String) throws {
-        storage[provider] = apiKey
+        self.storage[provider] = apiKey
     }
-    
+
     func retrieve(provider: CloudProvider) throws -> String? {
-        return storage[provider]
+        return self.storage[provider]
     }
-    
+
     func delete(provider: CloudProvider) throws {
-        storage.removeValue(forKey: provider)
+        self.storage.removeValue(forKey: provider)
     }
-    
+
     func hasCredential(for provider: CloudProvider) -> Bool {
-        return storage[provider] != nil
+        return self.storage[provider] != nil
     }
 }
 
-final class MockProviderFactory: LLMProviderFactory {
+private struct MockProviderFactory: LLMProviderFactory {
     func create(apiKey: String) throws -> LLMServicing {
         return MockCloudProvider(apiKey: apiKey)
     }
 }
 
-class MockCloudProvider: CloudLLMBase, @unchecked Sendable {
+private final class MockCloudProvider: CloudLLMBase, @unchecked Sendable {
     init(apiKey: String) {
         super.init(apiKey: apiKey, category: "mock")
     }
-    
+
     override func generate(messages: [LLMMessage], maxTokens: Int) async -> AsyncThrowingStream<LLMDelta, Error> {
         return AsyncThrowingStream { continuation in
             continuation.yield(.token("Mock"))
             continuation.finish()
         }
     }
-    
+
     override func prepare() async throws {
-        // success
+        // No-op.
     }
 }

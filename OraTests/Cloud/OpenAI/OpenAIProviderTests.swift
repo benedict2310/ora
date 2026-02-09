@@ -32,6 +32,7 @@ final class OpenAIProviderTests: XCTestCase {
 
     func test_models_haveCorrectDisplayNames() {
         // Given/When/Then
+        XCTAssertEqual(OpenAIModel.gpt52.displayName, "GPT-5.2")
         XCTAssertEqual(OpenAIModel.gpt4o.displayName, "GPT-4o")
         XCTAssertEqual(OpenAIModel.gpt4oMini.displayName, "GPT-4o Mini")
         XCTAssertEqual(OpenAIModel.o3Mini.displayName, "o3-mini")
