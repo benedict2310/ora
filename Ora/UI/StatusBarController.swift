@@ -321,7 +321,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         self.modelRefreshTask?.cancel()
         self.modelRefreshTask = Task { [weak self] in
             guard let self else { return }
-            await self.providerPreferencesViewModel.refreshModelAvailability(forceRefresh: true)
+            await self.providerPreferencesViewModel.refreshModelAvailability(forceRefresh: false)
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 self.rebuildMenu()
