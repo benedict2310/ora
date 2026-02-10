@@ -97,6 +97,7 @@ cd ora
 |:--------|:------------|
 | `./build.sh` | Build only |
 | `./build.sh run` | Build and launch |
+| `./build.sh test-onboarding` | Reset local state and launch first-run onboarding flow |
 | `./build.sh test` | Run tests |
 | `./build.sh clean` | Clean build artifacts |
 | `./build.sh reset-perms` | Reset macOS permissions |

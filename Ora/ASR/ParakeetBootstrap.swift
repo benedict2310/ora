@@ -196,25 +196,21 @@ final class ParakeetBootstrap: @unchecked Sendable {
         setEngineState(.downloading)
         downloader.notifyState(.running(progress: 0, fileIndex: 0, fileCount: 1, currentFile: "Parakeet TDT"))
 
-        let modelsPath = ParakeetModelDownloader.repoDirectory
-        // FluidAudio creates its own subdirectory (parakeet-tdt-0.6b-v3-coreml) inside the target path,
-        // so we pass the parent directory
-        let downloadTargetPath = modelsPath.deletingLastPathComponent()
+        let modelsPath = Self.asrModelsRepositoryDirectory()
 
         do {
             // Create directory if needed
-            try FileManager.default.createDirectory(at: downloadTargetPath, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: modelsPath, withIntermediateDirectories: true)
 
             // Configure for Neural Engine with CPU fallback
             let config = MLModelConfiguration()
             config.computeUnits = .cpuAndNeuralEngine
 
-            logger.info("Downloading Parakeet models to: \(downloadTargetPath.path)")
+            logger.info("Downloading Parakeet models to: \(modelsPath.path)")
 
             // FluidAudio handles HuggingFace download, caching, and CoreML compilation
-            // It will create the subdirectory parakeet-tdt-0.6b-v3-coreml inside downloadTargetPath
             let models = try await AsrModels.downloadAndLoad(
-                to: downloadTargetPath,
+                to: modelsPath,
                 configuration: config,
                 version: .v3
             )
@@ -270,15 +266,13 @@ final class ParakeetBootstrap: @unchecked Sendable {
         let config = MLModelConfiguration()
         config.computeUnits = .cpuAndNeuralEngine
 
-        // Load models from disk
-        // FluidAudio expects the parent directory and looks for its subdirectory inside
-        let modelsPath = ParakeetModelDownloader.repoDirectory
-        let loadPath = modelsPath.deletingLastPathComponent()
-        logger.debug("Loading models from: \(loadPath.path)")
+        // Load models from the ASR repo directory expected by FluidAudio.
+        let modelsPath = Self.asrModelsRepositoryDirectory()
+        logger.debug("Loading models from: \(modelsPath.path)")
 
         do {
             let models = try await AsrModels.load(
-                from: loadPath,
+                from: modelsPath,
                 configuration: config,
                 version: .v3
             )
@@ -298,6 +292,10 @@ final class ParakeetBootstrap: @unchecked Sendable {
             name: .parakeetDownloadStateDidChange,
             object: state
         )
+    }
+
+    static func asrModelsRepositoryDirectory() -> URL {
+        ParakeetModelDownloader.repoDirectory
     }
 
     private func setEngineState(_ state: EngineState) {

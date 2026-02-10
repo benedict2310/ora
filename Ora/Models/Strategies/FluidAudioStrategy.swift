@@ -13,6 +13,7 @@ import os
 struct FluidAudioStrategy: ModelDownloadStrategy, Sendable {
 
     private let logger = Logger(subsystem: "com.ora.app", category: "FluidAudioStrategy")
+    static let maxEstimatedProgressBeforeVerification: Double = 0.90
 
     func download(
         model: ModelIdentifier,
@@ -49,22 +50,36 @@ struct FluidAudioStrategy: ModelDownloadStrategy, Sendable {
 
         self.logger.info("Starting FluidAudio download for \(model.displayName)")
 
-        // Emit initial progress
-        progress(ModelDownloadProgress(identifier: model, progress: 0.0))
+        let progressReporter = FluidAudioProgressReporter(
+            model: model,
+            logger: self.logger,
+            progressHandler: progress
+        )
+        await progressReporter.emit(
+            ModelDownloadProgress(identifier: model, progress: 0.0),
+            source: .initial
+        )
 
-        // FluidAudio SDK handles download internally via ParakeetBootstrap
-        // We observe download state via notifications for progress updates
+        // FluidAudio SDK handles download internally. We combine SDK notifications with
+        // a file-size-based estimator so onboarding does not appear stuck at 0%.
         let progressObserver = FluidAudioProgressObserver(
             model: model,
-            progressHandler: progress
+            progressReporter: progressReporter
+        )
+        let progressEstimator = FluidAudioDirectoryProgressEstimator(
+            model: model,
+            directory: expectedPath,
+            progressReporter: progressReporter
         )
 
         // Start observing before download
         await progressObserver.startObserving()
+        await progressEstimator.start()
 
         defer {
             Task {
                 await progressObserver.stopObserving()
+                await progressEstimator.stop()
             }
         }
 
@@ -76,7 +91,10 @@ struct FluidAudioStrategy: ModelDownloadStrategy, Sendable {
             try await ParakeetBootstrap.shared.downloadModels()
 
             // Emit completion
-            progress(ModelDownloadProgress(identifier: model, progress: 1.0))
+            await progressReporter.emit(
+                ModelDownloadProgress(identifier: model, progress: 1.0),
+                source: .completion
+            )
             self.logger.info("FluidAudio download complete for \(model.displayName)")
 
         } catch {
@@ -90,8 +108,8 @@ struct FluidAudioStrategy: ModelDownloadStrategy, Sendable {
         model: ModelIdentifier
     ) -> ModelDownloadProgress? {
         switch state {
-        case .running(let progress, _, _, _):
-            return ModelDownloadProgress(identifier: model, progress: progress)
+        case .running(let progress, _, _, let currentFile):
+            return ModelDownloadProgress(identifier: model, progress: progress, currentFile: currentFile)
         case .verifying:
             return ModelDownloadProgress(identifier: model, progress: 0.95)
         case .done:
@@ -100,6 +118,13 @@ struct FluidAudioStrategy: ModelDownloadStrategy, Sendable {
             return nil
         }
     }
+
+    static func estimatedProgressFromDirectorySize(_ sizeBytes: Int64, model: ModelIdentifier) -> Double {
+        guard sizeBytes > 0 else { return 0.0 }
+
+        let estimate = Double(sizeBytes) / Double(max(model.estimatedSizeBytes, 1))
+        return min(max(estimate, 0.0), Self.maxEstimatedProgressBeforeVerification)
+    }
 }
 
 // MARK: - Progress Observer
@@ -107,17 +132,17 @@ struct FluidAudioStrategy: ModelDownloadStrategy, Sendable {
 /// Observes ParakeetBootstrap notifications to forward progress updates
 private actor FluidAudioProgressObserver {
     private let model: ModelIdentifier
-    private let progressHandler: @Sendable (ModelDownloadProgress) -> Void
+    private let progressReporter: FluidAudioProgressReporter
     private var observer: NSObjectProtocol?
 
-    init(model: ModelIdentifier, progressHandler: @escaping @Sendable (ModelDownloadProgress) -> Void) {
+    init(model: ModelIdentifier, progressReporter: FluidAudioProgressReporter) {
         self.model = model
-        self.progressHandler = progressHandler
+        self.progressReporter = progressReporter
     }
 
     func startObserving() {
-        let handler = self.progressHandler
         let model = self.model
+        let progressReporter = self.progressReporter
 
         self.observer = NotificationCenter.default.addObserver(
             forName: .parakeetDownloadStateDidChange,
@@ -127,7 +152,9 @@ private actor FluidAudioProgressObserver {
             guard let state = notification.object as? ParakeetModelDownloader.State else { return }
 
             if let modelProgress = FluidAudioStrategy.progress(for: state, model: model) {
-                handler(modelProgress)
+                Task {
+                    await progressReporter.emit(modelProgress, source: .notification)
+                }
             }
         }
     }
@@ -137,5 +164,112 @@ private actor FluidAudioProgressObserver {
             NotificationCenter.default.removeObserver(observer)
             self.observer = nil
         }
+    }
+}
+
+// MARK: - Directory Progress Estimator
+
+private actor FluidAudioDirectoryProgressEstimator {
+    private let model: ModelIdentifier
+    private let directory: URL
+    private let progressReporter: FluidAudioProgressReporter
+    private var task: Task<Void, Never>?
+
+    init(
+        model: ModelIdentifier,
+        directory: URL,
+        progressReporter: FluidAudioProgressReporter
+    ) {
+        self.model = model
+        self.directory = directory
+        self.progressReporter = progressReporter
+    }
+
+    func start() {
+        guard self.task == nil else { return }
+
+        let directory = self.directory
+        let model = self.model
+        let progressReporter = self.progressReporter
+
+        self.task = Task {
+            while !Task.isCancelled {
+                let size = ModelPaths.directorySize(at: directory)
+                let estimatedProgress = FluidAudioStrategy.estimatedProgressFromDirectorySize(size, model: model)
+
+                if estimatedProgress > 0 {
+                    await progressReporter.emit(
+                        ModelDownloadProgress(
+                            identifier: model,
+                            progress: estimatedProgress,
+                            currentFile: "Parakeet model assets"
+                        ),
+                        source: .directoryEstimate
+                    )
+                }
+
+                try? await Task.sleep(for: .milliseconds(750))
+            }
+        }
+    }
+
+    func stop() {
+        self.task?.cancel()
+        self.task = nil
+    }
+}
+
+// MARK: - Progress Reporter
+
+private actor FluidAudioProgressReporter {
+    enum Source {
+        case initial
+        case notification
+        case directoryEstimate
+        case completion
+    }
+
+    private let model: ModelIdentifier
+    private let logger: Logger
+    private let progressHandler: @Sendable (ModelDownloadProgress) -> Void
+
+    private var lastProgress: Double = 0
+    private var directoryEstimateFallbackLogged = false
+    private var notificationProgressSeen = false
+
+    init(
+        model: ModelIdentifier,
+        logger: Logger,
+        progressHandler: @escaping @Sendable (ModelDownloadProgress) -> Void
+    ) {
+        self.model = model
+        self.logger = logger
+        self.progressHandler = progressHandler
+    }
+
+    func emit(_ progress: ModelDownloadProgress, source: Source) {
+        let clampedProgress = min(max(progress.progress, 0), 1)
+
+        if source == .notification && clampedProgress > 0 {
+            self.notificationProgressSeen = true
+        }
+
+        guard clampedProgress > self.lastProgress || (source == .completion && clampedProgress == 1.0) else {
+            return
+        }
+
+        if source == .directoryEstimate && !self.notificationProgressSeen && !self.directoryEstimateFallbackLogged {
+            self.directoryEstimateFallbackLogged = true
+            self.logger.info("FLUIDAUDIO_PROGRESS_FALLBACK_DIRECTORY_ESTIMATE_ACTIVE")
+        }
+
+        self.lastProgress = clampedProgress
+        self.progressHandler(
+            ModelDownloadProgress(
+                identifier: self.model,
+                progress: clampedProgress,
+                currentFile: progress.currentFile
+            )
+        )
     }
 }

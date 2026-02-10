@@ -6,6 +6,7 @@
 # Usage:
 #   ./build.sh              # Build only
 #   ./build.sh run          # Build and launch
+#   ./build.sh test-onboarding  # Simulate first-run onboarding flow
 #   ./build.sh clean        # Clean build
 #   ./build.sh reset-perms  # Reset TCC permissions (after rebuild)
 #   ./build.sh test         # Run tests with token-optimized output
@@ -56,6 +57,39 @@ generate_project() {
     echo -e "${BLUE}Generating Xcode project...${NC}"
     xcodegen generate
   fi
+}
+
+# Reset local state so onboarding behaves like first launch
+reset_onboarding_state() {
+  echo -e "${BLUE}Resetting onboarding state for first-run testing...${NC}"
+
+  # Ensure a running app instance does not hold stale state.
+  killall Ora 2>/dev/null || true
+
+  # Setup + onboarding-related defaults.
+  defaults write "$BUNDLE_ID" "com.ora.setupComplete" -bool false
+  defaults delete "$BUNDLE_ID" "com.ora.hotkeyConfiguration" 2>/dev/null || true
+  defaults delete "$BUNDLE_ID" "com.ora.selectedLLMProvider" 2>/dev/null || true
+  defaults delete "$BUNDLE_ID" "com.ora.selectedAnthropicModel" 2>/dev/null || true
+  defaults delete "$BUNDLE_ID" "com.ora.selectedOpenAIModel" 2>/dev/null || true
+  defaults delete "$BUNDLE_ID" "com.ora.selectedOpenAIModelIdentifier" 2>/dev/null || true
+  defaults delete "$BUNDLE_ID" "com.ora.openAI.discoveredModelIdentifiers" 2>/dev/null || true
+
+  # Clear model artifacts so setup mirrors a fresh user download experience.
+  local ora_root="$HOME/Library/Application Support/Ora"
+  local fluid_root="$HOME/Library/Application Support/FluidAudio/Models"
+  rm -rf "$ora_root/Models"
+  rm -f "$ora_root/model-metadata.json"
+  rm -rf "$fluid_root/parakeet-tdt-0.6b-v3-coreml"
+
+  # Reset permissions to force fresh OS prompts during onboarding.
+  tccutil reset Accessibility "$BUNDLE_ID" 2>/dev/null || true
+  tccutil reset Calendar "$BUNDLE_ID" 2>/dev/null || true
+  tccutil reset Reminders "$BUNDLE_ID" 2>/dev/null || true
+  tccutil reset AddressBook "$BUNDLE_ID" 2>/dev/null || true
+  tccutil reset Microphone "$BUNDLE_ID" 2>/dev/null || true
+
+  echo -e "${GREEN}Onboarding reset complete.${NC}"
 }
 
 # Run tests with token-optimized output
@@ -215,6 +249,11 @@ case "${1:-build}" in
     fi
     ;;
 
+  test-onboarding)
+    reset_onboarding_state
+    "$0" run
+    ;;
+
   test)
     rm -f "$HOME/Library/Application Support/Ora/run-tts-tests.flag"
     run_tests "$SCHEME"
@@ -333,11 +372,12 @@ case "${1:-build}" in
     ;;
 
   *)
-    echo "Usage: $0 {build|run|clean|reset-perms|test|test-perms|test-tsan|test-tts|logs|open-results|sign}"
+    echo "Usage: $0 {build|run|test-onboarding|clean|reset-perms|test|test-perms|test-tsan|test-tts|logs|open-results|sign}"
     echo ""
     echo "Commands:"
     echo "  build         Build the app (default)"
     echo "  run           Build and launch the app"
+    echo "  test-onboarding  Reset local state and launch first-run onboarding flow"
     echo "  clean         Remove build artifacts and generated project"
     echo "  reset-perms   Reset TCC permissions (use after rebuild)"
     echo "  test          Run tests with token-optimized output"
