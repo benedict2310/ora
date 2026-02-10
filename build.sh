@@ -7,6 +7,7 @@
 #   ./build.sh              # Build only
 #   ./build.sh run          # Build and launch
 #   ./build.sh test-onboarding  # Simulate first-run onboarding flow
+#   ./build.sh test-onboarding --keep-models  # Reset onboarding, keep existing model files
 #   ./build.sh clean        # Clean build
 #   ./build.sh reset-perms  # Reset TCC permissions (after rebuild)
 #   ./build.sh test         # Run tests with token-optimized output
@@ -61,6 +62,8 @@ generate_project() {
 
 # Reset local state so onboarding behaves like first launch
 reset_onboarding_state() {
+  local keep_models="${1:-0}"
+
   echo -e "${BLUE}Resetting onboarding state for first-run testing...${NC}"
 
   # Ensure a running app instance does not hold stale state.
@@ -78,9 +81,13 @@ reset_onboarding_state() {
   # Clear model artifacts so setup mirrors a fresh user download experience.
   local ora_root="$HOME/Library/Application Support/Ora"
   local fluid_root="$HOME/Library/Application Support/FluidAudio/Models"
-  rm -rf "$ora_root/Models"
-  rm -f "$ora_root/model-metadata.json"
-  rm -rf "$fluid_root/parakeet-tdt-0.6b-v3-coreml"
+  if [ "$keep_models" -eq 0 ]; then
+    rm -rf "$ora_root/Models"
+    rm -f "$ora_root/model-metadata.json"
+    rm -rf "$fluid_root/parakeet-tdt-0.6b-v3-coreml"
+  else
+    echo -e "${YELLOW}Keeping existing model files (--keep-models).${NC}"
+  fi
 
   # Reset permissions to force fresh OS prompts during onboarding.
   tccutil reset Accessibility "$BUNDLE_ID" 2>/dev/null || true
@@ -250,7 +257,11 @@ case "${1:-build}" in
     ;;
 
   test-onboarding)
-    reset_onboarding_state
+    keep_models=0
+    if [ "${2:-}" = "--keep-models" ]; then
+      keep_models=1
+    fi
+    reset_onboarding_state "$keep_models"
     "$0" run
     ;;
 
@@ -372,12 +383,13 @@ case "${1:-build}" in
     ;;
 
   *)
-    echo "Usage: $0 {build|run|test-onboarding|clean|reset-perms|test|test-perms|test-tsan|test-tts|logs|open-results|sign}"
+    echo "Usage: $0 {build|run|test-onboarding [--keep-models]|clean|reset-perms|test|test-perms|test-tsan|test-tts|logs|open-results|sign}"
     echo ""
     echo "Commands:"
     echo "  build         Build the app (default)"
     echo "  run           Build and launch the app"
     echo "  test-onboarding  Reset local state and launch first-run onboarding flow"
+    echo "  test-onboarding --keep-models  Reset onboarding but keep local model files"
     echo "  clean         Remove build artifacts and generated project"
     echo "  reset-perms   Reset TCC permissions (use after rebuild)"
     echo "  test          Run tests with token-optimized output"
