@@ -57,12 +57,12 @@ struct ReadyStepView: View {
 
     private var detailCard: some View {
         VStack(spacing: 8) {
-            Text("Ora will listen, respond, and keep the conversation going.")
+            Text("Ora will listen, respond, and can continue in conversation mode.")
                 .font(.body)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
 
-            Text("You can change settings anytime from the menu bar icon.")
+            Text("You can change permissions, providers, and models anytime from the menu bar icon.")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }

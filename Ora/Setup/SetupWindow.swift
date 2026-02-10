@@ -202,7 +202,7 @@ struct SetupNavigationView: View {
     }
 
     private var laterButtonTitle: String {
-        self.coordinator.state.currentStep == .modelExplanation ? "Maybe Later" : "Later"
+        self.coordinator.state.currentStep == .modelExplanation ? "Skip for Now" : "Later"
     }
 
     private var primaryButtonTitle: String {
@@ -240,7 +240,7 @@ struct SetupNavigationView: View {
         switch step {
         case .welcome: return "Get Started"
         case .permissions: return "Continue"
-        case .modelExplanation: return "Download Now"
+        case .modelExplanation: return "Prepare Models"
         case .download: return "Continue"
         case .ready: return "Done"
         }

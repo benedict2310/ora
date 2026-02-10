@@ -22,6 +22,7 @@ final class FluidAudioStrategyTests: XCTestCase {
         let runningProgress = FluidAudioStrategy.progress(for: running, model: model)
         XCTAssertEqual(runningProgress?.identifier, model)
         XCTAssertEqual(runningProgress?.progress, 0.42)
+        XCTAssertEqual(runningProgress?.currentFile, "encoder.mlmodelc")
 
         let verifyingProgress = FluidAudioStrategy.progress(for: .verifying, model: model)
         XCTAssertEqual(verifyingProgress?.progress, 0.95)
@@ -31,5 +32,27 @@ final class FluidAudioStrategyTests: XCTestCase {
 
         XCTAssertNil(FluidAudioStrategy.progress(for: .idle, model: model))
         XCTAssertNil(FluidAudioStrategy.progress(for: .failed(ParakeetModelDownloader.DownloadError.invalidResponse), model: model))
+    }
+
+    func test_estimatedProgressFromDirectorySize_clampsAtNinetyPercent() {
+        let model = ModelIdentifier.parakeetTDT
+        let halfSize = model.estimatedSizeBytes / 2
+        XCTAssertEqual(
+            FluidAudioStrategy.estimatedProgressFromDirectorySize(halfSize, model: model),
+            0.5,
+            accuracy: 0.001
+        )
+
+        let oversized = model.estimatedSizeBytes * 2
+        XCTAssertEqual(
+            FluidAudioStrategy.estimatedProgressFromDirectorySize(oversized, model: model),
+            FluidAudioStrategy.maxEstimatedProgressBeforeVerification,
+            accuracy: 0.001
+        )
+
+        XCTAssertEqual(
+            FluidAudioStrategy.estimatedProgressFromDirectorySize(0, model: model),
+            0.0
+        )
     }
 }

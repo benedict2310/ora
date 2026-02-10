@@ -6,6 +6,7 @@
 //
 
 import XCTest
+import FluidAudio
 @testable import Ora
 
 final class ASREngineTests: XCTestCase {
@@ -133,6 +134,14 @@ final class ParakeetBootstrapTests: XCTestCase {
         bootstrap.invalidate()
         XCTAssertEqual(bootstrap.currentState(), .idle)
         XCTAssertNil(bootstrap.currentManager())
+    }
+
+    func test_asrModelsRepositoryDirectory_matchesFluidAudioDefaultCache() {
+        let expected = AsrModels.defaultCacheDirectory(for: .v3)
+        let actual = ParakeetBootstrap.asrModelsRepositoryDirectory()
+
+        XCTAssertEqual(actual.path, expected.path)
+        XCTAssertEqual(actual.lastPathComponent, "parakeet-tdt-0.6b-v3-coreml")
     }
 
     func test_engineState_isReadyProperty() {

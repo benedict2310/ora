@@ -345,8 +345,9 @@ actor ModelManager {
             // Check for cancellation before starting
             try Task.checkCancellation()
 
-            // Create directory
-            try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
+            // FluidAudio manages Parakeet leaf directory creation under its parent.
+            let directoryToCreate = model == .parakeetTDT ? path.deletingLastPathComponent() : path
+            try FileManager.default.createDirectory(at: directoryToCreate, withIntermediateDirectories: true)
 
             // Download with guarded progress updates
             try await self.downloader.download(model: model, to: path) { [weak self] modelProgress in

@@ -13,11 +13,11 @@ struct ModelExplanationStepView: View {
     var body: some View {
         VStack(spacing: 20) {
             // Title
-            Text("Ora Runs Locally")
+            Text("Model Setup")
                 .font(.largeTitle)
                 .fontWeight(.bold)
 
-            Text("Three AI models power your private assistant")
+            Text("Ora uses three local models. If they are already on this Mac, Ora reuses them.")
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
 
@@ -50,7 +50,7 @@ struct ModelExplanationStepView: View {
                 icon: "waveform",
                 iconColor: .blue,
                 name: "Speech Recognition (Parakeet)",
-                description: "Converts your voice to text",
+                description: "Converts your speech into text",
                 size: "~600 MB"
             )
 
@@ -61,7 +61,7 @@ struct ModelExplanationStepView: View {
                 icon: "brain",
                 iconColor: .purple,
                 name: self.state.primaryLLM.displayName,
-                description: "Understands requests and generates responses",
+                description: "Understands requests and plans responses",
                 size: self.llmSizeDisplay
             )
 
@@ -72,7 +72,7 @@ struct ModelExplanationStepView: View {
                 icon: "speaker.wave.2",
                 iconColor: .green,
                 name: "Text-to-Speech (Kokoro)",
-                description: "Speaks responses back to you",
+                description: "Speaks replies with natural voice output",
                 size: "~500 MB"
             )
 
@@ -99,9 +99,9 @@ struct ModelExplanationStepView: View {
                 .foregroundColor(.green)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Your privacy is protected")
+                Text("Privacy-first by default")
                     .fontWeight(.medium)
-                Text("All models run locally on your Mac. Your conversations never leave your device.")
+                Text("Model files run on your Mac. Existing downloads are verified and skipped.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }

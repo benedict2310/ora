@@ -27,7 +27,7 @@ struct WelcomeStepView: View {
                     .font(.largeTitle)
                     .fontWeight(.bold)
 
-                Text("Your private voice assistant that runs entirely on your Mac.")
+                Text("A private voice assistant for your Mac that can understand, respond, and take action.")
                     .font(.title3)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
@@ -69,7 +69,7 @@ struct WelcomeStepView: View {
     }
 
     private var privacyCard: some View {
-        Label("All processing happens on your device. No data is sent to the cloud.", systemImage: "lock.shield")
+        Label("By default, core voice processing runs locally on your device.", systemImage: "lock.shield")
             .font(.caption)
             .foregroundColor(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)

@@ -35,11 +35,11 @@ struct DownloadStepView: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            Text("Downloading Models")
+            Text("Preparing Models")
                 .font(.largeTitle)
                 .fontWeight(.bold)
 
-            Text("This may take a few minutes depending on your connection")
+            Text("Already-downloaded models are verified and skipped. New downloads may take a few minutes.")
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
 

@@ -216,6 +216,37 @@ final class HuggingFaceDownloaderTests: XCTestCase {
         XCTAssertTrue(hfMock.downloadedModels.contains(.kokoro))
     }
 
+    func test_defaultModelDownloader_asrDownload_createsOnlyParentDirectory() async throws {
+        let asrMock = MockModelDownloadStrategy()
+        let hfMock = MockModelDownloadStrategy()
+        asrMock.downloadDelay = 0.01
+
+        let downloader = DefaultModelDownloader(asrStrategy: asrMock, huggingFaceStrategy: hfMock)
+        let parent = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let parakeetLeaf = parent.appendingPathComponent("parakeet-tdt-0.6b-v3-coreml", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: parent) }
+
+        try await downloader.download(model: .parakeetTDT, to: parakeetLeaf) { _ in }
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: parent.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: parakeetLeaf.path))
+    }
+
+    func test_defaultModelDownloader_llmDownload_createsLeafDirectory() async throws {
+        let asrMock = MockModelDownloadStrategy()
+        let hfMock = MockModelDownloadStrategy()
+        hfMock.downloadDelay = 0.01
+
+        let downloader = DefaultModelDownloader(asrStrategy: asrMock, huggingFaceStrategy: hfMock)
+        let parent = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let llmLeaf = parent.appendingPathComponent("llm/qwen3-4b-instruct-4bit", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: parent) }
+
+        try await downloader.download(model: .qwen3_4B, to: llmLeaf) { _ in }
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: llmLeaf.path))
+    }
+
     // MARK: - Verification Tests
 
     func test_defaultModelDownloader_verify_checksRequiredFiles() async throws {

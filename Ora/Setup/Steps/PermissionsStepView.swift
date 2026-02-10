@@ -17,7 +17,7 @@ struct PermissionsStepView: View {
                 .font(.largeTitle)
                 .fontWeight(.bold)
 
-            Text("Ora needs a few permissions to work properly.")
+            Text("Ora needs microphone access to listen. Calendar, Reminders, and Contacts are optional for actions.")
                 .foregroundColor(.secondary)
 
             GlassEffectContainer(spacing: 16) {
@@ -64,7 +64,7 @@ struct PermissionsStepView: View {
             }
 
             if !self.permissionsState.requiredPermissionsGranted {
-                Label("Microphone permission is required to continue.", systemImage: "exclamationmark.triangle")
+                Label("Microphone access is required to continue setup.", systemImage: "exclamationmark.triangle")
                     .font(.caption)
                     .foregroundColor(.orange)
                     .frame(maxWidth: .infinity, alignment: .leading)

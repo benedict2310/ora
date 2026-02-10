@@ -164,7 +164,7 @@ final class SetupViewsTests: XCTestCase {
 
         XCTAssertEqual(SetupNavigationView.nextButtonTitle(for: .welcome), "Get Started")
         XCTAssertEqual(SetupNavigationView.nextButtonTitle(for: .permissions), "Continue")
-        XCTAssertEqual(SetupNavigationView.nextButtonTitle(for: .modelExplanation), "Download Now")
+        XCTAssertEqual(SetupNavigationView.nextButtonTitle(for: .modelExplanation), "Prepare Models")
         XCTAssertEqual(SetupNavigationView.nextButtonTitle(for: .download), "Continue")
         XCTAssertEqual(SetupNavigationView.nextButtonTitle(for: .ready), "Done")
 

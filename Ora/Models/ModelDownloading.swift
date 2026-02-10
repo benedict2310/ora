@@ -73,8 +73,9 @@ final class DefaultModelDownloader: ModelDownloader, @unchecked Sendable {
         to directory: URL,
         progress: @escaping @Sendable (ModelDownloadProgress) -> Void
     ) async throws {
-        // Ensure directory exists
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        // FluidAudio expects the Parakeet leaf directory to be created by the SDK under its parent.
+        let directoryToCreate = model == .parakeetTDT ? directory.deletingLastPathComponent() : directory
+        try FileManager.default.createDirectory(at: directoryToCreate, withIntermediateDirectories: true)
 
         self.logger.info("Starting download for \(model.displayName) using \(model.category.rawValue) strategy")
 
