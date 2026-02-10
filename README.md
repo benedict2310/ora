@@ -17,10 +17,13 @@
 
 ## ✨ What is Ora?
 
-Ora is a **fully on-device voice assistant** for macOS that puts your privacy first. Every piece of processing happens locally on your Mac — no data ever leaves your machine.
+Ora is a **local-first voice assistant** for macOS that puts your privacy first. By default, speech recognition, reasoning, and speech synthesis run on your Mac.
+
+Ora can also use **optional cloud providers** (for example OpenAI or Anthropic) if you explicitly enable them in **Preferences > Providers**.
 
 ```
-Voice → Parakeet ASR → MLX + Qwen 2.5 → Kokoro TTS → Voice/UI
+Voice → Parakeet ASR → MLX + Qwen 3 → Kokoro TTS → Voice/UI
+                    ↘ (Optional) Cloud LLM ↗
 ```
 
 ### Demo
@@ -33,18 +36,19 @@ https://github.com/benedict2310/ora/assets/demo.mp4
 
 ## 🎯 Features
 
-- **🔒 100% Local Processing** — All inference runs on-device using Apple Silicon acceleration
+- **🔒 Local-First** — On-device inference by default using Apple Silicon acceleration
 - **🎤 Push-to-Talk** — Hotkey activation (⌥Space) with menu bar control
 - **⚡ Streaming Pipeline** — Live transcription, streaming LLM tokens, early TTS start
 - **🤖 Agentic Tools** — Calendar, Reminders, Contacts, and System integrations
 - **📝 Audit Trail** — Every action logged for transparency
+- **☁️ Optional Cloud Providers** — OpenAI (API key or Codex OAuth) and Anthropic (API key)
 - **🔄 Auto-Updates** — Seamless updates via Sparkle
 
 ---
 
 ## 📦 Download
 
-**Latest Release:** [Ora v1.0.1](https://github.com/benedict2310/ora/releases/latest)
+**Latest Release:** [Ora (Releases)](https://github.com/benedict2310/ora/releases/latest)
 
 ### Installation
 
@@ -52,6 +56,8 @@ https://github.com/benedict2310/ora/assets/demo.mp4
 2. Open the DMG and drag **Ora.app** to Applications
 3. Launch Ora and grant requested permissions
 4. Press **⌥Space** to activate
+
+> Note: Sparkle auto-updates are intended for the signed release build installed in `/Applications`. Developer builds disable update checks.
 
 ### Requirements
 
@@ -69,13 +75,16 @@ https://github.com/benedict2310/ora/assets/demo.mp4
 
 1. Download from [Releases](https://github.com/benedict2310/ora/releases)
 2. Install and launch
-3. Grant permissions when prompted:
+3. On first run, Ora downloads required on-device models (ASR + LLM + TTS)
+4. Grant permissions when prompted:
    - **Microphone** — Voice input
    - **Calendar** — Event management
    - **Reminders** — Task management
    - **Contacts** — Contact lookup
    - **Accessibility** — Global hotkey
-4. Press **⌥Space** and start talking!
+5. Press **⌥Space** and start talking!
+
+To use a cloud provider, open **Preferences > Providers** and connect OpenAI/Anthropic.
 
 ### For Developers
 
@@ -111,7 +120,7 @@ Ora uses a streaming pipeline architecture for maximum responsiveness:
 
 1. **Audio Capture** → Real-time microphone input via AVAudioEngine
 2. **ASR** → FluidAudio Parakeet for streaming speech-to-text
-3. **LLM** → MLX Swift with Qwen 2.5 (7B) for reasoning
+3. **LLM** → MLX Swift with Qwen 3 (on-device), or optional cloud providers (OpenAI/Anthropic)
 4. **Tools** → Native macOS integrations (EventKit, Contacts)
 5. **TTS** → Kokoro MLX for natural speech synthesis
 
@@ -121,7 +130,7 @@ Ora uses a streaming pipeline architecture for maximum responsiveness:
 - **ML Runtime:** MLX Swift for on-device inference
 - **Build System:** XcodeGen for project generation
 
-See [docs/stories/ARCHITECTURE.md](docs/stories/ARCHITECTURE.md) for detailed architecture documentation.
+See [docs/](docs/) for architecture docs and implementation stories.
 
 ---
 
@@ -132,7 +141,7 @@ Ora/
 ├── Ora/                    # Main app source
 │   ├── Audio/              # Audio capture and VAD
 │   ├── ASR/                # Speech recognition (Parakeet)
-│   ├── LLM/                # Language model (Qwen 2.5)
+│   ├── LLM/                # Language model (Qwen 3)
 │   ├── Tools/              # Calendar, Reminders, Contacts
 │   ├── TTS/                # Text-to-speech (Kokoro)
 │   ├── UI/                 # AppKit + SwiftUI interface
@@ -214,7 +223,7 @@ Built with these amazing open-source projects:
 - [MLX Swift](https://github.com/ml-explore/mlx-swift) — Apple Silicon ML framework
 - [FluidAudio](https://github.com/FluidInference/FluidAudio) — Streaming ASR
 - [Sparkle](https://github.com/sparkle-project/Sparkle) — Auto-update framework
-- [Qwen 2.5](https://huggingface.co/Qwen) — Language model
+- [Qwen 3](https://huggingface.co/Qwen) — Language model
 - [Kokoro TTS](https://huggingface.co/hexgrad/Kokoro-82M) — Text-to-speech
 
 ---
