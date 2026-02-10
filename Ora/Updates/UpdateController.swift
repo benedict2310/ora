@@ -8,6 +8,7 @@
 import Foundation
 import Sparkle
 import os
+import Security
 
 // MARK: - Update Checking Protocol
 
@@ -48,6 +49,24 @@ enum UpdateCheckInterval: TimeInterval, CaseIterable, Identifiable {
 @MainActor
 final class UpdateController: ObservableObject, UpdateChecking {
 
+    // MARK: - Eligibility
+
+    typealias UpdateEligibilityProvider = @MainActor () -> UpdateEligibility
+
+    struct UpdateEligibility: Equatable {
+        let isEligible: Bool
+        let reason: String?
+        let teamIdentifier: String?
+
+        static func eligible(teamIdentifier: String?) -> UpdateEligibility {
+            return UpdateEligibility(isEligible: true, reason: nil, teamIdentifier: teamIdentifier)
+        }
+
+        static func ineligible(reason: String, teamIdentifier: String?) -> UpdateEligibility {
+            return UpdateEligibility(isEligible: false, reason: reason, teamIdentifier: teamIdentifier)
+        }
+    }
+
     // MARK: - Singleton
 
     static let shared = UpdateController()
@@ -73,12 +92,17 @@ final class UpdateController: ObservableObject, UpdateChecking {
 
     private let logger = Logger(subsystem: "com.ora.app", category: "Updates")
     private let updater: UpdateDriver
+    private let eligibilityProvider: UpdateEligibilityProvider
     private var isApplyingUpdaterState = false
 
     // MARK: - Initialization
 
-    init(updater: UpdateDriver = SparkleUpdateDriver()) {
+    init(
+        updater: UpdateDriver = SparkleUpdateDriver(),
+        eligibilityProvider: @escaping UpdateEligibilityProvider = UpdateController.defaultEligibilityProvider
+    ) {
         self.updater = updater
+        self.eligibilityProvider = eligibilityProvider
         self.refreshFromUpdater()
         self.updater.observeChanges { [weak self] in
             guard let self else { return }
@@ -89,7 +113,14 @@ final class UpdateController: ObservableObject, UpdateChecking {
     // MARK: - UpdateChecking
 
     func checkForUpdates() {
-        self.logger.info("User initiated update check")
+        let eligibility = self.eligibilityProvider()
+        guard eligibility.isEligible else {
+            let reason = eligibility.reason ?? "Unknown"
+            self.logger.error("UPDATE_CHECK_BLOCKED reason=\(reason, privacy: .public) teamId=\(eligibility.teamIdentifier ?? "nil", privacy: .public)")
+            return
+        }
+
+        self.logger.info("User initiated update check teamId=\(eligibility.teamIdentifier ?? "nil", privacy: .public)")
         self.updater.checkForUpdates()
     }
 
@@ -97,11 +128,46 @@ final class UpdateController: ObservableObject, UpdateChecking {
 
     private func refreshFromUpdater() {
         self.isApplyingUpdaterState = true
-        self.canCheckForUpdates = self.updater.canCheckForUpdates
+        let eligibility = self.eligibilityProvider()
+        if !eligibility.isEligible, let reason = eligibility.reason {
+            self.logger.info("Update checks disabled: \(reason, privacy: .public)")
+        }
+        self.canCheckForUpdates = eligibility.isEligible && self.updater.canCheckForUpdates
         self.lastUpdateCheck = self.updater.lastUpdateCheckDate
         self.automaticallyChecksForUpdates = self.updater.automaticallyChecksForUpdates
         self.updateCheckInterval = UpdateCheckInterval.nearest(to: self.updater.updateCheckInterval)
         self.isApplyingUpdaterState = false
+    }
+
+    private static func defaultEligibilityProvider() -> UpdateEligibility {
+        // Sparkle's Autoupdate enforces an XPC code-signing requirement based on Team ID.
+        // Ad-hoc/dev builds (TeamIdentifier == nil) will hit an update install failure.
+        let bundlePath = Bundle.main.bundleURL.path
+        if bundlePath.contains("/build/Build/Products/") {
+            return .ineligible(reason: "Running from a build product; Sparkle updates are disabled for development builds.", teamIdentifier: Self.currentTeamIdentifier())
+        }
+
+        guard let teamId = Self.currentTeamIdentifier() else {
+            return .ineligible(reason: "App is not Team-signed (ad-hoc); Sparkle updates require a signed release build.", teamIdentifier: nil)
+        }
+
+        return .eligible(teamIdentifier: teamId)
+    }
+
+    private static func currentTeamIdentifier() -> String? {
+        var code: SecCode?
+        let copySelfStatus = SecCodeCopySelf(SecCSFlags(), &code)
+        guard copySelfStatus == errSecSuccess, let code else { return nil }
+
+        var staticCode: SecStaticCode?
+        let staticStatus = SecCodeCopyStaticCode(code, SecCSFlags(), &staticCode)
+        guard staticStatus == errSecSuccess, let staticCode else { return nil }
+
+        var info: CFDictionary?
+        let status = SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &info)
+        guard status == errSecSuccess, let dict = info as? [CFString: Any] else { return nil }
+
+        return dict[kSecCodeInfoTeamIdentifier] as? String
     }
 }
 
