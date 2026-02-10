@@ -77,6 +77,10 @@ actor LLMProviderManager: LLMServicing {
     }
 
     func clearCache() async {
+        guard self.selectedProviderType == .local else {
+            self.logger.notice("PROVIDER_CLEAR_CACHE_SKIPPED_FOR_CLOUD")
+            return
+        }
         await activeProvider.clearCache()
     }
 

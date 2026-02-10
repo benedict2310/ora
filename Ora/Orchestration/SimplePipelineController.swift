@@ -306,6 +306,10 @@ final class SimplePipelineController: ObservableObject {
         let detector = SilenceDetector(timeout: timeout)
         detector.onSilenceDetected = { [weak self] in
             guard let self = self else { return }
+            guard self.state == .listening else {
+                self.logger.debug("Silence detected outside listening state, ignoring")
+                return
+            }
             // Only auto-submit if we have a transcript (AC-6)
             guard !self.currentTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 self.logger.debug("Silence detected but transcript empty, ignoring")

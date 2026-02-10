@@ -51,11 +51,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         case setupRequired
     }
 
-    private struct ModelSelectionPayload: Sendable {
-        let provider: LLMProviderType
-        let modelIdentifier: String
-    }
-
     // MARK: - Properties
 
     private var statusItem: NSStatusItem?
@@ -296,10 +291,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
                 )
                 item.target = self
                 item.state = option.isSelected ? .on : .off
-                item.representedObject = ModelSelectionPayload(
-                    provider: option.provider,
-                    modelIdentifier: option.identifier
-                )
+                item.representedObject = [
+                    "provider": option.provider.rawValue,
+                    "modelIdentifier": option.identifier,
+                ] as NSDictionary
                 modelSubmenu.addItem(item)
             }
         }
@@ -408,14 +403,20 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func modelSelectionClicked(_ sender: NSMenuItem) {
-        guard let payload = sender.representedObject as? ModelSelectionPayload else {
+        guard
+            let payload = sender.representedObject as? NSDictionary,
+            let providerRaw = payload["provider"] as? String,
+            let modelIdentifier = payload["modelIdentifier"] as? String,
+            let provider = LLMProviderType(rawValue: providerRaw)
+        else {
+            self.logger.error("STATUSBAR_MODEL_SELECTION_INVALID_PAYLOAD")
             return
         }
 
         Task { @MainActor in
             await self.providerPreferencesViewModel.selectModel(
-                provider: payload.provider,
-                identifier: payload.modelIdentifier
+                provider: provider,
+                identifier: modelIdentifier
             )
             self.rebuildMenu()
         }

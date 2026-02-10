@@ -87,7 +87,7 @@ final class ProviderPreferencesViewModel: ObservableObject {
 
     var openAISelectableModels: [OpenAIModelOption] {
         if case .available(let models, _) = self.openAIAvailability {
-            return models
+            return self.mergeWithCuratedOpenAIOptions(models)
         }
         return []
     }
@@ -340,6 +340,13 @@ final class ProviderPreferencesViewModel: ObservableObject {
 
         self.openAISelectedModelIdentifier = trimmed
         UserDefaults.standard.selectedOpenAIModelIdentifier = trimmed
+        // Keep manually selected models selectable and avoid aggressive fallback
+        // when discovery responses are temporarily narrow or stale.
+        var discoveredIDs = UserDefaults.standard.openAIDiscoveredModelIdentifiers
+        if !discoveredIDs.contains(trimmed) {
+            discoveredIDs.append(trimmed)
+            UserDefaults.standard.openAIDiscoveredModelIdentifiers = discoveredIDs
+        }
         await self.registerOpenAIFactory()
 
         if self.selectedProvider == .openai {
@@ -521,6 +528,32 @@ final class ProviderPreferencesViewModel: ObservableObject {
             seen.insert(option.identifier)
             return true
         }
+    }
+
+    private func mergeWithCuratedOpenAIOptions(_ discovered: [OpenAIModelOption]) -> [OpenAIModelOption] {
+        let curated: [OpenAIModelOption]
+        if self.codexAuthStatus.isConnected {
+            curated = Self.codexFallbackModelOptions
+        } else {
+            curated = OpenAIModel.curatedOptions
+        }
+
+        var merged: [OpenAIModelOption] = []
+        var seen: Set<String> = []
+
+        for model in discovered {
+            if seen.insert(model.identifier).inserted {
+                merged.append(model)
+            }
+        }
+
+        for model in curated {
+            if seen.insert(model.identifier).inserted {
+                merged.append(model)
+            }
+        }
+
+        return merged
     }
 }
 

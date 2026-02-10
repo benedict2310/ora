@@ -386,3 +386,79 @@ As a **user**, I want to **select provider and model from the menubar and only s
 - `OraTests/Orchestration/AgentLoopTests.swift`
   - validates actionable guidance for HTTP 400 request-shape rejections
 - Latest run: `✅ Tests: 1292/1292 passed`
+
+## Regression Investigation Round 4 (2026-02-09)
+
+### New Repro Outcome
+
+- With enhanced instrumentation, affected turns showed repeated structured validation failures across all retries and no provider transport errors.
+- This indicates model output formatting variability (JSON envelope drift), not model discovery/auth/provider switching failure.
+
+### Fixes landed in this round
+
+- `Ora/LLM/JSONValidator.swift`
+  - Added candidate extraction from mixed output so wrapped JSON can still be parsed.
+  - Added tolerant mappings for commonly drifted keys (`response`/`content`, `name`/`arguments`, nested typed object wrappers).
+- `Ora/LLM/StructuredGenerator.swift`
+  - Added non-sensitive validation diagnostics markers to classify why structured parsing failed.
+- Test updates:
+  - `OraTests/JSONValidatorTests.swift` (mixed-output extraction + alternate key parsing)
+  - `OraTests/StructuredGeneratorTests.swift` (adjusted retry fixture for new parser behavior)
+
+### Verification
+
+- Focused test targets succeeded (`JSONValidator`, `StructuredGenerator`, `AgentLoop`).
+- `./build.sh run` succeeded and app relaunched.
+
+## Regression Investigation Round 5 (2026-02-09)
+
+### New Repro Outcome
+
+- First turn succeeded; every follow-up turn failed.
+- Structured logs now identify this as request-shape failures on cloud stream start:
+  - `...CLOUD_REQUEST_400`
+  - `...CLOUD_BODY_REQUEST_SHAPE`
+
+### Fixes landed in this round
+
+- `Ora/Cloud/OpenAI/CodexProvider.swift`
+  - Reworked Codex input mapping for multi-turn history to avoid invalid role/content combinations on follow-up turns.
+  - Normalizes non-system history into `user` `input_text` entries with explicit prefixes for assistant/tool context.
+- `Ora/Cloud/LLMProviderManager.swift`
+  - Explicitly skips KV cache clearing for cloud providers (`PROVIDER_CLEAR_CACHE_SKIPPED_FOR_CLOUD`), keeping cache behavior local-only by design.
+- Added regression test:
+  - `OraTests/Cloud/OpenAI/CodexProviderTests.swift` verifies multi-turn history payload shape remains valid.
+
+### Verification
+
+- Focused cloud + orchestration + structured parsing test targets passed.
+- `./build.sh run` succeeded and app relaunched.
+
+## Regression Investigation Round 6 (2026-02-10)
+
+### New Repro Outcome
+
+- Menubar model submenu displayed OpenAI entries but selecting `GPT-5.2` did not stick reliably.
+
+### Root Cause
+
+1. OpenAI selection reconciliation could aggressively revert the selected identifier when discovery responses were narrower than curated options.
+2. Menu action payload used a Swift struct in `representedObject`; while usually safe, hardening to Objective-C-safe payloads eliminates silent cast failures in NSMenu action dispatch.
+
+### Fixes landed in this round
+
+- `Ora/Preferences/Tabs/ProviderPreferencesViewModel.swift`
+  - OpenAI selectable list now merges discovered models with curated defaults (and Codex defaults when connected), so key models like `GPT-5.2` remain selectable.
+  - Manual OpenAI model selections are now persisted into discovered identifiers to prevent immediate fallback/reversion loops.
+- `Ora/UI/StatusBarController.swift`
+  - Model menu payload switched to `NSDictionary` (`provider`, `modelIdentifier`) for robust menu action bridging.
+  - Added explicit `STATUSBAR_MODEL_SELECTION_INVALID_PAYLOAD` logging.
+- Tests:
+  - `OraTests/Preferences/ProviderPreferencesViewModelTests.swift` updated with selection persistence and merged-option coverage.
+
+### Verification
+
+- Focused tests passed:
+  - `StatusBarControllerTests`
+  - `ProviderPreferencesViewModelTests`
+- `./build.sh run` succeeded and app relaunched.

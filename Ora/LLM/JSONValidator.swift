@@ -17,21 +17,25 @@ struct JSONValidator: Sendable {
     static func parse(_ output: String) -> Result<LLMOutput, JSONValidationError> {
         // Clean the output (remove markdown, trim)
         let cleaned = cleanOutput(output)
-        
-        // Parse JSON
-        guard let data = cleaned.data(using: .utf8) else {
-            return .failure(.invalidEncoding)
+
+        // Fast path: direct parse
+        if case .success(let parsed) = parseObjectString(cleaned) {
+            return .success(parsed)
         }
-        
-        do {
-            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                return .failure(.notAnObject)
+
+        // Fallback: extract JSON object candidates from mixed output and try each.
+        for candidate in jsonObjectCandidates(from: cleaned) {
+            if case .success(let parsed) = parseObjectString(candidate) {
+                return .success(parsed)
             }
-            
-            return parseJSON(json)
-        } catch {
-            logger.warning("JSON parse error: \(error.localizedDescription)")
-            return .failure(.invalidJSON(error.localizedDescription))
+        }
+
+        // Return best-effort failure signal for diagnostics.
+        switch parseObjectString(cleaned) {
+        case .success:
+            return .failure(.invalidJSON("Unexpected success state"))
+        case .failure(let error):
+            return .failure(error)
         }
     }
     
@@ -53,32 +57,39 @@ struct JSONValidator: Sendable {
     }
     
     private static func parseJSON(_ json: [String: Any]) -> Result<LLMOutput, JSONValidationError> {
+        if let nested = firstNestedTypedObject(in: json) {
+            return parseJSON(nested)
+        }
+
         guard let type = json["type"] as? String else {
             return .failure(.missingField("type"))
         }
         
         switch type {
         case "response":
-            guard let text = json["text"] as? String else {
+            if let text = responseText(from: json) {
+                return .success(.response(text: text))
+            }
+            guard let text = json["text"] as? String, !text.isEmpty else {
                 return .failure(.missingField("text"))
             }
             return .success(.response(text: text))
             
         case "tool_call":
-            guard let tool = json["tool"] as? String else {
+            guard let tool = toolName(from: json) else {
                 return .failure(.missingField("tool"))
             }
-            guard let argsDict = json["args"] as? [String: Any] else {
-                return .failure(.missingField("args")) // or .invalidJSON("args must be object")
+            guard let argsDict = toolArgs(from: json) else {
+                return .failure(.missingField("args"))
             }
             return .success(.toolCall(tool: tool, args: convertToJSONValue(argsDict)))
             
         case "proposal":
-            guard let summary = json["summary"] as? String,
-                  let tool = json["tool"] as? String else {
+            guard let summary = proposalSummary(from: json),
+                  let tool = toolName(from: json) else {
                 return .failure(.missingField("summary or tool"))
             }
-            guard let argsDict = json["args"] as? [String: Any] else {
+            guard let argsDict = toolArgs(from: json) else {
                 return .failure(.missingField("args"))
             }
             return .success(.proposal(summary: summary, tool: tool, args: convertToJSONValue(argsDict)))
@@ -100,6 +111,145 @@ struct JSONValidator: Sendable {
             result[key] = anyToJSONValue(value)
         }
         return result
+    }
+
+    private static func parseObjectString(_ value: String) -> Result<LLMOutput, JSONValidationError> {
+        guard let data = value.data(using: .utf8) else {
+            return .failure(.invalidEncoding)
+        }
+
+        do {
+            let object = try JSONSerialization.jsonObject(with: data)
+            if let json = object as? [String: Any] {
+                return parseJSON(json)
+            }
+            return .failure(.notAnObject)
+        } catch {
+            logger.warning("JSON parse error: \(error.localizedDescription)")
+            return .failure(.invalidJSON(error.localizedDescription))
+        }
+    }
+
+    private static func responseText(from json: [String: Any]) -> String? {
+        let candidateKeys = ["text", "response", "message", "content", "output_text", "answer"]
+        for key in candidateKeys {
+            if let value = json[key] as? String,
+               !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private static func toolName(from json: [String: Any]) -> String? {
+        let candidateKeys = ["tool", "name"]
+        for key in candidateKeys {
+            if let value = json[key] as? String,
+               !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private static func proposalSummary(from json: [String: Any]) -> String? {
+        let candidateKeys = ["summary", "description", "text"]
+        for key in candidateKeys {
+            if let value = json[key] as? String,
+               !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private static func toolArgs(from json: [String: Any]) -> [String: Any]? {
+        if let args = json["args"] as? [String: Any] {
+            return args
+        }
+        if let args = json["arguments"] as? [String: Any] {
+            return args
+        }
+        if let argumentsString = json["arguments"] as? String,
+           let data = argumentsString.data(using: .utf8),
+           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            return object
+        }
+        return nil
+    }
+
+    private static func firstNestedTypedObject(in json: [String: Any]) -> [String: Any]? {
+        for value in json.values {
+            if let nested = value as? [String: Any],
+               nested["type"] != nil {
+                return nested
+            }
+        }
+        return nil
+    }
+
+    private static func jsonObjectCandidates(from text: String) -> [String] {
+        var candidates: [String] = []
+        var depth = 0
+        var isInString = false
+        var isEscaping = false
+        var startIndex: String.Index?
+
+        var index = text.startIndex
+        while index < text.endIndex {
+            let character = text[index]
+
+            if isEscaping {
+                isEscaping = false
+                index = text.index(after: index)
+                continue
+            }
+
+            if character == "\\" {
+                if isInString {
+                    isEscaping = true
+                }
+                index = text.index(after: index)
+                continue
+            }
+
+            if character == "\"" {
+                isInString.toggle()
+                index = text.index(after: index)
+                continue
+            }
+
+            if isInString {
+                index = text.index(after: index)
+                continue
+            }
+
+            if character == "{" {
+                if depth == 0 {
+                    startIndex = index
+                }
+                depth += 1
+            } else if character == "}" {
+                if depth > 0 {
+                    depth -= 1
+                    if depth == 0, let start = startIndex {
+                        let candidate = String(text[start...index])
+                        candidates.append(candidate)
+                        if candidates.count >= 8 {
+                            break
+                        }
+                        depth = 0
+                        isInString = false
+                        isEscaping = false
+                        startIndex = nil
+                    }
+                }
+            }
+
+            index = text.index(after: index)
+        }
+
+        return candidates
     }
     
     private static func anyToJSONValue(_ value: Any) -> JSONValue {

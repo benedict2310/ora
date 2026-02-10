@@ -215,6 +215,26 @@ final class ProviderPreferencesViewModelTests: XCTestCase {
         XCTAssertTrue(self.viewModel.codexAuthStatus.isConnected)
     }
 
+    func test_loadState_openAIWithDiscoveryStillIncludesCuratedDefaults() async throws {
+        // Given - API key configured and discovery omits GPT-5.2
+        try await self.credentialStore.save(provider: .openai, apiKey: "sk-test")
+        await self.discoveryService.setState(
+            .available(
+                models: [
+                    OpenAIModelOption(identifier: OpenAIModel.gpt4o.rawValue, source: .discovered),
+                ],
+                isStale: false
+            )
+        )
+
+        // When
+        await self.viewModel.loadState()
+
+        // Then - menu/options should still offer curated defaults such as GPT-5.2
+        XCTAssertTrue(self.viewModel.openAISelectableModels.contains(where: { $0.identifier == OpenAIModel.preferredDefault.rawValue }))
+        XCTAssertTrue(self.viewModel.openAISelectableModels.contains(where: { $0.identifier == OpenAIModel.gpt4o.rawValue }))
+    }
+
     func test_loadState_codexDisconnectedWithoutAPIKey_showsSetupRequired() async {
         // Given - no Codex, no API key
         await self.discoveryService.setState(.unavailable(.missingCredential))
@@ -248,6 +268,16 @@ final class ProviderPreferencesViewModelTests: XCTestCase {
         XCTAssertEqual(self.viewModel.codexAuthStatus, .disconnected)
         let stored = try await self.codexOAuthManager.currentCredential()
         XCTAssertNil(stored)
+    }
+
+    func test_updateOpenAIModel_addsManualSelectionToDiscoveredIdentifiers() async {
+        UserDefaults.standard.openAIDiscoveredModelIdentifiers = [OpenAIModel.gpt4o.rawValue]
+
+        await self.viewModel.updateOpenAIModel(OpenAIModel.preferredDefault.rawValue)
+
+        let discovered = UserDefaults.standard.openAIDiscoveredModelIdentifiers
+        XCTAssertTrue(discovered.contains(OpenAIModel.preferredDefault.rawValue))
+        XCTAssertEqual(self.viewModel.openAISelectedModelIdentifier, OpenAIModel.preferredDefault.rawValue)
     }
 }
 

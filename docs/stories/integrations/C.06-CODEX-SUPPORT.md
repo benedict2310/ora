@@ -324,3 +324,74 @@ When Codex is authorized, the user can select OpenAI as active provider and it w
 - Manual live validation still required for:
   - repeated retries on `gpt-5.2` and `gpt-5.2-codex`
   - discovery refresh under Codex-only auth
+
+## Regression Investigation Round 4 (2026-02-09)
+
+### New Evidence
+
+- `StructuredGenerator` now consistently reports attempt lifecycle, and captured logs showed:
+  - attempts complete without transport errors
+  - all retries fail JSON validation (`STRUCTURED_ATTEMPT_*_VALIDATION_FAILED`)
+  - no provider HTTP/request failures on those turns
+- Conclusion: failure class is model output formatting drift, not auth/connectivity.
+
+### Implemented in this round
+
+- `Ora/LLM/JSONValidator.swift`
+  - Added robust fallback parsing for mixed output:
+    - parse direct JSON object first
+    - if that fails, extract balanced JSON object candidates from surrounding text and parse candidates
+  - Added tolerant field mapping for common response shape drift:
+    - response text keys: `text`, `response`, `message`, `content`, `output_text`, `answer`
+    - tool name keys: `tool`, `name`
+    - tool args keys: `args`, `arguments` (including stringified JSON arguments)
+    - proposal summary keys: `summary`, `description`, `text`
+  - Supports nested typed object payloads when root object wraps `{ "type": ... }`.
+- `Ora/LLM/StructuredGenerator.swift`
+  - Added validation diagnostics markers that do not expose sensitive content:
+    - failure category (`INVALID_JSON`, `MISSING_FIELD`, `UNKNOWN_TYPE`, etc.)
+    - output-shape hints (`STARTS_WITH_OBJECT`, `CONTAINS_TYPE_FIELD`, code-fence marker)
+
+### Verification
+
+- Focused tests passed for:
+  - `OraTests/JSONValidatorTests.swift`
+  - `OraTests/StructuredGeneratorTests.swift`
+  - `OraTests/Orchestration/AgentLoopTests.swift`
+- App rebuilt and relaunched successfully via `./build.sh run`.
+
+## Regression Investigation Round 5 (2026-02-09)
+
+### New Evidence (User Logs)
+
+- First turn succeeds.
+- Consecutive turns fail immediately with:
+  - `STRUCTURED_ATTEMPT_*_STREAM_FAILED_CLOUD_REQUEST_400`
+  - `STRUCTURED_ATTEMPT_STREAM_FAILED_CLOUD_BODY_REQUEST_SHAPE`
+- This isolates a multi-turn request payload shape issue (not auth, not model availability).
+
+### Root Cause
+
+- Codex Responses request construction was passing assistant/tool history in a shape that is accepted on first turn (minimal history) but rejected on follow-up turns once assistant/tool context accumulates.
+
+### Fixes in this round
+
+- `Ora/Cloud/OpenAI/CodexProvider.swift`
+  - Added `buildCodexInput(from:)` to normalize **all non-system history** into valid `input` messages with `role: "user"` and `input_text` content.
+  - Added explicit context labeling:
+    - assistant history -> `Previous assistant response: ...`
+    - tool history -> `Tool result context: ...`
+  - Added request-shape diagnostics for mapped assistant/tool history.
+- `Ora/Cloud/LLMProviderManager.swift`
+  - Made cache clearing explicitly local-only:
+    - cloud providers now emit `PROVIDER_CLEAR_CACHE_SKIPPED_FOR_CLOUD` and do not attempt KV-style cache clears.
+
+### Verification
+
+- Focused tests passed for:
+  - `OraTests/Cloud/OpenAI/CodexProviderTests.swift` (including new multi-turn payload test)
+  - `OraTests/Orchestration/AgentLoopTests.swift`
+  - `OraTests/StructuredGeneratorTests.swift`
+  - `OraTests/JSONValidatorTests.swift`
+  - `OraTests/Cloud/LLMProviderManagerTests.swift`
+- App rebuilt/relaunched successfully with `./build.sh run`.

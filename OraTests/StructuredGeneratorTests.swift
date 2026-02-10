@@ -44,7 +44,7 @@ final class StructuredGeneratorTests: XCTestCase {
     func test_generate_streamsOnlySuccessfulAttemptFragments() async throws {
         let stub = StubLLMService(
             responses: [
-                "{\"type\":\"response\",\"text\":\"First\"} trailing",
+                "{\"type\":\"response\",\"text\":\"First\" trailing",
                 "{\"type\":\"response\",\"text\":\"Second\"}",
             ]
         )

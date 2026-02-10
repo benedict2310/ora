@@ -59,20 +59,7 @@ final class CodexProvider: CloudLLMBase, @unchecked Sendable {
     ) async throws {
         _ = maxTokens
         let instructions = self.buildInstructions(from: messages)
-        let mappedInput = messages
-            .filter { $0.role != .system }
-            .map { message in
-            [
-                "type": "message",
-                "role": message.role == .tool ? "user" : message.role.rawValue,
-                "content": [
-                    [
-                        "type": "input_text",
-                        "text": message.content,
-                    ],
-                ],
-            ] as [String: Any]
-        }
+        let mappedInput = self.buildCodexInput(from: messages)
 
         let body: [String: Any] = [
             "model": self.model,
@@ -111,6 +98,63 @@ final class CodexProvider: CloudLLMBase, @unchecked Sendable {
             return systemMessages.joined(separator: "\n\n")
         }
         return "You are Ora, a helpful assistant."
+    }
+
+    private func buildCodexInput(from messages: [LLMMessage]) -> [[String: Any]] {
+        var mappedInput: [[String: Any]] = []
+        var mappedAssistant = false
+        var mappedTool = false
+
+        for message in messages where message.role != .system {
+            let text = self.normalizedCodexInputText(for: message)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+
+            if message.role == .assistant {
+                mappedAssistant = true
+            } else if message.role == .tool {
+                mappedTool = true
+            }
+
+            mappedInput.append([
+                "type": "message",
+                "role": "user",
+                "content": [
+                    [
+                        "type": "input_text",
+                        "text": text,
+                    ],
+                ],
+            ])
+        }
+
+        if mappedAssistant {
+            self.logger.notice("CODEX_REQUEST_MAPPED_ASSISTANT_HISTORY_TO_USER")
+        }
+        if mappedTool {
+            self.logger.notice("CODEX_REQUEST_MAPPED_TOOL_HISTORY_TO_USER")
+        }
+
+        return mappedInput
+    }
+
+    private func normalizedCodexInputText(for message: LLMMessage) -> String {
+        switch message.role {
+        case .user:
+            return message.content
+        case .assistant:
+            return """
+                Previous assistant response:
+                \(message.content)
+                """
+        case .tool:
+            return """
+                Tool result context:
+                \(message.content)
+                """
+        case .system:
+            return ""
+        }
     }
 
     private func streamWithRetry(

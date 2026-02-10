@@ -110,6 +110,50 @@ final class CodexProviderTests: XCTestCase {
         XCTAssertEqual(self.tokenTexts(in: deltas), ["Hello", " world"])
     }
 
+    func test_codexProvider_mapsMultiTurnHistoryToUserInputMessages() async throws {
+        // Given
+        var capturedBody: [String: Any]?
+        CodexProviderMockURLProtocol.setHandler { request, _ in
+            if let body = self.requestBodyData(from: request) {
+                capturedBody = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+            }
+            return .sse(events: ["[DONE]"])
+        }
+        let provider = self.makeProvider()
+
+        // When
+        _ = try await self.collectDeltas(
+            from: await provider.generate(
+                messages: [
+                    LLMMessage(role: .system, content: "System instruction"),
+                    LLMMessage(role: .user, content: "What is on my calendar?"),
+                    LLMMessage(role: .assistant, content: "{\"type\":\"tool_call\",\"tool\":\"calendar.query\",\"args\":{}}"),
+                    LLMMessage(role: .tool, content: "Tool calendar.query returned: {...}"),
+                    LLMMessage(role: .assistant, content: "{\"type\":\"response\",\"text\":\"You have two meetings.\"}"),
+                    LLMMessage(role: .user, content: "And tomorrow?"),
+                ],
+                maxTokens: 64
+            )
+        )
+
+        // Then
+        let input = try XCTUnwrap(capturedBody?["input"] as? [[String: Any]])
+        XCTAssertEqual(input.count, 5)
+        XCTAssertTrue(input.allSatisfy { ($0["role"] as? String) == "user" })
+
+        let inputTexts: [String] = input.compactMap { message in
+            guard
+                let content = message["content"] as? [[String: Any]],
+                let first = content.first,
+                let text = first["text"] as? String
+            else { return nil }
+            return text
+        }
+        XCTAssertEqual(inputTexts.count, 5)
+        XCTAssertTrue(inputTexts.contains(where: { $0.contains("Previous assistant response:") }))
+        XCTAssertTrue(inputTexts.contains(where: { $0.contains("Tool result context:") }))
+    }
+
     private func makeProvider() -> CodexProvider {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [CodexProviderMockURLProtocol.self]

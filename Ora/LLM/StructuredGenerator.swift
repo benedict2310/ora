@@ -83,7 +83,7 @@ actor StructuredGenerator {
 
             case .failure(let error):
                 lastError = error
-                self.logAttemptValidationFailed(attempts, error: error)
+                self.logAttemptValidationFailed(attempts, error: error, rawOutput: fullResponse)
                 
                 // Add retry message
                 if attempts < maxRetries {
@@ -187,7 +187,7 @@ actor StructuredGenerator {
         }
     }
 
-    private func logAttemptValidationFailed(_ attempt: Int, error: Error) {
+    private func logAttemptValidationFailed(_ attempt: Int, error: Error, rawOutput: String) {
         self.logger.warning("STRUCTURED_ATTEMPT_VALIDATION_FAILED reason=\(error.localizedDescription)")
         switch attempt {
         case 1:
@@ -199,6 +199,9 @@ actor StructuredGenerator {
         default:
             self.logger.notice("STRUCTURED_ATTEMPT_VALIDATION_FAILED")
         }
+
+        self.logValidationFailureCategory(error)
+        self.logValidationOutputShape(rawOutput)
     }
 
     private func logAttemptStreamFailed(_ attempt: Int, error: Error) {
@@ -305,6 +308,52 @@ actor StructuredGenerator {
             return .requestShape
         }
         return .unknown
+    }
+
+    private func logValidationFailureCategory(_ error: Error) {
+        guard let validationError = error as? JSONValidationError else {
+            self.logger.error("STRUCTURED_ATTEMPT_VALIDATION_FAILURE_UNKNOWN_TYPE")
+            return
+        }
+
+        switch validationError {
+        case .invalidEncoding:
+            self.logger.error("STRUCTURED_ATTEMPT_VALIDATION_FAILURE_INVALID_ENCODING")
+        case .invalidJSON:
+            self.logger.error("STRUCTURED_ATTEMPT_VALIDATION_FAILURE_INVALID_JSON")
+        case .notAnObject:
+            self.logger.error("STRUCTURED_ATTEMPT_VALIDATION_FAILURE_NOT_OBJECT")
+        case .missingField:
+            self.logger.error("STRUCTURED_ATTEMPT_VALIDATION_FAILURE_MISSING_FIELD")
+        case .unknownType:
+            self.logger.error("STRUCTURED_ATTEMPT_VALIDATION_FAILURE_UNKNOWN_TYPE_FIELD")
+        }
+    }
+
+    private func logValidationOutputShape(_ rawOutput: String) {
+        let trimmed = rawOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            self.logger.error("STRUCTURED_ATTEMPT_VALIDATION_OUTPUT_EMPTY")
+            return
+        }
+
+        if trimmed.hasPrefix("{") {
+            self.logger.notice("STRUCTURED_ATTEMPT_VALIDATION_OUTPUT_STARTS_WITH_OBJECT")
+        } else {
+            self.logger.notice("STRUCTURED_ATTEMPT_VALIDATION_OUTPUT_NOT_OBJECT_PREFIX")
+        }
+
+        if trimmed.contains("```") {
+            self.logger.notice("STRUCTURED_ATTEMPT_VALIDATION_OUTPUT_CONTAINS_CODE_FENCE")
+        }
+
+        if trimmed.lowercased().contains("\"type\"") {
+            self.logger.notice("STRUCTURED_ATTEMPT_VALIDATION_OUTPUT_CONTAINS_TYPE_FIELD")
+        }
+
+        if trimmed.lowercased().contains("\"tool\"") || trimmed.lowercased().contains("\"name\"") {
+            self.logger.notice("STRUCTURED_ATTEMPT_VALIDATION_OUTPUT_CONTAINS_TOOL_FIELD")
+        }
     }
 }
 
