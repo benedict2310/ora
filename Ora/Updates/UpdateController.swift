@@ -198,8 +198,11 @@ final class SparkleUpdateDriver: UpdateDriver {
     // MARK: - Initialization
 
     init() {
+        // Unit tests run inside the host app and will initialize UpdateController.shared.
+        // Starting Sparkle in tests can hang in CI/headless environments due to UI/TCC interactions.
+        let isRunningUnitTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
         self.updaterController = SPUStandardUpdaterController(
-            startingUpdater: true,
+            startingUpdater: !isRunningUnitTests,
             updaterDelegate: nil,
             userDriverDelegate: nil
         )

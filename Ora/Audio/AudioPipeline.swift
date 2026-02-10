@@ -144,7 +144,15 @@ final class AudioPipeline: @unchecked Sendable {
 
     /// Check current microphone authorization status
     func checkPermission() -> PermissionStatus {
-        MicrophonePermission.checkStatus()
+        // Unit tests (and CI) should never try to touch real microphone hardware.
+        // Our test harness sets ORA_SKIP_PERMISSION_PROMPTS=1; treat permission as not determined so
+        // start()/resume() take the safe denial path without invoking AudioCapture.
+        let env = ProcessInfo.processInfo.environment
+        if let override = env["ORA_SKIP_PERMISSION_PROMPTS"]?.lowercased(), override == "1" || override == "true" {
+            return .notDetermined
+        }
+
+        return MicrophonePermission.checkStatus()
     }
 
     /// Request microphone permission
@@ -207,6 +215,13 @@ final class AudioPipeline: @unchecked Sendable {
 
     /// Resume audio capture
     func resume() throws {
+        // Mirror start() permission gating when resuming from idle.
+        // AudioCapture.resume() delegates to start() when not running, which would otherwise
+        // touch audio hardware even when permission prompts are suppressed during tests.
+        if state != .running, checkPermission() != .authorized {
+            throw AudioPipelineError.permissionDenied
+        }
+
         try capture.resume()
         stateStore.withLock { $0 = .running }
         logger.debug("Audio pipeline resumed")

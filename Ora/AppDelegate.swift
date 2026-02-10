@@ -20,11 +20,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var setupObserver: NSObjectProtocol?
     private var hotkeyPressObserver: NSObjectProtocol?
     private var hotkeyReleaseObserver: NSObjectProtocol?
-    private let updateController = UpdateController.shared
+    // Sparkle/updates are not relevant for unit tests and can cause hangs in headless CI.
+    private lazy var updateController = UpdateController.shared
+
+    private static var isRunningUnitTests: Bool {
+        return ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
 
     // MARK: - NSApplicationDelegate
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if Self.isRunningUnitTests {
+            self.logger.info("XCTest detected - skipping app launch initialization")
+            return
+        }
+
         self.logger.info("Ora launching...")
 
         // Initialize persistence
