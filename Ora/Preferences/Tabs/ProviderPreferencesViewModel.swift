@@ -20,6 +20,20 @@ final class ProviderPreferencesViewModel: ObservableObject {
         case error(String)
     }
 
+    enum CodexAuthStatus: Equatable {
+        case disconnected
+        case connecting
+        case connected(account: String)
+        case error(String)
+
+        var isConnected: Bool {
+            if case .connected = self {
+                return true
+            }
+            return false
+        }
+    }
+
     // MARK: - OpenAI Availability
 
     enum OpenAIAvailability: Equatable {
@@ -37,6 +51,7 @@ final class ProviderPreferencesViewModel: ObservableObject {
     @Published var openAISelectedModelIdentifier: String
     @Published var anthropicKeyStatus: KeyStatus = .checking
     @Published var openAIKeyStatus: KeyStatus = .checking
+    @Published var codexAuthStatus: CodexAuthStatus = .disconnected
     @Published var openAIAvailability: OpenAIAvailability = .loading
     @Published var openAIUnavailableNote: String?
 
@@ -45,6 +60,7 @@ final class ProviderPreferencesViewModel: ObservableObject {
     private let logger = Logger(subsystem: "com.ora.app", category: "ProviderPreferences")
     private let credentialStore: CredentialStore
     private let providerManager: LLMProviderManager
+    private let codexOAuthManager: CodexOAuthManaging
     private let modelDiscoveryService: any OpenAIModelDiscovering
 
     // MARK: - Initialization
@@ -52,11 +68,16 @@ final class ProviderPreferencesViewModel: ObservableObject {
     init(
         credentialStore: CredentialStore = KeychainCredentialStore(),
         providerManager: LLMProviderManager = .shared,
+        codexOAuthManager: CodexOAuthManaging = CodexOAuthManager.shared,
         modelDiscoveryService: (any OpenAIModelDiscovering)? = nil
     ) {
         self.credentialStore = credentialStore
         self.providerManager = providerManager
-        self.modelDiscoveryService = modelDiscoveryService ?? OpenAIModelDiscoveryService(credentialStore: credentialStore)
+        self.codexOAuthManager = codexOAuthManager
+        self.modelDiscoveryService = modelDiscoveryService ?? OpenAIModelDiscoveryService(
+            credentialStore: credentialStore,
+            codexOAuthManager: codexOAuthManager
+        )
         self.selectedProvider = UserDefaults.standard.selectedLLMProvider
         self.anthropicModel = UserDefaults.standard.selectedAnthropicModel
         self.openAISelectedModelIdentifier = UserDefaults.standard.selectedOpenAIModelIdentifier
@@ -66,7 +87,7 @@ final class ProviderPreferencesViewModel: ObservableObject {
 
     var openAISelectableModels: [OpenAIModelOption] {
         if case .available(let models, _) = self.openAIAvailability {
-            return models
+            return self.mergeWithCuratedOpenAIOptions(models)
         }
         return []
     }
@@ -90,22 +111,45 @@ final class ProviderPreferencesViewModel: ObservableObject {
             isSelected: self.selectedProvider == .local
         )
 
-        let anthropicOptions = AnthropicModel.allCases.map { model in
-            ProviderModelOption(
-                provider: .anthropic,
-                identifier: model.rawValue,
-                displayName: model.displayName,
-                isSelected: self.selectedProvider == .anthropic && self.anthropicModel == model
-            )
+        var sections: [ProviderModelSection] = [
+            ProviderModelSection(provider: .local, title: "Local", options: [localOption]),
+        ]
+
+        // Only show Anthropic section if credentials are configured
+        if self.anthropicKeyStatus == .saved {
+            let anthropicOptions = AnthropicModel.allCases.map { model in
+                ProviderModelOption(
+                    provider: .anthropic,
+                    identifier: model.rawValue,
+                    displayName: model.displayName,
+                    isSelected: self.selectedProvider == .anthropic && self.anthropicModel == model
+                )
+            }
+            sections.append(ProviderModelSection(provider: .anthropic, title: "Anthropic", options: anthropicOptions))
         }
 
-        let openAIOptions = self.openAISelectableModels.map { model in
-            ProviderModelOption(
-                provider: .openai,
-                identifier: model.identifier,
-                displayName: model.displayName,
-                isSelected: self.selectedProvider == .openai && self.openAISelectedModelIdentifier == model.identifier
-            )
+        // Only show OpenAI section if API key saved or Codex connected
+        let hasOpenAICredentials = self.openAIKeyStatus == .saved || self.codexAuthStatus.isConnected
+        if hasOpenAICredentials {
+            let openAIOptions = self.openAISelectableModels.map { model in
+                ProviderModelOption(
+                    provider: .openai,
+                    identifier: model.identifier,
+                    displayName: model.displayName,
+                    isSelected: self.selectedProvider == .openai && self.openAISelectedModelIdentifier == model.identifier
+                )
+            }
+            if !openAIOptions.isEmpty {
+                sections.append(ProviderModelSection(provider: .openai, title: "OpenAI", options: openAIOptions))
+            }
+        }
+
+        var setupRequiredProviders: [LLMProviderType] = []
+        if self.anthropicKeyStatus != .saved {
+            setupRequiredProviders.append(.anthropic)
+        }
+        if !hasOpenAICredentials {
+            setupRequiredProviders.append(.openai)
         }
 
         let activeModelName: String
@@ -121,11 +165,8 @@ final class ProviderPreferencesViewModel: ObservableObject {
         return ModelSelectionMenuState(
             activeProvider: self.selectedProvider,
             activeModelDisplayName: activeModelName,
-            sections: [
-                ProviderModelSection(provider: .local, title: "Local", options: [localOption]),
-                ProviderModelSection(provider: .anthropic, title: "Anthropic", options: anthropicOptions),
-                ProviderModelSection(provider: .openai, title: "OpenAI", options: openAIOptions),
-            ],
+            sections: sections,
+            setupRequiredProviders: setupRequiredProviders,
             showsOpenAISetupAction: self.openAIShowsSetupAction,
             openAIUnavailableMessage: self.openAIUnavailableNote
         )
@@ -138,10 +179,12 @@ final class ProviderPreferencesViewModel: ObservableObject {
         self.anthropicModel = UserDefaults.standard.selectedAnthropicModel
         self.openAISelectedModelIdentifier = UserDefaults.standard.selectedOpenAIModelIdentifier
 
+        await self.codexOAuthManager.importCLIAuthIfNeeded()
         await self.registerAnthropicFactory()
         await self.registerOpenAIFactory()
         await self.refreshKeyStatus(for: .anthropic)
         await self.refreshKeyStatus(for: .openai)
+        await self.refreshCodexStatus()
         await self.refreshOpenAIAvailability(forceRefresh: false)
     }
 
@@ -181,7 +224,44 @@ final class ProviderPreferencesViewModel: ObservableObject {
         self.openAIAvailability = .setupRequired(message: "Set up OpenAI to browse models.")
 
         if self.selectedProvider == .openai {
-            await self.switchProvider(.local)
+            if self.codexAuthStatus.isConnected {
+                await self.reconnectSelectedProvider(.openai)
+            } else {
+                await self.switchProvider(.local)
+            }
+        }
+    }
+
+    func authorizeCodex() async {
+        self.codexAuthStatus = .connecting
+
+        do {
+            let credential = try await self.codexOAuthManager.authorize()
+            self.codexAuthStatus = .connected(account: credential.displayIdentifier)
+            if self.selectedProvider == .openai {
+                await self.reconnectSelectedProvider(.openai)
+            }
+        } catch {
+            self.logger.error("Codex authorization failed: \(error.localizedDescription)")
+            self.codexAuthStatus = .error(error.localizedDescription)
+        }
+    }
+
+    func disconnectCodex() async {
+        do {
+            try await self.codexOAuthManager.disconnect()
+            self.codexAuthStatus = .disconnected
+
+            if self.selectedProvider == .openai {
+                if self.openAIKeyStatus == .saved {
+                    await self.reconnectSelectedProvider(.openai)
+                } else {
+                    await self.switchProvider(.local)
+                }
+            }
+        } catch {
+            self.logger.error("Failed to disconnect Codex OAuth: \(error.localizedDescription)")
+            self.codexAuthStatus = .error(error.localizedDescription)
         }
     }
 
@@ -193,11 +273,19 @@ final class ProviderPreferencesViewModel: ObservableObject {
             }
 
             do {
-                let key = try await self.credentialStore.retrieve(provider: cloudProvider)
-                guard let key, !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                    self.applyStatus(.error("No key configured"), for: cloudProvider)
-                    self.selectedProvider = await self.providerManager.getSelectedProviderType()
-                    return
+                if type == .openai {
+                    guard try await self.hasOpenAICredential() else {
+                        self.applyStatus(.error("No key configured"), for: .openai)
+                        self.selectedProvider = await self.providerManager.getSelectedProviderType()
+                        return
+                    }
+                } else {
+                    let key = try await self.credentialStore.retrieve(provider: cloudProvider)
+                    guard let key, !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                        self.applyStatus(.error("No key configured"), for: cloudProvider)
+                        self.selectedProvider = await self.providerManager.getSelectedProviderType()
+                        return
+                    }
                 }
             } catch {
                 self.applyStatus(.error(error.localizedDescription), for: cloudProvider)
@@ -252,6 +340,13 @@ final class ProviderPreferencesViewModel: ObservableObject {
 
         self.openAISelectedModelIdentifier = trimmed
         UserDefaults.standard.selectedOpenAIModelIdentifier = trimmed
+        // Keep manually selected models selectable and avoid aggressive fallback
+        // when discovery responses are temporarily narrow or stale.
+        var discoveredIDs = UserDefaults.standard.openAIDiscoveredModelIdentifiers
+        if !discoveredIDs.contains(trimmed) {
+            discoveredIDs.append(trimmed)
+            UserDefaults.standard.openAIDiscoveredModelIdentifiers = discoveredIDs
+        }
         await self.registerOpenAIFactory()
 
         if self.selectedProvider == .openai {
@@ -259,7 +354,40 @@ final class ProviderPreferencesViewModel: ObservableObject {
         }
     }
 
+    var openAICredentialSummary: String {
+        if self.codexAuthStatus.isConnected && self.openAIKeyStatus == .saved {
+            return "Active credential: Codex OAuth (API key fallback available)"
+        }
+        if self.codexAuthStatus.isConnected {
+            return "Active credential: Codex OAuth"
+        }
+        if self.openAIKeyStatus == .saved {
+            return "Active credential: API key"
+        }
+        return "Active credential: None"
+    }
+
     // MARK: - Private
+
+    private func hasOpenAICredential() async throws -> Bool {
+        if let _ = try await self.codexOAuthManager.validCredentialIfAvailable() {
+            return true
+        }
+        let key = try await self.credentialStore.retrieve(provider: .openai)
+        return key?.isEmpty == false
+    }
+
+    private func refreshCodexStatus() async {
+        do {
+            if let credential = try await self.codexOAuthManager.validCredentialIfAvailable() {
+                self.codexAuthStatus = .connected(account: credential.displayIdentifier)
+            } else {
+                self.codexAuthStatus = .disconnected
+            }
+        } catch {
+            self.codexAuthStatus = .error(error.localizedDescription)
+        }
+    }
 
     private func refreshOpenAIAvailability(forceRefresh: Bool) async {
         self.openAIAvailability = .loading
@@ -270,8 +398,15 @@ final class ProviderPreferencesViewModel: ObservableObject {
             await self.reconcileOpenAISelection(using: models)
             self.openAIAvailability = .available(models: models, isStale: isStale)
         case .unavailable(let reason):
-            self.openAIUnavailableNote = nil
-            self.openAIAvailability = .setupRequired(message: reason.recoveryMessage)
+            if self.codexAuthStatus.isConnected {
+                let curatedModels = Self.codexFallbackModelOptions
+                await self.reconcileOpenAISelection(using: curatedModels)
+                self.openAIAvailability = .available(models: curatedModels, isStale: true)
+                self.openAIUnavailableNote = "Could not refresh remote model list (\(reason.recoveryMessage)). Showing default models."
+            } else {
+                self.openAIUnavailableNote = nil
+                self.openAIAvailability = .setupRequired(message: reason.recoveryMessage)
+            }
         }
     }
 
@@ -360,6 +495,8 @@ final class ProviderPreferencesViewModel: ObservableObject {
             self.anthropicKeyStatus = status
         case .openai:
             self.openAIKeyStatus = status
+        case .openaiCodex:
+            break
         }
     }
 
@@ -375,6 +512,48 @@ final class ProviderPreferencesViewModel: ObservableObject {
             factory: OpenAIProviderFactory(model: self.openAISelectedModelIdentifier),
             for: .openai
         )
+    }
+
+    private static var codexFallbackModelOptions: [OpenAIModelOption] {
+        var options: [OpenAIModelOption] = [
+            OpenAIModelOption(identifier: "gpt-5.2-codex", source: .curated),
+        ]
+        options.append(contentsOf: OpenAIModel.curatedOptions)
+
+        var seen: Set<String> = []
+        return options.filter { option in
+            if seen.contains(option.identifier) {
+                return false
+            }
+            seen.insert(option.identifier)
+            return true
+        }
+    }
+
+    private func mergeWithCuratedOpenAIOptions(_ discovered: [OpenAIModelOption]) -> [OpenAIModelOption] {
+        let curated: [OpenAIModelOption]
+        if self.codexAuthStatus.isConnected {
+            curated = Self.codexFallbackModelOptions
+        } else {
+            curated = OpenAIModel.curatedOptions
+        }
+
+        var merged: [OpenAIModelOption] = []
+        var seen: Set<String> = []
+
+        for model in discovered {
+            if seen.insert(model.identifier).inserted {
+                merged.append(model)
+            }
+        }
+
+        for model in curated {
+            if seen.insert(model.identifier).inserted {
+                merged.append(model)
+            }
+        }
+
+        return merged
     }
 }
 

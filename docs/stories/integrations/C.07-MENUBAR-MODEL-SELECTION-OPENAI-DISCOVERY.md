@@ -1,7 +1,7 @@
 # C.07 - Menubar Model Selection & OpenAI Model Discovery
 
 **Epic:** Cloud Integrations (C)
-**Status:** Complete
+**Status:** Reopened (Regression Fix Round 2 Implemented, Pending Live Validation)
 **Priority:** P1
 **Estimated Effort:** 2-3 days
 **Dependencies:** C.02 (Cloud Provider Abstraction), C.04 (OpenAI Provider), C.05 (Provider Preferences UI), F.01 (App Shell & Menu Bar), F.06 (Preferences Window)
@@ -13,6 +13,13 @@
 ## 1. Objective
 
 Eliminate provider/model ambiguity at conversation start by adding a low-friction model selector directly in the menubar menu, with clear availability states and OpenAI model discovery. Users should always know which LLM is active, what models are selectable, and exactly how to recover when a provider is not configured.
+
+## 1.1 Regression Update (2026-02-09)
+
+- Repro: sending a prompt while `OpenAI` + `GPT-5.2` is selected can return `I had trouble generating a response. Please try again.`
+- Repro: `Refresh Models` can appear to do nothing when the user is connected via Codex OAuth but has no OpenAI API key saved.
+- Root causes identified from upstream Codex sources: localhost OAuth redirect mismatch, workspace account-id extraction mismatch (`chatgpt_account_id`), and Codex Responses request shape drift.
+- This story is reopened to close those regressions before final sign-off.
 
 ## 2. User Story
 
@@ -56,7 +63,7 @@ As a **user**, I want to **select provider and model from the menubar and only s
 
 ### Key Technical Details
 
-- Add an OpenAI model discovery service that calls `GET /v1/models` using the active OpenAI credential path (API key or Codex OAuth) and returns a filtered, user-facing model list.
+- Add an OpenAI model discovery service that uses credential-aware endpoints for model discovery (API key: `https://api.openai.com/v1/models`; Codex OAuth: `https://chatgpt.com/backend-api/codex/models`) and returns a filtered, user-facing model list.
 - Define a canonical selection model that supports both:
   - Static models (Local, Anthropic curated set)
   - Dynamic models (OpenAI discovered set)
@@ -113,11 +120,12 @@ As a **user**, I want to **select provider and model from the menubar and only s
 - [x] **AC-2:** Users can switch to Local model `Qwen 3 4B` directly from the menubar without opening Preferences.
 - [x] **AC-3:** Anthropic models shown in selection UI are exactly `Sonnet`, `Haiku`, and `Opus` (Claude 4 variants), with valid persistence.
 - [x] **AC-4:** OpenAI uses `GPT-5.2` as the preferred default model for new OpenAI selections.
-- [x] **AC-5:** OpenAI model discovery lists additional available models when valid OpenAI credentials are present.
+- [x] **AC-5:** OpenAI model discovery lists additional available models when valid OpenAI credentials are present (API key and Codex OAuth paths).
 - [x] **AC-6:** If OpenAI models are not available (no credential/disconnected), the UI shows `Set Up Connection…` instead of a broken/empty model picker.
 - [x] **AC-7:** Selecting `Set Up Connection…` opens Preferences directly to the Providers tab.
-- [x] **AC-8:** Conversation start no longer fails with generic config confusion; configuration issues produce an actionable recovery message.
+- [ ] **AC-8:** Conversation/model failures no longer fall back to generic copy; users see actionable guidance for unavailable/invalid models.
 - [x] **AC-9:** Model/provider selection state persists across restart and survives temporary discovery failures.
+- [x] **AC-10:** `Refresh Models` provides visible progress and updates model availability when only Codex OAuth is configured.
 
 ## 7. Verification Plan
 
@@ -161,6 +169,70 @@ As a **user**, I want to **select provider and model from the menubar and only s
 
 - Should OpenAI discovery include all compatible text models or only a curated allowlist plus discovered additions?
 - Should Anthropic model list later move to discovery once a stable API is available?
+
+## 11. Post-Completion Regression Triage (2026-02-09)
+
+### Findings
+
+1. Codex discovery path gap:
+   - `OpenAIModelDiscoveryService` currently fetches credentials only from `.openai` API key storage, so Codex-only setups cannot truly refresh remote models.
+2. Silent refresh UX:
+   - `ProviderPreferencesViewModel.refreshOpenAIAvailability` falls back to curated models when Codex is connected and discovery is unavailable, producing a no-op refresh from the user's perspective.
+3. Generic generation error:
+   - `AgentLoop` maps `CloudProviderError.requestFailed` to generic fallback text, masking concrete model/endpoint compatibility issues.
+4. Upstream protocol alignment needed:
+   - Codex upstream is Responses-wire-first (`/v1/responses`) and ChatGPT-auth uses `/backend-api/codex` base URL. Our model discovery and provider behavior must align with this.
+
+## 12. Regression Fix Round 2 (2026-02-09)
+
+### Implemented
+
+- OAuth auth flow aligned to Codex localhost callback (`http://localhost:1455/auth/callback`) in `Ora/Cloud/OpenAI/CodexOAuthManager.swift`.
+- Workspace account ID extraction fixed to use `chatgpt_account_id` JWT claim (`https://api.openai.com/auth`) in:
+  - `Ora/Cloud/OpenAI/CodexOAuthManager.swift`
+  - `Ora/Cloud/OpenAI/CodexCredentialReader.swift`
+- Codex generation payload aligned to Responses contract in `Ora/Cloud/OpenAI/CodexProvider.swift`:
+  - now sends `instructions`, `input`, `tool_choice`, `parallel_tool_calls`, `store`, `stream`
+  - codex headers normalized (`originator`, `version`, `User-Agent`, account header)
+- Codex discovery request compatibility improved in `Ora/Cloud/OpenAI/OpenAIModelDiscoveryService.swift`:
+  - `client_version` query + Codex headers on OAuth path
+  - API key path unchanged
+
+### Verification
+
+- Targeted tests (affected modules): 36/36 passed.
+- Full suite: `✅ Tests: 1287/1287 passed`.
+- App rebuild/relaunch: `./build.sh run` succeeded and Ora launched.
+
+### Remaining Manual Validation
+
+- Live OAuth login from Preferences (real account).
+- Live Codex-only model refresh and prompt send path.
+
+### Implementation Plan
+
+1. Introduce credential-aware discovery in `Ora/Cloud/OpenAI/OpenAIModelDiscoveryService.swift`:
+   - API key path: `https://api.openai.com/v1/models`
+   - Codex OAuth path: `https://chatgpt.com/backend-api/codex/models`
+2. Update `Ora/Preferences/Tabs/ProviderPreferencesViewModel.swift`:
+   - Wire refresh to active credential source.
+   - Expose explicit refresh result state (`updated`, `stale`, `failed`) for user feedback.
+3. Update `Ora/Preferences/Tabs/ProviderPreferencesView.swift`:
+   - Show refresh progress and last result text so refresh is never silent.
+4. Improve user-facing generation errors in `Ora/Orchestration/AgentLoop.swift`:
+   - Map model-not-found/unsupported request failures to actionable setup/model-switch guidance.
+5. Add regression tests:
+   - `OraTests/Cloud/OpenAI/OpenAIModelDiscoveryServiceTests.swift`
+   - `OraTests/Preferences/ProviderPreferencesViewModelTests.swift`
+   - `OraTests/Orchestration/AgentLoopTests.swift`
+
+## 13. Research Sources (2026-02-09)
+
+- OpenAI Codex provider wire/base URL behavior: https://raw.githubusercontent.com/openai/codex/main/codex-rs/core/src/model_provider_info.rs
+- OpenAI Codex login flow and callback contract: https://raw.githubusercontent.com/openai/codex/main/codex-rs/login/src/server.rs
+- OpenAI Codex models endpoint and `client_version` query behavior: https://raw.githubusercontent.com/openai/codex/main/codex-rs/codex-api/src/endpoint/models.rs
+- OpenAI Codex model presets (`gpt-5.2-codex`, `gpt-5.2`) and defaults: https://raw.githubusercontent.com/openai/codex/main/codex-rs/core/src/models_manager/model_presets.rs
+- OpenAI API reference (`/v1/models`, chat/create docs): https://platform.openai.com/docs/api-reference/models/list and https://platform.openai.com/docs/api-reference/chat/create
 
 ---
 
@@ -218,4 +290,175 @@ As a **user**, I want to **select provider and model from the menubar and only s
 - [x] Implementation complete
 - [x] Review findings addressed
 - [x] Build verified
-- [x] Tests passed (1266/1266)
+- [x] Tests passed (1287/1287)
+- [ ] Reopened regression fixes merged and live-verified
+
+---
+
+## Post-Merge Fix: Submenu Hierarchy, Credential Gating & C.06 Codex Restore
+
+**Date:** 2026-02-09
+**Branch:** `fix/menubar-submenu-codex-restore`
+**Issues Addressed:**
+
+1. **Model selection was flat in the menubar** — now uses a hierarchical "LLM Model" submenu.
+2. **Anthropic models showed without credentials** — providers are now credential-gated in the menu.
+3. **C.06 Codex OAuth UI was lost** — C.06 branch was never merged; all Codex code restored.
+
+### Changes
+
+#### Menubar Submenu Hierarchy
+- `Ora/UI/StatusBarController.swift` — `rebuildMenu()` now creates an "LLM Model" top-level item with an `NSMenu` submenu containing the current selection header, provider sections separated by dividers, and "Set Up Connection..." at the bottom. Menu accessor helpers (`menuItemTitles`, `menuItemKeyEquivalents`, `hasSetUpConnectionMenuItem`) updated to traverse submenus.
+
+#### Credential Gating
+- `Ora/Preferences/Tabs/ProviderPreferencesViewModel.swift` — `modelSelectionMenuState` now only includes the Anthropic section when `anthropicKeyStatus == .saved`, and the OpenAI section when `openAIKeyStatus == .saved` or `codexAuthStatus.isConnected`. Added `setupRequiredProviders` array listing providers that need setup.
+- `Ora/UI/ModelSelectionMenuState.swift` — Added `setupRequiredProviders: [LLMProviderType]` field and `showsSetupAction` computed property.
+
+#### C.06 Codex OAuth Restoration
+
+**New files (from C.06 branch):**
+- `Ora/Cloud/OpenAI/CodexOAuthManager.swift` — PKCE OAuth flow, token refresh, secure keychain persistence
+- `Ora/Cloud/OpenAI/CodexProvider.swift` — ChatGPT/Codex OAuth-backed LLMServicing implementation
+- `Ora/Cloud/OpenAI/CodexProviderFactory.swift` — Factory for Codex providers
+- `Ora/Cloud/OpenAI/CodexCredentialReader.swift` — Reads `~/.codex/auth.json` CLI credentials
+- `OraTests/Cloud/OpenAI/CodexOAuthManagerTests.swift`
+- `OraTests/Cloud/OpenAI/CodexProviderTests.swift`
+- `OraTests/Cloud/OpenAI/CodexCredentialReaderTests.swift`
+
+**Modified files:**
+- `Ora/Cloud/CloudProvider.swift` — Added `.openaiCodex` case
+- `Ora/Cloud/CredentialStore.swift` — Error messages changed from "API key" to "credential"
+- `Ora/Cloud/LLMProviderManager.swift` — Added `codexOAuthManager` dependency; `resolveProvider` tries Codex OAuth before API key for `.openai`; `ensureCredentialExists` and `isActiveProviderAligned` updated for Codex
+- `Ora/Cloud/LLMProviderType.swift` — Comment updated for Codex OAuth
+- `Ora/Info.plist` — Added `ora://` URL scheme for OAuth callback
+- `Ora/AppDelegate.swift` — Calls `CodexOAuthManager.shared.importCLIAuthIfNeeded()` on setup
+- `Ora/Preferences/Tabs/ProviderPreferencesViewModel.swift` — Added `CodexAuthStatus` enum, `codexOAuthManager` dependency, `authorizeCodex()`, `disconnectCodex()`, `refreshCodexStatus()`, `hasOpenAICredential()`, `openAICredentialSummary`, Codex-aware `switchProvider` and `deleteOpenAIKey`
+- `Ora/Preferences/Tabs/ProviderPreferencesView.swift` — Added Codex OAuth section (Authorize/Disconnect buttons, `CodexAuthStatusRow`, credential summary)
+- `OraTests/Cloud/CredentialStoreTests.swift` — Added `.openaiCodex` cases, updated error message assertions
+- `OraTests/Cloud/LLMProviderManagerTests.swift` — Added `MockCodexOAuthManager`, Codex preference test, fixed mock injection for all local manager instances
+- `OraTests/Preferences/ProviderPreferencesViewModelTests.swift` — Added `ProviderPreferencesCodexOAuthManagerMock`, authorize/disconnect tests
+- `OraTests/StatusBarControllerTests.swift` — Added `StatusBarCodexOAuthManagerMock`, updated `makeController` helper, updated assertions for submenu structure
+
+### Verification
+- `./build.sh test` — 1278/1278 tests passed
+- XcodeGen project regenerated to include new files
+
+---
+
+## Regression Investigation Round 3 (2026-02-09)
+
+### New Repro Captured
+
+- During turn processing with OpenAI/Codex models, logs show:
+  - `STRUCTURED_ATTEMPT_1_VALIDATION_FAILED`
+  - immediate failure after `STRUCTURED_ATTEMPT_2_STARTED`
+- User-visible outcome sometimes returned generic generation error.
+- UI could briefly render both a partial assistant response and an error state for one turn.
+
+### Findings
+
+1. Generic error messaging masked request-shape/model compatibility failures (especially HTTP 400 class failures).
+2. Structured retry context on failed JSON attempts increased cloud request-shape sensitivity.
+3. Discovery/model-refresh failures lacked stable, non-redacted diagnostics to explain 400/401/other failures.
+
+### Fixes landed in this round
+
+- `Ora/Orchestration/AgentLoop.swift`
+  - Expanded request-failure guidance:
+    - request-shape rejection
+    - context-length rejection
+    - status-based handling for 400/401/403/404
+  - Reduces fallback into generic `I had trouble generating a response` path.
+- `Ora/LLM/StructuredGenerator.swift`
+  - Added attempt-level stream failure classification markers.
+  - Retry behavior now resets to base messages after stream/request failure.
+  - Retry prompt now uses user-instruction + bounded invalid-response snippet (no synthetic assistant retry message).
+- `Ora/Cloud/OpenAI/OpenAIModelDiscoveryService.swift`
+  - Added discovery failure markers by auth path (API key vs Codex OAuth), HTTP status class, and coarse error-body category.
+- `Ora/Cloud/OpenAI/CodexProvider.swift`
+- `Ora/Cloud/OpenAI/OpenAIProvider.swift`
+  - Added stream-failure diagnostic markers for HTTP status/body categories.
+
+### Test Coverage Update
+
+- `OraTests/StructuredGeneratorTests.swift`
+  - validates retry-message shape and base-message reset after stream failure
+- `OraTests/Orchestration/AgentLoopTests.swift`
+  - validates actionable guidance for HTTP 400 request-shape rejections
+- Latest run: `✅ Tests: 1292/1292 passed`
+
+## Regression Investigation Round 4 (2026-02-09)
+
+### New Repro Outcome
+
+- With enhanced instrumentation, affected turns showed repeated structured validation failures across all retries and no provider transport errors.
+- This indicates model output formatting variability (JSON envelope drift), not model discovery/auth/provider switching failure.
+
+### Fixes landed in this round
+
+- `Ora/LLM/JSONValidator.swift`
+  - Added candidate extraction from mixed output so wrapped JSON can still be parsed.
+  - Added tolerant mappings for commonly drifted keys (`response`/`content`, `name`/`arguments`, nested typed object wrappers).
+- `Ora/LLM/StructuredGenerator.swift`
+  - Added non-sensitive validation diagnostics markers to classify why structured parsing failed.
+- Test updates:
+  - `OraTests/JSONValidatorTests.swift` (mixed-output extraction + alternate key parsing)
+  - `OraTests/StructuredGeneratorTests.swift` (adjusted retry fixture for new parser behavior)
+
+### Verification
+
+- Focused test targets succeeded (`JSONValidator`, `StructuredGenerator`, `AgentLoop`).
+- `./build.sh run` succeeded and app relaunched.
+
+## Regression Investigation Round 5 (2026-02-09)
+
+### New Repro Outcome
+
+- First turn succeeded; every follow-up turn failed.
+- Structured logs now identify this as request-shape failures on cloud stream start:
+  - `...CLOUD_REQUEST_400`
+  - `...CLOUD_BODY_REQUEST_SHAPE`
+
+### Fixes landed in this round
+
+- `Ora/Cloud/OpenAI/CodexProvider.swift`
+  - Reworked Codex input mapping for multi-turn history to avoid invalid role/content combinations on follow-up turns.
+  - Normalizes non-system history into `user` `input_text` entries with explicit prefixes for assistant/tool context.
+- `Ora/Cloud/LLMProviderManager.swift`
+  - Explicitly skips KV cache clearing for cloud providers (`PROVIDER_CLEAR_CACHE_SKIPPED_FOR_CLOUD`), keeping cache behavior local-only by design.
+- Added regression test:
+  - `OraTests/Cloud/OpenAI/CodexProviderTests.swift` verifies multi-turn history payload shape remains valid.
+
+### Verification
+
+- Focused cloud + orchestration + structured parsing test targets passed.
+- `./build.sh run` succeeded and app relaunched.
+
+## Regression Investigation Round 6 (2026-02-10)
+
+### New Repro Outcome
+
+- Menubar model submenu displayed OpenAI entries but selecting `GPT-5.2` did not stick reliably.
+
+### Root Cause
+
+1. OpenAI selection reconciliation could aggressively revert the selected identifier when discovery responses were narrower than curated options.
+2. Menu action payload used a Swift struct in `representedObject`; while usually safe, hardening to Objective-C-safe payloads eliminates silent cast failures in NSMenu action dispatch.
+
+### Fixes landed in this round
+
+- `Ora/Preferences/Tabs/ProviderPreferencesViewModel.swift`
+  - OpenAI selectable list now merges discovered models with curated defaults (and Codex defaults when connected), so key models like `GPT-5.2` remain selectable.
+  - Manual OpenAI model selections are now persisted into discovered identifiers to prevent immediate fallback/reversion loops.
+- `Ora/UI/StatusBarController.swift`
+  - Model menu payload switched to `NSDictionary` (`provider`, `modelIdentifier`) for robust menu action bridging.
+  - Added explicit `STATUSBAR_MODEL_SELECTION_INVALID_PAYLOAD` logging.
+- Tests:
+  - `OraTests/Preferences/ProviderPreferencesViewModelTests.swift` updated with selection persistence and merged-option coverage.
+
+### Verification
+
+- Focused tests passed:
+  - `StatusBarControllerTests`
+  - `ProviderPreferencesViewModelTests`
+- `./build.sh run` succeeded and app relaunched.

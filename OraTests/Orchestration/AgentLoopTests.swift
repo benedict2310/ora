@@ -60,6 +60,42 @@ actor AgentLoopMockFailingLLMService: LLMServicing {
     }
 }
 
+actor AgentLoopMockModelUnavailableLLMService: LLMServicing {
+    func warmup() async throws {}
+    func prepare() async throws {}
+    func unload() async {}
+    func clearCache() async {}
+
+    func generate(messages: [LLMMessage], maxTokens: Int) async -> AsyncThrowingStream<LLMDelta, Error> {
+        return AsyncThrowingStream { continuation in
+            continuation.finish(
+                throwing: CloudProviderError.requestFailed(
+                    statusCode: 404,
+                    body: "The model `gpt-5.2` does not exist or you do not have access to it."
+                )
+            )
+        }
+    }
+}
+
+actor AgentLoopMockRequestShapeRejectedLLMService: LLMServicing {
+    func warmup() async throws {}
+    func prepare() async throws {}
+    func unload() async {}
+    func clearCache() async {}
+
+    func generate(messages: [LLMMessage], maxTokens: Int) async -> AsyncThrowingStream<LLMDelta, Error> {
+        return AsyncThrowingStream { continuation in
+            continuation.finish(
+                throwing: CloudProviderError.requestFailed(
+                    statusCode: 400,
+                    body: "invalid_request_error: Invalid role value in input payload."
+                )
+            )
+        }
+    }
+}
+
 // MARK: - Mock Tool
 
 /// Mock tool for testing agent loop
@@ -330,6 +366,23 @@ final class AgentLoopTests: XCTestCase {
         }
     }
 
+    func test_process_structuredOutputFailure_returnsActionableFormattingMessage() async throws {
+        await mockLLM.setResponses([
+            "not-json",
+            "still-not-json",
+            "also-not-json",
+        ])
+
+        let result = try await agentLoop.process(userText: "Trigger invalid structure")
+
+        if case .error(let message) = result {
+            XCTAssertTrue(message.contains("model formatting issue"))
+            XCTAssertTrue(message.contains("Preferences > Providers"))
+        } else {
+            XCTFail("Expected formatting error guidance, got \(result)")
+        }
+    }
+
     func test_conversationStart_withProviderConfigIssue_returnsActionableGuidance() async throws {
         let failingLLM = AgentLoopMockFailingLLMService()
         let failingGenerator = StructuredGenerator(llm: failingLLM)
@@ -349,6 +402,52 @@ final class AgentLoopTests: XCTestCase {
             XCTAssertTrue(message.contains("Preferences > Providers"))
         } else {
             XCTFail("Expected error result with actionable guidance")
+        }
+    }
+
+    func test_conversationStart_withUnavailableModelError_returnsActionableGuidance() async throws {
+        let failingLLM = AgentLoopMockModelUnavailableLLMService()
+        let failingGenerator = StructuredGenerator(llm: failingLLM)
+        let loop = AgentLoop(
+            maxStepsPerTurn: 2,
+            maxToolCallsPerTurn: 1,
+            maxTokensPerTurn: 256,
+            structuredGenerator: failingGenerator,
+            toolHost: .shared,
+            toolRegistry: self.toolRegistry,
+            conversationManager: ConversationManager.makeTestInstance(maxContextTokens: 2000)
+        )
+
+        let result = try await loop.process(userText: "Test unavailable model")
+
+        if case .error(let message) = result {
+            XCTAssertTrue(message.contains("model is unavailable"))
+            XCTAssertTrue(message.contains("Preferences > Providers"))
+        } else {
+            XCTFail("Expected error result with model guidance")
+        }
+    }
+
+    func test_conversationStart_withRequestShapeError_returnsActionableGuidance() async throws {
+        let failingLLM = AgentLoopMockRequestShapeRejectedLLMService()
+        let failingGenerator = StructuredGenerator(llm: failingLLM)
+        let loop = AgentLoop(
+            maxStepsPerTurn: 2,
+            maxToolCallsPerTurn: 1,
+            maxTokensPerTurn: 256,
+            structuredGenerator: failingGenerator,
+            toolHost: .shared,
+            toolRegistry: self.toolRegistry,
+            conversationManager: ConversationManager.makeTestInstance(maxContextTokens: 2000)
+        )
+
+        let result = try await loop.process(userText: "Test request shape rejection")
+
+        if case .error(let message) = result {
+            XCTAssertTrue(message.contains("structured request format"))
+            XCTAssertTrue(message.contains("Preferences > Providers"))
+        } else {
+            XCTFail("Expected error result with request-shape guidance")
         }
     }
     

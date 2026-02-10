@@ -232,4 +232,79 @@ final class JSONValidatorTests: XCTestCase {
         XCTAssertEqual(JSONValidationError.missingField("tool").errorDescription, "Missing required field: tool")
         XCTAssertEqual(JSONValidationError.unknownType("foo").errorDescription, "Unknown response type: foo")
     }
+
+    func testParse_withPreambleAndTrailingText_extractsJSONObjectCandidate() {
+        let json = """
+        I will answer in JSON.
+        {"type":"response","text":"Hello from wrapped JSON"}
+        Done.
+        """
+
+        let result = JSONValidator.parse(json)
+
+        if case .success(let output) = result {
+            if case .response(let text) = output {
+                XCTAssertEqual(text, "Hello from wrapped JSON")
+            } else {
+                XCTFail("Expected .response")
+            }
+        } else {
+            XCTFail("Parse failed")
+        }
+    }
+
+    func testParse_response_acceptsAlternativeTextField() {
+        let json = """
+        {"type":"response","response":"Fallback key text"}
+        """
+
+        let result = JSONValidator.parse(json)
+
+        if case .success(let output) = result {
+            if case .response(let text) = output {
+                XCTAssertEqual(text, "Fallback key text")
+            } else {
+                XCTFail("Expected .response")
+            }
+        } else {
+            XCTFail("Parse failed")
+        }
+    }
+
+    func testParse_toolCall_acceptsNameAndArgumentsString() {
+        let json = """
+        {"type":"tool_call","name":"calendar.query","arguments":"{\\"range\\":\\"today\\"}"}
+        """
+
+        let result = JSONValidator.parse(json)
+
+        if case .success(let output) = result {
+            if case .toolCall(let tool, let args) = output {
+                XCTAssertEqual(tool, "calendar.query")
+                XCTAssertEqual(args["range"]?.stringValue, "today")
+            } else {
+                XCTFail("Expected .toolCall")
+            }
+        } else {
+            XCTFail("Parse failed")
+        }
+    }
+
+    func testParse_nestedTypedObject_isParsed() {
+        let json = """
+        {"result":{"type":"response","text":"Nested response"}}
+        """
+
+        let result = JSONValidator.parse(json)
+
+        if case .success(let output) = result {
+            if case .response(let text) = output {
+                XCTAssertEqual(text, "Nested response")
+            } else {
+                XCTFail("Expected .response")
+            }
+        } else {
+            XCTFail("Parse failed")
+        }
+    }
 }

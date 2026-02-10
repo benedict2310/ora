@@ -73,7 +73,7 @@ public final class OpenAIProvider: CloudLLMBase, @unchecked Sendable {
 
         let body: [String: Any] = [
             "model": self.model,
-            "max_tokens": maxTokens,
+            "max_completion_tokens": maxTokens,
             "stream": true,
             "stream_options": ["include_usage": true],
             "messages": mappedMessages,
@@ -115,6 +115,11 @@ public final class OpenAIProvider: CloudLLMBase, @unchecked Sendable {
                     for try await line in bytes.lines {
                         errorBody += line
                     }
+                    self.logHTTPFailure(
+                        statusCode: httpResponse.statusCode,
+                        body: errorBody,
+                        attemptIndex: attempt
+                    )
 
                     let error = self.classifyError(
                         statusCode: httpResponse.statusCode,
@@ -198,5 +203,91 @@ public final class OpenAIProvider: CloudLLMBase, @unchecked Sendable {
 
         continuation.yield(.completed(totalTokens: tokenCount))
         continuation.finish()
+    }
+
+    private func logHTTPFailure(statusCode: Int, body: String, attemptIndex: Int) {
+        switch attemptIndex + 1 {
+        case 1:
+            self.logger.error("OPENAI_STREAM_ATTEMPT_1_FAILED")
+        case 2:
+            self.logger.error("OPENAI_STREAM_ATTEMPT_2_FAILED")
+        case 3:
+            self.logger.error("OPENAI_STREAM_ATTEMPT_3_FAILED")
+        default:
+            self.logger.error("OPENAI_STREAM_ATTEMPT_FAILED")
+        }
+
+        switch statusCode {
+        case 400:
+            self.logger.error("OPENAI_STREAM_HTTP_400")
+        case 401:
+            self.logger.error("OPENAI_STREAM_HTTP_401")
+        case 403:
+            self.logger.error("OPENAI_STREAM_HTTP_403")
+        case 404:
+            self.logger.error("OPENAI_STREAM_HTTP_404")
+        case 408:
+            self.logger.error("OPENAI_STREAM_HTTP_408")
+        case 429:
+            self.logger.error("OPENAI_STREAM_HTTP_429")
+        case 500...599:
+            self.logger.error("OPENAI_STREAM_HTTP_5XX")
+        default:
+            self.logger.error("OPENAI_STREAM_HTTP_OTHER")
+        }
+
+        switch Self.classifyFailureBody(body) {
+        case .invalidModel:
+            self.logger.error("OPENAI_STREAM_HTTP_BODY_INVALID_MODEL")
+        case .requestShape:
+            self.logger.error("OPENAI_STREAM_HTTP_BODY_REQUEST_SHAPE")
+        case .tokenParameter:
+            self.logger.error("OPENAI_STREAM_HTTP_BODY_TOKEN_PARAMETER")
+        case .contextLength:
+            self.logger.error("OPENAI_STREAM_HTTP_BODY_CONTEXT_LENGTH")
+        case .unknown:
+            self.logger.error("OPENAI_STREAM_HTTP_BODY_UNKNOWN")
+        }
+    }
+
+    private enum FailureBodyCategory {
+        case invalidModel
+        case requestShape
+        case tokenParameter
+        case contextLength
+        case unknown
+    }
+
+    private static func classifyFailureBody(_ body: String) -> FailureBodyCategory {
+        let normalized = body.lowercased()
+        if normalized.contains("model") &&
+            (normalized.contains("not found") ||
+                normalized.contains("does not exist") ||
+                normalized.contains("invalid model") ||
+                normalized.contains("unsupported")) {
+            return .invalidModel
+        }
+        if normalized.contains("max_tokens") ||
+            normalized.contains("max_output_tokens") ||
+            normalized.contains("max_completion_tokens") {
+            return .tokenParameter
+        }
+        if normalized.contains("context length") ||
+            normalized.contains("maximum context") ||
+            normalized.contains("too many tokens") {
+            return .contextLength
+        }
+        if normalized.contains("invalid_request_error") ||
+            normalized.contains("invalid value") ||
+            normalized.contains("unsupported value") ||
+            normalized.contains("invalid type") ||
+            normalized.contains("validation") ||
+            normalized.contains("\"role\"") ||
+            normalized.contains("messages") ||
+            normalized.contains("input") ||
+            normalized.contains("tool_choice") {
+            return .requestShape
+        }
+        return .unknown
     }
 }

@@ -11,8 +11,13 @@ struct ModelSelectionMenuState: Sendable, Equatable {
     let activeProvider: LLMProviderType
     let activeModelDisplayName: String
     let sections: [ProviderModelSection]
+    let setupRequiredProviders: [LLMProviderType]
     let showsOpenAISetupAction: Bool
     let openAIUnavailableMessage: String?
+
+    var showsSetupAction: Bool {
+        return !self.setupRequiredProviders.isEmpty
+    }
 }
 
 struct ProviderModelSection: Sendable, Equatable {

@@ -71,6 +71,31 @@ actor StatusBarDiscoveryServiceMock: OpenAIModelDiscovering {
     }
 }
 
+actor StatusBarCodexOAuthManagerMock: CodexOAuthManaging {
+    private var credential: CodexOAuthCredential?
+
+    func authorize() async throws -> CodexOAuthCredential {
+        guard let credential else {
+            throw CodexOAuthError.invalidTokenResponse("No credential")
+        }
+        return credential
+    }
+
+    func disconnect() async throws {
+        self.credential = nil
+    }
+
+    func currentCredential() async throws -> CodexOAuthCredential? {
+        return self.credential
+    }
+
+    func validCredentialIfAvailable() async throws -> CodexOAuthCredential? {
+        return self.credential
+    }
+
+    func importCLIAuthIfNeeded() async {}
+}
+
 // MARK: - StatusBarController Tests
 
 @MainActor
@@ -226,7 +251,7 @@ final class StatusBarControllerTests: XCTestCase {
         let controller = self.makeController()
         let titles = controller.menuItemTitles
 
-        XCTAssertTrue(titles.contains("Select Model"), "Menu should contain Select Model section")
+        XCTAssertTrue(titles.contains("LLM Model"), "Menu should contain LLM Model submenu")
         XCTAssertTrue(titles.contains("Preferences..."), "Menu should contain Preferences...")
         XCTAssertTrue(titles.contains("Check for Updates..."), "Menu should contain Check for Updates...")
         XCTAssertTrue(titles.contains("Conversation Mode"), "Menu should contain Conversation Mode")
@@ -245,10 +270,10 @@ final class StatusBarControllerTests: XCTestCase {
         try? await Task.sleep(for: .milliseconds(80))
         controller.triggerMenuUpdate()
 
-        let currentItems = controller.menuItemTitles.filter { $0.hasPrefix("Current: ") }
-        XCTAssertEqual(currentItems.count, 1)
-        XCTAssertTrue(currentItems[0].contains("Local (On-Device)"))
-        XCTAssertTrue(currentItems[0].contains("Qwen 3 4B"))
+        let titles = controller.menuItemTitles
+        // The submenu header shows "Local (On-Device): Qwen 3 4B"
+        let headerItems = titles.filter { $0.contains("Local (On-Device)") && $0.contains("Qwen 3 4B") }
+        XCTAssertEqual(headerItems.count, 1, "Submenu should show active provider and model")
 
         controller.shutdown()
     }
@@ -459,11 +484,16 @@ final class StatusBarControllerTests: XCTestCase {
     ) -> StatusBarController {
         let updateChecker = MockUpdateChecker(canCheckForUpdates: canCheckForUpdates)
         let credentialStore = StatusBarCredentialStoreMock()
-        let providerManager = LLMProviderManager(credentialStore: credentialStore)
+        let codexOAuthManager = StatusBarCodexOAuthManagerMock()
+        let providerManager = LLMProviderManager(
+            credentialStore: credentialStore,
+            codexOAuthManager: codexOAuthManager
+        )
         let discoveryService = StatusBarDiscoveryServiceMock()
         let viewModel = ProviderPreferencesViewModel(
             credentialStore: credentialStore,
             providerManager: providerManager,
+            codexOAuthManager: codexOAuthManager,
             modelDiscoveryService: discoveryService
         )
         return StatusBarController(

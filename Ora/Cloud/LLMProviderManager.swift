@@ -21,6 +21,7 @@ actor LLMProviderManager: LLMServicing {
 
     private let logger = Logger(subsystem: "com.ora.app", category: "providers")
     private let credentialStore: CredentialStore
+    private let codexOAuthManager: CodexOAuthManaging
 
     /// Currently active provider
     private var activeProvider: LLMServicing
@@ -31,8 +32,12 @@ actor LLMProviderManager: LLMServicing {
     /// Available provider factories
     private var factories: [LLMProviderType: LLMProviderFactory] = [:]
 
-    init(credentialStore: CredentialStore = KeychainCredentialStore()) {
+    init(
+        credentialStore: CredentialStore = KeychainCredentialStore(),
+        codexOAuthManager: CodexOAuthManaging = CodexOAuthManager.shared
+    ) {
         self.credentialStore = credentialStore
+        self.codexOAuthManager = codexOAuthManager
         
         // Load preference
         let savedType = UserDefaults.standard.selectedLLMProvider
@@ -72,6 +77,10 @@ actor LLMProviderManager: LLMServicing {
     }
 
     func clearCache() async {
+        guard self.selectedProviderType == .local else {
+            self.logger.notice("PROVIDER_CLEAR_CACHE_SKIPPED_FOR_CLOUD")
+            return
+        }
         await activeProvider.clearCache()
     }
 
@@ -215,27 +224,49 @@ actor LLMProviderManager: LLMServicing {
         switch type {
         case .local:
             return LLMService.shared
-        case .anthropic, .openai:
-            guard let factory = self.factories[type] else {
-                throw ProviderError.providerNotRegistered(type)
+        case .anthropic:
+            return try await self.resolveAPIKeyProvider(for: .anthropic)
+        case .openai:
+            if let _ = try await self.codexOAuthManager.validCredentialIfAvailable() {
+                self.logger.info("Using Codex OAuth credential for OpenAI provider")
+                let factory = CodexProviderFactory(
+                    model: UserDefaults.standard.selectedOpenAIModelIdentifier
+                ) { [codexOAuthManager = self.codexOAuthManager] in
+                    guard let credential = try await codexOAuthManager.validCredentialIfAvailable() else {
+                        throw ProviderError.noCredential(.openai)
+                    }
+                    return credential
+                }
+                return factory.create()
             }
-            
-            // Check credentials
-            guard let cloudProvider = type.cloudProvider else {
-                // Should not happen for .anthropic/.openai
-                throw ProviderError.switchFailed(type, CloudProviderError.invalidResponse("Invalid provider type"))
-            }
-            
-            guard let apiKey = try await self.credentialStore.retrieve(provider: cloudProvider),
-                  !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                throw ProviderError.noCredential(type)
-            }
-            
-            return try factory.create(apiKey: apiKey)
+
+            return try await self.resolveAPIKeyProvider(for: .openai)
         }
     }
 
+    private func resolveAPIKeyProvider(for type: LLMProviderType) async throws -> LLMServicing {
+        guard let factory = self.factories[type] else {
+            throw ProviderError.providerNotRegistered(type)
+        }
+
+        guard let cloudProvider = type.cloudProvider else {
+            throw ProviderError.switchFailed(type, CloudProviderError.invalidResponse("Invalid provider type"))
+        }
+
+        guard let apiKey = try await self.credentialStore.retrieve(provider: cloudProvider),
+              !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw ProviderError.noCredential(type)
+        }
+
+        return try factory.create(apiKey: apiKey)
+    }
+
     private func ensureCredentialExists(for type: LLMProviderType) async throws {
+        if type == .openai {
+            if let _ = try await self.codexOAuthManager.validCredentialIfAvailable() {
+                return
+            }
+        }
         guard let cloudProvider = type.cloudProvider else { return }
         let apiKey = try await self.credentialStore.retrieve(provider: cloudProvider)
         guard let apiKey, !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -250,7 +281,7 @@ actor LLMProviderManager: LLMServicing {
         case .anthropic:
             return self.activeProvider is AnthropicProvider
         case .openai:
-            return self.activeProvider is OpenAIProvider
+            return self.activeProvider is OpenAIProvider || self.activeProvider is CodexProvider
         }
     }
 

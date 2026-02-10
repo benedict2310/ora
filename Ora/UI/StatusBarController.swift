@@ -51,11 +51,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         case setupRequired
     }
 
-    private struct ModelSelectionPayload: Sendable {
-        let provider: LLMProviderType
-        let modelIdentifier: String
-    }
-
     // MARK: - Properties
 
     private var statusItem: NSStatusItem?
@@ -162,9 +157,19 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    /// Returns the menu item titles. Exposed for testing.
+    /// Returns the menu item titles (including submenu items). Exposed for testing.
     var menuItemTitles: [String] {
-        return self.statusItem?.menu?.items.compactMap { $0.isSeparatorItem ? nil : $0.title } ?? []
+        guard let menu = self.statusItem?.menu else { return [] }
+        var titles: [String] = []
+        for item in menu.items where !item.isSeparatorItem {
+            titles.append(item.title)
+            if let submenu = item.submenu {
+                for subItem in submenu.items where !subItem.isSeparatorItem {
+                    titles.append(subItem.title)
+                }
+            }
+        }
+        return titles
     }
 
     /// Returns the menu item key equivalents. Exposed for testing.
@@ -172,6 +177,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         var result: [String: String] = [:]
         for item in self.statusItem?.menu?.items ?? [] where !item.isSeparatorItem {
             result[item.title] = item.keyEquivalent
+            if let submenu = item.submenu {
+                for subItem in submenu.items where !subItem.isSeparatorItem {
+                    result[subItem.title] = subItem.keyEquivalent
+                }
+            }
         }
         return result
     }
@@ -186,9 +196,16 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         return self.statusItem?.menu?.items.first(where: { $0.title == "Check for Updates..." })?.isEnabled
     }
 
-    /// Returns whether the setup connection item is present.
+    /// Returns whether the setup connection item is present (checks submenu).
     var hasSetUpConnectionMenuItem: Bool {
-        return self.statusItem?.menu?.items.contains(where: { $0.title == "Set Up Connection..." }) ?? false
+        guard let menu = self.statusItem?.menu else { return false }
+        for item in menu.items {
+            if item.title == "Set Up Connection..." { return true }
+            if let submenu = item.submenu {
+                if submenu.items.contains(where: { $0.title == "Set Up Connection..." }) { return true }
+            }
+        }
+        return false
     }
 
     /// Simulates clicking the Conversation Mode menu item. Exposed for testing.
@@ -243,19 +260,29 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         let selectionState = self.providerPreferencesViewModel.modelSelectionMenuState
 
-        let sectionHeader = NSMenuItem(title: "Select Model", action: nil, keyEquivalent: "")
-        sectionHeader.isEnabled = false
-        menu.addItem(sectionHeader)
+        // Build LLM Model submenu
+        let modelSubmenu = NSMenu()
+        let modelMenuItem = NSMenuItem(
+            title: "LLM Model",
+            action: nil,
+            keyEquivalent: ""
+        )
+        modelMenuItem.submenu = modelSubmenu
 
+        // Current selection header
         let currentItem = NSMenuItem(
-            title: "Current: \(selectionState.activeProvider.displayName) - \(selectionState.activeModelDisplayName)",
+            title: "\(selectionState.activeProvider.displayName): \(selectionState.activeModelDisplayName)",
             action: nil,
             keyEquivalent: ""
         )
         currentItem.isEnabled = false
-        menu.addItem(currentItem)
+        modelSubmenu.addItem(currentItem)
 
-        for section in selectionState.sections {
+        for (index, section) in selectionState.sections.enumerated() {
+            if index > 0 || !section.options.isEmpty {
+                modelSubmenu.addItem(NSMenuItem.separator())
+            }
+
             for option in section.options {
                 let item = NSMenuItem(
                     title: "\(section.title): \(option.displayName)",
@@ -264,29 +291,32 @@ final class StatusBarController: NSObject, NSMenuDelegate {
                 )
                 item.target = self
                 item.state = option.isSelected ? .on : .off
-                item.representedObject = ModelSelectionPayload(
-                    provider: option.provider,
-                    modelIdentifier: option.identifier
-                )
-                menu.addItem(item)
+                item.representedObject = [
+                    "provider": option.provider.rawValue,
+                    "modelIdentifier": option.identifier,
+                ] as NSDictionary
+                modelSubmenu.addItem(item)
             }
         }
 
-        if selectionState.showsOpenAISetupAction {
-            menu.addItem(
-                NSMenuItem(
-                    title: "Set Up Connection...",
-                    action: #selector(self.setUpConnectionClicked),
-                    keyEquivalent: ""
-                )
+        if selectionState.showsSetupAction {
+            modelSubmenu.addItem(NSMenuItem.separator())
+            let setupItem = NSMenuItem(
+                title: "Set Up Connection...",
+                action: #selector(self.setUpConnectionClicked),
+                keyEquivalent: ""
             )
+            setupItem.target = self
+            modelSubmenu.addItem(setupItem)
         }
 
         if let unavailableMessage = selectionState.openAIUnavailableMessage {
             let noteItem = NSMenuItem(title: unavailableMessage, action: nil, keyEquivalent: "")
             noteItem.isEnabled = false
-            menu.addItem(noteItem)
+            modelSubmenu.addItem(noteItem)
         }
+
+        menu.addItem(modelMenuItem)
 
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Preferences...", action: #selector(self.preferencesClicked), keyEquivalent: ","))
@@ -373,14 +403,20 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func modelSelectionClicked(_ sender: NSMenuItem) {
-        guard let payload = sender.representedObject as? ModelSelectionPayload else {
+        guard
+            let payload = sender.representedObject as? NSDictionary,
+            let providerRaw = payload["provider"] as? String,
+            let modelIdentifier = payload["modelIdentifier"] as? String,
+            let provider = LLMProviderType(rawValue: providerRaw)
+        else {
+            self.logger.error("STATUSBAR_MODEL_SELECTION_INVALID_PAYLOAD")
             return
         }
 
         Task { @MainActor in
             await self.providerPreferencesViewModel.selectModel(
-                provider: payload.provider,
-                identifier: payload.modelIdentifier
+                provider: provider,
+                identifier: modelIdentifier
             )
             self.rebuildMenu()
         }

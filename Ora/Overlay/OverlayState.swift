@@ -181,6 +181,14 @@ final class OverlayViewModel: ObservableObject {
         }
     }
 
+    /// Remove a trailing partial assistant message, if present.
+    func discardTrailingPartialAssistantMessage() {
+        guard let lastMessage = self.messages.last else { return }
+        guard lastMessage.role == .assistant, lastMessage.isPartial else { return }
+        self.messages.removeLast()
+        self.logger.notice("OVERLAY_DISCARDED_PARTIAL_ASSISTANT_MESSAGE")
+    }
+
     // MARK: - Tool Proposals
 
     /// Show a tool proposal

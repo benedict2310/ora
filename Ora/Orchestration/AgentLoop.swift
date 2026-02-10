@@ -329,9 +329,15 @@ actor AgentLoop {
                 )
             } catch {
                 logger.error("Generation failed: \(error.localizedDescription)")
+                if error is StructuredGeneratorError {
+                    logger.error("AGENT_GENERATION_FAILED_STRUCTURED_OUTPUT")
+                    return .error("I ran into a model formatting issue. Please try again, or switch models in Preferences > Providers.")
+                }
                 if let guidance = self.userFacingConfigurationMessage(for: error) {
+                    logger.notice("AGENT_GENERATION_FAILED_WITH_CONFIGURATION_GUIDANCE")
                     return .error(guidance)
                 }
+                logger.error("AGENT_GENERATION_FAILED_GENERIC")
                 return .error("I had trouble generating a response. Please try again.")
             }
 
@@ -459,11 +465,68 @@ actor AgentLoop {
                 return "Your cloud provider account needs billing attention. Open Preferences > Providers or switch to Local (Qwen 3 4B)."
             case .connectionFailed:
                 return "I could not reach the cloud provider. Check your connection or switch to Local (Qwen 3 4B)."
-            case .invalidResponse, .requestFailed, .rateLimited, .serverError:
+            case .requestFailed(let statusCode, let body):
+                return self.requestFailureGuidance(statusCode: statusCode, body: body)
+            case .invalidResponse(let reason):
+                let normalized = reason.lowercased()
+                if normalized.contains("model") && normalized.contains("unsupported") {
+                    return "The selected cloud model is unavailable for this account. Choose another model in Preferences > Providers."
+                }
+                return nil
+            case .rateLimited, .serverError:
                 return nil
             }
         }
 
         return nil
+    }
+
+    private func requestFailureGuidance(statusCode: Int, body: String) -> String? {
+        let normalized = body.lowercased()
+
+        if normalized.contains("model") &&
+            (normalized.contains("not found") ||
+                normalized.contains("does not exist") ||
+                normalized.contains("invalid model") ||
+                normalized.contains("unsupported")) {
+            return "The selected cloud model is unavailable for this account. Choose another model in Preferences > Providers."
+        }
+
+        if normalized.contains("max_tokens") ||
+            normalized.contains("max_output_tokens") ||
+            normalized.contains("max_completion_tokens") {
+            return "The selected cloud model rejected this request format. Try another model in Preferences > Providers."
+        }
+
+        if normalized.contains("invalid_request_error") ||
+            normalized.contains("invalid value") ||
+            normalized.contains("unsupported value") ||
+            normalized.contains("invalid type") ||
+            normalized.contains("validation") ||
+            normalized.contains("\"role\"") ||
+            normalized.contains("messages") ||
+            normalized.contains("input") ||
+            normalized.contains("tool_choice") {
+            return "The selected cloud model rejected Ora's structured request format. Try again or switch models in Preferences > Providers."
+        }
+
+        if normalized.contains("context length") ||
+            normalized.contains("maximum context") ||
+            normalized.contains("too many tokens") {
+            return "This request exceeded the model context limit. Try a shorter prompt, or switch models in Preferences > Providers."
+        }
+
+        switch statusCode {
+        case 400:
+            return "The cloud provider rejected this request. Try again, or switch models in Preferences > Providers."
+        case 401:
+            return "Your cloud provider credential appears invalid. Open Preferences > Providers to reconnect."
+        case 403:
+            return "Your cloud provider account does not have access to this model. Choose another model in Preferences > Providers."
+        case 404:
+            return "The selected cloud model could not be found. Choose another model in Preferences > Providers."
+        default:
+            return nil
+        }
     }
 }
