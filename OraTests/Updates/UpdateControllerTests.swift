@@ -20,7 +20,10 @@ final class UpdateControllerTests: XCTestCase {
             updateCheckInterval: UpdateCheckInterval.weekly.rawValue
         )
 
-        let controller = UpdateController(updater: driver)
+        let controller = UpdateController(
+            updater: driver,
+            eligibilityProvider: { .eligible(teamIdentifier: "TEST_TEAM") }
+        )
 
         XCTAssertEqual(controller.canCheckForUpdates, true)
         XCTAssertEqual(controller.lastUpdateCheck, lastCheck)
@@ -36,7 +39,10 @@ final class UpdateControllerTests: XCTestCase {
             updateCheckInterval: UpdateCheckInterval.daily.rawValue
         )
 
-        let controller = UpdateController(updater: driver)
+        let controller = UpdateController(
+            updater: driver,
+            eligibilityProvider: { .eligible(teamIdentifier: "TEST_TEAM") }
+        )
 
         XCTAssertEqual(driver.checkCallCount, 0)
         controller.checkForUpdates()
@@ -51,7 +57,10 @@ final class UpdateControllerTests: XCTestCase {
             updateCheckInterval: UpdateCheckInterval.daily.rawValue
         )
 
-        let controller = UpdateController(updater: driver)
+        let controller = UpdateController(
+            updater: driver,
+            eligibilityProvider: { .eligible(teamIdentifier: "TEST_TEAM") }
+        )
         XCTAssertEqual(controller.canCheckForUpdates, false)
         XCTAssertNil(controller.lastUpdateCheck)
 
@@ -76,12 +85,34 @@ final class UpdateControllerTests: XCTestCase {
             updateCheckInterval: UpdateCheckInterval.daily.rawValue
         )
 
-        let controller = UpdateController(updater: driver)
+        let controller = UpdateController(
+            updater: driver,
+            eligibilityProvider: { .eligible(teamIdentifier: "TEST_TEAM") }
+        )
 
         controller.automaticallyChecksForUpdates = false
         XCTAssertEqual(driver.automaticallyChecksForUpdates, false)
 
         controller.updateCheckInterval = .weekly
         XCTAssertEqual(driver.updateCheckInterval, UpdateCheckInterval.weekly.rawValue)
+    }
+
+    func test_updateController_ineligible_disablesUpdateChecksAndDoesNotCallDriver() {
+        let driver = MockUpdateDriver(
+            canCheckForUpdates: true,
+            lastUpdateCheckDate: nil,
+            automaticallyChecksForUpdates: true,
+            updateCheckInterval: UpdateCheckInterval.daily.rawValue
+        )
+
+        let controller = UpdateController(
+            updater: driver,
+            eligibilityProvider: { .ineligible(reason: "Ad-hoc", teamIdentifier: nil) }
+        )
+
+        XCTAssertEqual(controller.canCheckForUpdates, false)
+        XCTAssertEqual(driver.checkCallCount, 0)
+        controller.checkForUpdates()
+        XCTAssertEqual(driver.checkCallCount, 0)
     }
 }
