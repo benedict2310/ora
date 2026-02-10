@@ -216,7 +216,11 @@ final class PreferencesIntegrationTests: XCTestCase {
 
     func test_statusBarController_showPreferences_opensWindow() {
         let mockHandler = MockStatusBarActionHandler()
-        let controller = StatusBarController(actionHandler: mockHandler)
+        // Avoid starting Sparkle in unit tests via UpdateController.shared.
+        let controller = StatusBarController(
+            actionHandler: mockHandler,
+            updateChecker: MockUpdateChecker(canCheckForUpdates: true)
+        )
 
         controller.showPreferences()
 

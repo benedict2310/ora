@@ -78,7 +78,6 @@ jobs:
             -project Ora.xcodeproj \
             -scheme "$SCHEME" \
             -configuration "$CONFIGURATION" \
-            -arch "$ARCH" \
             -derivedDataPath "$DERIVED_DATA" \
             -destination "platform=macOS,arch=$ARCH" \
             CODE_SIGN_IDENTITY="Developer ID Application" \
