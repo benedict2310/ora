@@ -44,7 +44,7 @@ https://github.com/benedict2310/ora/assets/demo.mp4
 
 ## 📦 Download
 
-**Latest Release:** [Ora v1.0.0](https://github.com/benedict2310/ora/releases/latest)
+**Latest Release:** [Ora v1.0.1](https://github.com/benedict2310/ora/releases/latest)
 
 ### Installation
 

@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Updated onboarding copy across Welcome, Permissions, Model Setup, Download, and Ready steps to better explain required permissions and model preparation behavior.
 - Updated setup CTA copy from `Download Now` to `Prepare Models` and `Maybe Later` to `Skip for Now`.
 - Updated README build command docs for the new onboarding test mode.
+- Bumped app version metadata to `CFBundleShortVersionString=1.0.1` and `CFBundleVersion=2`.
 
 ### Fixed
 - Fixed Parakeet bootstrap/model path alignment with FluidAudio model cache directory.
