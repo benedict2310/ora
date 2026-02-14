@@ -367,7 +367,7 @@ case "${1:-build}" in
     echo ""
     read -p "Create DMG? (y/N): " CREATE_DMG
     if [[ "$CREATE_DMG" =~ ^[Yy]$ ]]; then
-      VERSION=$(defaults read "$APP_PATH/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null || echo "1.0.0")
+      VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_PATH/Contents/Info.plist" 2>/dev/null || echo "1.0.0")
       DMG_PATH="$PWD/Ora-${VERSION}.dmg"
 
       echo -e "${BLUE}Creating DMG...${NC}"
