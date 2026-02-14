@@ -34,9 +34,14 @@ final class PersistenceManager {
             AppSettings.self
         ])
 
+        let storeURL = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("Ora", isDirectory: true)
+            .appendingPathComponent("default.store")
+
         let configuration = ModelConfiguration(
             schema: schema,
-            isStoredInMemoryOnly: false,
+            url: storeURL,
             cloudKitDatabase: .none
         )
 
