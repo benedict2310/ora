@@ -7,9 +7,16 @@
 
 import Foundation
 import SwiftData
+import os
 
 @Model
 final class Session {
+
+    // MARK: - Performance Instrumentation
+
+    private static let persistenceLogger = Logger(subsystem: "com.ora.app", category: "persistence")
+    private static let persistenceSignposter = OSSignposter(logger: persistenceLogger)
+    private static let slowOperationThresholdNanoseconds = Session.resolveSlowOperationThresholdNanoseconds()
 
     // MARK: - Properties
 
@@ -58,12 +65,39 @@ final class Session {
 
     var messages: [Message] {
         get {
-            guard let data = messagesData else { return [] }
-            return (try? JSONDecoder().decode([Message].self, from: data)) ?? []
+            guard let data = self.messagesData else { return [] }
+
+            let state = Self.persistenceSignposter.beginInterval("session.messages.decode")
+            let start = DispatchTime.now().uptimeNanoseconds
+            let decodedMessages = (try? JSONDecoder().decode([Message].self, from: data)) ?? []
+            let elapsedNanoseconds = DispatchTime.now().uptimeNanoseconds - start
+            Self.persistenceSignposter.endInterval("session.messages.decode", state)
+
+            Self.logIfSlow(
+                operation: "messagesData.decode",
+                elapsedNanoseconds: elapsedNanoseconds,
+                messageCount: decodedMessages.count,
+                payloadBytes: data.count
+            )
+
+            return decodedMessages
         }
         set {
-            messagesData = try? JSONEncoder().encode(newValue)
-            updatedAt = Date()
+            let state = Self.persistenceSignposter.beginInterval("session.messages.encode")
+            let start = DispatchTime.now().uptimeNanoseconds
+            let encodedData = try? JSONEncoder().encode(newValue)
+            let elapsedNanoseconds = DispatchTime.now().uptimeNanoseconds - start
+            Self.persistenceSignposter.endInterval("session.messages.encode", state)
+
+            self.messagesData = encodedData
+            self.updatedAt = Date()
+
+            Self.logIfSlow(
+                operation: "messagesData.encode",
+                elapsedNanoseconds: elapsedNanoseconds,
+                messageCount: newValue.count,
+                payloadBytes: encodedData?.count ?? 0
+            )
         }
     }
 
@@ -82,5 +116,33 @@ final class Session {
             metadata: metadata
         ))
         messages = current
+    }
+
+    // MARK: - Helpers
+
+    private static func resolveSlowOperationThresholdNanoseconds() -> UInt64 {
+        let defaultThresholdMilliseconds = 10.0
+        let environment = ProcessInfo.processInfo.environment
+        let configuredThresholdMilliseconds = environment["ORA_PERSISTENCE_SLOW_LOG_THRESHOLD_MS"]
+            .flatMap(Double.init)
+            ?? defaultThresholdMilliseconds
+        let clampedThresholdMilliseconds = max(0, configuredThresholdMilliseconds)
+        return UInt64(clampedThresholdMilliseconds * 1_000_000.0)
+    }
+
+    private static func logIfSlow(
+        operation: String,
+        elapsedNanoseconds: UInt64,
+        messageCount: Int,
+        payloadBytes: Int
+    ) {
+        guard elapsedNanoseconds >= Self.slowOperationThresholdNanoseconds else {
+            return
+        }
+
+        let elapsedMilliseconds = Double(elapsedNanoseconds) / 1_000_000.0
+        Self.persistenceLogger.notice(
+            "Slow persistence \(operation): \(elapsedMilliseconds, format: .fixed(precision: 2))ms (messages: \(messageCount), payloadBytes: \(payloadBytes))"
+        )
     }
 }

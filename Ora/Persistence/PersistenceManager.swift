@@ -16,10 +16,12 @@ final class PersistenceManager {
 
     static let shared = PersistenceManager()
     private static let defaultSaveDebounceInterval: Duration = .milliseconds(250)
+    private static let slowOperationThresholdNanoseconds = PersistenceManager.resolveSlowOperationThresholdNanoseconds()
 
     // MARK: - Properties
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "Persistence")
+    private let logger = Logger(subsystem: "com.ora.app", category: "persistence")
+    private let saveSignposter: OSSignposter
     private let saveDebounceInterval: Duration
     private let onContextSavedForTesting: (@MainActor () -> Void)?
     private var saveTask: Task<Void, Never>?
@@ -35,6 +37,7 @@ final class PersistenceManager {
     private init() {
         self.saveDebounceInterval = Self.defaultSaveDebounceInterval
         self.onContextSavedForTesting = nil
+        self.saveSignposter = OSSignposter(logger: self.logger)
 
         let schema = Schema([
             Session.self,
@@ -87,6 +90,7 @@ final class PersistenceManager {
     ) {
         self.saveDebounceInterval = saveDebounceInterval
         self.onContextSavedForTesting = onContextSaved
+        self.saveSignposter = OSSignposter(logger: self.logger)
 
         let schema = Schema([
             Session.self,
@@ -405,11 +409,38 @@ final class PersistenceManager {
             return
         }
 
+        let state = self.saveSignposter.beginInterval("persistence.context.save")
+        let start = DispatchTime.now().uptimeNanoseconds
+        defer {
+            self.saveSignposter.endInterval("persistence.context.save", state)
+        }
+
         do {
             try self.context.save()
+            let elapsedNanoseconds = DispatchTime.now().uptimeNanoseconds - start
+            self.logSlowSaveIfNeeded(elapsedNanoseconds: elapsedNanoseconds)
             self.onContextSavedForTesting?()
         } catch {
             self.logger.error("Failed to save context: \(error.localizedDescription)")
         }
+    }
+
+    private static func resolveSlowOperationThresholdNanoseconds() -> UInt64 {
+        let defaultThresholdMilliseconds = 10.0
+        let environment = ProcessInfo.processInfo.environment
+        let configuredThresholdMilliseconds = environment["ORA_PERSISTENCE_SLOW_LOG_THRESHOLD_MS"]
+            .flatMap(Double.init)
+            ?? defaultThresholdMilliseconds
+        let clampedThresholdMilliseconds = max(0, configuredThresholdMilliseconds)
+        return UInt64(clampedThresholdMilliseconds * 1_000_000.0)
+    }
+
+    private func logSlowSaveIfNeeded(elapsedNanoseconds: UInt64) {
+        guard elapsedNanoseconds >= Self.slowOperationThresholdNanoseconds else {
+            return
+        }
+
+        let elapsedMilliseconds = Double(elapsedNanoseconds) / 1_000_000.0
+        self.logger.notice("Slow context.save(): \(elapsedMilliseconds, format: .fixed(precision: 2))ms")
     }
 }
