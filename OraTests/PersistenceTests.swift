@@ -354,9 +354,14 @@ final class PersistenceManagerAPITests: XCTestCase {
     func test_persistenceManager_appendMessage_freshSession_appendsMessageWithIdentifiers() {
         // Given
         let appendStart = Date()
+        let metadata = ["source": "asr", "turnId": "1"]
 
         // When
-        let session = manager.appendMessage(role: .user, content: "Hello persistence")
+        let session = manager.appendMessage(
+            role: .user,
+            content: "Hello persistence",
+            metadata: metadata
+        )
 
         // Then
         XCTAssertFalse(session.isComplete)
@@ -366,6 +371,7 @@ final class PersistenceManagerAPITests: XCTestCase {
         XCTAssertEqual(message.role, .user)
         XCTAssertEqual(message.content, "Hello persistence")
         XCTAssertGreaterThanOrEqual(message.timestamp, appendStart)
+        XCTAssertEqual(message.metadata, metadata)
         XCTAssertNotNil(session.messagesData)
         XCTAssertFalse(session.messagesData?.isEmpty ?? true)
     }

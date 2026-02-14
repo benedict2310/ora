@@ -135,7 +135,7 @@ final class PersistenceManager {
         metadata: [String: String]? = nil
     ) -> Session {
         let session = self.currentSession()
-        session.addMessage(role: role, content: content)
+        session.addMessage(role: role, content: content, metadata: metadata)
         self.saveContext()
 
         if let metadata, !metadata.isEmpty {

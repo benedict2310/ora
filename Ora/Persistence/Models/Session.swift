@@ -47,6 +47,7 @@ final class Session {
         let role: Role
         let content: String
         let timestamp: Date
+        let metadata: [String: String]?
 
         enum Role: String, Codable, Sendable {
             case user
@@ -69,6 +70,7 @@ final class Session {
     func addMessage(
         role: Message.Role,
         content: String,
+        metadata: [String: String]? = nil,
         timestamp: Date = Date()
     ) {
         var current = messages
@@ -76,7 +78,8 @@ final class Session {
             id: UUID(),
             role: role,
             content: content,
-            timestamp: timestamp
+            timestamp: timestamp,
+            metadata: metadata
         ))
         messages = current
     }
