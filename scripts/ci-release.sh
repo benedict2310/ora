@@ -67,12 +67,20 @@ cmd_teardown_keychain() {
 cmd_codesign() {
     [ $# -eq 1 ] || die "Usage: codesign <app-path>"
     local app_path="$1"
+    local repo_root
+    local entitlements_path
 
     [ -d "$app_path" ] || die "App not found: $app_path"
+    repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+    entitlements_path="$repo_root/Ora/Ora.entitlements"
+    [ -f "$entitlements_path" ] || die "Entitlements file not found: $entitlements_path"
 
+    # NOTE: This currently uses --deep for convenience. For long-term robustness,
+    # migrate to explicit inside-out signing of nested frameworks/helpers first,
+    # then sign the outer app bundle last.
     log "Deep-signing $app_path"
     codesign --deep --force --options runtime \
-        --preserve-metadata=entitlements \
+        --entitlements "$entitlements_path" \
         --sign "$SIGNING_IDENTITY" \
         --keychain "$KEYCHAIN_NAME" \
         "$app_path"

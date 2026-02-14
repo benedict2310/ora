@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.0.2] - 2026-02-14
+
+### Fixed
+- Added and wired microphone entitlement (`com.apple.security.device.audio-input`) for release builds.
+- Ensured release signing applies explicit app entitlements to avoid notarization rejection from `com.apple.security.get-task-allow`.
+- Corrected `./build.sh sign` DMG naming to use `CFBundleShortVersionString` reliably.
+
 ## [Unreleased] - 2026-02-10
 
 ### Added
