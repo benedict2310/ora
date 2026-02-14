@@ -188,6 +188,14 @@ scripts/ci-release.sh
 
 **Note:** The `./build.sh sign` command uses ad-hoc signing for the initial build, then applies Developer ID signing afterward. This is faster than signing during the xcodebuild step.
 
+**Release safety rules (CRITICAL):**
+- Never overwrite an existing GitHub release asset for a published version (no `--clobber` on published tags).
+- If a release artifact is wrong, cut a new patch version and publish a new tag.
+- Always update Sparkle appcast immediately after publishing a new release.
+- Always verify appcast `url`, `length`, and `sparkle:edSignature` match the published DMG.
+- Always verify the release tag points to the intended release commit.
+- For end-to-end release workflows, load the `ora-release` skill.
+
 ### Test Output Policy (Token Optimization)
 
 When running tests, report results minimally:
