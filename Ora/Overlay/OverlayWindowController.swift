@@ -33,6 +33,7 @@ final class OverlayWindowController {
     private var appActivationObserver: NSObjectProtocol?
     private var permissionPromptEndObserver: NSObjectProtocol?
     private var externalFocusEndObserver: NSObjectProtocol?
+    private var visibilityRecoveryTask: Task<Void, Never>?
 
     /// Default cancel action (override in tests)
     var cancelHandler: (() -> Void) = {
@@ -80,6 +81,8 @@ final class OverlayWindowController {
 
         // Invalidate any pending hide operations
         self.currentSessionID = UUID()
+        self.visibilityRecoveryTask?.cancel()
+        self.visibilityRecoveryTask = nil
 
         // Position the panel (at final position, animation offsets handled separately)
         self.positionPanel()
@@ -107,6 +110,18 @@ final class OverlayWindowController {
             }
         }
 
+        let showSessionID = self.currentSessionID
+        self.visibilityRecoveryTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(200))
+            guard let self = self, self.currentSessionID == showSessionID else { return }
+            guard let panel = self.panel, panel.isVisible else { return }
+
+            // A rapid hide/show can leave an in-flight hide animation that forces alpha to 0.
+            // Reassert visibility state after the animation window to keep the panel visible.
+            panel.alphaValue = 1
+            self.positionPanel()
+        }
+
         // Use orderFrontRegardless for more aggressive window ordering
         // This helps when coming back from system dialogs (e.g., permission prompts)
         panel.orderFrontRegardless()
@@ -129,8 +144,10 @@ final class OverlayWindowController {
 
         // Remove dismiss monitors
         self.removeDismissMonitors()
+        self.visibilityRecoveryTask?.cancel()
+        self.visibilityRecoveryTask = nil
 
-        self.logger.info("Overlay hide requested (animated: \(animated, privacy: .public))")
+        self.logger.info("Overlay hide requested (animated: \(animated))")
         
         let hideSessionID = self.currentSessionID
 
