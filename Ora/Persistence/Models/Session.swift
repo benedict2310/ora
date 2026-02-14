@@ -66,13 +66,17 @@ final class Session {
         }
     }
 
-    func addMessage(role: Message.Role, content: String) {
+    func addMessage(
+        role: Message.Role,
+        content: String,
+        timestamp: Date = Date()
+    ) {
         var current = messages
         current.append(Message(
             id: UUID(),
             role: role,
             content: content,
-            timestamp: Date()
+            timestamp: timestamp
         ))
         messages = current
     }

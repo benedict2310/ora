@@ -52,26 +52,50 @@ final class PersistenceManager {
     // MARK: - Test Support
 
     /// Create a persistence manager with an in-memory store for testing
-    static func createForTesting() -> PersistenceManager {
-        return PersistenceManager(inMemory: true)
+    static func createForTesting(
+        inMemory: Bool = true,
+        storeURL: URL? = nil
+    ) -> PersistenceManager {
+        return PersistenceManager(
+            inMemory: inMemory,
+            storeURL: storeURL
+        )
     }
 
-    private init(inMemory: Bool) {
+    private init(
+        inMemory: Bool,
+        storeURL: URL? = nil
+    ) {
         let schema = Schema([
             Session.self,
             AuditLogEntryModel.self,
             AppSettings.self
         ])
 
-        let configuration = ModelConfiguration(
-            schema: schema,
-            isStoredInMemoryOnly: inMemory,
-            cloudKitDatabase: .none
-        )
+        let configuration: ModelConfiguration
+        if inMemory {
+            configuration = ModelConfiguration(
+                schema: schema,
+                isStoredInMemoryOnly: true,
+                cloudKitDatabase: .none
+            )
+        } else if let storeURL {
+            configuration = ModelConfiguration(
+                schema: schema,
+                url: storeURL,
+                cloudKitDatabase: .none
+            )
+        } else {
+            configuration = ModelConfiguration(
+                schema: schema,
+                isStoredInMemoryOnly: false,
+                cloudKitDatabase: .none
+            )
+        }
 
         do {
             container = try ModelContainer(for: schema, configurations: [configuration])
-            self.logger.info("SwiftData container initialized (in-memory: \(inMemory))")
+            self.logger.info("SwiftData container initialized (in-memory: \(inMemory), custom-url: \(storeURL != nil))")
         } catch {
             self.logger.error("Failed to initialize SwiftData: \(error.localizedDescription)")
             fatalError("Failed to initialize SwiftData: \(error)")
@@ -101,6 +125,26 @@ final class PersistenceManager {
         }
 
         return createSession()
+    }
+
+    /// Append a message to the current active session
+    @discardableResult
+    func appendMessage(
+        role: Session.Message.Role,
+        content: String,
+        metadata: [String: String]? = nil
+    ) -> Session {
+        let session = self.currentSession()
+        session.addMessage(role: role, content: content)
+        self.saveContext()
+
+        if let metadata, !metadata.isEmpty {
+            self.logger.debug("Appended message to session \(session.id) (metadata keys: \(metadata.count))")
+        } else {
+            self.logger.debug("Appended message to session \(session.id)")
+        }
+
+        return session
     }
 
     /// Complete the current session
