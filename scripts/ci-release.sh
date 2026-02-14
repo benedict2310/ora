@@ -72,6 +72,7 @@ cmd_codesign() {
 
     log "Deep-signing $app_path"
     codesign --deep --force --options runtime \
+        --preserve-metadata=entitlements \
         --sign "$SIGNING_IDENTITY" \
         --keychain "$KEYCHAIN_NAME" \
         "$app_path"
