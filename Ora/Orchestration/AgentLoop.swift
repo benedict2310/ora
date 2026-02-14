@@ -9,6 +9,19 @@
 import Foundation
 import os
 
+/// Persistence sink for conversation messages emitted by AgentLoop.
+protocol AgentLoopPersistenceSink: Sendable {
+    func appendMessage(role: Session.Message.Role, content: String) async throws
+}
+
+struct SwiftDataAgentLoopPersistenceSink: AgentLoopPersistenceSink {
+    func appendMessage(role: Session.Message.Role, content: String) async throws {
+        await MainActor.run {
+            _ = PersistenceManager.shared.appendMessage(role: role, content: content)
+        }
+    }
+}
+
 /// Agent activity for transparency status updates
 enum AgentActivity: Equatable, Sendable {
     /// Planning/reasoning before tool calls or response
@@ -91,6 +104,7 @@ actor AgentLoop {
     private let toolHost: ToolHost
     private let toolRegistry: ToolRegistry
     private let conversationManager: ConversationManager
+    private let persistenceSink: AgentLoopPersistenceSink
     
     // MARK: - Initialization
     
@@ -101,7 +115,8 @@ actor AgentLoop {
         structuredGenerator: StructuredGenerator = StructuredGenerator(llm: LLMProviderManager.shared),
         toolHost: ToolHost = .shared,
         toolRegistry: ToolRegistry = .shared,
-        conversationManager: ConversationManager = .shared
+        conversationManager: ConversationManager = .shared,
+        persistenceSink: AgentLoopPersistenceSink = SwiftDataAgentLoopPersistenceSink()
     ) {
         self.maxStepsPerTurn = maxStepsPerTurn
         self.maxToolCallsPerTurn = maxToolCallsPerTurn
@@ -110,6 +125,7 @@ actor AgentLoop {
         self.toolHost = toolHost
         self.toolRegistry = toolRegistry
         self.conversationManager = conversationManager
+        self.persistenceSink = persistenceSink
     }
     
     // MARK: - Public API
@@ -203,7 +219,9 @@ actor AgentLoop {
         
         await notifyDelegateThinkingStarted()
         
-        // Add user message to existing conversation
+        await self.persistMessage(role: .user, content: userText)
+
+        // Add user message to in-memory conversation
         await conversationManager.addUserMessage(userText)
         
         // Run agent loop
@@ -285,12 +303,14 @@ actor AgentLoop {
         )
         
         if case .response(let text) = output {
+            await self.persistMessage(role: .assistant, content: text)
             await conversationManager.addAssistantMessage(text)
             return text
         }
         
         // If not a direct response, return a simple acknowledgment
         let defaultResponse = "Done."
+        await self.persistMessage(role: .assistant, content: defaultResponse)
         await conversationManager.addAssistantMessage(defaultResponse)
         return defaultResponse
     }
@@ -349,6 +369,7 @@ actor AgentLoop {
                 // Emit composing activity before returning response
                 await notifyDelegateActivity(.composing)
                 logger.info("Agent produced direct response")
+                await self.persistMessage(role: .assistant, content: text)
                 await conversationManager.addAssistantMessage(text)
                 return .response(text: text)
 
@@ -415,6 +436,14 @@ actor AgentLoop {
     }
     
     // MARK: - Private - Delegate Notifications
+
+    private func persistMessage(role: Session.Message.Role, content: String) async {
+        do {
+            try await self.persistenceSink.appendMessage(role: role, content: content)
+        } catch {
+            self.logger.error("Failed to persist \(role.rawValue) message: \(error.localizedDescription)")
+        }
+    }
     
     private func notifyDelegateThinkingStarted() async {
         await MainActor.run {
