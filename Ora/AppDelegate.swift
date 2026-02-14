@@ -157,6 +157,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         self.logger.info("Ora terminating...")
 
+        PersistenceManager.shared.flushSave()
+
         // Stop hotkey manager
         HotkeyManager.shared.stop()
 
