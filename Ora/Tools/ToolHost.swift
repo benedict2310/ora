@@ -8,6 +8,36 @@
 import Foundation
 import os
 
+struct ToolExecutionRecord: Sendable {
+    let result: ToolResult
+    let auditEntryID: UUID
+}
+
+enum ToolExecutionError: LocalizedError, Sendable {
+    case executionFailed(auditEntryID: UUID, message: String)
+
+    var errorDescription: String? {
+        switch self {
+        case .executionFailed(_, let message):
+            return message
+        }
+    }
+
+    var auditEntryID: UUID {
+        switch self {
+        case .executionFailed(let auditEntryID, _):
+            return auditEntryID
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .executionFailed(_, let message):
+            return message
+        }
+    }
+}
+
 /// Executes tools with proper guardrails
 actor ToolHost {
     
@@ -32,6 +62,22 @@ actor ToolHost {
         confirmed: Bool,
         sessionID: UUID? = nil
     ) async throws -> ToolResult {
+        let execution = try await self.executeWithAudit(
+            toolName: toolName,
+            args: args,
+            confirmed: confirmed,
+            sessionID: sessionID
+        )
+        return execution.result
+    }
+
+    /// Execute a tool call and return the resulting audit entry ID.
+    func executeWithAudit(
+        toolName: String,
+        args: [String: JSONValue],
+        confirmed: Bool,
+        sessionID: UUID? = nil
+    ) async throws -> ToolExecutionRecord {
         // Get tool
         guard let tool = await ToolRegistry.shared.tool(named: toolName) else {
             throw ToolHostError.toolNotFound(toolName)
@@ -95,7 +141,7 @@ actor ToolHost {
             }
             
             logger.info("Tool executed: \(toolName)")
-            return result
+            return ToolExecutionRecord(result: result, auditEntryID: auditEntryID)
             
         } catch {
             // Update audit with failure
@@ -105,7 +151,7 @@ actor ToolHost {
             }
             
             logger.error("Tool failed: \(toolName) - \(error.localizedDescription)")
-            throw error
+            throw ToolExecutionError.executionFailed(auditEntryID: auditEntryID, message: errorMessage)
         }
     }
     

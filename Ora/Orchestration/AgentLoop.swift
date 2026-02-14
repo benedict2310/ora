@@ -87,6 +87,7 @@ actor AgentLoop {
     private let maxStepsPerTurn: Int
     private let maxToolCallsPerTurn: Int
     private let maxTokensPerTurn: Int
+    private let maxPersistedToolSummaryCharacters: Int = 500
     
     private var currentSessionID: UUID?
     
@@ -254,12 +255,13 @@ actor AgentLoop {
         await notifyDelegateActivity(.toolCall(name: tool))
 
         do {
-            let result = try await toolHost.execute(
+            let execution = try await toolHost.executeWithAudit(
                 toolName: tool,
                 args: args,
                 confirmed: true,
                 sessionID: currentSessionID
             )
+            let result = execution.result
 
             // Emit toolResult activity after execution
             await notifyDelegateActivity(.toolResult(name: tool))
@@ -267,6 +269,11 @@ actor AgentLoop {
             // Add to conversation context
             let resultText = "Tool \(tool) executed: \(result.humanSummary)"
             await conversationManager.addToolResult(resultText)
+            await self.persistToolResultMessage(
+                tool: tool,
+                summary: result.humanSummary,
+                auditID: execution.auditEntryID
+            )
 
             await notifyDelegateToolExecuted(name: tool, result: result.humanSummary)
 
@@ -387,12 +394,13 @@ actor AgentLoop {
                 await notifyDelegateActivity(.toolCall(name: tool))
 
                 do {
-                    let result = try await toolHost.execute(
+                    let execution = try await toolHost.executeWithAudit(
                         toolName: tool,
                         args: args,
                         confirmed: true,  // Read tools don't need confirmation
                         sessionID: currentSessionID
                     )
+                    let result = execution.result
 
                     // Emit toolResult activity after execution
                     await notifyDelegateActivity(.toolResult(name: tool))
@@ -405,15 +413,38 @@ actor AgentLoop {
                     let resultText = "Tool \(tool) returned: \(jsonString)"
                     logger.info("Tool result received for \(tool)")
                     await conversationManager.addToolResult(resultText)
+                    await self.persistToolResultMessage(
+                        tool: tool,
+                        summary: result.humanSummary,
+                        auditID: execution.auditEntryID
+                    )
 
                 } catch {
                     // Emit toolResult even on failure
                     await notifyDelegateActivity(.toolResult(name: tool))
 
                     // Tool failed, add error to context and continue
-                    let errorText = "Tool \(tool) failed: \(error.localizedDescription)"
+                    let failureSummary: String
+                    let auditID: UUID?
+                    if let executionError = error as? ToolExecutionError {
+                        failureSummary = executionError.message
+                        auditID = executionError.auditEntryID
+                    } else {
+                        failureSummary = error.localizedDescription
+                        auditID = nil
+                    }
+                    let errorText = "Tool \(tool) failed: \(failureSummary)"
                     logger.error("Tool failed: \(errorText)")
                     await conversationManager.addToolResult(errorText)
+                    if let auditID {
+                        await self.persistToolResultMessage(
+                            tool: tool,
+                            summary: failureSummary,
+                            auditID: auditID
+                        )
+                    } else {
+                        logger.error("Missing audit entry ID for tool failure: \(tool)")
+                    }
                 }
 
                 // Continue loop for next step
@@ -449,6 +480,30 @@ actor AgentLoop {
         await MainActor.run {
             self._delegate?.agentLoopDidStartThinking(self)
         }
+    }
+
+    private func persistToolResultMessage(
+        tool: String,
+        summary: String,
+        auditID: UUID
+    ) async {
+        let boundedSummary = self.boundedToolSummary(summary)
+        let auditReference = auditID.uuidString
+        let content = "[ToolResult: \(tool)] \(boundedSummary) (auditId=\(auditReference))"
+        await self.persistMessage(role: .tool, content: content)
+    }
+
+    private func boundedToolSummary(_ summary: String) -> String {
+        let compactSummary = summary
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard compactSummary.count > self.maxPersistedToolSummaryCharacters else {
+            return compactSummary
+        }
+
+        let prefixLength = max(self.maxPersistedToolSummaryCharacters - 3, 0)
+        return "\(compactSummary.prefix(prefixLength))..."
     }
 
     private func notifyDelegateToken(_ token: String) async {
