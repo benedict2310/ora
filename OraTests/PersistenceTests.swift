@@ -431,6 +431,7 @@ final class PersistenceManagerAPITests: XCTestCase {
 
         // When
         _ = diskManager.appendMessage(role: .user, content: "Persist me")
+        diskManager.flushSave()
 
         // Then
         XCTAssertTrue(fileManager.fileExists(atPath: storeURL.path))

@@ -15,10 +15,15 @@ final class PersistenceManager {
     // MARK: - Singleton
 
     static let shared = PersistenceManager()
+    private static let defaultSaveDebounceInterval: Duration = .milliseconds(250)
 
     // MARK: - Properties
 
     private let logger = Logger(subsystem: "com.ora.app", category: "Persistence")
+    private let saveDebounceInterval: Duration
+    private let onContextSavedForTesting: (@MainActor () -> Void)?
+    private var saveTask: Task<Void, Never>?
+    private var saveTaskToken: UInt64 = 0
 
     let container: ModelContainer
     var context: ModelContext {
@@ -28,6 +33,9 @@ final class PersistenceManager {
     // MARK: - Initialization
 
     private init() {
+        self.saveDebounceInterval = Self.defaultSaveDebounceInterval
+        self.onContextSavedForTesting = nil
+
         let schema = Schema([
             Session.self,
             AuditLogEntryModel.self,
@@ -59,18 +67,27 @@ final class PersistenceManager {
     /// Create a persistence manager with an in-memory store for testing
     static func createForTesting(
         inMemory: Bool = true,
-        storeURL: URL? = nil
+        storeURL: URL? = nil,
+        saveDebounceInterval: Duration = PersistenceManager.defaultSaveDebounceInterval,
+        onContextSaved: (@MainActor () -> Void)? = nil
     ) -> PersistenceManager {
         return PersistenceManager(
             inMemory: inMemory,
-            storeURL: storeURL
+            storeURL: storeURL,
+            saveDebounceInterval: saveDebounceInterval,
+            onContextSaved: onContextSaved
         )
     }
 
     private init(
         inMemory: Bool,
-        storeURL: URL? = nil
+        storeURL: URL? = nil,
+        saveDebounceInterval: Duration = PersistenceManager.defaultSaveDebounceInterval,
+        onContextSaved: (@MainActor () -> Void)? = nil
     ) {
+        self.saveDebounceInterval = saveDebounceInterval
+        self.onContextSavedForTesting = onContextSaved
+
         let schema = Schema([
             Session.self,
             AuditLogEntryModel.self,
@@ -349,11 +366,48 @@ final class PersistenceManager {
         self.saveContext()
     }
 
+    /// Immediately persist any pending changes, cancelling a scheduled debounced save first.
+    func flushSave() {
+        self.saveTask?.cancel()
+        self.saveTask = nil
+        self.performSave()
+    }
+
     // MARK: - Helpers
 
     private func saveContext() {
+        self.saveTask?.cancel()
+        self.saveTaskToken &+= 1
+        let token = self.saveTaskToken
+        let debounceInterval = self.saveDebounceInterval
+
+        self.saveTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: debounceInterval)
+            } catch {
+                return
+            }
+
+            guard let self else {
+                return
+            }
+            guard !Task.isCancelled, token == self.saveTaskToken else {
+                return
+            }
+
+            self.performSave()
+            self.saveTask = nil
+        }
+    }
+
+    private func performSave() {
+        guard self.context.hasChanges else {
+            return
+        }
+
         do {
-            try context.save()
+            try self.context.save()
+            self.onContextSavedForTesting?()
         } catch {
             self.logger.error("Failed to save context: \(error.localizedDescription)")
         }
