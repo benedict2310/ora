@@ -351,6 +351,94 @@ final class PersistenceManagerAPITests: XCTestCase {
         XCTAssertFalse(session.isComplete)
     }
 
+    func test_persistenceManager_appendMessage_freshSession_appendsMessageWithIdentifiers() {
+        // Given
+        let appendStart = Date()
+        let metadata = ["source": "asr", "turnId": "1"]
+
+        // When
+        let session = manager.appendMessage(
+            role: .user,
+            content: "Hello persistence",
+            metadata: metadata
+        )
+
+        // Then
+        XCTAssertFalse(session.isComplete)
+        XCTAssertEqual(session.messages.count, 1)
+
+        let message = session.messages[0]
+        XCTAssertEqual(message.role, .user)
+        XCTAssertEqual(message.content, "Hello persistence")
+        XCTAssertGreaterThanOrEqual(message.timestamp, appendStart)
+        XCTAssertEqual(message.metadata, metadata)
+        XCTAssertNotNil(session.messagesData)
+        XCTAssertFalse(session.messagesData?.isEmpty ?? true)
+    }
+
+    func test_persistenceManager_appendMessage_updatesSessionUpdatedAt() {
+        // Given
+        let session = manager.createSession()
+        let originalUpdatedAt = session.updatedAt
+        Thread.sleep(forTimeInterval: 0.01)
+
+        // When
+        _ = manager.appendMessage(role: .assistant, content: "Reply")
+
+        // Then
+        XCTAssertEqual(session.messages.count, 1)
+        XCTAssertGreaterThan(session.updatedAt, originalUpdatedAt)
+    }
+
+    func test_persistenceManager_appendMessage_multipleSequentialAppends_accumulateInOrderWithUniqueIDs() {
+        // Given
+        let messages = [
+            (role: Session.Message.Role.user, content: "First"),
+            (role: Session.Message.Role.assistant, content: "Second"),
+            (role: Session.Message.Role.user, content: "Third")
+        ]
+
+        // When
+        for message in messages {
+            _ = manager.appendMessage(role: message.role, content: message.content)
+        }
+        let session = manager.currentSession()
+
+        // Then
+        XCTAssertEqual(session.messages.count, messages.count)
+        XCTAssertEqual(session.messages.map(\.content), messages.map(\.content))
+        XCTAssertEqual(session.messages.map(\.role), messages.map(\.role))
+
+        let uniqueMessageIDs = Set(session.messages.map(\.id))
+        XCTAssertEqual(uniqueMessageIDs.count, messages.count)
+    }
+
+    func test_persistenceManager_appendMessage_diskStore_nonEmptyAfterFirstMessage() throws {
+        // Given
+        let fileManager = FileManager.default
+        let tempDirectory = fileManager.temporaryDirectory
+            .appendingPathComponent("PersistenceManagerAPITests-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: tempDirectory)
+        }
+
+        let storeURL = tempDirectory.appendingPathComponent(".default.store")
+        let diskManager = PersistenceManager.createForTesting(
+            inMemory: false,
+            storeURL: storeURL
+        )
+
+        // When
+        _ = diskManager.appendMessage(role: .user, content: "Persist me")
+
+        // Then
+        XCTAssertTrue(fileManager.fileExists(atPath: storeURL.path))
+        let storeAttributes = try fileManager.attributesOfItem(atPath: storeURL.path)
+        let storeSize = (storeAttributes[.size] as? NSNumber)?.intValue ?? 0
+        XCTAssertGreaterThan(storeSize, 0)
+    }
+
     func test_persistenceManager_completeSession_marksSummary() {
         // Given
         let session = manager.createSession()
