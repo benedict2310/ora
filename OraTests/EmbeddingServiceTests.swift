@@ -77,6 +77,20 @@ final class EmbeddingServiceTests: XCTestCase {
         }
     }
 
+    private static func isModelAvailabilityError(_ error: Error) -> Bool {
+        let description = String(describing: error).lowercased()
+        return description.contains("no such file")
+            || description.contains("not found")
+            || description.contains("doesn't exist")
+            || description.contains("can't connect")
+            || description.contains("connection")
+            || description.contains("resolve host")
+            || description.contains("network")
+            || description.contains("timed out")
+            || description.contains("offline")
+            || description.contains("download")
+    }
+
     func test_embed_sampleText_returnsNonZeroVectorWithExpectedDimension() async throws {
         // Given
         let service = EmbeddingService(
@@ -141,5 +155,40 @@ final class EmbeddingServiceTests: XCTestCase {
         // Then
         XCTAssertEqual(limitCounter.currentValue(), 1)
         XCTAssertEqual(clearCounter.currentValue(), 2)
+    }
+
+    func test_embed_realModelPath_generatesVectorWhenModelAvailable() async throws {
+        // Given
+        let service = EmbeddingService(
+            configuration: .init(
+                vectorDimension: 384,
+                gpuCacheLimitBytes: 64 * 1024 * 1024,
+                modelIdentifier: "BAAI/bge-small-en-v1.5",
+                batchSize: 2
+            )
+        )
+
+        // When
+        let vectors: [[Float]]
+        do {
+            vectors = try await service.embed(
+                texts: [
+                    "I like spicy food.",
+                    "What kind of cuisine do I enjoy?"
+                ]
+            )
+        } catch {
+            if Self.isModelAvailabilityError(error) {
+                throw XCTSkip("Embedding model unavailable for integration path test: \(error.localizedDescription)")
+            }
+            throw error
+        }
+
+        // Then
+        XCTAssertEqual(vectors.count, 2)
+        XCTAssertEqual(vectors[0].count, 384)
+        XCTAssertEqual(vectors[1].count, 384)
+        XCTAssertTrue(vectors[0].contains { abs($0) > 0.0001 })
+        XCTAssertTrue(vectors[1].contains { abs($0) > 0.0001 })
     }
 }
