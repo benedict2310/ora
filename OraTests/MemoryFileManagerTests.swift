@@ -110,7 +110,7 @@ Favorite coffee: black
         XCTAssertTrue(writtenContent.contains("## Open Loops"))
     }
 
-    func test_appendToMemory_existingContent_preservesExistingAndAppendsEntries() throws {
+    func test_appendEntries_existingContent_preservesExistingAndAppendsEntries() throws {
         // Given
         let documentsDirectory = self.temporaryDirectoryURL.appendingPathComponent("Documents", isDirectory: true)
         let manager = MemoryFileManager(documentsDirectory: documentsDirectory)
@@ -126,19 +126,33 @@ Favorite coffee: black
         let timestamp = Date(timeIntervalSince1970: 1_700_000_000)
         let sessionID = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
 
+        let entries = [
+            MemoryEntry(
+                section: .preferences,
+                tag: .preference,
+                content: "Prefers morning meetings",
+                sourceSessionID: sessionID,
+                timestamp: timestamp
+            ),
+            MemoryEntry(
+                section: .projects,
+                tag: .fact,
+                content: "Uses 25-minute focus blocks",
+                sourceSessionID: sessionID,
+                timestamp: timestamp
+            )
+        ]
+
         // When
-        try manager.appendToMemory(
-            entries: ["Prefers morning meetings", "Uses 25-minute focus blocks"],
-            sessionId: sessionID,
-            timestamp: timestamp
-        )
+        try manager.appendEntries(entries: entries)
 
         // Then
         let content = try String(contentsOf: manager.memoryFileURL, encoding: .utf8)
         XCTAssertTrue(content.contains("Favorite coffee: black"))
-        XCTAssertTrue(content.contains("## Memory Update 2023-11-14 22:13 UTC"))
+        XCTAssertTrue(content.contains("## Preferences"))
+        XCTAssertTrue(content.contains("## Projects"))
         XCTAssertTrue(content.contains(sessionID.uuidString))
-        XCTAssertTrue(content.contains("- Prefers morning meetings"))
-        XCTAssertTrue(content.contains("- Uses 25-minute focus blocks"))
+        XCTAssertTrue(content.contains("- [preference] Prefers morning meetings"))
+        XCTAssertTrue(content.contains("- [fact] Uses 25-minute focus blocks"))
     }
 }

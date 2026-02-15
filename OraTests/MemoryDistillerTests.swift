@@ -62,7 +62,7 @@ final class MemoryDistillerTests: XCTestCase {
     func test_distill_validTranscript_writesSummaryAndAppendsMemoryEntries() async throws {
         // Given
         let sessionID = UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!
-        let response = #"{"summary":{"tldr":"User prefers morning meetings.","bullets":["Discussed recurring planning sync."],"decisions_and_commitments":[{"decision":"Move sync to 9am","rationale":"Improves focus time","timestamp":"2026-02-15T09:30:00Z"}],"open_loops":["Confirm Thursday slot with design team."]},"memory_entries":["User prefers morning meetings.","User starts deep work at 10am."]}"#
+        let response = #"{"summary":{"tldr":"User prefers morning meetings.","bullets":["Discussed recurring planning sync."],"decisions_and_commitments":[{"decision":"Move sync to 9am","rationale":"Improves focus time","timestamp":"2026-02-15T09:30:00Z"}],"open_loops":["Confirm Thursday slot with design team."]},"memory_entries":[{"section":"preferences","tag":"preference","content":"User prefers morning meetings.","normalized_key":"pref:meeting:morning"},{"section":"projects","tag":"fact","content":"User starts deep work at 10am."}]}"#
 
         let mockLLM = MemoryDistillerMockLLMService(responses: [response])
         let documentsDirectory = self.temporaryDirectoryURL.appendingPathComponent("Documents", isDirectory: true)
