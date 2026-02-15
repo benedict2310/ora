@@ -109,4 +109,36 @@ Favorite coffee: black
         XCTAssertTrue(writtenContent.contains("## Decisions & Commitments"))
         XCTAssertTrue(writtenContent.contains("## Open Loops"))
     }
+
+    func test_appendToMemory_existingContent_preservesExistingAndAppendsEntries() throws {
+        // Given
+        let documentsDirectory = self.temporaryDirectoryURL.appendingPathComponent("Documents", isDirectory: true)
+        let manager = MemoryFileManager(documentsDirectory: documentsDirectory)
+        try manager.ensureMemoryStructureExists()
+
+        let existingContent = """
+# Ora Memory
+
+Favorite coffee: black
+"""
+        try existingContent.write(to: manager.memoryFileURL, atomically: true, encoding: .utf8)
+
+        let timestamp = Date(timeIntervalSince1970: 1_700_000_000)
+        let sessionID = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
+
+        // When
+        try manager.appendToMemory(
+            entries: ["Prefers morning meetings", "Uses 25-minute focus blocks"],
+            sessionId: sessionID,
+            timestamp: timestamp
+        )
+
+        // Then
+        let content = try String(contentsOf: manager.memoryFileURL, encoding: .utf8)
+        XCTAssertTrue(content.contains("Favorite coffee: black"))
+        XCTAssertTrue(content.contains("## Memory Update 2023-11-14 22:13 UTC"))
+        XCTAssertTrue(content.contains(sessionID.uuidString))
+        XCTAssertTrue(content.contains("- Prefers morning meetings"))
+        XCTAssertTrue(content.contains("- Uses 25-minute focus blocks"))
+    }
 }

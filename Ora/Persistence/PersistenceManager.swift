@@ -153,6 +153,15 @@ final class PersistenceManager {
         return createSession()
     }
 
+    func activeSession() -> Session? {
+        let descriptor = FetchDescriptor<Session>(
+            predicate: #Predicate { !$0.isComplete },
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+
+        return try? context.fetch(descriptor).first
+    }
+
     /// Append a message to the current active session
     @discardableResult
     func appendMessage(
@@ -185,6 +194,29 @@ final class PersistenceManager {
 
         self.saveContext()
         self.logger.debug("Completed session: \(session.id)")
+    }
+
+    @discardableResult
+    func completeActiveSession() -> UUID? {
+        guard let session = self.activeSession() else {
+            return nil
+        }
+
+        self.completeSession(session)
+        return session.id
+    }
+
+    func messageSnapshot(sessionId: UUID) -> [Session.Message]? {
+        let descriptor = FetchDescriptor<Session>(
+            predicate: #Predicate { $0.id == sessionId },
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+
+        guard let session = try? context.fetch(descriptor).first else {
+            return nil
+        }
+
+        return session.messages
     }
 
     /// Fetch recent sessions

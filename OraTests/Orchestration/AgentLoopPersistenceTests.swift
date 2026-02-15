@@ -25,6 +25,37 @@ actor AgentLoopPersistenceEventRecorder {
     }
 }
 
+actor AgentLoopRecordingSessionLifecycleSink: AgentLoopSessionLifecycleSink {
+    private let completedSessionID: UUID?
+    private var callCount = 0
+
+    init(completedSessionID: UUID?) {
+        self.completedSessionID = completedSessionID
+    }
+
+    func completeActiveSession() async -> UUID? {
+        self.callCount += 1
+        return self.completedSessionID
+    }
+
+    func completionCallCount() -> Int {
+        return self.callCount
+    }
+}
+
+actor AgentLoopRecordingMemoryDistiller: MemoryDistilling {
+    private var distilledSessionIDs: [UUID] = []
+
+    func distill(sessionId: UUID) async -> SessionSummary? {
+        self.distilledSessionIDs.append(sessionId)
+        return SessionSummary()
+    }
+
+    func snapshot() -> [UUID] {
+        return self.distilledSessionIDs
+    }
+}
+
 struct PersistedMessageSnapshot: Equatable, Sendable {
     let role: Session.Message.Role
     let content: String
@@ -180,9 +211,37 @@ final class AgentLoopPersistenceTests: XCTestCase {
         }
     }
 
+    func test_endSession_completesActiveSession_andTriggersMemoryDistillation() async throws {
+        // Given
+        let expectedSessionID = UUID()
+        let sessionLifecycleSink = AgentLoopRecordingSessionLifecycleSink(completedSessionID: expectedSessionID)
+        let memoryDistiller = AgentLoopRecordingMemoryDistiller()
+        let loop = self.makeLoop(
+            llmService: AgentLoopPersistenceMockLLMService(),
+            persistenceSink: AgentLoopRecordingPersistenceSink(),
+            sessionLifecycleSink: sessionLifecycleSink,
+            memoryDistiller: memoryDistiller
+        )
+
+        await loop.startSession()
+
+        // When
+        await loop.endSession()
+        try await Task.sleep(for: .milliseconds(50))
+
+        // Then
+        let callCount = await sessionLifecycleSink.completionCallCount()
+        XCTAssertEqual(callCount, 1)
+
+        let distilledSessionIDs = await memoryDistiller.snapshot()
+        XCTAssertEqual(distilledSessionIDs, [expectedSessionID])
+    }
+
     private func makeLoop(
         llmService: LLMServicing,
-        persistenceSink: AgentLoopPersistenceSink
+        persistenceSink: AgentLoopPersistenceSink,
+        sessionLifecycleSink: AgentLoopSessionLifecycleSink = AgentLoopRecordingSessionLifecycleSink(completedSessionID: nil),
+        memoryDistiller: any MemoryDistilling = AgentLoopRecordingMemoryDistiller()
     ) -> AgentLoop {
         return AgentLoop(
             maxStepsPerTurn: 4,
@@ -192,7 +251,9 @@ final class AgentLoopPersistenceTests: XCTestCase {
             toolHost: .shared,
             toolRegistry: ToolRegistry.makeTestInstance(),
             conversationManager: ConversationManager.makeTestInstance(maxContextTokens: 6000),
-            persistenceSink: persistenceSink
+            persistenceSink: persistenceSink,
+            sessionLifecycleSink: sessionLifecycleSink,
+            memoryDistiller: memoryDistiller
         )
     }
 }

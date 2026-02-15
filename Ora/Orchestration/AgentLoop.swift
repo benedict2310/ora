@@ -22,6 +22,18 @@ struct SwiftDataAgentLoopPersistenceSink: AgentLoopPersistenceSink {
     }
 }
 
+protocol AgentLoopSessionLifecycleSink: Sendable {
+    func completeActiveSession() async -> UUID?
+}
+
+struct SwiftDataAgentLoopSessionLifecycleSink: AgentLoopSessionLifecycleSink {
+    func completeActiveSession() async -> UUID? {
+        return await MainActor.run {
+            return PersistenceManager.shared.completeActiveSession()
+        }
+    }
+}
+
 /// Agent activity for transparency status updates
 enum AgentActivity: Equatable, Sendable {
     /// Planning/reasoning before tool calls or response
@@ -106,6 +118,8 @@ actor AgentLoop {
     private let toolRegistry: ToolRegistry
     private let conversationManager: ConversationManager
     private let persistenceSink: AgentLoopPersistenceSink
+    private let sessionLifecycleSink: AgentLoopSessionLifecycleSink
+    private let memoryDistiller: any MemoryDistilling
     
     // MARK: - Initialization
     
@@ -117,7 +131,9 @@ actor AgentLoop {
         toolHost: ToolHost = .shared,
         toolRegistry: ToolRegistry = .shared,
         conversationManager: ConversationManager = .shared,
-        persistenceSink: AgentLoopPersistenceSink = SwiftDataAgentLoopPersistenceSink()
+        persistenceSink: AgentLoopPersistenceSink = SwiftDataAgentLoopPersistenceSink(),
+        sessionLifecycleSink: AgentLoopSessionLifecycleSink = SwiftDataAgentLoopSessionLifecycleSink(),
+        memoryDistiller: any MemoryDistilling = MemoryDistiller.shared
     ) {
         self.maxStepsPerTurn = maxStepsPerTurn
         self.maxToolCallsPerTurn = maxToolCallsPerTurn
@@ -127,6 +143,8 @@ actor AgentLoop {
         self.toolRegistry = toolRegistry
         self.conversationManager = conversationManager
         self.persistenceSink = persistenceSink
+        self.sessionLifecycleSink = sessionLifecycleSink
+        self.memoryDistiller = memoryDistiller
     }
     
     // MARK: - Public API
@@ -171,6 +189,16 @@ actor AgentLoop {
     ///
     /// Clears all session state and conversation history to free memory.
     func endSession() async {
+        if self.sessionActive {
+            let completedSessionID = await self.sessionLifecycleSink.completeActiveSession()
+            if let completedSessionID {
+                let memoryDistiller = self.memoryDistiller
+                Task.detached(priority: .utility) {
+                    _ = await memoryDistiller.distill(sessionId: completedSessionID)
+                }
+            }
+        }
+
         self.sessionActive = false
         self.pendingProposal = nil
         self.currentSessionID = nil
