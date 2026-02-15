@@ -16,7 +16,19 @@ struct MemoryFileManager {
 
 This file is user-editable.
 Add or remove details that you want Ora to remember long-term.
+
+## Profile
+
+## Preferences
+
+## People
+
+## Projects
+
+## Ongoing Goals
 """
+
+    private static let writeLock = NSLock()
 
     // MARK: - Properties
 
@@ -80,66 +92,45 @@ Add or remove details that you want Ora to remember long-term.
         try self.writeSummary(sessionId: sessionId, content: SessionSummary.placeholder.renderMarkdown())
     }
 
-    func appendToMemory(
-        entries: [String],
-        sessionId: UUID? = nil,
-        timestamp: Date = Date()
-    ) throws {
-        let normalizedEntries = entries
-            .map { entry in
-                let trimmed = entry
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                if trimmed.hasPrefix("- ") {
-                    return String(trimmed.dropFirst(2))
-                }
-                return trimmed
-            }
-            .filter { !$0.isEmpty }
-
+    func appendEntries(entries: [MemoryEntry]) throws {
+        let normalizedEntries = entries.filter { !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         guard !normalizedEntries.isEmpty else {
             return
         }
 
         try self.ensureMemoryStructureExists()
+        try Self.withWriteLock {
+            let existingContent = (try? String(contentsOf: self.memoryFileURL, encoding: .utf8)) ?? Self.initialMemoryTemplate
+            let contentWithSections = Self.ensureRequiredSections(in: existingContent)
+            var lines = Self.splitLines(contentWithSections)
+            let existingFingerprints = Self.existingEntryFingerprints(in: lines)
+            let entriesToAppend = Self.deduplicatedEntries(
+                from: normalizedEntries,
+                existingFingerprints: existingFingerprints
+            )
 
-        let existingContent = (try? String(contentsOf: self.memoryFileURL, encoding: .utf8)) ?? ""
-        let separator: String
-        if existingContent.isEmpty {
-            separator = ""
-        } else if existingContent.hasSuffix("\n\n") {
-            separator = ""
-        } else if existingContent.hasSuffix("\n") {
-            separator = "\n"
-        } else {
-            separator = "\n\n"
+            guard !entriesToAppend.isEmpty else {
+                return
+            }
+
+            let groupedEntries = Dictionary(grouping: entriesToAppend, by: { $0.section })
+            for section in MemoryEntry.Section.allCases.reversed() {
+                guard let sectionEntries = groupedEntries[section], !sectionEntries.isEmpty else {
+                    continue
+                }
+
+                let sectionRanges = Self.sectionRanges(in: lines)
+                guard let range = sectionRanges[section] else {
+                    continue
+                }
+
+                let insertionIndex = Self.insertionIndex(for: range, lines: lines)
+                lines.insert(contentsOf: sectionEntries.map(\.renderedLine), at: insertionIndex)
+            }
+
+            let updatedContent = lines.joined(separator: "\n")
+            try updatedContent.write(to: self.memoryFileURL, atomically: true, encoding: .utf8)
         }
-
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd HH:mm 'UTC'"
-
-        var sectionHeader = "## Memory Update \(formatter.string(from: timestamp))"
-        if let sessionId {
-            sectionHeader += " (session: \(sessionId.uuidString))"
-        }
-
-        let appendedSection = [
-            separator + sectionHeader,
-            normalizedEntries.map { "- \($0)" }.joined(separator: "\n")
-        ].joined(separator: "\n")
-
-        guard let data = appendedSection.data(using: .utf8) else {
-            throw CocoaError(.fileWriteInapplicableStringEncoding)
-        }
-
-        let handle = try FileHandle(forWritingTo: self.memoryFileURL)
-        defer {
-            handle.closeFile()
-        }
-
-        try handle.seekToEnd()
-        try handle.write(contentsOf: data)
     }
 
     // MARK: - Private Helpers
@@ -150,5 +141,145 @@ Add or remove details that you want Ora to remember long-term.
         }
 
         try Self.initialMemoryTemplate.write(to: self.memoryFileURL, atomically: true, encoding: .utf8)
+    }
+
+    private static func withWriteLock<T>(_ operation: () throws -> T) throws -> T {
+        self.writeLock.lock()
+        defer {
+            self.writeLock.unlock()
+        }
+        return try operation()
+    }
+
+    private static func splitLines(_ content: String) -> [String] {
+        content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    }
+
+    private static func ensureRequiredSections(in content: String) -> String {
+        var lines = self.splitLines(content)
+
+        if lines.isEmpty {
+            lines = self.splitLines(Self.initialMemoryTemplate)
+        }
+
+        for section in MemoryEntry.Section.allCases {
+            if lines.contains(section.heading) {
+                continue
+            }
+            if lines.last?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+                lines.append("")
+            }
+            lines.append(section.heading)
+            lines.append("")
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
+    private static func deduplicatedEntries(
+        from entries: [MemoryEntry],
+        existingFingerprints: Set<String>
+    ) -> [MemoryEntry] {
+        var output: [MemoryEntry] = []
+        var seenFingerprints = existingFingerprints
+        var seenKeys: Set<String> = []
+
+        for entry in entries {
+            let fingerprint = entry.dedupFingerprint
+            if seenFingerprints.contains(fingerprint) {
+                continue
+            }
+
+            if let key = entry.normalizedKeyToken {
+                if seenKeys.contains(key) {
+                    continue
+                }
+                seenKeys.insert(key)
+            }
+
+            output.append(entry)
+            seenFingerprints.insert(fingerprint)
+        }
+
+        return output
+    }
+
+    private static func existingEntryFingerprints(in lines: [String]) -> Set<String> {
+        let ranges = self.sectionRanges(in: lines)
+        var fingerprints: Set<String> = []
+
+        for (section, range) in ranges {
+            guard range.count > 1 else {
+                continue
+            }
+
+            for line in lines[(range.lowerBound + 1)..<range.upperBound] {
+                guard let prefix = self.entryPrefix(from: line) else {
+                    continue
+                }
+                let token = MemoryEntry.normalizeForDedup(prefix)
+                fingerprints.insert("\(section.rawValue)|\(token)")
+            }
+        }
+
+        return fingerprints
+    }
+
+    private static func entryPrefix(from line: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("- ") else {
+            return nil
+        }
+
+        let body = String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else {
+            return nil
+        }
+
+        if let sourceRange = body.range(of: " (source:", options: [.caseInsensitive, .backwards]) {
+            let prefix = body[..<sourceRange.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
+            return prefix.isEmpty ? nil : prefix
+        }
+
+        return body
+    }
+
+    private static func sectionRanges(in lines: [String]) -> [MemoryEntry.Section: Range<Int>] {
+        var sectionStarts: [(section: MemoryEntry.Section, index: Int)] = []
+
+        for (index, line) in lines.enumerated() {
+            for section in MemoryEntry.Section.allCases where line == section.heading {
+                sectionStarts.append((section: section, index: index))
+            }
+        }
+
+        guard !sectionStarts.isEmpty else {
+            return [:]
+        }
+
+        sectionStarts.sort { $0.index < $1.index }
+        var ranges: [MemoryEntry.Section: Range<Int>] = [:]
+
+        for (currentIndex, start) in sectionStarts.enumerated() {
+            let end = currentIndex + 1 < sectionStarts.count
+                ? sectionStarts[currentIndex + 1].index
+                : lines.count
+            ranges[start.section] = start.index..<end
+        }
+
+        return ranges
+    }
+
+    private static func insertionIndex(for sectionRange: Range<Int>, lines: [String]) -> Int {
+        var insertion = sectionRange.upperBound
+        while insertion > sectionRange.lowerBound + 1 {
+            let candidate = lines[insertion - 1].trimmingCharacters(in: .whitespacesAndNewlines)
+            if candidate.isEmpty {
+                insertion -= 1
+                continue
+            }
+            break
+        }
+        return insertion
     }
 }
