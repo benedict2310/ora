@@ -177,6 +177,29 @@ final class TranscriptMigrationTests: XCTestCase {
         XCTAssertEqual(retrieved.first?.content, "blob content")
     }
 
+    func test_messages_setter_updatesModels_whenMigrated() {
+        let session = self.persistence.createSession()
+        XCTAssertTrue(session.isMigrated)
+
+        // Add via addMessage first
+        session.addMessage(role: .user, content: "original")
+        self.persistence.flushSave()
+        XCTAssertEqual(session.messages.count, 1)
+
+        // Overwrite via setter
+        let replacement = Session.Message(
+            id: UUID(), role: .assistant, content: "replaced", timestamp: Date(), metadata: nil
+        )
+        session.messages = [replacement]
+        self.persistence.flushSave()
+
+        // Getter should reflect the setter's value
+        let messages = session.messages
+        XCTAssertEqual(messages.count, 1)
+        XCTAssertEqual(messages.first?.content, "replaced")
+        XCTAssertEqual(messages.first?.role, .assistant)
+    }
+
     func test_messagesAPI_unchangedForConsumers() {
         let session = self.persistence.createSession()
 

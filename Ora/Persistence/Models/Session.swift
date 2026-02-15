@@ -99,7 +99,14 @@ final class Session {
             return decodedMessages
         }
         set {
-            // Always update blob for backward compat and legacy code paths
+            if self.isMigrated {
+                // Replace relationship storage with new values
+                self.messageModels = newValue.map { MessageModel.from($0, session: self) }
+                self.updatedAt = Date()
+                return
+            }
+
+            // Legacy blob path
             let state = Self.persistenceSignposter.beginInterval("session.messages.encode")
             let start = DispatchTime.now().uptimeNanoseconds
             let encodedData = try? JSONEncoder().encode(newValue)
