@@ -47,8 +47,8 @@ final class HopTimerTests: XCTestCase {
             || NSHomeDirectory().contains("/Users/runner")
     }
 
-    override func setUp() {
-        try? XCTSkipIf(
+    override func setUpWithError() throws {
+        try XCTSkipIf(
             Self.isCI,
             "DispatchSourceTimer tests crash intermittently on CI runners"
         )

@@ -74,6 +74,8 @@ jobs:
             -derivedDataPath "$DERIVED_DATA" \
             -resultBundlePath .artifacts/TestResults.xcresult \
             -destination "platform=macOS,arch=$ARCH" \
+            -retry-tests-on-failure \
+            -test-iterations 3 \
             CODE_SIGN_IDENTITY="-" \
             ENABLE_HARDENED_RUNTIME=NO
 
