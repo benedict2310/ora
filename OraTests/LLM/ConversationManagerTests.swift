@@ -258,4 +258,40 @@ final class ConversationManagerTests: XCTestCase {
         XCTAssertEqual(messages[1].content, "What's the weather like?")
         XCTAssertEqual(messages[5].content, "Thanks! What about tomorrow?")
     }
+
+    func test_memoryContext_whenSet_includesAdditionalSystemMessage() async {
+        // Given
+        let manager = ConversationManager.makeTestInstance(maxContextTokens: 6000)
+        await manager.startConversation(systemPrompt: "Base system prompt")
+        await manager.addUserMessage("What did we decide?")
+        await manager.setMemoryContext("Relevant memory chunk")
+
+        // When
+        let messages = await manager.getMessagesForLLM()
+
+        // Then
+        XCTAssertEqual(messages.count, 3)
+        XCTAssertEqual(messages[0].role, .system)
+        XCTAssertEqual(messages[0].content, "Base system prompt")
+        XCTAssertEqual(messages[1].role, .system)
+        XCTAssertEqual(messages[1].content, "Relevant memory chunk")
+        XCTAssertEqual(messages[2].role, .user)
+    }
+
+    func test_memoryContext_whenCleared_excludesAdditionalSystemMessage() async {
+        // Given
+        let manager = ConversationManager.makeTestInstance(maxContextTokens: 6000)
+        await manager.startConversation(systemPrompt: "Base system prompt")
+        await manager.addUserMessage("Follow up")
+        await manager.setMemoryContext("Temporary memory context")
+        await manager.clearMemoryContext()
+
+        // When
+        let messages = await manager.getMessagesForLLM()
+
+        // Then
+        XCTAssertEqual(messages.count, 2)
+        XCTAssertEqual(messages[0].role, .system)
+        XCTAssertEqual(messages[1].role, .user)
+    }
 }

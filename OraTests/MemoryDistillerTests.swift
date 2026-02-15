@@ -36,6 +36,18 @@ actor MemoryDistillerMockLLMService: LLMServicing {
     }
 }
 
+actor MemoryDistillerMockMemoryIndex: MemoryIndexing {
+    private(set) var rebuildCallCount = 0
+
+    func rebuild() async {
+        self.rebuildCallCount += 1
+    }
+
+    func search(query: String, limit: Int) async -> [MemoryChunk] {
+        return []
+    }
+}
+
 final class MemoryDistillerTests: XCTestCase {
 
     // MARK: - Properties
@@ -147,5 +159,30 @@ final class MemoryDistillerTests: XCTestCase {
 
         let memoryContent = try String(contentsOf: verificationManager.memoryFileURL, encoding: .utf8)
         XCTAssertEqual(memoryContent, baselineMemory)
+    }
+
+    func test_distill_emptyTranscript_triggersMemoryIndexRebuild() async throws {
+        // Given
+        let sessionID = UUID(uuidString: "66666666-7777-8888-9999-aaaaaaaaaaaa")!
+        let mockLLM = MemoryDistillerMockLLMService(responses: [])
+        let mockMemoryIndex = MemoryDistillerMockMemoryIndex()
+        let documentsDirectory = self.temporaryDirectoryURL.appendingPathComponent("Documents", isDirectory: true)
+
+        let distiller = MemoryDistiller(
+            llm: mockLLM,
+            memoryFileManager: MemoryFileManager(documentsDirectory: documentsDirectory),
+            memoryIndex: mockMemoryIndex,
+            transcriptLoader: { requestedSessionID in
+                return requestedSessionID == sessionID ? [] : nil
+            },
+            promptLoader: { "Return JSON only." }
+        )
+
+        // When
+        _ = await distiller.distill(sessionId: sessionID)
+
+        // Then
+        let rebuildCallCount = await mockMemoryIndex.rebuildCallCount
+        XCTAssertEqual(rebuildCallCount, 1)
     }
 }
