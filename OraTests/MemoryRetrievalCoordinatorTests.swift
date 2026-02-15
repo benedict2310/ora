@@ -34,7 +34,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
                 sessionID: nil,
                 sectionName: "Projects",
                 lastModified: now,
-                score: 1.20
+                score: -0.14
             ),
             MemoryChunk(
                 content: "Decision: move rollout checkpoint to Thursday.",
@@ -42,7 +42,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
                 sessionID: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
                 sectionName: "Decisions & Commitments",
                 lastModified: now,
-                score: 1.10
+                score: -0.18
             ),
             MemoryChunk(
                 content: "Open loop: confirm Phoenix dependency with infra.",
@@ -50,7 +50,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
                 sessionID: UUID(uuidString: "ffffffff-1111-2222-3333-444444444444"),
                 sectionName: "Open Loops",
                 lastModified: now,
-                score: 1.05
+                score: -0.21
             ),
             MemoryChunk(
                 content: "Preference: keep migration notes concise.",
@@ -58,7 +58,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
                 sessionID: nil,
                 sectionName: "Preferences",
                 lastModified: now,
-                score: 0.98
+                score: -0.29
             ),
             MemoryChunk(
                 content: "TL;DR: weekly migration checkpoint accepted.",
@@ -66,7 +66,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
                 sessionID: UUID(uuidString: "12345678-1234-5678-9abc-def012345678"),
                 sectionName: "TL;DR",
                 lastModified: now,
-                score: 0.92
+                score: -0.34
             )
         ]
 
@@ -76,7 +76,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
         let coordinator = KeywordMemoryRetrievalCoordinator(
             memoryIndex: StubMemoryIndex(chunks: chunks),
             configuration: .init(
-                minTopScore: 0.20,
+                minTopScore: -0.30,
                 minChunkCount: 3,
                 maxChunkCount: 7,
                 scoreWindowRatio: 0.70
@@ -121,7 +121,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
                 sessionID: nil,
                 sectionName: "Projects",
                 lastModified: now,
-                score: 0.10
+                score: -0.62
             ),
             MemoryChunk(
                 content: "Another weak match.",
@@ -129,7 +129,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
                 sessionID: UUID(),
                 sectionName: "TL;DR",
                 lastModified: now,
-                score: 0.08
+                score: -0.75
             )
         ]
 
@@ -139,7 +139,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
         let coordinator = KeywordMemoryRetrievalCoordinator(
             memoryIndex: StubMemoryIndex(chunks: chunks),
             configuration: .init(
-                minTopScore: 0.30,
+                minTopScore: -0.30,
                 minChunkCount: 3,
                 maxChunkCount: 7,
                 scoreWindowRatio: 0.70
@@ -166,4 +166,3 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
         XCTAssertEqual(messages[0].content, "System prompt")
     }
 }
-
