@@ -55,7 +55,7 @@ struct KeywordMemoryRetrievalCoordinator: MemoryRetrievalCoordinating {
         let scoreWindowRatio: Double
 
         static let `default` = Configuration(
-            minTopScore: 0.30,
+            minTopScore: -0.30,
             minChunkCount: 3,
             maxChunkCount: 7,
             scoreWindowRatio: 0.70
@@ -126,7 +126,12 @@ struct KeywordMemoryRetrievalCoordinator: MemoryRetrievalCoordinating {
             return []
         }
 
-        let dynamicFloor = topScore * self.configuration.scoreWindowRatio
+        let dynamicFloor: Double
+        if topScore < 0 {
+            dynamicFloor = topScore / self.configuration.scoreWindowRatio
+        } else {
+            dynamicFloor = topScore * self.configuration.scoreWindowRatio
+        }
         var shortlisted = chunks.filter { chunk in
             return chunk.score >= dynamicFloor
         }
