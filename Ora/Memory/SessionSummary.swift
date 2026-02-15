@@ -102,11 +102,11 @@ struct SessionSummary: Codable, Sendable, Equatable {
 
         return self.decisionsAndCommitments.enumerated().map { index, item in
             let timestamp = formatter.string(from: item.timestamp)
-            return """
-\(index + 1). **Decision:** \(item.decision)
-   **Rationale:** \(item.rationale)
-   **Timestamp:** \(timestamp)
-"""
+            return [
+                "\(index + 1). **Decision:** \(item.decision)",
+                "   **Rationale:** \(item.rationale)",
+                "   **Timestamp:** \(timestamp)"
+            ].joined(separator: "\n")
         }.joined(separator: "\n\n")
     }
 
