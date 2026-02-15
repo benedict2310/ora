@@ -7,6 +7,7 @@
 
 import Foundation
 import MLX
+import MLXEmbedders
 import os
 
 protocol EmbeddingServicing: Sendable {
@@ -22,15 +23,41 @@ actor EmbeddingService: EmbeddingServicing {
     struct Configuration: Sendable, Equatable {
         let vectorDimension: Int
         let gpuCacheLimitBytes: Int
+        let modelIdentifier: String
+        let batchSize: Int
 
-        static let `default` = Configuration(
-            vectorDimension: 384,
-            gpuCacheLimitBytes: 512 * 1024 * 1024
-        )
+        init(
+            vectorDimension: Int = 384,
+            gpuCacheLimitBytes: Int = 512 * 1024 * 1024,
+            modelIdentifier: String = "BAAI/bge-small-en-v1.5",
+            batchSize: Int = 16
+        ) {
+            self.vectorDimension = vectorDimension
+            self.gpuCacheLimitBytes = gpuCacheLimitBytes
+            self.modelIdentifier = modelIdentifier
+            self.batchSize = batchSize
+        }
+
+        static let `default` = Configuration()
+    }
+
+    enum EmbeddingServiceError: LocalizedError {
+        case modelUnavailable
+        case outputCountMismatch(expected: Int, actual: Int)
+
+        var errorDescription: String? {
+            switch self {
+            case .modelUnavailable:
+                return "Embedding model is not loaded."
+            case .outputCountMismatch(let expected, let actual):
+                return "Embedding output count mismatch. Expected \(expected), got \(actual)."
+            }
+        }
     }
 
     typealias GPUCacheLimiter = @Sendable (Int) -> Void
     typealias GPUCacheClearer = @Sendable () -> Void
+    typealias BatchEmbedder = @Sendable ([String]) async throws -> [[Float]]
 
     // MARK: - Singleton
 
@@ -42,8 +69,10 @@ actor EmbeddingService: EmbeddingServicing {
     private let configuration: Configuration
     private let gpuCacheLimiter: GPUCacheLimiter
     private let gpuCacheClearer: GPUCacheClearer
+    private let batchEmbedder: BatchEmbedder?
     nonisolated let vectorDimension: Int
     private var isPrepared = false
+    private var modelContainer: MLXEmbedders.ModelContainer?
 
     // MARK: - Initialization
 
@@ -54,11 +83,13 @@ actor EmbeddingService: EmbeddingServicing {
         },
         gpuCacheClearer: @escaping GPUCacheClearer = {
             GPU.clearCache()
-        }
+        },
+        batchEmbedder: BatchEmbedder? = nil
     ) {
         self.configuration = configuration
         self.gpuCacheLimiter = gpuCacheLimiter
         self.gpuCacheClearer = gpuCacheClearer
+        self.batchEmbedder = batchEmbedder
         self.vectorDimension = configuration.vectorDimension
     }
 
@@ -76,189 +107,150 @@ actor EmbeddingService: EmbeddingServicing {
             return []
         }
 
-        self.prepareIfNeeded()
+        try await self.prepareIfNeeded()
         defer {
             self.gpuCacheClearer()
         }
 
-        return texts.map { text in
-            return Self.makeVector(
-                from: text,
-                dimension: self.configuration.vectorDimension
-            )
-        }
-    }
+        var output: [[Float]] = []
+        output.reserveCapacity(texts.count)
 
-    // MARK: - Model Lifecycle
+        let batchSize = max(1, self.configuration.batchSize)
+        for startIndex in stride(from: 0, to: texts.count, by: batchSize) {
+            let endIndex = min(startIndex + batchSize, texts.count)
+            let batchTexts = Array(texts[startIndex..<endIndex])
 
-    private func prepareIfNeeded() {
-        guard !self.isPrepared else {
-            return
-        }
-
-        self.gpuCacheLimiter(self.configuration.gpuCacheLimitBytes)
-        self.isPrepared = true
-        self.logger.info("Embedding service prepared with vector dimension \(self.configuration.vectorDimension)")
-    }
-
-    // MARK: - Vectorization
-
-    private static func makeVector(from text: String, dimension: Int) -> [Float] {
-        guard dimension > 0 else {
-            return []
-        }
-
-        let tokens = Self.extractSemanticTokens(from: text)
-        guard !tokens.isEmpty else {
-            return [Float](repeating: 0, count: dimension)
-        }
-
-        var vector = [Float](repeating: 0, count: dimension)
-
-        for token in tokens {
-            Self.accumulate(feature: "tok:\(token)", weight: 1.0, vector: &vector)
-        }
-
-        if tokens.count > 1 {
-            for index in 0..<(tokens.count - 1) {
-                let bigram = "\(tokens[index])_\(tokens[index + 1])"
-                Self.accumulate(feature: "big:\(bigram)", weight: 0.75, vector: &vector)
-            }
-        }
-
-        for token in tokens {
-            let trigrams = Self.characterTrigrams(token)
-            for trigram in trigrams {
-                Self.accumulate(feature: "tri:\(trigram)", weight: 0.4, vector: &vector)
-            }
-        }
-
-        let squaredSum = vector.reduce(Float.zero) { partial, value in
-            return partial + (value * value)
-        }
-
-        guard squaredSum > 0 else {
-            return vector
-        }
-
-        let inverseNorm = 1 / sqrt(squaredSum)
-        for index in vector.indices {
-            vector[index] *= inverseNorm
-        }
-
-        return vector
-    }
-
-    private static func accumulate(feature: String, weight: Float, vector: inout [Float]) {
-        let dimension = UInt64(vector.count)
-        guard dimension > 0 else {
-            return
-        }
-
-        let hash = Self.fnv1a64("idx|\(feature)")
-        let signHash = Self.fnv1a64("sign|\(feature)")
-        let index = Int(hash % dimension)
-        let sign: Float = (signHash & 1) == 0 ? 1.0 : -1.0
-        vector[index] += weight * sign
-    }
-
-    private static func extractSemanticTokens(from text: String) -> [String] {
-        let normalized = text
-            .lowercased()
-            .replacingOccurrences(of: "[^a-z0-9\\s]", with: " ", options: .regularExpression)
-            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !normalized.isEmpty else {
-            return []
-        }
-
-        var output: [String] = []
-        for token in normalized.split(separator: " ").map(String.init) {
-            guard !token.isEmpty else {
-                continue
+            let batchVectors: [[Float]]
+            if let batchEmbedder = self.batchEmbedder {
+                batchVectors = try await batchEmbedder(batchTexts)
+            } else {
+                guard let modelContainer = self.modelContainer else {
+                    throw EmbeddingServiceError.modelUnavailable
+                }
+                batchVectors = try await self.embedBatchWithModel(
+                    texts: batchTexts,
+                    modelContainer: modelContainer
+                )
             }
 
-            let stemmed = Self.lightStem(token)
-            if !stemmed.isEmpty {
-                output.append(stemmed)
+            guard batchVectors.count == batchTexts.count else {
+                throw EmbeddingServiceError.outputCountMismatch(
+                    expected: batchTexts.count,
+                    actual: batchVectors.count
+                )
             }
 
-            if let mapped = Self.semanticMap[stemmed] {
-                output.append(mapped)
+            for vector in batchVectors {
+                output.append(
+                    Self.fitVector(
+                        vector,
+                        to: self.configuration.vectorDimension
+                    )
+                )
             }
         }
 
         return output
     }
 
-    private static func lightStem(_ token: String) -> String {
-        guard token.count >= 4 else {
-            return token
+    // MARK: - Model Lifecycle
+
+    private func prepareIfNeeded() async throws {
+        guard !self.isPrepared else {
+            return
         }
 
-        if token.hasSuffix("ing") {
-            return String(token.dropLast(3))
+        self.gpuCacheLimiter(self.configuration.gpuCacheLimitBytes)
+        if self.batchEmbedder == nil {
+            self.modelContainer = try await self.prepareModelContainer()
         }
-
-        if token.hasSuffix("ed") {
-            return String(token.dropLast(2))
-        }
-
-        if token.hasSuffix("es") {
-            return String(token.dropLast(2))
-        }
-
-        if token.hasSuffix("s") {
-            return String(token.dropLast())
-        }
-
-        return token
+        self.isPrepared = true
+        self.logger.info(
+            "Embedding service prepared with model '\(self.configuration.modelIdentifier)' and vector dimension \(self.configuration.vectorDimension)"
+        )
     }
 
-    private static func characterTrigrams(_ token: String) -> [String] {
-        guard token.count >= 3 else {
-            return [token]
-        }
+    private func prepareModelContainer() async throws -> MLXEmbedders.ModelContainer {
+        let modelConfiguration = MLXEmbedders.ModelConfiguration(
+            id: self.configuration.modelIdentifier
+        )
 
-        let characters = Array(token)
-        var trigrams: [String] = []
-        trigrams.reserveCapacity(max(1, characters.count - 2))
-
-        for index in 0...(characters.count - 3) {
-            let trigram = String(characters[index...index + 2])
-            trigrams.append(trigram)
-        }
-
-        return trigrams
+        return try await MLXEmbedders.loadModelContainer(
+            configuration: modelConfiguration
+        )
     }
 
-    private static func fnv1a64(_ text: String) -> UInt64 {
-        var hash: UInt64 = 14_695_981_039_346_656_037
-        let prime: UInt64 = 1_099_511_628_211
+    private func embedBatchWithModel(
+        texts: [String],
+        modelContainer: MLXEmbedders.ModelContainer
+    ) async throws -> [[Float]] {
+        return try await MLXMetalGate.shared.withExclusiveAccess {
+            return await modelContainer.perform { model, tokenizer, pooling in
+                let encodedInputs = texts.map { text in
+                    return tokenizer.encode(text: text, addSpecialTokens: true)
+                }
 
-        for byte in text.utf8 {
-            hash ^= UInt64(byte)
-            hash = hash &* prime
+                let maxLength = max(
+                    encodedInputs.reduce(0) { partial, tokens in
+                        return max(partial, tokens.count)
+                    },
+                    1
+                )
+                let eosTokenID = tokenizer.eosTokenId ?? 0
+
+                let padded = MLX.stacked(
+                    encodedInputs.map { tokens in
+                        let paddedTokens = tokens + Array(
+                            repeating: eosTokenID,
+                            count: maxLength - tokens.count
+                        )
+                        return MLXArray(paddedTokens)
+                    },
+                    axis: 0
+                )
+
+                let mask = (padded .!= eosTokenID)
+                let tokenTypeIDs = MLXArray.zeros(like: padded)
+                let modelOutput = model(
+                    padded,
+                    positionIds: nil,
+                    tokenTypeIds: tokenTypeIDs,
+                    attentionMask: mask
+                )
+
+                let pooled = pooling(
+                    modelOutput,
+                    mask: mask,
+                    normalize: true,
+                    applyLayerNorm: true
+                )
+
+                eval(pooled)
+
+                Stream.gpu.synchronize()
+
+                return pooled.map { row in
+                    return row.asArray(Float.self)
+                }
+            }
         }
-
-        return hash
     }
 
-    // MARK: - Semantic Mapping
+    // MARK: - Vector Utilities
 
-    private static let semanticMap: [String: String] = [
-        "enjoy": "like",
-        "lik": "like",
-        "favorite": "prefer",
-        "favourite": "prefer",
-        "pref": "prefer",
-        "meal": "food",
-        "cuisine": "food",
-        "snack": "food",
-        "work": "project",
-        "task": "project",
-        "objective": "goal",
-        "aim": "goal"
-    ]
+    private static func fitVector(_ vector: [Float], to dimension: Int) -> [Float] {
+        guard dimension > 0 else {
+            return []
+        }
+
+        if vector.count == dimension {
+            return vector
+        }
+
+        if vector.count > dimension {
+            return Array(vector.prefix(dimension))
+        }
+
+        return vector + Array(repeating: 0, count: dimension - vector.count)
+    }
 }

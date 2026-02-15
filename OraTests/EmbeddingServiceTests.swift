@@ -29,10 +29,61 @@ final class EmbeddingServiceTests: XCTestCase {
         }
     }
 
+    private static func makeTestVectors(texts: [String], dimension: Int) -> [[Float]] {
+        return texts.map { text in
+            return self.makeTestVector(text: text, dimension: dimension)
+        }
+    }
+
+    private static func makeTestVector(text: String, dimension: Int) -> [Float] {
+        guard dimension > 0 else {
+            return []
+        }
+
+        let normalized = text
+            .lowercased()
+            .replacingOccurrences(of: "[^a-z0-9\\s]", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+
+        var vector = [Float](repeating: 0, count: dimension)
+        let tokens = normalized.split(separator: " ").map(String.init)
+
+        for token in tokens {
+            switch token {
+            case "food", "cuisine", "meal":
+                vector[min(0, dimension - 1)] += 1
+            case "spicy":
+                vector[min(1, dimension - 1)] += 1
+            case "like", "likes", "enjoy", "enjoying", "prefer", "prefers":
+                vector[min(2, dimension - 1)] += 1
+            case "gateway", "rollout", "checklist", "release", "gates":
+                vector[min(3, dimension - 1)] += 1
+            default:
+                break
+            }
+        }
+
+        let squaredNorm = vector.reduce(Float.zero) { partial, value in
+            return partial + (value * value)
+        }
+
+        guard squaredNorm > 0 else {
+            return vector
+        }
+
+        let scale = 1 / sqrt(squaredNorm)
+        return vector.map { value in
+            return value * scale
+        }
+    }
+
     func test_embed_sampleText_returnsNonZeroVectorWithExpectedDimension() async throws {
         // Given
         let service = EmbeddingService(
-            configuration: .init(vectorDimension: 128, gpuCacheLimitBytes: 8 * 1024 * 1024)
+            configuration: .init(vectorDimension: 128, gpuCacheLimitBytes: 8 * 1024 * 1024),
+            batchEmbedder: { texts in
+                return Self.makeTestVectors(texts: texts, dimension: 128)
+            }
         )
 
         // When
@@ -48,7 +99,10 @@ final class EmbeddingServiceTests: XCTestCase {
     func test_embed_semanticParaphrase_scoresHigherThanUnrelatedText() async throws {
         // Given
         let service = EmbeddingService(
-            configuration: .init(vectorDimension: 256, gpuCacheLimitBytes: 8 * 1024 * 1024)
+            configuration: .init(vectorDimension: 256, gpuCacheLimitBytes: 8 * 1024 * 1024),
+            batchEmbedder: { texts in
+                return Self.makeTestVectors(texts: texts, dimension: 256)
+            }
         )
 
         // When
@@ -74,6 +128,9 @@ final class EmbeddingServiceTests: XCTestCase {
             },
             gpuCacheClearer: {
                 clearCounter.increment()
+            },
+            batchEmbedder: { texts in
+                return Self.makeTestVectors(texts: texts, dimension: 64)
             }
         )
 
