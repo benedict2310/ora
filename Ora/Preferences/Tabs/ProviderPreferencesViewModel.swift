@@ -189,6 +189,8 @@ final class ProviderPreferencesViewModel: ObservableObject {
     }
 
     func refreshModelAvailability(forceRefresh: Bool = false) async {
+        await self.refreshKeyStatus(for: .openai)
+        await self.refreshCodexStatus()
         await self.refreshOpenAIAvailability(forceRefresh: forceRefresh)
     }
 
