@@ -54,6 +54,42 @@ actor MemoryIndex: MemoryIndexing {
         }
     }
 
+    private struct HybridCandidateRecord: Sendable {
+        let rowID: Int64
+        let content: String
+        let documentType: MemoryDocumentType
+        let sessionID: UUID?
+        let sectionName: String
+        let lastModified: Date
+        let bm25Score: Double
+        let embedding: [Float]?
+
+        func merged(with other: HybridCandidateRecord) -> HybridCandidateRecord {
+            return HybridCandidateRecord(
+                rowID: self.rowID,
+                content: self.content,
+                documentType: self.documentType,
+                sessionID: self.sessionID,
+                sectionName: self.sectionName,
+                lastModified: self.lastModified,
+                bm25Score: max(self.bm25Score, other.bm25Score),
+                embedding: self.embedding ?? other.embedding
+            )
+        }
+
+        func toHybridCandidate() -> HybridScorer.Candidate {
+            return HybridScorer.Candidate(
+                content: self.content,
+                documentType: self.documentType,
+                sessionID: self.sessionID,
+                sectionName: self.sectionName,
+                lastModified: self.lastModified,
+                bm25Score: self.bm25Score,
+                embedding: self.embedding
+            )
+        }
+    }
+
     // MARK: - Singleton
 
     static let shared = MemoryIndex()
@@ -64,6 +100,11 @@ actor MemoryIndex: MemoryIndexing {
     private static let maximumSearchLimit = 20
     private static let minimumSearchTokenLength = 2
     private static let minimumHybridScore = 0.10
+    private static let minimumKeywordCandidateLimit = 32
+    private static let minimumSemanticCandidateLimit = 96
+    private static let maximumSemanticCandidateLimit = 512
+    private static let keywordCandidateMultiplier = 8
+    private static let semanticCandidateMultiplier = 32
 
     // MARK: - Properties
 
@@ -319,6 +360,7 @@ actor MemoryIndex: MemoryIndexing {
     ) throws -> [MemoryChunk] {
         let candidates = try self.fetchHybridCandidates(
             expression: expression,
+            limit: limit,
             database: database
         )
 
@@ -341,92 +383,158 @@ actor MemoryIndex: MemoryIndexing {
 
     private func fetchHybridCandidates(
         expression: String,
+        limit: Int,
         database: OpaquePointer
     ) throws -> [HybridScorer.Candidate] {
-        let hasKeywordExpression = !expression.isEmpty
-        let sql: String
+        var mergedByRowID: [Int64: HybridCandidateRecord] = [:]
 
-        if hasKeywordExpression {
-            sql = """
-            WITH keyword_scores AS (
-                SELECT
-                    rowid AS chunk_rowid,
-                    -bm25(memory_chunks) AS bm25_score
-                FROM memory_chunks
-                WHERE memory_chunks MATCH ?
+        if !expression.isEmpty {
+            let keywordLimit = Self.keywordCandidateLimit(for: limit)
+            let keywordCandidates = try self.fetchKeywordCandidates(
+                expression: expression,
+                limit: keywordLimit,
+                database: database
             )
-            SELECT
-                c.content,
-                c.document_type,
-                c.session_id,
-                c.section_name,
-                c.last_modified,
-                COALESCE(k.bm25_score, 0.0) AS bm25_score,
-                e.embedding
-            FROM memory_chunks c
-            LEFT JOIN keyword_scores k ON k.chunk_rowid = c.rowid
-            LEFT JOIN memory_chunk_embeddings e ON e.chunk_rowid = c.rowid;
-            """
-        } else {
-            sql = """
-            SELECT
-                c.content,
-                c.document_type,
-                c.session_id,
-                c.section_name,
-                c.last_modified,
-                0.0 AS bm25_score,
-                e.embedding
-            FROM memory_chunks c
-            LEFT JOIN memory_chunk_embeddings e ON e.chunk_rowid = c.rowid;
-            """
+
+            for candidate in keywordCandidates {
+                mergedByRowID[candidate.rowID] = candidate
+            }
         }
+
+        let semanticLimit = Self.semanticCandidateLimit(for: limit)
+        let semanticCandidates = try self.fetchSemanticCandidates(
+            limit: semanticLimit,
+            database: database
+        )
+
+        for candidate in semanticCandidates {
+            if let existing = mergedByRowID[candidate.rowID] {
+                mergedByRowID[candidate.rowID] = existing.merged(with: candidate)
+            } else {
+                mergedByRowID[candidate.rowID] = candidate
+            }
+        }
+
+        return mergedByRowID.values.map { record in
+            return record.toHybridCandidate()
+        }
+    }
+
+    private func fetchKeywordCandidates(
+        expression: String,
+        limit: Int,
+        database: OpaquePointer
+    ) throws -> [HybridCandidateRecord] {
+        let sql = """
+        SELECT
+            memory_chunks.rowid,
+            memory_chunks.content,
+            memory_chunks.document_type,
+            memory_chunks.session_id,
+            memory_chunks.section_name,
+            memory_chunks.last_modified,
+            -bm25(memory_chunks) AS bm25_score,
+            e.embedding
+        FROM memory_chunks
+        LEFT JOIN memory_chunk_embeddings e ON e.chunk_rowid = memory_chunks.rowid
+        WHERE memory_chunks MATCH ?
+        ORDER BY bm25(memory_chunks)
+        LIMIT ?;
+        """
 
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
-            throw MemoryIndexError.sqlite("Failed to prepare hybrid search statement: \(self.lastSQLiteError(database: database))")
+            throw MemoryIndexError.sqlite("Failed to prepare keyword candidate statement: \(self.lastSQLiteError(database: database))")
         }
         defer {
             sqlite3_finalize(statement)
         }
 
-        if hasKeywordExpression {
-            self.bindText(expression, at: 1, to: statement)
-        }
+        self.bindText(expression, at: 1, to: statement)
+        sqlite3_bind_int(statement, 2, Int32(limit))
 
-        var output: [HybridScorer.Candidate] = []
+        var output: [HybridCandidateRecord] = []
         while sqlite3_step(statement) == SQLITE_ROW {
-            guard
-                let contentText = sqlite3_column_text(statement, 0),
-                let documentTypeText = sqlite3_column_text(statement, 1),
-                let sectionNameText = sqlite3_column_text(statement, 3),
-                let documentType = MemoryDocumentType(rawValue: String(cString: documentTypeText))
-            else {
+            guard let record = Self.readHybridCandidateRecord(from: statement) else {
                 continue
             }
-
-            let content = String(cString: contentText)
-            let sectionName = String(cString: sectionNameText)
-            let sessionIDText = sqlite3_column_text(statement, 2).map { String(cString: $0) }
-            let sessionID = sessionIDText.flatMap(UUID.init(uuidString:))
-            let modifiedTimestamp = sqlite3_column_double(statement, 4)
-            let bm25Score = sqlite3_column_double(statement, 5)
-            let embedding = Self.readEmbedding(from: statement, index: 6)
-
-            output.append(
-                HybridScorer.Candidate(
-                    content: content,
-                    documentType: documentType,
-                    sessionID: sessionID,
-                    sectionName: sectionName,
-                    lastModified: Date(timeIntervalSince1970: modifiedTimestamp),
-                    bm25Score: bm25Score,
-                    embedding: embedding
-                )
-            )
+            output.append(record)
         }
 
         return output
+    }
+
+    private func fetchSemanticCandidates(
+        limit: Int,
+        database: OpaquePointer
+    ) throws -> [HybridCandidateRecord] {
+        let sql = """
+        SELECT
+            c.rowid,
+            c.content,
+            c.document_type,
+            c.session_id,
+            c.section_name,
+            c.last_modified,
+            0.0 AS bm25_score,
+            e.embedding
+        FROM memory_chunk_embeddings e
+        JOIN memory_chunks c ON c.rowid = e.chunk_rowid
+        WHERE e.embedding IS NOT NULL
+        ORDER BY e.chunk_rowid DESC
+        LIMIT ?;
+        """
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            throw MemoryIndexError.sqlite("Failed to prepare semantic candidate statement: \(self.lastSQLiteError(database: database))")
+        }
+        defer {
+            sqlite3_finalize(statement)
+        }
+
+        sqlite3_bind_int(statement, 1, Int32(limit))
+
+        var output: [HybridCandidateRecord] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let record = Self.readHybridCandidateRecord(from: statement) else {
+                continue
+            }
+            output.append(record)
+        }
+
+        return output
+    }
+
+    private static func readHybridCandidateRecord(from statement: OpaquePointer) -> HybridCandidateRecord? {
+        guard
+            let contentText = sqlite3_column_text(statement, 1),
+            let documentTypeText = sqlite3_column_text(statement, 2),
+            let sectionNameText = sqlite3_column_text(statement, 4),
+            let documentType = MemoryDocumentType(rawValue: String(cString: documentTypeText))
+        else {
+            return nil
+        }
+
+        let rowID = sqlite3_column_int64(statement, 0)
+        let content = String(cString: contentText)
+        let sectionName = String(cString: sectionNameText)
+        let sessionIDText = sqlite3_column_text(statement, 3).map { String(cString: $0) }
+        let sessionID = sessionIDText.flatMap(UUID.init(uuidString:))
+        let modifiedTimestamp = sqlite3_column_double(statement, 5)
+        let bm25Score = sqlite3_column_double(statement, 6)
+        let embedding = Self.readEmbedding(from: statement, index: 7)
+
+        return HybridCandidateRecord(
+            rowID: rowID,
+            content: content,
+            documentType: documentType,
+            sessionID: sessionID,
+            sectionName: sectionName,
+            lastModified: Date(timeIntervalSince1970: modifiedTimestamp),
+            bm25Score: bm25Score,
+            embedding: embedding
+        )
     }
 
     private func searchIndexKeywordOnly(
@@ -764,6 +872,23 @@ actor MemoryIndex: MemoryIndexing {
             .sorted()
             .map { "\($0)*" }
             .joined(separator: " OR ")
+    }
+
+    private static func keywordCandidateLimit(for limit: Int) -> Int {
+        return max(
+            Self.minimumKeywordCandidateLimit,
+            limit * Self.keywordCandidateMultiplier
+        )
+    }
+
+    private static func semanticCandidateLimit(for limit: Int) -> Int {
+        return min(
+            Self.maximumSemanticCandidateLimit,
+            max(
+                Self.minimumSemanticCandidateLimit,
+                limit * Self.semanticCandidateMultiplier
+            )
+        )
     }
 
     private static func normalizeMarkdownText(_ text: String) -> String {
