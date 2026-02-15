@@ -10,6 +10,7 @@ import XCTest
 
 enum AgentLoopPersistenceEvent: Equatable, Sendable {
     case persisted(role: Session.Message.Role, content: String)
+    case memoryRetrievalPrepared(triggered: Bool)
     case generationStarted
 }
 
@@ -40,6 +41,40 @@ actor AgentLoopRecordingSessionLifecycleSink: AgentLoopSessionLifecycleSink {
 
     func completionCallCount() -> Int {
         return self.callCount
+    }
+}
+
+struct AgentLoopStubMemoryTriggerDetector: MemoryTriggerDetecting {
+    let result: MemoryTriggerResult
+
+    func detect(userText: String) -> MemoryTriggerResult {
+        return self.result
+    }
+}
+
+actor AgentLoopRecordingMemoryRetrievalCoordinator: MemoryRetrievalCoordinating {
+    private let eventRecorder: AgentLoopPersistenceEventRecorder?
+    private(set) var callCount = 0
+    private(set) var lastTriggerResult: MemoryTriggerResult?
+
+    init(eventRecorder: AgentLoopPersistenceEventRecorder? = nil) {
+        self.eventRecorder = eventRecorder
+    }
+
+    func prepareRetrievalIfNeeded(
+        userText: String,
+        triggerResult: MemoryTriggerResult,
+        conversationManager: ConversationManager
+    ) async {
+        self.callCount += 1
+        self.lastTriggerResult = triggerResult
+        if let eventRecorder = self.eventRecorder {
+            await eventRecorder.record(.memoryRetrievalPrepared(triggered: triggerResult.shouldTrigger))
+        }
+    }
+
+    func snapshot() -> (callCount: Int, lastTriggerResult: MemoryTriggerResult?) {
+        return (self.callCount, self.lastTriggerResult)
     }
 }
 
@@ -211,6 +246,48 @@ final class AgentLoopPersistenceTests: XCTestCase {
         }
     }
 
+    func test_process_memoryTriggerDetected_coordinatorRunsBeforeGeneration() async throws {
+        // Given
+        let userText = "remember what we agreed"
+        let eventRecorder = AgentLoopPersistenceEventRecorder()
+        let retrievalCoordinator = AgentLoopRecordingMemoryRetrievalCoordinator(eventRecorder: eventRecorder)
+        let triggerResult = MemoryTriggerResult(
+            shouldTrigger: true,
+            confidence: 0.95,
+            triggerType: .linguistic,
+            matchedSignals: ["remember", "we agreed"]
+        )
+
+        let loop = self.makeLoop(
+            llmService: AgentLoopPersistenceMockLLMService(
+                responsePayload: #"{"type":"response","text":"Assistant"}"#,
+                eventRecorder: eventRecorder
+            ),
+            persistenceSink: AgentLoopRecordingPersistenceSink(eventRecorder: eventRecorder),
+            memoryTriggerDetector: AgentLoopStubMemoryTriggerDetector(result: triggerResult),
+            memoryRetrievalCoordinator: retrievalCoordinator
+        )
+
+        // When
+        _ = try await loop.process(userText: userText)
+
+        // Then
+        let events = await eventRecorder.snapshot()
+        let retrievalIndex = events.firstIndex(of: .memoryRetrievalPrepared(triggered: true))
+        let generationIndex = events.firstIndex(of: .generationStarted)
+
+        XCTAssertNotNil(retrievalIndex)
+        XCTAssertNotNil(generationIndex)
+
+        if let retrievalIndex, let generationIndex {
+            XCTAssertLessThan(retrievalIndex, generationIndex)
+        }
+
+        let snapshot = await retrievalCoordinator.snapshot()
+        XCTAssertEqual(snapshot.callCount, 1)
+        XCTAssertEqual(snapshot.lastTriggerResult?.triggerType, .linguistic)
+    }
+
     func test_endSession_completesActiveSession_andTriggersMemoryDistillation() async throws {
         // Given
         let expectedSessionID = UUID()
@@ -241,7 +318,9 @@ final class AgentLoopPersistenceTests: XCTestCase {
         llmService: LLMServicing,
         persistenceSink: AgentLoopPersistenceSink,
         sessionLifecycleSink: AgentLoopSessionLifecycleSink = AgentLoopRecordingSessionLifecycleSink(completedSessionID: nil),
-        memoryDistiller: any MemoryDistilling = AgentLoopRecordingMemoryDistiller()
+        memoryDistiller: any MemoryDistilling = AgentLoopRecordingMemoryDistiller(),
+        memoryTriggerDetector: any MemoryTriggerDetecting = MemoryTriggerDetector(),
+        memoryRetrievalCoordinator: any MemoryRetrievalCoordinating = NoopMemoryRetrievalCoordinator()
     ) -> AgentLoop {
         return AgentLoop(
             maxStepsPerTurn: 4,
@@ -253,7 +332,9 @@ final class AgentLoopPersistenceTests: XCTestCase {
             conversationManager: ConversationManager.makeTestInstance(maxContextTokens: 6000),
             persistenceSink: persistenceSink,
             sessionLifecycleSink: sessionLifecycleSink,
-            memoryDistiller: memoryDistiller
+            memoryDistiller: memoryDistiller,
+            memoryTriggerDetector: memoryTriggerDetector,
+            memoryRetrievalCoordinator: memoryRetrievalCoordinator
         )
     }
 }
