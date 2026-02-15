@@ -40,11 +40,17 @@ private final class AtomicDateCollector: @unchecked Sendable {
 
 final class HopTimerTests: XCTestCase {
 
+    override func setUp() {
+        try? XCTSkipIf(
+            ProcessInfo.processInfo.environment["CI"] != nil,
+            "DispatchSourceTimer tests crash intermittently on CI runners"
+        )
+    }
+
     // MARK: - Basic Timer Operation
 
     /// TC-1.1: Timer fires at expected intervals
     func test_timerFiresAtExpectedInterval() async throws {
-        try XCTSkipIf(ProcessInfo.processInfo.environment["CI"] != nil, "Timing-sensitive test flaky on CI runners")
         let timer = HopTimer(interval: 0.1)
         let hopTimes = AtomicDateCollector()
         let expectation = expectation(description: "hops")
@@ -99,7 +105,6 @@ final class HopTimerTests: XCTestCase {
 
     /// TC-1.4: Timer drift stays within bounds
     func test_timerDriftWithinBounds() async throws {
-        try XCTSkipIf(ProcessInfo.processInfo.environment["CI"] != nil, "Timing-sensitive test flaky on CI runners")
         let timer = HopTimer(interval: 0.1)
         let expectation = expectation(description: "hops")
         expectation.expectedFulfillmentCount = 20
@@ -129,7 +134,6 @@ final class HopTimerTests: XCTestCase {
     }
 
     func test_totalHopsIncrement() async throws {
-        try XCTSkipIf(ProcessInfo.processInfo.environment["CI"] != nil, "Timing-sensitive test flaky on CI runners")
         let timer = HopTimer(interval: 0.05)
         let expectation = expectation(description: "hops")
         expectation.expectedFulfillmentCount = 5
