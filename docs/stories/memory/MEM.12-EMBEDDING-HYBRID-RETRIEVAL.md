@@ -109,7 +109,35 @@ As a user, I want Ora to understand what I mean even when I don't use the exact 
 
 ## Code Review Findings
 
-(TBD by review agent.)
+**Reviewer:** Codex Subagent
+**Date:** 2026-02-15T14:03:00Z
+**Commit reviewed:** 7425455
+**Iteration:** 2
+
+### Summary
+- Files reviewed: 10
+- Build status: Pass
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- None
+
+#### P1 - Major (Should fix)
+- [ ] `MemoryIndex.swift:343` - **Limited Semantic Recall**: `fetchSemanticCandidates` implements a hard limit (default ~512) on fetching semantic candidates, ordering by `chunk_rowid DESC`. This effectively disables semantic search for any memory older than the most recent ~500 chunks (unless it also matches a keyword). To achieve true hybrid retrieval for the entire memory, the system should fetch all embeddings (rowid + vector only), compute scores, rank them, and then fetch content for the top matches.
+- [ ] `EmbeddingService.swift` - **Untested MLX Integration**: The unit tests for `EmbeddingService` inject a mock `batchEmbedder`, bypassing the actual `MLXEmbedders` integration code (`embedBatchWithModel`). The real model loading, tokenization, and inference paths are not exercised by any test, creating a risk of runtime failure that tests won't catch.
+
+#### P2 - Minor (Can defer)
+- [ ] `MemoryIndex.swift:383` - **Inefficient Fetch**: `fetchSemanticCandidates` fetches full content (`c.content`) for all candidates before scoring. This forces the use of the restrictive `LIMIT` to avoid performance issues. Fetching only row IDs and embeddings for the initial scoring pass would allow scanning the entire index efficiently.
+- [ ] `HybridScorer.swift:130` - **Performance**: `cosineSimilarity` uses a manual loop. For larger datasets, using `vDSP` (Accelerate framework) or MLX for dot products would be significantly faster.
+
+### Future Considerations (Out of Scope)
+- `MemoryIndex.rebuild` - Re-embedding all chunks on every index rebuild might become slow as memory grows. Future work could implement incremental updates or caching.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [ ] All P1 issues resolved
+- [ ] Ready for merge
 
 ## Completion Status
 
