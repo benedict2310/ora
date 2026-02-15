@@ -39,6 +39,12 @@ Add or remove details that you want Ora to remember long-term.
         self.memoryDirectory.appendingPathComponent("MEMORY.md", isDirectory: false)
     }
 
+    // MARK: - Paths
+
+    func summaryFileURL(for sessionId: UUID) -> URL {
+        self.summariesDirectory.appendingPathComponent("\(sessionId.uuidString).md", isDirectory: false)
+    }
+
     // MARK: - Initialization
 
     init(fileManager: FileManager = .default, documentsDirectory: URL? = nil) {
@@ -62,6 +68,16 @@ Add or remove details that you want Ora to remember long-term.
     func ensureMemoryStructureExists() throws {
         try self.fileManager.createDirectory(at: self.summariesDirectory, withIntermediateDirectories: true)
         try self.ensureMemoryTemplateExists()
+    }
+
+    func writeSummary(sessionId: UUID, content: String) throws {
+        try self.ensureMemoryStructureExists()
+        let summaryURL = self.summaryFileURL(for: sessionId)
+        try content.write(to: summaryURL, atomically: true, encoding: .utf8)
+    }
+
+    func writePlaceholderSummary(sessionId: UUID) throws {
+        try self.writeSummary(sessionId: sessionId, content: SessionSummary.placeholder.renderMarkdown())
     }
 
     // MARK: - Private Helpers

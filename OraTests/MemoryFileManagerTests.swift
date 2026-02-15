@@ -73,4 +73,40 @@ Favorite coffee: black
         XCTAssertEqual(content, customContent)
         XCTAssertTrue(FileManager.default.fileExists(atPath: manager.summariesDirectory.path))
     }
+
+    func test_writeSummary_validSessionId_writesMarkdownFile() throws {
+        // Given
+        let documentsDirectory = self.temporaryDirectoryURL.appendingPathComponent("Documents", isDirectory: true)
+        let manager = MemoryFileManager(documentsDirectory: documentsDirectory)
+        let sessionID = UUID()
+        let content = "# Session Summary\n\n## TL;DR\nplaceholder"
+
+        // When
+        try manager.writeSummary(sessionId: sessionID, content: content)
+
+        // Then
+        let summaryFileURL = manager.summaryFileURL(for: sessionID)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: summaryFileURL.path))
+        let writtenContent = try String(contentsOf: summaryFileURL, encoding: .utf8)
+        XCTAssertEqual(writtenContent, content)
+    }
+
+    func test_writePlaceholderSummary_validSessionId_writesTemplateSections() throws {
+        // Given
+        let documentsDirectory = self.temporaryDirectoryURL.appendingPathComponent("Documents", isDirectory: true)
+        let manager = MemoryFileManager(documentsDirectory: documentsDirectory)
+        let sessionID = UUID()
+
+        // When
+        try manager.writePlaceholderSummary(sessionId: sessionID)
+
+        // Then
+        let summaryFileURL = manager.summaryFileURL(for: sessionID)
+        let writtenContent = try String(contentsOf: summaryFileURL, encoding: .utf8)
+        XCTAssertTrue(writtenContent.contains("# Session Summary"))
+        XCTAssertTrue(writtenContent.contains("## TL;DR"))
+        XCTAssertTrue(writtenContent.contains("## Bullets"))
+        XCTAssertTrue(writtenContent.contains("## Decisions & Commitments"))
+        XCTAssertTrue(writtenContent.contains("## Open Loops"))
+    }
 }
