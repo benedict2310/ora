@@ -25,7 +25,7 @@ actor StubMemoryIndex: MemoryIndexing {
 final class MemoryRetrievalCoordinatorTests: XCTestCase {
 
     func test_prepareRetrieval_triggeredAndHighScore_injectsThreeToSevenChunks() async {
-        // Given
+        // Given — scores are positive (-bm25 output, higher = more relevant)
         let now = Date(timeIntervalSince1970: 1_739_599_200)
         let chunks: [MemoryChunk] = [
             MemoryChunk(
@@ -34,7 +34,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
                 sessionID: nil,
                 sectionName: "Projects",
                 lastModified: now,
-                score: -0.14
+                score: 5.20
             ),
             MemoryChunk(
                 content: "Decision: move rollout checkpoint to Thursday.",
@@ -42,7 +42,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
                 sessionID: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
                 sectionName: "Decisions & Commitments",
                 lastModified: now,
-                score: -0.18
+                score: 4.10
             ),
             MemoryChunk(
                 content: "Open loop: confirm Phoenix dependency with infra.",
@@ -50,7 +50,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
                 sessionID: UUID(uuidString: "ffffffff-1111-2222-3333-444444444444"),
                 sectionName: "Open Loops",
                 lastModified: now,
-                score: -0.21
+                score: 3.80
             ),
             MemoryChunk(
                 content: "Preference: keep migration notes concise.",
@@ -58,7 +58,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
                 sessionID: nil,
                 sectionName: "Preferences",
                 lastModified: now,
-                score: -0.29
+                score: 2.50
             ),
             MemoryChunk(
                 content: "TL;DR: weekly migration checkpoint accepted.",
@@ -66,7 +66,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
                 sessionID: UUID(uuidString: "12345678-1234-5678-9abc-def012345678"),
                 sectionName: "TL;DR",
                 lastModified: now,
-                score: -0.34
+                score: 1.20
             )
         ]
 
@@ -76,7 +76,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
         let coordinator = KeywordMemoryRetrievalCoordinator(
             memoryIndex: StubMemoryIndex(chunks: chunks),
             configuration: .init(
-                minTopScore: -0.30,
+                minTopScore: 0.10,
                 minChunkCount: 3,
                 maxChunkCount: 7,
                 scoreWindowRatio: 0.70
@@ -112,7 +112,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
     }
 
     func test_prepareRetrieval_topScoreBelowThreshold_doesNotInjectContext() async {
-        // Given
+        // Given — scores below threshold (0.10) should not inject context
         let now = Date(timeIntervalSince1970: 1_739_599_200)
         let chunks: [MemoryChunk] = [
             MemoryChunk(
@@ -121,7 +121,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
                 sessionID: nil,
                 sectionName: "Projects",
                 lastModified: now,
-                score: -0.62
+                score: 0.05
             ),
             MemoryChunk(
                 content: "Another weak match.",
@@ -129,7 +129,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
                 sessionID: UUID(),
                 sectionName: "TL;DR",
                 lastModified: now,
-                score: -0.75
+                score: 0.02
             )
         ]
 
@@ -139,7 +139,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
         let coordinator = KeywordMemoryRetrievalCoordinator(
             memoryIndex: StubMemoryIndex(chunks: chunks),
             configuration: .init(
-                minTopScore: -0.30,
+                minTopScore: 0.10,
                 minChunkCount: 3,
                 maxChunkCount: 7,
                 scoreWindowRatio: 0.70

@@ -55,7 +55,7 @@ struct KeywordMemoryRetrievalCoordinator: MemoryRetrievalCoordinating {
         let scoreWindowRatio: Double
 
         static let `default` = Configuration(
-            minTopScore: -0.30,
+            minTopScore: 0.10,
             minChunkCount: 3,
             maxChunkCount: 7,
             scoreWindowRatio: 0.70
