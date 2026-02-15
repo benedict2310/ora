@@ -21,6 +21,7 @@ struct MemoryChunk: Sendable, Equatable {
     let sectionName: String
     let lastModified: Date
     let score: Double
+    let embedding: [Float]?
 
     init(
         content: String,
@@ -29,7 +30,8 @@ struct MemoryChunk: Sendable, Equatable {
         turnNumber: Int? = nil,
         sectionName: String,
         lastModified: Date,
-        score: Double
+        score: Double,
+        embedding: [Float]? = nil
     ) {
         self.content = content
         self.documentType = documentType
@@ -38,5 +40,6 @@ struct MemoryChunk: Sendable, Equatable {
         self.sectionName = sectionName
         self.lastModified = lastModified
         self.score = score
+        self.embedding = embedding
     }
 }
