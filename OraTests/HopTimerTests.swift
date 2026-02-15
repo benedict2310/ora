@@ -42,7 +42,9 @@ final class HopTimerTests: XCTestCase {
 
     private static var isCI: Bool {
         let env = ProcessInfo.processInfo.environment
-        return env["CI"] != nil || env["GITHUB_ACTIONS"] != nil
+        return env["CI"] != nil
+            || env["GITHUB_ACTIONS"] != nil
+            || NSHomeDirectory().contains("/Users/runner")
     }
 
     override func setUp() {
