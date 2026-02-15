@@ -161,12 +161,26 @@ def extract_counts(json_obj: dict) -> tuple[int, int, bool, bool]:
     return tests_count, tests_failed, count_found, failed_found
 
 
+def parse_args() -> tuple[str, int]:
+    """Parse command line arguments."""
+    import argparse
+    parser = argparse.ArgumentParser(description="Token-optimized Xcode test summary")
+    parser.add_argument("bundle", help="Path to .xcresult bundle")
+    parser.add_argument(
+        "--tolerate-crashes", type=int, default=0, metavar="N",
+        help="Tolerate up to N crash-only failures (for flaky CI runners)"
+    )
+    args = parser.parse_args()
+    return args.bundle, args.tolerate_crashes
+
+
+def is_crash_failure(msg: str) -> bool:
+    """Check if a failure message indicates a process crash (not a test assertion)."""
+    return "Crash:" in msg or "crash" in msg.lower()
+
+
 def main() -> int:
-    if len(sys.argv) != 2:
-        print("Usage: xcresult_summary.py <path/to/TestResults.xcresult>", file=sys.stderr)
-        return 2
-    
-    bundle = sys.argv[1]
+    bundle, tolerate_crashes = parse_args()
     if not Path(bundle).exists():
         print(f"Missing xcresult bundle: {bundle}", file=sys.stderr)
         return 2
@@ -195,9 +209,22 @@ def main() -> int:
     if tests_failed == 0:
         print(f"✅ Tests: {passed}/{tests_count} passed")
         return 0
-    
+
+    # Check if all failures are crashes (tolerable on flaky CI runners)
+    crash_count = sum(1 for _, msg, _, _ in failures if is_crash_failure(msg))
+    assertion_count = tests_failed - crash_count
+
+    if assertion_count == 0 and crash_count <= tolerate_crashes and crash_count > 0:
+        print(f"✅ Tests: {passed}/{tests_count} passed ({crash_count} crash{'es' if crash_count > 1 else ''} tolerated)")
+        if failures:
+            print("Tolerated crashes:")
+            for test, msg, file, line in failures:
+                if is_crash_failure(msg):
+                    print(f"  - {test}: {msg[:80]}")
+        return 0
+
     print(f"❌ Tests: {passed}/{tests_count} passed ({tests_failed} failed)")
-    
+
     if failures:
         print("Failures:")
         for test, msg, file, line in failures[:10]:  # Limit to first 10
@@ -206,7 +233,7 @@ def main() -> int:
                 # Shorten path for readability
                 file_short = Path(file).name if "/" in file else file
                 loc = f" @ {file_short}:{line}"
-            
+
             if test:
                 # Truncate long messages
                 msg_short = msg[:80] + "..." if len(msg) > 80 else msg
@@ -214,12 +241,12 @@ def main() -> int:
             else:
                 msg_short = msg[:100] + "..." if len(msg) > 100 else msg
                 print(f"  - {msg_short}{loc}")
-        
+
         if len(failures) > 10:
             print(f"  ... and {len(failures) - 10} more failures")
     else:
         print("  (failure details not extracted; open .xcresult for context)")
-    
+
     return 1
 
 

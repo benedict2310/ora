@@ -53,12 +53,40 @@ struct KeywordMemoryRetrievalCoordinator: MemoryRetrievalCoordinating {
         let minChunkCount: Int
         let maxChunkCount: Int
         let scoreWindowRatio: Double
+        let primarySufficiencyScore: Double
+        let transcriptMinTopScore: Double
+        let transcriptResultLimit: Int
+        let recentTranscriptSessionLimit: Int
+
+        init(
+            minTopScore: Double,
+            minChunkCount: Int,
+            maxChunkCount: Int,
+            scoreWindowRatio: Double,
+            primarySufficiencyScore: Double = 0.25,
+            transcriptMinTopScore: Double = 1e-7,
+            transcriptResultLimit: Int = 3,
+            recentTranscriptSessionLimit: Int = 5
+        ) {
+            self.minTopScore = minTopScore
+            self.minChunkCount = minChunkCount
+            self.maxChunkCount = maxChunkCount
+            self.scoreWindowRatio = scoreWindowRatio
+            self.primarySufficiencyScore = primarySufficiencyScore
+            self.transcriptMinTopScore = transcriptMinTopScore
+            self.transcriptResultLimit = transcriptResultLimit
+            self.recentTranscriptSessionLimit = recentTranscriptSessionLimit
+        }
 
         static let `default` = Configuration(
             minTopScore: 0.30,
             minChunkCount: 3,
             maxChunkCount: 7,
-            scoreWindowRatio: 0.70
+            scoreWindowRatio: 0.70,
+            primarySufficiencyScore: 0.25,
+            transcriptMinTopScore: 1e-7,
+            transcriptResultLimit: 3,
+            recentTranscriptSessionLimit: 5
         )
     }
 
@@ -94,29 +122,51 @@ struct KeywordMemoryRetrievalCoordinator: MemoryRetrievalCoordinating {
             query: userText,
             limit: self.configuration.maxChunkCount
         )
-        guard let topChunk = retrievedChunks.first else {
-            await conversationManager.clearMemoryContext()
-            self.logger.debug("Memory retrieval produced no chunks")
-            return
+
+        let topPrimaryScore = retrievedChunks.first?.score
+        let primaryChunks: [MemoryChunk]
+        if let topPrimaryScore, topPrimaryScore >= self.configuration.minTopScore {
+            primaryChunks = self.selectChunks(from: retrievedChunks)
+        } else {
+            primaryChunks = []
         }
 
-        guard topChunk.score >= self.configuration.minTopScore else {
-            await conversationManager.clearMemoryContext()
-            self.logger.debug(
-                "Memory retrieval skipped due to low confidence (score: \(topChunk.score), threshold: \(self.configuration.minTopScore))"
+        var selectedChunks = primaryChunks
+        var usedTranscriptFallback = false
+
+        if self.shouldUseTranscriptFallback(topPrimaryScore: topPrimaryScore) {
+            let transcriptChunks = await self.memoryIndex.searchTranscriptFallback(
+                query: userText,
+                summarySessionIDs: self.extractSummarySessionIDs(from: retrievedChunks),
+                recentSessionLimit: self.configuration.recentTranscriptSessionLimit,
+                limit: self.configuration.transcriptResultLimit
             )
-            return
+
+            if let topTranscriptChunk = transcriptChunks.first,
+                topTranscriptChunk.score >= self.configuration.transcriptMinTopScore {
+                let selectedTranscriptChunks = self.selectTranscriptChunks(from: transcriptChunks)
+                if !selectedTranscriptChunks.isEmpty {
+                    selectedChunks = selectedTranscriptChunks
+                    usedTranscriptFallback = true
+                }
+            }
         }
 
-        let selectedChunks = self.selectChunks(from: retrievedChunks)
         guard !selectedChunks.isEmpty else {
             await conversationManager.clearMemoryContext()
+            self.logger.debug(
+                "Memory retrieval produced no sufficiently relevant context (primary top score: \(topPrimaryScore ?? -1))"
+            )
             return
         }
 
         let context = self.renderContext(chunks: selectedChunks)
         await conversationManager.setMemoryContext(context)
-        self.logger.debug("Injected \(selectedChunks.count) memory chunk(s) into prompt context")
+        if usedTranscriptFallback {
+            self.logger.debug("Injected \(selectedChunks.count) transcript fallback chunk(s) into prompt context")
+        } else {
+            self.logger.debug("Injected \(selectedChunks.count) memory chunk(s) into prompt context")
+        }
     }
 
     // MARK: - Private Helpers
@@ -144,9 +194,41 @@ struct KeywordMemoryRetrievalCoordinator: MemoryRetrievalCoordinating {
         return Array(shortlisted.prefix(self.configuration.maxChunkCount))
     }
 
+    private func selectTranscriptChunks(from chunks: [MemoryChunk]) -> [MemoryChunk] {
+        return Array(chunks.prefix(max(self.configuration.transcriptResultLimit, 1)))
+    }
+
+    private func shouldUseTranscriptFallback(topPrimaryScore: Double?) -> Bool {
+        guard let topPrimaryScore else {
+            return true
+        }
+
+        return topPrimaryScore < self.configuration.primarySufficiencyScore
+    }
+
+    private func extractSummarySessionIDs(from chunks: [MemoryChunk]) -> [UUID] {
+        var seen: Set<UUID> = []
+        var output: [UUID] = []
+
+        for chunk in chunks {
+            guard chunk.documentType == .summary, let sessionID = chunk.sessionID else {
+                continue
+            }
+
+            if seen.contains(sessionID) {
+                continue
+            }
+
+            seen.insert(sessionID)
+            output.append(sessionID)
+        }
+
+        return output
+    }
+
     private func renderContext(chunks: [MemoryChunk]) -> String {
         let header = """
-        Relevant memory retrieved from MEMORY.md and prior session summaries.
+        Relevant memory retrieved from MEMORY.md, prior session summaries, and transcript turns.
         Use this context only when it directly helps answer the user.
         """
 
@@ -161,6 +243,10 @@ struct KeywordMemoryRetrievalCoordinator: MemoryRetrievalCoordinating {
                 } else {
                     source = "summary"
                 }
+            case .transcript:
+                let sessionComponent = chunk.sessionID?.uuidString ?? "unknown-session"
+                let turnComponent = chunk.turnNumber.map(String.init) ?? "?"
+                source = "transcript \(sessionComponent) turn \(turnComponent)"
             }
 
             return "\(index + 1). [\(source) • \(chunk.sectionName)] \(chunk.content)"

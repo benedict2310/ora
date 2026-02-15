@@ -2,7 +2,8 @@
 //  MemoryIndex.swift
 //  Ora
 //
-//  SQLite FTS5 + embeddings hybrid index for MEMORY.md and session summaries.
+//  SQLite FTS5 + embeddings hybrid index for MEMORY.md, session summaries,
+//  and lazily scoped transcript fallback chunks.
 //
 
 import Foundation
@@ -12,6 +13,23 @@ import os
 protocol MemoryIndexing: Sendable {
     func rebuild() async
     func search(query: String, limit: Int) async -> [MemoryChunk]
+    func searchTranscriptFallback(
+        query: String,
+        summarySessionIDs: [UUID],
+        recentSessionLimit: Int,
+        limit: Int
+    ) async -> [MemoryChunk]
+}
+
+extension MemoryIndexing {
+    func searchTranscriptFallback(
+        query: String,
+        summarySessionIDs: [UUID],
+        recentSessionLimit: Int,
+        limit: Int
+    ) async -> [MemoryChunk] {
+        return []
+    }
 }
 
 actor MemoryIndex: MemoryIndexing {
@@ -83,6 +101,21 @@ actor MemoryIndex: MemoryIndexing {
         }
     }
 
+    struct TranscriptSessionSnapshot: Sendable {
+        let sessionID: UUID
+        let lastModified: Date
+        let messages: [Session.Message]
+    }
+
+    private struct TranscriptIndexedChunk: Sendable {
+        let sessionID: UUID
+        let turnNumber: Int
+        let content: String
+        let lastModified: Date
+    }
+
+    typealias TranscriptSessionLoader = @Sendable ([UUID], Int) async -> [TranscriptSessionSnapshot]
+
     // MARK: - Singleton
 
     static let shared = MemoryIndex()
@@ -101,6 +134,8 @@ actor MemoryIndex: MemoryIndexing {
     private let logger = Logger(subsystem: "com.ora.app", category: "memory")
     private let memoryFileManager: MemoryFileManager
     private let fileManager: FileManager
+    private let transcriptChunker: TranscriptChunker
+    private let transcriptSessionLoader: TranscriptSessionLoader
     private let embeddingService: any EmbeddingServicing
     private let hybridScorer: HybridScorer
 
@@ -113,6 +148,8 @@ actor MemoryIndex: MemoryIndexing {
     init(
         documentsDirectory: URL? = nil,
         fileManager: FileManager = .default,
+        transcriptChunker: TranscriptChunker = TranscriptChunker(),
+        transcriptSessionLoader: @escaping TranscriptSessionLoader = MemoryIndex.defaultTranscriptSessionLoader,
         embeddingService: any EmbeddingServicing = EmbeddingService.shared,
         hybridScorer: HybridScorer = HybridScorer()
     ) {
@@ -121,6 +158,8 @@ actor MemoryIndex: MemoryIndexing {
             fileManager: fileManager,
             documentsDirectory: documentsDirectory
         )
+        self.transcriptChunker = transcriptChunker
+        self.transcriptSessionLoader = transcriptSessionLoader
         self.embeddingService = embeddingService
         self.hybridScorer = hybridScorer
     }
@@ -139,7 +178,7 @@ actor MemoryIndex: MemoryIndexing {
             }
 
             try self.ensureSchema(database: database)
-            try self.replaceIndexContents(chunks: embeddedChunks, database: database)
+            try self.replaceMemoryIndexContents(chunks: embeddedChunks, database: database)
 
             self.logger.debug("Memory index rebuilt with \(embeddedChunks.count) chunk(s)")
         } catch {
@@ -157,6 +196,7 @@ actor MemoryIndex: MemoryIndexing {
         let clampedLimit = min(max(limit, 1), Self.maximumSearchLimit)
 
         do {
+            try self.memoryFileManager.ensureMemoryStructureExists()
             let database = try self.openDatabase()
             defer {
                 sqlite3_close(database)
@@ -195,6 +235,54 @@ actor MemoryIndex: MemoryIndexing {
         }
     }
 
+    func searchTranscriptFallback(
+        query: String,
+        summarySessionIDs: [UUID],
+        recentSessionLimit: Int,
+        limit: Int
+    ) async -> [MemoryChunk] {
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedQuery.isEmpty else {
+            return []
+        }
+
+        let queryExpression = Self.makeFTSQueryExpression(from: normalizedQuery)
+        guard !queryExpression.isEmpty else {
+            return []
+        }
+
+        let clampedLimit = min(max(limit, 1), Self.maximumSearchLimit)
+
+        do {
+            try self.memoryFileManager.ensureMemoryStructureExists()
+            let scopedChunks = await self.loadScopedTranscriptChunks(
+                summarySessionIDs: summarySessionIDs,
+                recentSessionLimit: recentSessionLimit
+            )
+            guard !scopedChunks.isEmpty else {
+                self.logger.debug("Transcript fallback search skipped: no scoped transcript chunks available")
+                return []
+            }
+
+            let database = try self.openDatabase()
+            defer {
+                sqlite3_close(database)
+            }
+
+            try self.ensureSchema(database: database)
+            try self.replaceTranscriptIndexContents(chunks: scopedChunks, database: database)
+
+            return try self.searchTranscriptIndex(
+                expression: queryExpression,
+                limit: clampedLimit,
+                database: database
+            )
+        } catch {
+            self.logger.error("Transcript fallback search failed: \(error.localizedDescription)")
+            return []
+        }
+    }
+
     // MARK: - Schema
 
     private func ensureSchema(database: OpaquePointer) throws {
@@ -225,11 +313,24 @@ actor MemoryIndex: MemoryIndexing {
             """,
             database: database
         )
+
+        try self.execute(
+            sql: """
+            CREATE VIRTUAL TABLE IF NOT EXISTS transcript_chunks USING fts5(
+                content,
+                session_id UNINDEXED,
+                turn_number UNINDEXED,
+                last_modified UNINDEXED,
+                tokenize = 'unicode61'
+            );
+            """,
+            database: database
+        )
     }
 
     // MARK: - Rebuild
 
-    private func replaceIndexContents(chunks: [IndexedChunk], database: OpaquePointer) throws {
+    private func replaceMemoryIndexContents(chunks: [IndexedChunk], database: OpaquePointer) throws {
         try self.execute(sql: "BEGIN IMMEDIATE TRANSACTION;", database: database)
 
         do {
@@ -237,7 +338,7 @@ actor MemoryIndex: MemoryIndexing {
             try self.execute(sql: "DELETE FROM memory_chunks;", database: database)
 
             if !chunks.isEmpty {
-                try self.insert(chunks: chunks, database: database)
+                try self.insertMemoryChunks(chunks: chunks, database: database)
             }
 
             try self.execute(sql: "COMMIT;", database: database)
@@ -247,7 +348,7 @@ actor MemoryIndex: MemoryIndexing {
         }
     }
 
-    private func insert(chunks: [IndexedChunk], database: OpaquePointer) throws {
+    private func insertMemoryChunks(chunks: [IndexedChunk], database: OpaquePointer) throws {
         let chunkSQL = """
         INSERT INTO memory_chunks (
             content,
@@ -337,6 +438,57 @@ actor MemoryIndex: MemoryIndexing {
 
         return zip(chunks, embeddings).map { chunk, embedding in
             return chunk.withEmbedding(embedding)
+        }
+    }
+
+    private func replaceTranscriptIndexContents(chunks: [TranscriptIndexedChunk], database: OpaquePointer) throws {
+        try self.execute(sql: "BEGIN IMMEDIATE TRANSACTION;", database: database)
+
+        do {
+            try self.execute(sql: "DELETE FROM transcript_chunks;", database: database)
+
+            if !chunks.isEmpty {
+                try self.insertTranscriptChunks(chunks: chunks, database: database)
+            }
+
+            try self.execute(sql: "COMMIT;", database: database)
+        } catch {
+            _ = try? self.execute(sql: "ROLLBACK;", database: database)
+            throw error
+        }
+    }
+
+    private func insertTranscriptChunks(chunks: [TranscriptIndexedChunk], database: OpaquePointer) throws {
+        let sql = """
+        INSERT INTO transcript_chunks (
+            content,
+            session_id,
+            turn_number,
+            last_modified
+        )
+        VALUES (?, ?, ?, ?);
+        """
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            throw MemoryIndexError.sqlite("Failed to prepare transcript insert statement: \(self.lastSQLiteError(database: database))")
+        }
+        defer {
+            sqlite3_finalize(statement)
+        }
+
+        for chunk in chunks {
+            sqlite3_reset(statement)
+            sqlite3_clear_bindings(statement)
+
+            self.bindText(chunk.content, at: 1, to: statement)
+            self.bindText(chunk.sessionID.uuidString, at: 2, to: statement)
+            sqlite3_bind_int(statement, 3, Int32(chunk.turnNumber))
+            sqlite3_bind_double(statement, 4, chunk.lastModified.timeIntervalSince1970)
+
+            if sqlite3_step(statement) != SQLITE_DONE {
+                throw MemoryIndexError.sqlite("Failed to insert transcript chunk: \(self.lastSQLiteError(database: database))")
+            }
         }
     }
 
@@ -653,7 +805,103 @@ actor MemoryIndex: MemoryIndexing {
         return output
     }
 
+    private func searchTranscriptIndex(
+        expression: String,
+        limit: Int,
+        database: OpaquePointer
+    ) throws -> [MemoryChunk] {
+        let sql = """
+        SELECT
+            content,
+            session_id,
+            turn_number,
+            last_modified,
+            -bm25(transcript_chunks) AS score
+        FROM transcript_chunks
+        WHERE transcript_chunks MATCH ?
+        ORDER BY bm25(transcript_chunks)
+        LIMIT ?;
+        """
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            throw MemoryIndexError.sqlite("Failed to prepare transcript search statement: \(self.lastSQLiteError(database: database))")
+        }
+        defer {
+            sqlite3_finalize(statement)
+        }
+
+        self.bindText(expression, at: 1, to: statement)
+        sqlite3_bind_int(statement, 2, Int32(limit))
+
+        var output: [MemoryChunk] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard
+                let contentText = sqlite3_column_text(statement, 0),
+                let sessionIDText = sqlite3_column_text(statement, 1)
+            else {
+                continue
+            }
+
+            let content = String(cString: contentText)
+            let sessionID = UUID(uuidString: String(cString: sessionIDText))
+            let turnNumber = Int(sqlite3_column_int(statement, 2))
+            let modifiedTimestamp = sqlite3_column_double(statement, 3)
+            let score = sqlite3_column_double(statement, 4)
+
+            guard let sessionID else {
+                continue
+            }
+
+            output.append(
+                MemoryChunk(
+                    content: content,
+                    documentType: .transcript,
+                    sessionID: sessionID,
+                    turnNumber: turnNumber,
+                    sectionName: "Turn \(turnNumber)",
+                    lastModified: Date(timeIntervalSince1970: modifiedTimestamp),
+                    score: score
+                )
+            )
+        }
+
+        return output
+    }
+
     // MARK: - File Parsing
+
+    private func loadScopedTranscriptChunks(
+        summarySessionIDs: [UUID],
+        recentSessionLimit: Int
+    ) async -> [TranscriptIndexedChunk] {
+        let snapshots = await self.transcriptSessionLoader(
+            Self.uniqueSessionIDs(summarySessionIDs),
+            recentSessionLimit
+        )
+
+        var transcriptChunks: [TranscriptIndexedChunk] = []
+        for snapshot in snapshots {
+            let chunks = self.transcriptChunker.chunk(
+                sessionID: snapshot.sessionID,
+                messages: snapshot.messages,
+                lastModified: snapshot.lastModified
+            )
+
+            transcriptChunks.append(
+                contentsOf: chunks.map { chunk in
+                    TranscriptIndexedChunk(
+                        sessionID: chunk.sessionID,
+                        turnNumber: chunk.turnNumber,
+                        content: chunk.content,
+                        lastModified: chunk.lastModified
+                    )
+                }
+            )
+        }
+
+        return transcriptChunks
+    }
 
     private func loadAllChunks() throws -> [IndexedChunk] {
         var chunks: [IndexedChunk] = []
@@ -807,6 +1055,44 @@ actor MemoryIndex: MemoryIndexing {
         return modifiedDate
     }
 
+    private static func defaultTranscriptSessionLoader(
+        summarySessionIDs: [UUID],
+        recentSessionLimit: Int
+    ) async -> [TranscriptSessionSnapshot] {
+        return await MainActor.run {
+            let persistence = PersistenceManager.shared
+
+            if !summarySessionIDs.isEmpty {
+                return summarySessionIDs.compactMap { sessionID in
+                    guard let messages = persistence.messageSnapshot(sessionId: sessionID),
+                        !messages.isEmpty else {
+                        return nil
+                    }
+
+                    return TranscriptSessionSnapshot(
+                        sessionID: sessionID,
+                        lastModified: messages.last?.timestamp ?? Date(),
+                        messages: messages
+                    )
+                }
+            }
+
+            let recentSessions = persistence.recentSessions(limit: max(recentSessionLimit, 1))
+            return recentSessions.compactMap { session in
+                let messages = session.messages
+                guard !messages.isEmpty else {
+                    return nil
+                }
+
+                return TranscriptSessionSnapshot(
+                    sessionID: session.id,
+                    lastModified: session.updatedAt,
+                    messages: messages
+                )
+            }
+        }
+    }
+
     // MARK: - SQLite Utilities
 
     private func openDatabase() throws -> OpaquePointer {
@@ -901,6 +1187,18 @@ actor MemoryIndex: MemoryIndexing {
     }
 
     // MARK: - Query Normalization
+
+    private static func uniqueSessionIDs(_ sessionIDs: [UUID]) -> [UUID] {
+        var seen: Set<UUID> = []
+        var output: [UUID] = []
+
+        for sessionID in sessionIDs where !seen.contains(sessionID) {
+            seen.insert(sessionID)
+            output.append(sessionID)
+        }
+
+        return output
+    }
 
     private static func makeFTSQueryExpression(from query: String) -> String {
         let tokens = query

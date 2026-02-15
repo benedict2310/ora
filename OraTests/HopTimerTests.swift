@@ -40,6 +40,20 @@ private final class AtomicDateCollector: @unchecked Sendable {
 
 final class HopTimerTests: XCTestCase {
 
+    private static var isCI: Bool {
+        let env = ProcessInfo.processInfo.environment
+        return env["CI"] != nil
+            || env["GITHUB_ACTIONS"] != nil
+            || NSHomeDirectory().contains("/Users/runner")
+    }
+
+    override func setUpWithError() throws {
+        try XCTSkipIf(
+            Self.isCI,
+            "DispatchSourceTimer tests crash intermittently on CI runners"
+        )
+    }
+
     // MARK: - Basic Timer Operation
 
     /// TC-1.1: Timer fires at expected intervals

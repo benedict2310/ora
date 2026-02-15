@@ -100,12 +100,50 @@ As a user, I want Ora to find specific details from past conversations even if t
 ---
 
 ## Implementation Summary
+**Date:** 2026-02-15
+**Branch:** `feat/MEM.13-transcript-fallback-retrieval`
+**Commits:** 4
+**Implemented by:** codex (complexity score: 7/10)
+**Reviewed by:** pi (1 iteration)
 
-(TBD after implementation.)
+### Files Changed
+- `Ora/Memory/TranscriptChunker.swift` — Created: chunks transcripts into Q/A turn pairs
+- `Ora/Memory/MemoryIndex.swift` — Modified: added transcript FTS5 table, scoped search, and fallback method
+- `Ora/Memory/MemoryChunk.swift` — Modified: added `turnNumber` field and `transcript` document type
+- `Ora/Memory/MemoryTriggerDetector.swift` — Modified: wired transcript fallback into retrieval coordinator
+- `Ora/Orchestration/AgentLoop.swift` — Modified: minor integration
+- `OraTests/TranscriptChunkerTests.swift` — Created: chunking logic tests
+- `OraTests/TranscriptRetrievalTests.swift` — Created: fallback search and session scoping tests
 
 ## Code Review Findings
 
-(TBD by review agent.)
+**Reviewer:** Codex Subagent
+**Date:** 2026-02-15T15:38:00Z
+**Commit reviewed:** 1cf4c64
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 8
+- Build status: Pass
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- None
+
+#### P1 - Major (Should fix)
+- None
+
+#### P2 - Minor (Can defer)
+- [ ] `Ora/Memory/MemoryIndex.swift` - The `replaceTranscriptIndexContents` method clears the `transcript_chunks` table on every search. While this correctly implements the "scratchpad" design for scoped search, it relies entirely on the actor's serialization to prevent data races. Consider adding a comment explaining that this table is transient and only valid for the duration of the search call.
+
+### Future Considerations (Out of Scope)
+- Consider using an in-memory SQLite database or a separate temporary table for transcript chunks to avoid any potential IO overhead on the main index file, though current volume (scoped sessions) makes this negligible.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
 
 ## Completion Status
 
