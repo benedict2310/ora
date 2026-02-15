@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var setupObserver: NSObjectProtocol?
     private var hotkeyPressObserver: NSObjectProtocol?
     private var hotkeyReleaseObserver: NSObjectProtocol?
+    private var memoryFileWatcher: MemoryFileWatcher?
     // Sparkle/updates are not relevant for unit tests and can cause hangs in headless CI.
     private lazy var updateController = UpdateController.shared
 
@@ -139,6 +140,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         self.startHotkeyManager()
+        self.startMemoryFileWatcher()
+    }
+
+    private func startMemoryFileWatcher() {
+        let fileURL = MemoryFileManager().memoryFileURL
+        let watcher = MemoryFileWatcher(fileURL: fileURL) {
+            await MemoryIndex.shared.rebuild()
+        }
+        self.memoryFileWatcher = watcher
+
+        Task {
+            await watcher.startWatching()
+        }
     }
 
     private func startHotkeyManager() {
@@ -167,6 +181,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         self.logger.info("Ora terminating...")
 
+        if let watcher = self.memoryFileWatcher {
+            Task { await watcher.stopWatching() }
+        }
         PersistenceManager.shared.flushSave()
 
         // Stop hotkey manager
