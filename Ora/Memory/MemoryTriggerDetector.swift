@@ -66,22 +66,44 @@ struct MemoryTriggerDetector: MemoryTriggerDetecting, Sendable {
     }
 
     private final class EntityIndexCache: @unchecked Sendable {
+        private struct FileSignature: Equatable {
+            let modificationDate: Date?
+            let fileSize: Int?
+            let fileSystemNumber: Int64?
+        }
+
         private var cachedTokens: Set<String>?
+        private var cachedFileSignature: FileSignature?
         private let lock = NSLock()
 
-        func tokens(load: () -> Set<String>) -> Set<String> {
+        func tokens(for fileURL: URL, load: () -> Set<String>) -> Set<String> {
             self.lock.lock()
             defer {
                 self.lock.unlock()
             }
 
-            if let cachedTokens = self.cachedTokens {
+            let currentFileSignature = Self.makeFileSignature(for: fileURL)
+            if let cachedTokens = self.cachedTokens,
+                self.cachedFileSignature == currentFileSignature {
                 return cachedTokens
             }
 
             let loadedTokens = load()
             self.cachedTokens = loadedTokens
+            self.cachedFileSignature = currentFileSignature
             return loadedTokens
+        }
+
+        private static func makeFileSignature(for fileURL: URL) -> FileSignature? {
+            guard let fileAttributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path) else {
+                return nil
+            }
+
+            return FileSignature(
+                modificationDate: fileAttributes[.modificationDate] as? Date,
+                fileSize: (fileAttributes[.size] as? NSNumber)?.intValue,
+                fileSystemNumber: (fileAttributes[.systemFileNumber] as? NSNumber)?.int64Value
+            )
         }
     }
 
@@ -181,7 +203,7 @@ struct MemoryTriggerDetector: MemoryTriggerDetecting, Sendable {
             return nil
         }
 
-        let memoryTokens = self.entityIndexCache.tokens {
+        let memoryTokens = self.entityIndexCache.tokens(for: self.memoryFileURL) {
             return self.loadEntityTokens()
         }
         guard !memoryTokens.isEmpty else {

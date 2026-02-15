@@ -122,6 +122,39 @@ final class MemoryTriggerDetectorTests: XCTestCase {
         XCTAssertLessThan(averageMilliseconds, 5.0)
     }
 
+    func test_detect_entityIndexCacheInvalidatesWhenMemoryFileChanges() throws {
+        // Given
+        let memoryFileURL = self.temporaryDirectoryURL.appendingPathComponent("MEMORY.md", isDirectory: false)
+        let initialMemoryContent = """
+# Ora Memory
+
+## Projects
+- [fact] Atlas rollout is blocked on staging.
+"""
+        try initialMemoryContent.write(to: memoryFileURL, atomically: true, encoding: .utf8)
+        let detector = MemoryTriggerDetector(memoryFileURL: memoryFileURL)
+
+        // Warm cache with initial file content.
+        let initialResult = detector.detect(userText: "Any update on Atlas rollout?")
+        XCTAssertTrue(initialResult.shouldTrigger)
+        XCTAssertTrue(initialResult.matchedSignals.contains("atlas"))
+
+        // When
+        let updatedMemoryContent = """
+# Ora Memory
+
+## Projects
+- [fact] Helios launch depends on release coordination details and checklist.
+"""
+        try updatedMemoryContent.write(to: memoryFileURL, atomically: true, encoding: .utf8)
+        let result = detector.detect(userText: "Any update on Helios launch?")
+
+        // Then
+        XCTAssertTrue(result.shouldTrigger)
+        XCTAssertEqual(result.triggerType, .entityOverlap)
+        XCTAssertTrue(result.matchedSignals.contains("helios"))
+    }
+
     // MARK: - Helpers
 
     private func makeDetector(memoryContent: String) throws -> MemoryTriggerDetector {
