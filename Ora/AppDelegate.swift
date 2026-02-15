@@ -43,6 +43,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.logger.warning("Failed to initialize on-disk memory folder: \(error.localizedDescription)")
         }
 
+        Task.detached(priority: .utility) {
+            await MemoryIndex.shared.rebuild()
+        }
+
         // Initialize persistence
         _ = PersistenceManager.shared
 
