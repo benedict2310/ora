@@ -120,6 +120,8 @@ actor AgentLoop {
     private let persistenceSink: AgentLoopPersistenceSink
     private let sessionLifecycleSink: AgentLoopSessionLifecycleSink
     private let memoryDistiller: any MemoryDistilling
+    private let memoryTriggerDetector: any MemoryTriggerDetecting
+    private let memoryRetrievalCoordinator: any MemoryRetrievalCoordinating
     
     // MARK: - Initialization
     
@@ -133,7 +135,9 @@ actor AgentLoop {
         conversationManager: ConversationManager = .shared,
         persistenceSink: AgentLoopPersistenceSink = SwiftDataAgentLoopPersistenceSink(),
         sessionLifecycleSink: AgentLoopSessionLifecycleSink = SwiftDataAgentLoopSessionLifecycleSink(),
-        memoryDistiller: any MemoryDistilling = MemoryDistiller.shared
+        memoryDistiller: any MemoryDistilling = MemoryDistiller.shared,
+        memoryTriggerDetector: any MemoryTriggerDetecting = MemoryTriggerDetector(),
+        memoryRetrievalCoordinator: any MemoryRetrievalCoordinating = NoopMemoryRetrievalCoordinator()
     ) {
         self.maxStepsPerTurn = maxStepsPerTurn
         self.maxToolCallsPerTurn = maxToolCallsPerTurn
@@ -145,6 +149,8 @@ actor AgentLoop {
         self.persistenceSink = persistenceSink
         self.sessionLifecycleSink = sessionLifecycleSink
         self.memoryDistiller = memoryDistiller
+        self.memoryTriggerDetector = memoryTriggerDetector
+        self.memoryRetrievalCoordinator = memoryRetrievalCoordinator
     }
     
     // MARK: - Public API
@@ -252,6 +258,18 @@ actor AgentLoop {
 
         // Add user message to in-memory conversation
         await conversationManager.addUserMessage(userText)
+
+        let memoryTriggerResult = self.memoryTriggerDetector.detect(userText: userText)
+        if memoryTriggerResult.shouldTrigger {
+            self.logger.debug(
+                "Memory retrieval trigger detected (\(memoryTriggerResult.triggerType.rawValue), confidence: \(memoryTriggerResult.confidence))"
+            )
+        }
+        await self.memoryRetrievalCoordinator.prepareRetrievalIfNeeded(
+            userText: userText,
+            triggerResult: memoryTriggerResult,
+            conversationManager: self.conversationManager
+        )
         
         // Run agent loop
         let result = await runLoop()
