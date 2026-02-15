@@ -170,7 +170,7 @@ final class PersistenceManager {
     /// Append a message to the current active session.
     ///
     /// The message is added to the main-actor session immediately for UI responsiveness,
-    /// then the heavy JSON encode + save is dispatched to the background actor.
+    /// then the save is dispatched via the debounced main-context save.
     @discardableResult
     func appendMessage(
         role: Session.Message.Role,
@@ -178,30 +178,8 @@ final class PersistenceManager {
         metadata: [String: String]? = nil
     ) -> Session {
         let session = self.currentSession()
-        let timestamp = Date()
-
-        // Update main-actor model for immediate UI display
-        session.addMessage(role: role, content: content, metadata: metadata, timestamp: timestamp)
-
-        // Dispatch save to background actor
-        let sessionID = session.id
-        let bgActor = self.backgroundActor
-        Task.detached(priority: .utility) {
-            do {
-                try await bgActor.appendMessage(
-                    sessionID: sessionID,
-                    role: role,
-                    content: content,
-                    metadata: metadata,
-                    timestamp: timestamp
-                )
-            } catch {
-                // Fallback: save on main context
-                await MainActor.run { [weak self] in
-                    self?.saveContext()
-                }
-            }
-        }
+        session.addMessage(role: role, content: content, metadata: metadata)
+        self.saveContext()
 
         if let metadata, !metadata.isEmpty {
             self.logger.debug("Appended message to session \(session.id) (metadata keys: \(metadata.count))")
