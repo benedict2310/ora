@@ -243,7 +243,8 @@ final class TranscriptRetrievalTests: XCTestCase {
                     summarySessionIDs: summarySessionIDs,
                     recentSessionLimit: recentSessionLimit
                 )
-            }
+            },
+            embeddingService: StubEmbeddingService()
         )
         await index.rebuild()
 
@@ -297,7 +298,8 @@ final class TranscriptRetrievalTests: XCTestCase {
                     summarySessionIDs: summarySessionIDs,
                     recentSessionLimit: recentSessionLimit
                 )
-            }
+            },
+            embeddingService: StubEmbeddingService()
         )
         await index.rebuild()
 
