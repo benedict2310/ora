@@ -76,7 +76,7 @@ struct MemoryTriggerDetector: MemoryTriggerDetecting, Sendable {
         private var cachedFileSignature: FileSignature?
         private let lock = NSLock()
 
-        func tokens(for fileURL: URL, load: () -> Set<String>) -> Set<String> {
+        func tokens(for fileURL: URL, load: () throws -> Set<String>) -> Set<String> {
             self.lock.lock()
             defer {
                 self.lock.unlock()
@@ -88,10 +88,17 @@ struct MemoryTriggerDetector: MemoryTriggerDetecting, Sendable {
                 return cachedTokens
             }
 
-            let loadedTokens = load()
-            self.cachedTokens = loadedTokens
-            self.cachedFileSignature = currentFileSignature
-            return loadedTokens
+            do {
+                let loadedTokens = try load()
+                self.cachedTokens = loadedTokens
+                self.cachedFileSignature = currentFileSignature
+                return loadedTokens
+            } catch {
+                if let cachedTokens = self.cachedTokens {
+                    return cachedTokens
+                }
+                return []
+            }
         }
 
         private static func makeFileSignature(for fileURL: URL) -> FileSignature? {
@@ -204,7 +211,7 @@ struct MemoryTriggerDetector: MemoryTriggerDetecting, Sendable {
         }
 
         let memoryTokens = self.entityIndexCache.tokens(for: self.memoryFileURL) {
-            return self.loadEntityTokens()
+            return try self.loadEntityTokens()
         }
         guard !memoryTokens.isEmpty else {
             return nil
@@ -226,10 +233,8 @@ struct MemoryTriggerDetector: MemoryTriggerDetecting, Sendable {
 
     // MARK: - Entity Index
 
-    private func loadEntityTokens() -> Set<String> {
-        guard let content = try? self.loadFileContent(self.memoryFileURL) else {
-            return []
-        }
+    private func loadEntityTokens() throws -> Set<String> {
+        let content = try self.loadFileContent(self.memoryFileURL)
 
         var tokens: Set<String> = []
         let lines = content.components(separatedBy: .newlines)

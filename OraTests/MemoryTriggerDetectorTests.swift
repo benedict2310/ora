@@ -155,6 +155,31 @@ final class MemoryTriggerDetectorTests: XCTestCase {
         XCTAssertTrue(result.matchedSignals.contains("helios"))
     }
 
+    func test_detect_entityIndexLoadFailureDoesNotCacheEmptyResult() throws {
+        // Given
+        let memoryFileURL = self.temporaryDirectoryURL.appendingPathComponent("MEMORY.md", isDirectory: false)
+        let detector = MemoryTriggerDetector(memoryFileURL: memoryFileURL)
+
+        // Initial detect occurs before MEMORY.md exists.
+        let firstResult = detector.detect(userText: "Any update on Atlas rollout?")
+        XCTAssertFalse(firstResult.shouldTrigger)
+
+        // When
+        let memoryContent = """
+# Ora Memory
+
+## Projects
+- [fact] Atlas rollout has release blockers.
+"""
+        try memoryContent.write(to: memoryFileURL, atomically: true, encoding: .utf8)
+        let secondResult = detector.detect(userText: "Any update on Atlas rollout?")
+
+        // Then
+        XCTAssertTrue(secondResult.shouldTrigger)
+        XCTAssertEqual(secondResult.triggerType, .entityOverlap)
+        XCTAssertTrue(secondResult.matchedSignals.contains("atlas"))
+    }
+
     // MARK: - Helpers
 
     private func makeDetector(memoryContent: String) throws -> MemoryTriggerDetector {
