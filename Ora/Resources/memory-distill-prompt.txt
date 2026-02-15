@@ -15,11 +15,21 @@ Return ONLY one JSON object in this exact schema:
     ],
     "open_loops": ["string"]
   },
-  "memory_entries": ["string"]
+  "memory_entries": [
+    {
+      "section": "profile|preferences|people|projects|ongoing_goals",
+      "tag": "fact|preference|fact_sensitive",
+      "content": "string",
+      "normalized_key": "optional-string"
+    }
+  ]
 }
 
 Rules:
 - Extract only stable facts, user preferences, commitments, and decisions.
+- Put each memory entry in the best section.
+- Use tags exactly: `fact`, `preference`, `fact_sensitive`.
+- Use `normalized_key` when obvious (example: `pref:food:spicy`), otherwise omit it.
 - Ignore transient chatter and speculative statements.
 - Keep bullet items concise and factual.
 - If no items exist for a field, use an empty string or empty array.

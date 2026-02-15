@@ -81,11 +81,17 @@ actor MemoryDistiller: MemoryDistilling {
             try await self.llm.prepare()
 
             let prompt = self.promptLoader()
-            let payload = try await self.generatePayload(prompt: prompt, transcript: transcript)
+            let distillationTimestamp = Date()
+            let payload = try await self.generatePayload(
+                prompt: prompt,
+                transcript: transcript,
+                sessionId: sessionId,
+                timestamp: distillationTimestamp
+            )
 
             let summaryMarkdown = payload.summary.renderMarkdown()
             try self.memoryFileManager.writeSummary(sessionId: sessionId, content: summaryMarkdown)
-            try self.memoryFileManager.appendToMemory(entries: payload.memoryEntries, sessionId: sessionId)
+            try self.memoryFileManager.appendEntries(entries: payload.memoryEntries)
 
             self.logger.info("Memory distillation completed for session \(sessionId.uuidString)")
             return payload.summary
@@ -104,7 +110,12 @@ actor MemoryDistiller: MemoryDistilling {
 
     // MARK: - Payload Generation
 
-    private func generatePayload(prompt: String, transcript: String) async throws -> DistillationPayload {
+    private func generatePayload(
+        prompt: String,
+        transcript: String,
+        sessionId: UUID,
+        timestamp: Date
+    ) async throws -> DistillationPayload {
         let baseMessages = [
             LLMMessage(role: .system, content: prompt),
             LLMMessage(role: .user, content: "Transcript:\n\n\(transcript)")
@@ -117,7 +128,7 @@ actor MemoryDistiller: MemoryDistilling {
             let response = try await self.generateResponse(messages: messages)
 
             do {
-                return try Self.parsePayload(from: response)
+                return try Self.parsePayload(from: response, sessionId: sessionId, timestamp: timestamp)
             } catch {
                 lastParsingError = error
                 self.logger.warning("Memory distillation parse failed on attempt \(attempt): \(error.localizedDescription)")
@@ -196,7 +207,14 @@ Return ONLY one JSON object in this exact shape:
     ],
     "open_loops": ["string"]
   },
-  "memory_entries": ["string"]
+  "memory_entries": [
+    {
+      "section": "profile|preferences|people|projects|ongoing_goals",
+      "tag": "fact|preference|fact_sensitive",
+      "content": "string",
+      "normalized_key": "optional-string"
+    }
+  ]
 }
 
 Rules:
@@ -215,15 +233,19 @@ Rules:
 
     // MARK: - Parsing
 
-    private static func parsePayload(from response: String) throws -> DistillationPayload {
+    private static func parsePayload(
+        from response: String,
+        sessionId: UUID,
+        timestamp: Date
+    ) throws -> DistillationPayload {
         let cleaned = Self.cleanResponse(response)
 
-        if let payload = try Self.decodePayload(candidate: cleaned) {
+        if let payload = try Self.decodePayload(candidate: cleaned, sessionId: sessionId, timestamp: timestamp) {
             return payload
         }
 
         for candidate in Self.extractJSONObjectCandidates(from: cleaned) {
-            if let payload = try Self.decodePayload(candidate: candidate) {
+            if let payload = try Self.decodePayload(candidate: candidate, sessionId: sessionId, timestamp: timestamp) {
                 return payload
             }
         }
@@ -247,7 +269,11 @@ Rules:
         return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func decodePayload(candidate: String) throws -> DistillationPayload? {
+    private static func decodePayload(
+        candidate: String,
+        sessionId: UUID,
+        timestamp: Date
+    ) throws -> DistillationPayload? {
         guard let data = candidate.data(using: .utf8) else {
             return nil
         }
@@ -261,7 +287,7 @@ Rules:
             let normalizedData = try JSONSerialization.data(withJSONObject: json, options: [])
             let decoder = JSONDecoder()
             let envelope = try decoder.decode(DistillationEnvelope.self, from: normalizedData)
-            return envelope.toPayload()
+            return envelope.toPayload(sessionId: sessionId, timestamp: timestamp)
         } catch {
             throw error
         }
@@ -351,20 +377,39 @@ Previous invalid output:
 
 private struct DistillationPayload: Sendable {
     let summary: SessionSummary
-    let memoryEntries: [String]
+    let memoryEntries: [MemoryEntry]
 }
 
 private struct DistillationEnvelope: Decodable {
 
     let summary: DistilledSummary
-    let memoryEntries: [String]
+    let memoryEntries: [DistilledMemoryEntry]
 
     enum CodingKeys: String, CodingKey {
         case summary
         case memoryEntries = "memory_entries"
     }
 
-    func toPayload() -> DistillationPayload {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.summary = try container.decode(DistilledSummary.self, forKey: .summary)
+
+        if let structuredEntries = try? container.decode([DistilledMemoryEntry].self, forKey: .memoryEntries) {
+            self.memoryEntries = structuredEntries
+        } else {
+            let legacyEntries = (try? container.decode([String].self, forKey: .memoryEntries)) ?? []
+            self.memoryEntries = legacyEntries.map {
+                DistilledMemoryEntry(
+                    section: "profile",
+                    tag: "fact",
+                    content: $0,
+                    normalizedKey: nil
+                )
+            }
+        }
+    }
+
+    func toPayload(sessionId: UUID, timestamp: Date) -> DistillationPayload {
         let summary = SessionSummary(
             tldr: self.summary.tldr.trimmingCharacters(in: .whitespacesAndNewlines),
             bullets: self.summary.bullets
@@ -384,9 +429,24 @@ private struct DistillationEnvelope: Decodable {
                 .filter { !$0.isEmpty }
         )
 
-        let normalizedMemoryEntries = self.memoryEntries
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        let normalizedMemoryEntries = self.memoryEntries.compactMap { entry -> MemoryEntry? in
+            let section = MemoryEntry.Section(rawSection: entry.section)
+            let tag = MemoryEntry.Tag(rawTag: entry.tag) ?? .fact
+            let content = entry.content.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            guard let section, !content.isEmpty else {
+                return nil
+            }
+
+            return MemoryEntry(
+                section: section,
+                tag: tag,
+                content: content,
+                sourceSessionID: sessionId,
+                timestamp: timestamp,
+                normalizedKey: entry.normalizedKey
+            )
+        }
 
         return DistillationPayload(summary: summary, memoryEntries: normalizedMemoryEntries)
     }
@@ -437,6 +497,20 @@ private struct DistilledDecision: Decodable {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         return formatter.date(from: timestamp)
+    }
+}
+
+private struct DistilledMemoryEntry: Decodable {
+    let section: String
+    let tag: String
+    let content: String
+    let normalizedKey: String?
+
+    enum CodingKeys: String, CodingKey {
+        case section
+        case tag
+        case content
+        case normalizedKey = "normalized_key"
     }
 }
 
