@@ -25,7 +25,7 @@ actor StubMemoryIndex: MemoryIndexing {
 final class MemoryRetrievalCoordinatorTests: XCTestCase {
 
     func test_prepareRetrieval_triggeredAndHighScore_injectsThreeToSevenChunks() async {
-        // Given — scores are positive (-bm25 output, higher = more relevant)
+        // Given
         let now = Date(timeIntervalSince1970: 1_739_599_200)
         let chunks: [MemoryChunk] = [
             MemoryChunk(
@@ -76,7 +76,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
         let coordinator = KeywordMemoryRetrievalCoordinator(
             memoryIndex: StubMemoryIndex(chunks: chunks),
             configuration: .init(
-                minTopScore: 1e-7,
+                minTopScore: 0.30,
                 minChunkCount: 3,
                 maxChunkCount: 7,
                 scoreWindowRatio: 0.70
@@ -111,8 +111,8 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
         XCTAssertLessThanOrEqual(numberedLines.count, 7)
     }
 
-    func test_prepareRetrieval_smallIndexScores_stillInjectsContext() async {
-        // Given — small indexes produce tiny scores; should still inject
+    func test_prepareRetrieval_hybridScoresAboveThreshold_injectsContext() async {
+        // Given
         let now = Date(timeIntervalSince1970: 1_739_599_200)
         let chunks: [MemoryChunk] = [
             MemoryChunk(
@@ -121,7 +121,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
                 sessionID: nil,
                 sectionName: "Preferences",
                 lastModified: now,
-                score: 0.0003
+                score: 0.62
             ),
             MemoryChunk(
                 content: "Project Atlas is the current focus.",
@@ -129,7 +129,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
                 sessionID: nil,
                 sectionName: "Projects",
                 lastModified: now,
-                score: 0.0001
+                score: 0.41
             )
         ]
 
@@ -155,13 +155,13 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
         )
         let messages = await conversationManager.getMessagesForLLM()
 
-        // Then — should inject context even with tiny scores
+        // Then
         XCTAssertEqual(messages.count, 2)
         XCTAssertEqual(messages[1].role, .system)
     }
 
     func test_prepareRetrieval_topScoreBelowThreshold_doesNotInjectContext() async {
-        // Given — scores at or below threshold (1e-7) should not inject context
+        // Given
         let now = Date(timeIntervalSince1970: 1_739_599_200)
         let chunks: [MemoryChunk] = [
             MemoryChunk(
@@ -170,7 +170,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
                 sessionID: nil,
                 sectionName: "Projects",
                 lastModified: now,
-                score: 1e-8
+                score: 0.12
             ),
             MemoryChunk(
                 content: "Another negligible match.",
@@ -178,7 +178,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
                 sessionID: UUID(),
                 sectionName: "TL;DR",
                 lastModified: now,
-                score: 1e-9
+                score: 0.08
             )
         ]
 
@@ -188,7 +188,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
         let coordinator = KeywordMemoryRetrievalCoordinator(
             memoryIndex: StubMemoryIndex(chunks: chunks),
             configuration: .init(
-                minTopScore: 1e-7,
+                minTopScore: 0.30,
                 minChunkCount: 3,
                 maxChunkCount: 7,
                 scoreWindowRatio: 0.70

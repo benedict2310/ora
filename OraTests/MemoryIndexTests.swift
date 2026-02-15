@@ -2,11 +2,83 @@
 //  MemoryIndexTests.swift
 //  OraTests
 //
-//  Tests for keyword retrieval index over MEMORY.md and session summaries.
+//  Tests for hybrid memory retrieval over MEMORY.md and session summaries.
 //
 
 import XCTest
 @testable import Ora
+
+struct StubEmbeddingService: EmbeddingServicing {
+    var vectorDimension: Int { 16 }
+
+    private static let tokenDimensions: [String: Int] = [
+        "atlas": 0,
+        "migration": 1,
+        "phoenix": 2,
+        "guardrail": 3,
+        "budget": 4,
+        "variance": 5,
+        "review": 6,
+        "food": 7,
+        "cuisine": 7,
+        "spicy": 8,
+        "like": 9,
+        "enjoy": 9,
+        "prefer": 9,
+        "meeting": 10,
+        "project": 11,
+        "decision": 12,
+        "weekly": 13,
+        "summary": 14,
+        "general": 15
+    ]
+
+    func embed(text: String) async throws -> [Float] {
+        return Self.makeVector(from: text, dimension: self.vectorDimension)
+    }
+
+    func embed(texts: [String]) async throws -> [[Float]] {
+        return texts.map { text in
+            return Self.makeVector(from: text, dimension: self.vectorDimension)
+        }
+    }
+
+    private static func makeVector(from text: String, dimension: Int) -> [Float] {
+        var vector = [Float](repeating: 0, count: dimension)
+        let tokens = text
+            .lowercased()
+            .replacingOccurrences(of: "[^a-z0-9\\s]", with: " ", options: .regularExpression)
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .map(String.init)
+
+        for token in tokens {
+            if let index = self.tokenDimensions[token] {
+                vector[index] += 1
+            }
+
+            if token == "enjoy" || token == "enjoying" {
+                vector[9] += 1
+            }
+
+            if token == "meal" {
+                vector[7] += 1
+            }
+        }
+
+        let squaredNorm = vector.reduce(Float.zero) { partial, value in
+            return partial + (value * value)
+        }
+
+        guard squaredNorm > 0 else {
+            return vector
+        }
+
+        let scale = 1 / sqrt(squaredNorm)
+        return vector.map { value in
+            return value * scale
+        }
+    }
+}
 
 final class MemoryIndexTests: XCTestCase {
 
@@ -28,7 +100,10 @@ final class MemoryIndexTests: XCTestCase {
 
         self.memoryFileManager = MemoryFileManager(documentsDirectory: self.documentsDirectoryURL)
         try self.memoryFileManager.ensureMemoryStructureExists()
-        self.memoryIndex = MemoryIndex(documentsDirectory: self.documentsDirectoryURL)
+        self.memoryIndex = MemoryIndex(
+            documentsDirectory: self.documentsDirectoryURL,
+            embeddingService: StubEmbeddingService()
+        )
     }
 
     override func tearDownWithError() throws {
@@ -122,7 +197,28 @@ Aligned on budget variance review.
 
         // Then
         XCTAssertGreaterThanOrEqual(matches.count, 2)
-        XCTAssertTrue(matches[0].content.contains("strict guardrail checklist"))
-        XCTAssertGreaterThan(matches[0].score, matches[1].score)
+        let first = try XCTUnwrap(matches.first)
+        XCTAssertTrue(first.content.contains("strict guardrail checklist"))
+        let second = try XCTUnwrap(matches.dropFirst().first)
+        XCTAssertGreaterThan(first.score, second.score)
+    }
+
+    func test_search_paraphrasedQuery_returnsSemanticallyRelevantChunk() async throws {
+        // Given
+        let memoryContent = """
+# Ora Memory
+
+## Preferences
+- User likes spicy cuisine.
+"""
+        try memoryContent.write(to: self.memoryFileManager.memoryFileURL, atomically: true, encoding: .utf8)
+        await self.memoryIndex.rebuild()
+
+        // When
+        let matches = await self.memoryIndex.search(query: "what kind of food do I enjoy", limit: 5)
+
+        // Then
+        let top = try XCTUnwrap(matches.first)
+        XCTAssertTrue(top.content.contains("likes spicy cuisine"))
     }
 }
