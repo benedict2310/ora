@@ -95,8 +95,13 @@ struct SessionSummary: Codable, Sendable, Equatable {
             return "- _No decisions or commitments yet._"
         }
 
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd HH:mm 'UTC'"
+
         return self.decisionsAndCommitments.enumerated().map { index, item in
-            let timestamp = Self.timestampFormatter.string(from: item.timestamp)
+            let timestamp = formatter.string(from: item.timestamp)
             return """
 \(index + 1). **Decision:** \(item.decision)
    **Rationale:** \(item.rationale)
@@ -114,11 +119,4 @@ struct SessionSummary: Codable, Sendable, Equatable {
             .joined(separator: "\n")
     }
 
-    private static let timestampFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd HH:mm 'UTC'"
-        return formatter
-    }()
 }
