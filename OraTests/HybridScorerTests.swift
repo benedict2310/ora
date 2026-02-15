@@ -26,6 +26,7 @@ final class HybridScorerTests: XCTestCase {
 
         let candidates: [HybridScorer.Candidate] = [
             .init(
+                rowID: 1,
                 content: "Exact semantic match",
                 documentType: .memory,
                 sessionID: nil,
@@ -35,6 +36,7 @@ final class HybridScorerTests: XCTestCase {
                 embedding: [1.0, 0.0]
             ),
             .init(
+                rowID: 2,
                 content: "Strong keyword but weak semantic",
                 documentType: .memory,
                 sessionID: nil,
@@ -72,6 +74,7 @@ final class HybridScorerTests: XCTestCase {
 
         let candidates: [HybridScorer.Candidate] = [
             .init(
+                rowID: 1,
                 content: "Old memory",
                 documentType: .memory,
                 sessionID: nil,
@@ -81,6 +84,7 @@ final class HybridScorerTests: XCTestCase {
                 embedding: [1.0, 0.0]
             ),
             .init(
+                rowID: 2,
                 content: "Recent memory",
                 documentType: .memory,
                 sessionID: nil,
@@ -113,6 +117,7 @@ final class HybridScorerTests: XCTestCase {
 
         let candidates: [HybridScorer.Candidate] = [
             .init(
+                rowID: 1,
                 content: "Weak candidate",
                 documentType: .memory,
                 sessionID: nil,

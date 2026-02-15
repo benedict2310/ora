@@ -26,6 +26,7 @@ struct HybridScorer: Sendable {
     }
 
     struct Candidate: Sendable {
+        let rowID: Int64
         let content: String
         let documentType: MemoryDocumentType
         let sessionID: UUID?
@@ -36,6 +37,7 @@ struct HybridScorer: Sendable {
     }
 
     struct ScoredChunk: Sendable, Equatable {
+        let rowID: Int64
         let chunk: MemoryChunk
         let cosineSimilarity: Double
         let bm25Score: Double
@@ -85,6 +87,7 @@ struct HybridScorer: Sendable {
                 + recencyBoost
 
             return ScoredChunk(
+                rowID: candidate.rowID,
                 chunk: MemoryChunk(
                     content: candidate.content,
                     documentType: candidate.documentType,

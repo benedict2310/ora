@@ -221,4 +221,29 @@ Aligned on budget variance review.
         let top = try XCTUnwrap(matches.first)
         XCTAssertTrue(top.content.contains("likes spicy cuisine"))
     }
+
+    func test_search_semanticMatchOutsideRecentWindow_stillReturnsOlderChunk() async throws {
+        // Given
+        var lines = [
+            "# Ora Memory",
+            "",
+            "## Preferences",
+            "- User likes spicy cuisine."
+        ]
+
+        for index in 0..<700 {
+            lines.append("- Archive filler line \(index) about atlas migration.")
+        }
+
+        let memoryContent = lines.joined(separator: "\n")
+        try memoryContent.write(to: self.memoryFileManager.memoryFileURL, atomically: true, encoding: .utf8)
+        await self.memoryIndex.rebuild()
+
+        // When
+        let matches = await self.memoryIndex.search(query: "what kind of food do I enjoy", limit: 5)
+
+        // Then
+        let top = try XCTUnwrap(matches.first)
+        XCTAssertTrue(top.content.contains("likes spicy cuisine"))
+    }
 }
