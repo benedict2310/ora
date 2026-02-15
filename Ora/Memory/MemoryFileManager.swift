@@ -80,6 +80,68 @@ Add or remove details that you want Ora to remember long-term.
         try self.writeSummary(sessionId: sessionId, content: SessionSummary.placeholder.renderMarkdown())
     }
 
+    func appendToMemory(
+        entries: [String],
+        sessionId: UUID? = nil,
+        timestamp: Date = Date()
+    ) throws {
+        let normalizedEntries = entries
+            .map { entry in
+                let trimmed = entry
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.hasPrefix("- ") {
+                    return String(trimmed.dropFirst(2))
+                }
+                return trimmed
+            }
+            .filter { !$0.isEmpty }
+
+        guard !normalizedEntries.isEmpty else {
+            return
+        }
+
+        try self.ensureMemoryStructureExists()
+
+        let existingContent = (try? String(contentsOf: self.memoryFileURL, encoding: .utf8)) ?? ""
+        let separator: String
+        if existingContent.isEmpty {
+            separator = ""
+        } else if existingContent.hasSuffix("\n\n") {
+            separator = ""
+        } else if existingContent.hasSuffix("\n") {
+            separator = "\n"
+        } else {
+            separator = "\n\n"
+        }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd HH:mm 'UTC'"
+
+        var sectionHeader = "## Memory Update \(formatter.string(from: timestamp))"
+        if let sessionId {
+            sectionHeader += " (session: \(sessionId.uuidString))"
+        }
+
+        let appendedSection = [
+            separator + sectionHeader,
+            normalizedEntries.map { "- \($0)" }.joined(separator: "\n")
+        ].joined(separator: "\n")
+
+        guard let data = appendedSection.data(using: .utf8) else {
+            throw CocoaError(.fileWriteInapplicableStringEncoding)
+        }
+
+        let handle = try FileHandle(forWritingTo: self.memoryFileURL)
+        defer {
+            handle.closeFile()
+        }
+
+        try handle.seekToEnd()
+        try handle.write(contentsOf: data)
+    }
+
     // MARK: - Private Helpers
 
     private func ensureMemoryTemplateExists() throws {
