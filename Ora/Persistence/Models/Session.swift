@@ -32,8 +32,15 @@ final class Session {
     /// Short summary of the conversation
     var summary: String?
 
-    /// Messages in this session (stored as JSON)
+    /// Messages in this session (stored as JSON blob — legacy, kept for backward compat)
     var messagesData: Data?
+
+    /// Per-message relationship storage (new, replaces messagesData for new writes)
+    @Relationship(deleteRule: .cascade, inverse: \MessageModel.session)
+    var messageModels: [MessageModel]?
+
+    /// Whether the session has been migrated from blob to relationship storage
+    var isMigrated: Bool = false
 
     /// Whether the session is complete
     var isComplete: Bool
@@ -45,6 +52,7 @@ final class Session {
         self.createdAt = Date()
         self.updatedAt = Date()
         self.isComplete = false
+        self.isMigrated = true
     }
 
     // MARK: - Messages
@@ -65,6 +73,14 @@ final class Session {
 
     var messages: [Message] {
         get {
+            // Prefer relationship storage if migrated
+            if self.isMigrated, let models = self.messageModels, !models.isEmpty {
+                return models
+                    .sorted { $0.timestamp < $1.timestamp }
+                    .map { $0.toMessage() }
+            }
+
+            // Fallback to blob storage
             guard let data = self.messagesData else { return [] }
 
             let state = Self.persistenceSignposter.beginInterval("session.messages.decode")
@@ -83,6 +99,7 @@ final class Session {
             return decodedMessages
         }
         set {
+            // Always update blob for backward compat and legacy code paths
             let state = Self.persistenceSignposter.beginInterval("session.messages.encode")
             let start = DispatchTime.now().uptimeNanoseconds
             let encodedData = try? JSONEncoder().encode(newValue)
@@ -107,15 +124,54 @@ final class Session {
         metadata: [String: String]? = nil,
         timestamp: Date = Date()
     ) {
-        var current = messages
-        current.append(Message(
+        let message = Message(
             id: UUID(),
             role: role,
             content: content,
             timestamp: timestamp,
             metadata: metadata
-        ))
+        )
+
+        // Append to relationship storage if migrated
+        if self.isMigrated {
+            let model = MessageModel.from(message, session: self)
+            if self.messageModels != nil {
+                self.messageModels?.append(model)
+            } else {
+                self.messageModels = [model]
+            }
+            self.updatedAt = Date()
+            return
+        }
+
+        // Legacy blob path
+        var current = messages
+        current.append(message)
         messages = current
+    }
+
+    // MARK: - Migration
+
+    /// Migrate this session from blob storage to relationship storage.
+    /// Returns the number of messages migrated, or 0 if already migrated / no data.
+    @discardableResult
+    func migrateToRelationshipStorage() -> Int {
+        guard !self.isMigrated else {
+            return 0
+        }
+
+        guard let data = self.messagesData,
+              let blobMessages = try? JSONDecoder().decode([Message].self, from: data),
+              !blobMessages.isEmpty else {
+            self.isMigrated = true
+            return 0
+        }
+
+        let models = blobMessages.map { MessageModel.from($0, session: self) }
+        self.messageModels = models
+        self.isMigrated = true
+
+        return models.count
     }
 
     // MARK: - Helpers

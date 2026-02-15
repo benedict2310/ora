@@ -372,8 +372,11 @@ final class PersistenceManagerAPITests: XCTestCase {
         XCTAssertEqual(message.content, "Hello persistence")
         XCTAssertGreaterThanOrEqual(message.timestamp, appendStart)
         XCTAssertEqual(message.metadata, metadata)
-        XCTAssertNotNil(session.messagesData)
-        XCTAssertFalse(session.messagesData?.isEmpty ?? true)
+
+        // New sessions use relationship storage (isMigrated=true), so verify models
+        XCTAssertTrue(session.isMigrated)
+        XCTAssertNotNil(session.messageModels)
+        XCTAssertEqual(session.messageModels?.count, 1)
     }
 
     func test_persistenceManager_appendMessage_updatesSessionUpdatedAt() {
