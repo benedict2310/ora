@@ -40,9 +40,14 @@ private final class AtomicDateCollector: @unchecked Sendable {
 
 final class HopTimerTests: XCTestCase {
 
+    private static var isCI: Bool {
+        let env = ProcessInfo.processInfo.environment
+        return env["CI"] != nil || env["GITHUB_ACTIONS"] != nil
+    }
+
     override func setUp() {
         try? XCTSkipIf(
-            ProcessInfo.processInfo.environment["CI"] != nil,
+            Self.isCI,
             "DispatchSourceTimer tests crash intermittently on CI runners"
         )
     }
