@@ -96,9 +96,11 @@ final class MemoryDistillerTests: XCTestCase {
             )
         ]
 
+        let mockMemoryIndex = MemoryDistillerMockMemoryIndex()
         let distiller = MemoryDistiller(
             llm: mockLLM,
             memoryFileManager: MemoryFileManager(documentsDirectory: documentsDirectory),
+            memoryIndex: mockMemoryIndex,
             transcriptLoader: { requestedSessionID in
                 return requestedSessionID == sessionID ? messages : nil
             },
@@ -137,9 +139,11 @@ final class MemoryDistillerTests: XCTestCase {
         let baselineMemory = "# Ora Memory\n\nExisting memory line"
         try baselineMemory.write(to: verificationManager.memoryFileURL, atomically: true, encoding: .utf8)
 
+        let mockMemoryIndex = MemoryDistillerMockMemoryIndex()
         let distiller = MemoryDistiller(
             llm: mockLLM,
             memoryFileManager: MemoryFileManager(documentsDirectory: documentsDirectory),
+            memoryIndex: mockMemoryIndex,
             transcriptLoader: { requestedSessionID in
                 return requestedSessionID == sessionID ? [] : nil
             },

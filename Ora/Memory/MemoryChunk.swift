@@ -19,5 +19,23 @@ struct MemoryChunk: Sendable, Equatable {
     let sectionName: String
     let lastModified: Date
     let score: Double
-}
+    let embedding: [Float]?
 
+    init(
+        content: String,
+        documentType: MemoryDocumentType,
+        sessionID: UUID?,
+        sectionName: String,
+        lastModified: Date,
+        score: Double,
+        embedding: [Float]? = nil
+    ) {
+        self.content = content
+        self.documentType = documentType
+        self.sessionID = sessionID
+        self.sectionName = sectionName
+        self.lastModified = lastModified
+        self.score = score
+        self.embedding = embedding
+    }
+}
