@@ -137,7 +137,7 @@ actor AgentLoop {
         sessionLifecycleSink: AgentLoopSessionLifecycleSink = SwiftDataAgentLoopSessionLifecycleSink(),
         memoryDistiller: any MemoryDistilling = MemoryDistiller.shared,
         memoryTriggerDetector: any MemoryTriggerDetecting = MemoryTriggerDetector(),
-        memoryRetrievalCoordinator: any MemoryRetrievalCoordinating = NoopMemoryRetrievalCoordinator()
+        memoryRetrievalCoordinator: any MemoryRetrievalCoordinating = KeywordMemoryRetrievalCoordinator()
     ) {
         self.maxStepsPerTurn = maxStepsPerTurn
         self.maxToolCallsPerTurn = maxToolCallsPerTurn
@@ -258,6 +258,7 @@ actor AgentLoop {
 
         // Add user message to in-memory conversation
         await conversationManager.addUserMessage(userText)
+        await self.conversationManager.clearMemoryContext()
 
         let memoryTriggerResult = self.memoryTriggerDetector.detect(userText: userText)
         if memoryTriggerResult.shouldTrigger {

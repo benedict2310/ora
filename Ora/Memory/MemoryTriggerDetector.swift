@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import os
 
 enum MemoryTriggerType: String, Sendable, Equatable {
     case none
@@ -40,6 +41,132 @@ struct NoopMemoryRetrievalCoordinator: MemoryRetrievalCoordinating {
         conversationManager: ConversationManager
     ) async {
         return
+    }
+}
+
+struct KeywordMemoryRetrievalCoordinator: MemoryRetrievalCoordinating {
+
+    // MARK: - Configuration
+
+    struct Configuration: Sendable, Equatable {
+        let minTopScore: Double
+        let minChunkCount: Int
+        let maxChunkCount: Int
+        let scoreWindowRatio: Double
+
+        static let `default` = Configuration(
+            minTopScore: 1e-7,
+            minChunkCount: 3,
+            maxChunkCount: 7,
+            scoreWindowRatio: 0.70
+        )
+    }
+
+    // MARK: - Properties
+
+    private let logger = Logger(subsystem: "com.ora.app", category: "memory")
+    private let memoryIndex: any MemoryIndexing
+    private let configuration: Configuration
+
+    // MARK: - Initialization
+
+    init(
+        memoryIndex: any MemoryIndexing = MemoryIndex.shared,
+        configuration: Configuration = .default
+    ) {
+        self.memoryIndex = memoryIndex
+        self.configuration = configuration
+    }
+
+    // MARK: - MemoryRetrievalCoordinating
+
+    func prepareRetrievalIfNeeded(
+        userText: String,
+        triggerResult: MemoryTriggerResult,
+        conversationManager: ConversationManager
+    ) async {
+        guard triggerResult.shouldTrigger else {
+            await conversationManager.clearMemoryContext()
+            return
+        }
+
+        let retrievedChunks = await self.memoryIndex.search(
+            query: userText,
+            limit: self.configuration.maxChunkCount
+        )
+        guard let topChunk = retrievedChunks.first else {
+            await conversationManager.clearMemoryContext()
+            self.logger.debug("Memory retrieval produced no chunks")
+            return
+        }
+
+        guard topChunk.score >= self.configuration.minTopScore else {
+            await conversationManager.clearMemoryContext()
+            self.logger.debug(
+                "Memory retrieval skipped due to low confidence (score: \(topChunk.score), threshold: \(self.configuration.minTopScore))"
+            )
+            return
+        }
+
+        let selectedChunks = self.selectChunks(from: retrievedChunks)
+        guard !selectedChunks.isEmpty else {
+            await conversationManager.clearMemoryContext()
+            return
+        }
+
+        let context = self.renderContext(chunks: selectedChunks)
+        await conversationManager.setMemoryContext(context)
+        self.logger.debug("Injected \(selectedChunks.count) memory chunk(s) into prompt context")
+    }
+
+    // MARK: - Private Helpers
+
+    private func selectChunks(from chunks: [MemoryChunk]) -> [MemoryChunk] {
+        guard let topScore = chunks.first?.score else {
+            return []
+        }
+
+        let dynamicFloor: Double
+        if topScore < 0 {
+            dynamicFloor = topScore / self.configuration.scoreWindowRatio
+        } else {
+            dynamicFloor = topScore * self.configuration.scoreWindowRatio
+        }
+        var shortlisted = chunks.filter { chunk in
+            return chunk.score >= dynamicFloor
+        }
+
+        if shortlisted.count < self.configuration.minChunkCount {
+            let fallbackCount = min(self.configuration.minChunkCount, chunks.count)
+            shortlisted = Array(chunks.prefix(fallbackCount))
+        }
+
+        return Array(shortlisted.prefix(self.configuration.maxChunkCount))
+    }
+
+    private func renderContext(chunks: [MemoryChunk]) -> String {
+        let header = """
+        Relevant memory retrieved from MEMORY.md and prior session summaries.
+        Use this context only when it directly helps answer the user.
+        """
+
+        let lines = chunks.enumerated().map { index, chunk in
+            let source: String
+            switch chunk.documentType {
+            case .memory:
+                source = "memory"
+            case .summary:
+                if let sessionID = chunk.sessionID {
+                    source = "summary \(sessionID.uuidString)"
+                } else {
+                    source = "summary"
+                }
+            }
+
+            return "\(index + 1). [\(source) • \(chunk.sectionName)] \(chunk.content)"
+        }
+
+        return ([header, ""] + lines).joined(separator: "\n")
     }
 }
 

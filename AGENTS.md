@@ -135,6 +135,61 @@ defaults delete com.ora.app "com.ora.hotkeyConfiguration"
 - **Run tests:** `./build.sh test` (preferred) or `xcodebuild test -project Ora.xcodeproj -scheme Ora`.
 - **Restart app manually:** `killall Ora 2>/dev/null || true; open -n build/Build/Products/Release/Ora.app`.
 
+### Querying Persisted Data (SwiftData / SQLite)
+
+**Store location:** `~/Library/Application Support/Ora/default.store` (SQLite)
+
+**How persistence works:**
+- `PersistenceManager` (`@MainActor` singleton) manages all SwiftData operations
+- `Session` stores conversation messages as a JSON blob in `messagesData` (encode on write, decode on read)
+- Messages have roles: `.user`, `.assistant`, `.tool`
+- Tool results are persisted as `.tool` role messages with format: `[ToolResult: <toolName>] <summary> (auditId=<uuid>)`
+- Tool summaries are capped at 500 chars; full output lives in `AuditLogEntryModel`
+- Saves are **debounced** (250ms default) — rapid appends coalesce into one `context.save()`
+- `flushSave()` forces immediate persistence (called on app termination)
+- Slow operations (>10ms) are logged via `os_signpost` + threshold-gated `Logger` (category: `persistence`)
+
+**Query persisted messages:**
+```bash
+# List all messages in the most recent session (role + first 200 chars)
+sqlite3 ~/Library/Application\ Support/Ora/default.store \
+  "SELECT CAST(ZMESSAGESDATA AS TEXT) FROM ZSESSION ORDER BY ZUPDATEDAT DESC LIMIT 1;" \
+  | python3 -c "
+import sys, json
+msgs = json.loads(sys.stdin.read().strip())
+for m in msgs:
+    print(f'[{m[\"role\"]}] {m[\"content\"][:200]}')
+"
+
+# Count messages per role in the latest session
+sqlite3 ~/Library/Application\ Support/Ora/default.store \
+  "SELECT CAST(ZMESSAGESDATA AS TEXT) FROM ZSESSION ORDER BY ZUPDATEDAT DESC LIMIT 1;" \
+  | python3 -c "
+import sys, json, collections
+msgs = json.loads(sys.stdin.read().strip())
+counts = collections.Counter(m['role'] for m in msgs)
+for role, n in sorted(counts.items()): print(f'{role}: {n}')
+"
+
+# List recent audit log entries
+sqlite3 ~/Library/Application\ Support/Ora/default.store \
+  "SELECT ZTOOLNAME, ZSUMMARY, ZSUCCESS FROM ZAUDITLOGENTRYMODEL ORDER BY ZTIMESTAMP DESC LIMIT 10;"
+
+# Show all tables
+sqlite3 ~/Library/Application\ Support/Ora/default.store ".tables"
+```
+
+**Key tables:** `ZSESSION` (conversations), `ZAUDITLOGENTRYMODEL` (tool execution audit trail), `ZAPPSETTINGS`
+
+**Monitor persistence performance in real-time:**
+```bash
+# Watch for slow persistence operations (default threshold: 10ms)
+./build.sh logs --category persistence
+
+# Lower threshold to see all operations
+ORA_PERSISTENCE_SLOW_LOG_THRESHOLD_MS=0 open build/Build/Products/Release/Ora.app
+```
+
 ### Local Signing for Distribution
 
 **When to use local signing:**
@@ -234,6 +289,7 @@ For detailed triage workflows, load the `ora-testing` skill.
 - **MLX GPU memory (CRITICAL):** MLX caches Metal GPU buffers for reuse, but without limits this cache grows unbounded (15GB+ observed). Always: (1) Set `GPU.set(cacheLimit:)` on model load (512MB recommended), (2) Call `GPU.clearCache()` after each LLM/TTS generation. See `LLMService.swift` and `KokoroEngine.swift` for examples.
 - **macOS Logger privacy:** By default, macOS redacts dynamic string interpolation in `Logger` calls as `<private>`. To see actual values during debugging, use `privacy: .public`: `logger.error("Result: '\(String(text), privacy: .public)'")`). **IMPORTANT:** Remove `.public` privacy modifiers before merging - they should only be used temporarily for debugging, never in production code.
 - **ASR transcription is never exact (CRITICAL):** Ora is a voice assistant — all user input passes through ASR, which regularly introduces spelling errors, homophones, and phonetic approximations. Every tool that performs search or lookup against user-provided text **must** include a fuzzy matching fallback (Jaro-Winkler via `StringSimilarity`). Pattern: try exact/substring match first, then fall back to fuzzy scoring if no results. See `ContactsSearchTool` for the canonical two-tier implementation.
+- **Persistence architecture:** Messages are stored as a JSON blob (`messagesData`) on `Session` in SwiftData. Tool results persist as `.tool` role messages with format `[ToolResult: <toolName>] <summary> (auditId=<uuid>)` — summaries capped at 500 chars, full output in `AuditLogEntryModel`. Saves are debounced (250ms); `flushSave()` on termination. To get audit IDs from tool execution, use `ToolHost.executeWithAudit()` which returns `ToolExecutionRecord` (result + auditEntryID). On failure, `ToolExecutionError` carries the audit ID.
 
 ### Commit & PR Guidelines
 - Commit messages: short imperative clauses (e.g., "Add calendar tool", "Fix ASR latency"); keep commits scoped.

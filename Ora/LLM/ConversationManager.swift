@@ -24,6 +24,7 @@ actor ConversationManager {
     
     private var messages: [LLMMessage] = []
     private var systemPrompt: String = ""
+    private var memoryContext: String?
     
     /// Maximum tokens for context window (leaving room for response)
     private let maxContextTokens: Int
@@ -51,6 +52,7 @@ actor ConversationManager {
     func startConversation(systemPrompt: String) {
         self.systemPrompt = systemPrompt
         self.messages = []
+        self.memoryContext = nil
         
         // Clear KV cache when starting a new conversation
         // This ensures the LLM doesn't reuse stale cached state
@@ -91,12 +93,17 @@ actor ConversationManager {
         var result: [LLMMessage] = []
         
         // System prompt is always first (AC-1)
-        if !systemPrompt.isEmpty {
-            result.append(LLMMessage(role: .system, content: systemPrompt))
+        if !self.systemPrompt.isEmpty {
+            result.append(LLMMessage(role: .system, content: self.systemPrompt))
+        }
+
+        if let memoryContext = self.memoryContext,
+            !memoryContext.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            result.append(LLMMessage(role: .system, content: memoryContext))
         }
         
         // Add conversation messages in order (AC-2)
-        result.append(contentsOf: messages)
+        result.append(contentsOf: self.messages)
         
         return result
     }
@@ -131,9 +138,26 @@ actor ConversationManager {
     
     /// Clear conversation state completely (AC-5)
     func clear() {
-        messages = []
-        systemPrompt = ""
+        self.messages = []
+        self.systemPrompt = ""
+        self.memoryContext = nil
         logger.debug("Conversation cleared")
+    }
+
+    func setMemoryContext(_ context: String?) {
+        let normalized = context?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let normalized, !normalized.isEmpty {
+            self.memoryContext = normalized
+            self.logger.debug("Injected memory context (\(normalized.count) chars)")
+        } else {
+            self.memoryContext = nil
+            self.logger.debug("Cleared memory context")
+        }
+    }
+
+    func clearMemoryContext() {
+        self.memoryContext = nil
+        self.logger.debug("Cleared memory context")
     }
     
     // MARK: - Private

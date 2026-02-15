@@ -30,6 +30,7 @@ actor MemoryDistiller: MemoryDistilling {
     private let logger = Logger(subsystem: "com.ora.app", category: "memory")
     private let llm: LLMServicing
     private let memoryFileManager: MemoryFileManager
+    private let memoryIndex: any MemoryIndexing
     private let transcriptLoader: TranscriptLoader
     private let promptLoader: PromptLoader
     private let maxRetries: Int
@@ -40,6 +41,7 @@ actor MemoryDistiller: MemoryDistilling {
     init(
         llm: LLMServicing = LLMService.shared,
         memoryFileManager: MemoryFileManager = MemoryFileManager(),
+        memoryIndex: any MemoryIndexing = MemoryIndex.shared,
         transcriptLoader: @escaping TranscriptLoader = MemoryDistiller.defaultTranscriptLoader,
         promptLoader: @escaping PromptLoader = MemoryDistiller.loadPrompt,
         maxRetries: Int = 3,
@@ -47,6 +49,7 @@ actor MemoryDistiller: MemoryDistilling {
     ) {
         self.llm = llm
         self.memoryFileManager = memoryFileManager
+        self.memoryIndex = memoryIndex
         self.transcriptLoader = transcriptLoader
         self.promptLoader = promptLoader
         self.maxRetries = maxRetries
@@ -71,6 +74,7 @@ actor MemoryDistiller: MemoryDistilling {
             let emptySummary = SessionSummary()
             do {
                 try self.memoryFileManager.writeSummary(sessionId: sessionId, content: emptySummary.renderMarkdown())
+                await self.memoryIndex.rebuild()
             } catch {
                 self.logger.error("Failed to write empty session summary for \(sessionId.uuidString): \(error.localizedDescription)")
             }
@@ -92,6 +96,7 @@ actor MemoryDistiller: MemoryDistilling {
             let summaryMarkdown = payload.summary.renderMarkdown()
             try self.memoryFileManager.writeSummary(sessionId: sessionId, content: summaryMarkdown)
             try self.memoryFileManager.appendEntries(entries: payload.memoryEntries)
+            await self.memoryIndex.rebuild()
 
             self.logger.info("Memory distillation completed for session \(sessionId.uuidString)")
             return payload.summary
@@ -100,6 +105,7 @@ actor MemoryDistiller: MemoryDistilling {
 
             do {
                 try self.memoryFileManager.writeSummary(sessionId: sessionId, content: SessionSummary.placeholder.renderMarkdown())
+                await self.memoryIndex.rebuild()
             } catch {
                 self.logger.error("Failed to write placeholder summary for session \(sessionId.uuidString): \(error.localizedDescription)")
             }

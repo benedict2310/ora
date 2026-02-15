@@ -163,6 +163,29 @@ Connecting the loop: Audio → ASR → LLM → Tools → TTS.
 | O.06 | [Agent Loop Integration](orchestration/O.06-AGENT-LOOP-INTEGRATION.md) | ✅ Complete |
 | O.07 | [Conversation Mode](orchestration/O.07-CONVERSATION-MODE.md) | ✅ Complete |
 
+### 🧠 Memory System (MEM)
+Persistent conversation history, user-visible memory artifacts, and implicit retrieval.
+
+| ID | Title | Status |
+|:---|:------|:-------|
+| MEM.01 | [Conversation Persistence Sink](memory/MEM.01-CONVERSATION-PERSISTENCE-SINK.md) | 🚧 Not Started |
+| MEM.02 | [AgentLoop Persistence Integration](memory/MEM.02-AGENTLOOP-PERSISTENCE-INTEGRATION.md) | 🚧 Not Started |
+| MEM.03 | [Tool Result Persistence](memory/MEM.03-TOOL-RESULT-PERSISTENCE.md) | 🚧 Not Started |
+| MEM.04 | [Debounced Save Scheduler](memory/MEM.04-DEBOUNCED-SAVE-SCHEDULER.md) | 🚧 Not Started |
+| MEM.05 | [Persistence Performance Guardrail](memory/MEM.05-PERSISTENCE-PERFORMANCE-GUARDRAIL.md) | 🚧 Not Started |
+| MEM.06 | [On-Disk Memory Folder](memory/MEM.06-ON-DISK-MEMORY-FOLDER.md) | 🚧 Not Started |
+| MEM.07 | [Summary Template](memory/MEM.07-SUMMARY-TEMPLATE.md) | 🚧 Not Started |
+| MEM.08 | [Memory Distiller Pipeline](memory/MEM.08-MEMORY-DISTILLER-PIPELINE.md) | 🚧 Not Started |
+| MEM.09 | [Memory Update Policy](memory/MEM.09-MEMORY-UPDATE-POLICY.md) | 🚧 Not Started |
+| MEM.10 | [Memory Trigger Detector](memory/MEM.10-MEMORY-TRIGGER-DETECTOR.md) | 🚧 Not Started |
+| MEM.11 | [Keyword Retrieval Index](memory/MEM.11-KEYWORD-RETRIEVAL-INDEX.md) | 🚧 Not Started |
+| MEM.12 | [Embedding Hybrid Retrieval](memory/MEM.12-EMBEDDING-HYBRID-RETRIEVAL.md) | 🚧 Not Started |
+| MEM.13 | [Transcript Fallback Retrieval](memory/MEM.13-TRANSCRIPT-FALLBACK-RETRIEVAL.md) | 🚧 Not Started |
+| MEM.14 | [MEMORY.md File Watcher](memory/MEM.14-MEMORY-FILE-WATCHER.md) | 🚧 Not Started |
+| MEM.15 | [Memory Manager Panel](memory/MEM.15-MEMORY-MANAGER-PANEL.md) | 🚧 Not Started |
+| MEM.16 | [Background Persistence ModelActor](memory/MEM.16-BACKGROUND-PERSISTENCE-MODELACTOR.md) | 📋 Future |
+| MEM.17 | [Transcript Storage Migration](memory/MEM.17-TRANSCRIPT-STORAGE-MIGRATION.md) | 📋 Future |
+
 ### 📚 Skills (S)
 Optional orchestration playbooks that layer on top of native tools.
 
