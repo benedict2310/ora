@@ -76,7 +76,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
         let coordinator = KeywordMemoryRetrievalCoordinator(
             memoryIndex: StubMemoryIndex(chunks: chunks),
             configuration: .init(
-                minTopScore: 0.10,
+                minTopScore: 1e-7,
                 minChunkCount: 3,
                 maxChunkCount: 7,
                 scoreWindowRatio: 0.70
@@ -111,25 +111,74 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
         XCTAssertLessThanOrEqual(numberedLines.count, 7)
     }
 
-    func test_prepareRetrieval_topScoreBelowThreshold_doesNotInjectContext() async {
-        // Given — scores below threshold (0.10) should not inject context
+    func test_prepareRetrieval_smallIndexScores_stillInjectsContext() async {
+        // Given — small indexes produce tiny scores; should still inject
         let now = Date(timeIntervalSince1970: 1_739_599_200)
         let chunks: [MemoryChunk] = [
             MemoryChunk(
-                content: "Old note with weak overlap.",
+                content: "User prefers morning meetings.",
+                documentType: .memory,
+                sessionID: nil,
+                sectionName: "Preferences",
+                lastModified: now,
+                score: 0.0003
+            ),
+            MemoryChunk(
+                content: "Project Atlas is the current focus.",
                 documentType: .memory,
                 sessionID: nil,
                 sectionName: "Projects",
                 lastModified: now,
-                score: 0.05
+                score: 0.0001
+            )
+        ]
+
+        let conversationManager = ConversationManager.makeTestInstance(maxContextTokens: 6000)
+        await conversationManager.startConversation(systemPrompt: "System prompt")
+
+        let coordinator = KeywordMemoryRetrievalCoordinator(
+            memoryIndex: StubMemoryIndex(chunks: chunks),
+            configuration: .default
+        )
+        let triggerResult = MemoryTriggerResult(
+            shouldTrigger: true,
+            confidence: 0.90,
+            triggerType: .entityOverlap,
+            matchedSignals: ["morning"]
+        )
+
+        // When
+        await coordinator.prepareRetrievalIfNeeded(
+            userText: "do I prefer morning or afternoon?",
+            triggerResult: triggerResult,
+            conversationManager: conversationManager
+        )
+        let messages = await conversationManager.getMessagesForLLM()
+
+        // Then — should inject context even with tiny scores
+        XCTAssertEqual(messages.count, 2)
+        XCTAssertEqual(messages[1].role, .system)
+    }
+
+    func test_prepareRetrieval_topScoreBelowThreshold_doesNotInjectContext() async {
+        // Given — scores at or below threshold (1e-7) should not inject context
+        let now = Date(timeIntervalSince1970: 1_739_599_200)
+        let chunks: [MemoryChunk] = [
+            MemoryChunk(
+                content: "Old note with negligible overlap.",
+                documentType: .memory,
+                sessionID: nil,
+                sectionName: "Projects",
+                lastModified: now,
+                score: 1e-8
             ),
             MemoryChunk(
-                content: "Another weak match.",
+                content: "Another negligible match.",
                 documentType: .summary,
                 sessionID: UUID(),
                 sectionName: "TL;DR",
                 lastModified: now,
-                score: 0.02
+                score: 1e-9
             )
         ]
 
@@ -139,7 +188,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
         let coordinator = KeywordMemoryRetrievalCoordinator(
             memoryIndex: StubMemoryIndex(chunks: chunks),
             configuration: .init(
-                minTopScore: 0.10,
+                minTopScore: 1e-7,
                 minChunkCount: 3,
                 maxChunkCount: 7,
                 scoreWindowRatio: 0.70
