@@ -265,6 +265,7 @@ actor AgentLoop {
             self.logger.debug(
                 "Memory retrieval trigger detected (\(memoryTriggerResult.triggerType.rawValue), confidence: \(memoryTriggerResult.confidence))"
             )
+            self.logger.debug("Preparing memory retrieval context with transcript fallback if primary memory confidence is low")
         }
         await self.memoryRetrievalCoordinator.prepareRetrievalIfNeeded(
             userText: userText,
