@@ -158,6 +158,11 @@ final class EmbeddingServiceTests: XCTestCase {
     }
 
     func test_embed_realModelPath_generatesVectorWhenModelAvailable() async throws {
+        try XCTSkipIf(
+            ProcessInfo.processInfo.environment["CI"] != nil,
+            "MLXEmbedders crashes on CI runners without Metal GPU support"
+        )
+
         // Given
         let service = EmbeddingService(
             configuration: .init(
