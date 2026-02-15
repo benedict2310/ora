@@ -37,6 +37,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         self.logger.info("Ora launching...")
 
+        do {
+            try MemoryFileManager.ensureDirectories()
+        } catch {
+            self.logger.warning("Failed to initialize on-disk memory folder: \(error.localizedDescription)")
+        }
+
         // Initialize persistence
         _ = PersistenceManager.shared
 
