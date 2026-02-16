@@ -72,7 +72,7 @@ Improve distiller output quality and deduplication to keep MEMORY.md concise and
 
 | ID | Title | Status | Deps |
 |:---|:------|:-------|:-----|
-| MEM.18 | [Distiller Quality & Deduplication](MEM.18-DISTILLER-QUALITY-AND-DEDUP.md) | Not Started | MEM.08, MEM.09 |
+| MEM.18 | [Distiller Quality & Deduplication](MEM.18-DISTILLER-QUALITY-AND-DEDUP.md) | Complete | MEM.08, MEM.09 |
 
 ## Implementation Order
 
