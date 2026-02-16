@@ -267,8 +267,8 @@ Keep this exact line
     // MARK: - Helpers
 
     private func makeManager() -> MemoryFileManager {
-        let documentsDirectory = self.temporaryDirectoryURL.appendingPathComponent("Documents", isDirectory: true)
-        return MemoryFileManager(documentsDirectory: documentsDirectory)
+        let memoryDirectory = self.temporaryDirectoryURL.appendingPathComponent("memory", isDirectory: true)
+        return MemoryFileManager(memoryDirectory: memoryDirectory)
     }
 
     private func occurrenceCount(of token: String, in content: String) -> Int {

@@ -146,7 +146,7 @@ actor MemoryIndex: MemoryIndexing {
     // MARK: - Initialization
 
     init(
-        documentsDirectory: URL? = nil,
+        memoryDirectory: URL? = nil,
         fileManager: FileManager = .default,
         transcriptChunker: TranscriptChunker = TranscriptChunker(),
         transcriptSessionLoader: @escaping TranscriptSessionLoader = MemoryIndex.defaultTranscriptSessionLoader,
@@ -156,7 +156,7 @@ actor MemoryIndex: MemoryIndexing {
         self.fileManager = fileManager
         self.memoryFileManager = MemoryFileManager(
             fileManager: fileManager,
-            documentsDirectory: documentsDirectory
+            memoryDirectory: memoryDirectory
         )
         self.transcriptChunker = transcriptChunker
         self.transcriptSessionLoader = transcriptSessionLoader

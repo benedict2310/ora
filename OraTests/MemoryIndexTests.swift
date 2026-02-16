@@ -85,7 +85,7 @@ final class MemoryIndexTests: XCTestCase {
     // MARK: - Properties
 
     private var temporaryDirectoryURL: URL!
-    private var documentsDirectoryURL: URL!
+    private var memoryDirectoryURL: URL!
     private var memoryFileManager: MemoryFileManager!
     private var memoryIndex: MemoryIndex!
 
@@ -94,14 +94,14 @@ final class MemoryIndexTests: XCTestCase {
     override func setUpWithError() throws {
         self.temporaryDirectoryURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        self.documentsDirectoryURL = self.temporaryDirectoryURL
-            .appendingPathComponent("Documents", isDirectory: true)
-        try FileManager.default.createDirectory(at: self.documentsDirectoryURL, withIntermediateDirectories: true)
+        self.memoryDirectoryURL = self.temporaryDirectoryURL
+            .appendingPathComponent("memory", isDirectory: true)
+        try FileManager.default.createDirectory(at: self.memoryDirectoryURL, withIntermediateDirectories: true)
 
-        self.memoryFileManager = MemoryFileManager(documentsDirectory: self.documentsDirectoryURL)
+        self.memoryFileManager = MemoryFileManager(memoryDirectory: self.memoryDirectoryURL)
         try self.memoryFileManager.ensureMemoryStructureExists()
         self.memoryIndex = MemoryIndex(
-            documentsDirectory: self.documentsDirectoryURL,
+            memoryDirectory: self.memoryDirectoryURL,
             embeddingService: StubEmbeddingService()
         )
     }
@@ -113,7 +113,7 @@ final class MemoryIndexTests: XCTestCase {
 
         self.memoryIndex = nil
         self.memoryFileManager = nil
-        self.documentsDirectoryURL = nil
+        self.memoryDirectoryURL = nil
         self.temporaryDirectoryURL = nil
     }
 

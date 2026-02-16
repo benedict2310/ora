@@ -33,8 +33,8 @@ final class MemoryFileManagerTests: XCTestCase {
 
     func test_ensureMemoryStructureExists_missingStructure_createsDirectoriesAndTemplate() throws {
         // Given
-        let documentsDirectory = self.temporaryDirectoryURL.appendingPathComponent("Documents", isDirectory: true)
-        let manager = MemoryFileManager(documentsDirectory: documentsDirectory)
+        let memoryDirectory = self.temporaryDirectoryURL.appendingPathComponent("memory", isDirectory: true)
+        let manager = MemoryFileManager(memoryDirectory: memoryDirectory)
 
         // When
         try manager.ensureMemoryStructureExists()
@@ -55,8 +55,8 @@ final class MemoryFileManagerTests: XCTestCase {
 
     func test_ensureMemoryStructureExists_existingTemplate_preservesUserEditsOnSecondCall() throws {
         // Given
-        let documentsDirectory = self.temporaryDirectoryURL.appendingPathComponent("Documents", isDirectory: true)
-        let manager = MemoryFileManager(documentsDirectory: documentsDirectory)
+        let memoryDirectory = self.temporaryDirectoryURL.appendingPathComponent("memory", isDirectory: true)
+        let manager = MemoryFileManager(memoryDirectory: memoryDirectory)
         try manager.ensureMemoryStructureExists()
         let customContent = """
 # Custom Memory
@@ -82,8 +82,8 @@ Favorite coffee: black
 
     func test_writeSummary_validSessionId_writesMarkdownFile() throws {
         // Given
-        let documentsDirectory = self.temporaryDirectoryURL.appendingPathComponent("Documents", isDirectory: true)
-        let manager = MemoryFileManager(documentsDirectory: documentsDirectory)
+        let memoryDirectory = self.temporaryDirectoryURL.appendingPathComponent("memory", isDirectory: true)
+        let manager = MemoryFileManager(memoryDirectory: memoryDirectory)
         let sessionID = UUID()
         let content = "# Session Summary\n\n## TL;DR\nplaceholder"
 
@@ -99,8 +99,8 @@ Favorite coffee: black
 
     func test_writePlaceholderSummary_validSessionId_writesTemplateSections() throws {
         // Given
-        let documentsDirectory = self.temporaryDirectoryURL.appendingPathComponent("Documents", isDirectory: true)
-        let manager = MemoryFileManager(documentsDirectory: documentsDirectory)
+        let memoryDirectory = self.temporaryDirectoryURL.appendingPathComponent("memory", isDirectory: true)
+        let manager = MemoryFileManager(memoryDirectory: memoryDirectory)
         let sessionID = UUID()
 
         // When
@@ -118,8 +118,8 @@ Favorite coffee: black
 
     func test_appendEntries_existingContent_preservesExistingAndAppendsEntries() throws {
         // Given
-        let documentsDirectory = self.temporaryDirectoryURL.appendingPathComponent("Documents", isDirectory: true)
-        let manager = MemoryFileManager(documentsDirectory: documentsDirectory)
+        let memoryDirectory = self.temporaryDirectoryURL.appendingPathComponent("memory", isDirectory: true)
+        let manager = MemoryFileManager(memoryDirectory: memoryDirectory)
         try manager.ensureMemoryStructureExists()
 
         let existingContent = """
