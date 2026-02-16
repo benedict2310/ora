@@ -79,17 +79,14 @@ actor MemoryDistiller: MemoryDistilling {
 
         if self.shouldSkipMemoryDistillation(for: messages) {
             self.logger.info("Memory distillation skipped: session \(sessionId.uuidString) below threshold")
-            let emptySummary = SessionSummary()
-            await self.persistSummary(summary: emptySummary, for: sessionId)
-            return emptySummary
+            return nil
         }
 
         let transcript = self.renderTranscript(messages)
 
         if transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let emptySummary = SessionSummary()
-            await self.persistSummary(summary: emptySummary, for: sessionId)
-            return emptySummary
+            self.logger.info("Memory distillation skipped: session \(sessionId.uuidString) has empty transcript")
+            return nil
         }
 
         do {
@@ -216,15 +213,6 @@ actor MemoryDistiller: MemoryDistilling {
 
         return userMessages.count < self.minimumUserMessageCount
             || totalUserCharacters < self.minimumUserCharacterCount
-    }
-
-    private func persistSummary(summary: SessionSummary, for sessionId: UUID) async {
-        do {
-            try self.memoryFileManager.writeSummary(sessionId: sessionId, content: summary.renderMarkdown())
-            await self.memoryIndex.rebuild()
-        } catch {
-            self.logger.error("Failed to persist session summary for \(sessionId.uuidString): \(error.localizedDescription)")
-        }
     }
 
     private func loadExistingMemoryContext(limit: Int) -> String {

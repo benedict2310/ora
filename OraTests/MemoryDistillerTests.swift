@@ -181,7 +181,7 @@ final class MemoryDistillerTests: XCTestCase {
         XCTAssertTrue(userPrompt.contains("Here is what Ora already remembers (MEMORY.md):"))
     }
 
-    func test_distill_emptyTranscript_writesSummaryAndDoesNotAppendMemoryEntries() async throws {
+    func test_distill_emptyTranscript_returnsNilAndDoesNotWriteSummary() async throws {
         // Given
         let sessionID = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
         let mockLLM = MemoryDistillerMockLLMService(responses: [])
@@ -208,19 +208,19 @@ final class MemoryDistillerTests: XCTestCase {
         let summary = await distiller.distill(sessionId: sessionID)
 
         // Then
-        XCTAssertEqual(summary, SessionSummary())
+        XCTAssertNil(summary)
         let llmCallCount = await mockLLM.generateCallCount
         XCTAssertEqual(llmCallCount, 0)
 
         let summaryURL = verificationManager.summaryFileURL(for: sessionID)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: summaryURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: summaryURL.path))
 
         let memoryContent = try String(contentsOf: verificationManager.memoryFileURL, encoding: .utf8)
         XCTAssertTrue(memoryContent.contains("Existing memory line"))
         XCTAssertFalse(memoryContent.contains("(source:"))
     }
 
-    func test_distill_belowThreshold_skipsMemoryExtractionAndWritesSummary() async throws {
+    func test_distill_belowThreshold_returnsNilAndDoesNotWriteSummary() async throws {
         // Given
         let sessionID = UUID(uuidString: "abababab-cdcd-efef-0101-121212121212")!
         let mockLLM = MemoryDistillerMockLLMService(responses: [])
@@ -265,13 +265,10 @@ final class MemoryDistillerTests: XCTestCase {
         let summary = await distiller.distill(sessionId: sessionID)
 
         // Then
-        XCTAssertEqual(summary, SessionSummary())
+        XCTAssertNil(summary)
         let llmCallCount = await mockLLM.generateCallCount
         XCTAssertEqual(llmCallCount, 0)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: verificationManager.summaryFileURL(for: sessionID).path))
-
-        let memoryContent = try String(contentsOf: verificationManager.memoryFileURL, encoding: .utf8)
-        XCTAssertEqual(memoryContent, MemoryFileManager.initialMemoryTemplate)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: verificationManager.summaryFileURL(for: sessionID).path))
     }
 
     func test_distill_promptIncludesExistingMemoryContext() async throws {
@@ -372,7 +369,7 @@ final class MemoryDistillerTests: XCTestCase {
         XCTAssertEqual(entryCount, 8)
     }
 
-    func test_distill_emptyTranscript_triggersMemoryIndexRebuild() async throws {
+    func test_distill_emptyTranscript_doesNotTriggerMemoryIndexRebuild() async throws {
         // Given
         let sessionID = UUID(uuidString: "66666666-7777-8888-9999-aaaaaaaaaaaa")!
         let mockLLM = MemoryDistillerMockLLMService(responses: [])
@@ -394,7 +391,7 @@ final class MemoryDistillerTests: XCTestCase {
 
         // Then
         let rebuildCallCount = await mockMemoryIndex.rebuildCallCount
-        XCTAssertEqual(rebuildCallCount, 1)
+        XCTAssertEqual(rebuildCallCount, 0)
     }
 
     // MARK: - Helpers
