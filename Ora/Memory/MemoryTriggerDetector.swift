@@ -537,12 +537,23 @@ struct MemoryTriggerDetector: MemoryTriggerDetecting, Sendable {
 
     private static let linguisticTriggers: [String] = [
         "remember",
+        "remind me",
         "last time",
+        "earlier conversation",
+        "previous conversation",
+        "from before",
+        "from our last",
         "as we discussed",
         "what did we decide",
+        "what did we talk",
+        "what were we",
         "my preference",
         "you told me",
-        "we agreed"
+        "you said",
+        "you mentioned",
+        "we agreed",
+        "we talked about",
+        "we discussed"
     ]
 
     private static let taskFramingTriggers: [String] = [
@@ -550,7 +561,9 @@ struct MemoryTriggerDetector: MemoryTriggerDetecting, Sendable {
         "did we decide",
         "why did we choose",
         "follow up on",
-        "follow-up on"
+        "follow-up on",
+        "what happened with",
+        "what came of"
     ]
 
     private static let entityTokenStopWords: Set<String> = [
