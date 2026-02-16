@@ -43,6 +43,33 @@ final class MemoryFileWatcher: Sendable {
             return
         }
 
+        await self.installSource()
+    }
+
+    func stopWatching() async {
+        await self.state.cancelDebounce()
+
+        if let source = await self.state.clearSource() {
+            source.cancel()
+        }
+
+        self.logger.debug("Stopped watching MEMORY.md")
+    }
+
+    func beginOraWrite() async {
+        await self.state.setWriteInProgress(true)
+    }
+
+    func endOraWrite() async {
+        // Delay clearing the flag so the DispatchSource event is still suppressed.
+        try? await Task.sleep(for: .milliseconds(200))
+        await self.state.setWriteInProgress(false)
+    }
+
+    // MARK: - Private
+
+    /// Open a file descriptor and install a DispatchSource to monitor changes.
+    private func installSource() async {
         let fd = open(self.fileURL.path, O_EVTONLY)
         guard fd >= 0 else {
             self.logger.warning("Cannot watch MEMORY.md: failed to open file descriptor")
@@ -60,8 +87,21 @@ final class MemoryFileWatcher: Sendable {
         let state = self.state
         let logger = self.logger
 
+        // Capture weak self in a @Sendable closure to avoid mutable-var capture in Task.
+        let reopener: @Sendable () async -> Void = { [weak self] in
+            await self?.reopenSource()
+        }
+
         source.setEventHandler {
+            let flags = source.data
+            let needsReopen = flags.contains(.rename) || flags.contains(.delete)
+
             Task {
+                // Atomic writes (tmp + rename) invalidate the old FD. Re-open for the new inode.
+                if needsReopen {
+                    await reopener()
+                }
+
                 let isWriteInProgress = await state.isWriteInProgress
                 guard !isWriteInProgress else {
                     logger.debug("Suppressed re-index during Ora write")
@@ -104,24 +144,16 @@ final class MemoryFileWatcher: Sendable {
         self.logger.debug("Started watching MEMORY.md for external edits")
     }
 
-    func stopWatching() async {
-        await self.state.cancelDebounce()
-
-        if let source = await self.state.clearSource() {
-            source.cancel()
+    /// Re-open the file descriptor after a rename or delete event invalidated the old one.
+    private func reopenSource() async {
+        if let oldSource = await self.state.clearSource() {
+            oldSource.cancel()
         }
 
-        self.logger.debug("Stopped watching MEMORY.md")
-    }
+        // Brief delay for filesystem to settle after atomic rename.
+        try? await Task.sleep(for: .milliseconds(50))
 
-    func beginOraWrite() async {
-        await self.state.setWriteInProgress(true)
-    }
-
-    func endOraWrite() async {
-        // Delay clearing the flag so the DispatchSource event is still suppressed.
-        try? await Task.sleep(for: .milliseconds(200))
-        await self.state.setWriteInProgress(false)
+        await self.installSource()
     }
 }
 

@@ -116,6 +116,46 @@ final class MemoryFileWatcherTests: XCTestCase {
         await watcher.stopWatching()
     }
 
+    func test_atomicWrites_continueToBeDetectedAfterReopen() async throws {
+        let fileURL = self.temporaryDirectoryURL.appendingPathComponent("MEMORY.md")
+        try "initial".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let callCount = CallCounter()
+        let firstExpectation = XCTestExpectation(description: "first callback")
+        let secondExpectation = XCTestExpectation(description: "second callback")
+
+        let watcher = MemoryFileWatcher(
+            fileURL: fileURL,
+            debounceInterval: 0.1
+        ) {
+            let count = await callCount.increment()
+            if count == 1 {
+                firstExpectation.fulfill()
+            } else if count == 2 {
+                secondExpectation.fulfill()
+            }
+        }
+
+        await watcher.startWatching()
+
+        // First atomic write (triggers rename, invalidating old FD)
+        try await Task.sleep(for: .milliseconds(50))
+        try "first edit".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        await fulfillment(of: [firstExpectation], timeout: 3.0)
+
+        // Second atomic write — verifies FD was re-opened after rename
+        try await Task.sleep(for: .milliseconds(300))
+        try "second edit".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        await fulfillment(of: [secondExpectation], timeout: 3.0)
+
+        let count = await callCount.value
+        XCTAssertEqual(count, 2, "Both atomic writes should be detected after FD reopen")
+
+        await watcher.stopWatching()
+    }
+
     func test_stopWatching_preventsCallbacks() async throws {
         let fileURL = self.temporaryDirectoryURL.appendingPathComponent("MEMORY.md")
         try "initial".write(to: fileURL, atomically: true, encoding: .utf8)
@@ -147,7 +187,9 @@ final class MemoryFileWatcherTests: XCTestCase {
 private actor CallCounter {
     var value = 0
 
-    func increment() {
+    @discardableResult
+    func increment() -> Int {
         self.value += 1
+        return self.value
     }
 }

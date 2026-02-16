@@ -67,6 +67,13 @@ Performance and scalability improvements.
 | MEM.16 | [Background Persistence ModelActor](MEM.16-BACKGROUND-PERSISTENCE-MODELACTOR.md) | Complete | MEM.04 |
 | MEM.17 | [Transcript Storage Migration](MEM.17-TRANSCRIPT-STORAGE-MIGRATION.md) | Complete | MEM.01 |
 
+### MEM.08 — Memory Quality
+Improve distiller output quality and deduplication to keep MEMORY.md concise and high-signal.
+
+| ID | Title | Status | Deps |
+|:---|:------|:-------|:-----|
+| MEM.18 | [Distiller Quality & Deduplication](MEM.18-DISTILLER-QUALITY-AND-DEDUP.md) | Not Started | MEM.08, MEM.09 |
+
 ## Implementation Order
 
 ```
@@ -76,6 +83,7 @@ Phase 3: Auto-Distill (MEM.08 → MEM.09)
 Phase 4: Retrieval (MEM.10 → MEM.11 → MEM.12/MEM.13)
 Phase 5: UX (MEM.14, MEM.15)
 Phase 6: Hardening (MEM.16, MEM.17)
+Phase 7: Quality (MEM.18)
 ```
 
 ## Dependency Graph
@@ -102,7 +110,7 @@ MEM.01 (Persistence Sink)
  │    │
  │    └─► MEM.15 (Memory Panel)
  │
- ├─► MEM.08 (Distiller) ──► MEM.09 (Update Policy)
+ ├─► MEM.08 (Distiller) ──► MEM.09 (Update Policy) ──► MEM.18 (Quality & Dedup)
  ├─► MEM.16 (Background ModelActor)
  └─► MEM.17 (Storage Migration)
 ```
