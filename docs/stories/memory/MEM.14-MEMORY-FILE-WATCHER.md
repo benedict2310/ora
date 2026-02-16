@@ -1,7 +1,7 @@
 # MEM.14 - MEMORY.md File Watcher
 
 **Epic:** Memory System
-**Status:** Not Started
+**Status:** Complete
 **Priority:** P2 (Medium)
 **Estimated Effort:** 1 day
 **Dependencies:** MEM.06, MEM.11
@@ -60,21 +60,21 @@ As a user, I want my edits to MEMORY.md to take effect immediately so that I can
 
 ## 6. Acceptance Criteria
 
-- [ ] AC-1: Editing MEMORY.md in an external editor triggers re-indexing
-- [ ] AC-2: Re-indexing completes within 1 second of file save
-- [ ] AC-3: Rapid saves (typing) are debounced into a single re-index
-- [ ] AC-4: Deleted entries in MEMORY.md are removed from the retrieval index
+- [x] AC-1: Editing MEMORY.md in an external editor triggers re-indexing
+- [x] AC-2: Re-indexing completes within 1 second of file save
+- [x] AC-3: Rapid saves (typing) are debounced into a single re-index
+- [x] AC-4: Deleted entries in MEMORY.md are removed from the retrieval index
 
 ## 7. Verification Plan
 
 ### Automated Tests
 
-- [ ] Unit test: write to watched file, verify callback fires
-- [ ] Unit test: rapid writes trigger only one callback (debounce)
+- [x] Unit test: write to watched file, verify callback fires
+- [x] Unit test: rapid writes trigger only one callback (debounce)
 
 ### Manual Tests
 
-- [ ] Edit MEMORY.md, immediately ask Ora about the change — verify it's reflected
+- [x] Edit MEMORY.md, immediately ask Ora about the change — verify it's reflected
 
 ## 8. Performance / Reliability Considerations
 
@@ -94,12 +94,24 @@ As a user, I want my edits to MEMORY.md to take effect immediately so that I can
 
 ## Implementation Summary
 
-(TBD after implementation.)
+**Date:** 2026-02-15
+**Branch:** `feat/MEM.14-memory-file-watcher`
+**PR:** #138
+
+### Files Created
+- `Ora/Memory/MemoryFileWatcher.swift` — Sendable file watcher with private `WatcherState` actor, DispatchSource monitoring, debounce, and write-in-progress suppression. Re-opens FD on rename/delete events (atomic save support, fixed in PR #143).
+- `OraTests/MemoryFileWatcherTests.swift` — Tests for change detection, debounce, write suppression, stop, and atomic write survival.
+
+### Files Modified
+- `Ora/AppDelegate.swift` — Start watcher on setup complete, stop on terminate.
 
 ## Code Review Findings
 
-(TBD by review agent.)
+Reviewed by pi. No P0 issues. P1: FD invalidation on atomic saves (fixed in PR #143).
 
 ## Completion Status
 
-(TBD after merge.)
+- [x] Implementation complete
+- [x] Code review passed
+- [x] PR merged: #138
+- [x] Date: 2026-02-15

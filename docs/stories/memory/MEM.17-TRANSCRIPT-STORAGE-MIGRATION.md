@@ -1,7 +1,7 @@
 # MEM.17 - Transcript Storage Migration
 
 **Epic:** Memory System
-**Status:** Not Started
+**Status:** Complete
 **Priority:** P3 (Low / Future)
 **Estimated Effort:** 2 days
 **Dependencies:** MEM.01
@@ -61,22 +61,22 @@ As a power user with long conversations, I want Ora to remain fast even with hun
 
 ## 6. Acceptance Criteria
 
-- [ ] AC-1: New messages are stored as `MessageModel` relationships (not blob)
-- [ ] AC-2: Old sessions with `messagesData` are readable and migratable
-- [ ] AC-3: Migration runs automatically on first launch after upgrade
-- [ ] AC-4: `Session.messages` API remains unchanged for consumers
+- [x] AC-1: New messages are stored as `MessageModel` relationships (not blob)
+- [x] AC-2: Old sessions with `messagesData` are readable and migratable
+- [x] AC-3: Migration runs automatically on first launch after upgrade
+- [x] AC-4: `Session.messages` API remains unchanged for consumers
 
 ## 7. Verification Plan
 
 ### Automated Tests
 
-- [ ] Unit test: create session with old blob format, verify migration produces MessageModel instances
-- [ ] Unit test: new writes use relationship model
-- [ ] Unit test: `Session.messages` returns correct data from both storage formats
+- [x] Unit test: create session with old blob format, verify migration produces MessageModel instances
+- [x] Unit test: new writes use relationship model
+- [x] Unit test: `Session.messages` returns correct data from both storage formats
 
 ### Manual Tests
 
-- [ ] Upgrade from pre-migration build, verify old conversations accessible
+- [x] Upgrade from pre-migration build, verify old conversations accessible
 
 ## 8. Performance / Reliability Considerations
 
@@ -96,12 +96,29 @@ As a power user with long conversations, I want Ora to remain fast even with hun
 
 ## Implementation Summary
 
-(TBD after implementation.)
+**Date:** 2026-02-15
+**Branch:** `feat/MEM.17-transcript-storage-migration`
+**PR:** #141
+
+### Files Created
+- `Ora/Persistence/Models/MessageModel.swift` — Per-message `@Model` with `@Attribute(.unique)` ID, role, content, timestamp, metadata JSON, and `Session` relationship. Round-trip conversion via `toMessage()` / `from()`.
+- `OraTests/TranscriptMigrationTests.swift` — 11 tests covering round-trip, nil metadata, relationship storage, blob migration, batch migration, backward compat, setter behavior, and API compatibility.
+
+### Files Modified
+- `Ora/Persistence/Models/Session.swift` — Added `messageModels` relationship, `isMigrated` flag, dual-path getter (relationship when migrated, blob fallback), updated setter and `addMessage` for relationship path.
+- `Ora/Persistence/PersistenceManager.swift` — Added `MessageModel.self` to schema, added `migrateSessionsToRelationshipStorage()` batch migration method.
+- `OraTests/PersistenceTests.swift` — Updated `appendMessage` test to check relationship storage instead of blob.
+
+### Design Note
+Pi review found a P0 where the `messages` setter wrote to the blob but the getter read from `messageModels` when migrated, silently losing writes. Fixed by adding an `isMigrated` branch in the setter that updates `messageModels` directly.
 
 ## Code Review Findings
 
-(TBD by review agent.)
+Reviewed by pi. P0: messages setter ignored relationship storage when migrated (fixed). P1: inconsistent blob handling between setter and addMessage (resolved by accepting blob is dead after migration).
 
 ## Completion Status
 
-(TBD after merge.)
+- [x] Implementation complete
+- [x] Code review passed
+- [x] PR merged: #141
+- [x] Date: 2026-02-15
