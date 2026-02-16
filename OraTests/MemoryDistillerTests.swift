@@ -12,6 +12,7 @@ actor MemoryDistillerMockLLMService: LLMServicing {
 
     private let responses: [String]
     private(set) var generateCallCount = 0
+    private(set) var generatedMessages: [[LLMMessage]] = []
 
     init(responses: [String]) {
         self.responses = responses
@@ -25,6 +26,7 @@ actor MemoryDistillerMockLLMService: LLMServicing {
     func generate(messages: [LLMMessage], maxTokens: Int) async -> AsyncThrowingStream<LLMDelta, Error> {
         let index = self.generateCallCount
         self.generateCallCount += 1
+        self.generatedMessages.append(messages)
         let response = index < self.responses.count
             ? self.responses[index]
             : #"{"summary":{"tldr":"","bullets":[],"decisions_and_commitments":[],"open_loops":[]},"memory_entries":[]}"#
@@ -83,7 +85,7 @@ final class MemoryDistillerTests: XCTestCase {
             Session.Message(
                 id: UUID(),
                 role: .user,
-                content: "I prefer morning meetings and do deep work at 10.",
+                content: "I prefer morning meetings and do deep work at 10 because afternoons are full of interruptions.",
                 timestamp: Date(timeIntervalSince1970: 1_739_616_600),
                 metadata: nil
             ),
@@ -92,6 +94,27 @@ final class MemoryDistillerTests: XCTestCase {
                 role: .assistant,
                 content: "Noted. I'll keep that in mind.",
                 timestamp: Date(timeIntervalSince1970: 1_739_616_620),
+                metadata: nil
+            ),
+            Session.Message(
+                id: UUID(),
+                role: .user,
+                content: "Please also remember that I usually start planning sessions at 8:30 on weekdays.",
+                timestamp: Date(timeIntervalSince1970: 1_739_616_650),
+                metadata: nil
+            ),
+            Session.Message(
+                id: UUID(),
+                role: .assistant,
+                content: "Understood.",
+                timestamp: Date(timeIntervalSince1970: 1_739_616_670),
+                metadata: nil
+            ),
+            Session.Message(
+                id: UUID(),
+                role: .user,
+                content: "That schedule preference has stayed consistent for months and should remain my default.",
+                timestamp: Date(timeIntervalSince1970: 1_739_616_700),
                 metadata: nil
             )
         ]
@@ -125,6 +148,37 @@ final class MemoryDistillerTests: XCTestCase {
         let memoryContent = try String(contentsOf: verificationManager.memoryFileURL, encoding: .utf8)
         XCTAssertTrue(memoryContent.contains("User prefers morning meetings."))
         XCTAssertTrue(memoryContent.contains("User starts deep work at 10am."))
+    }
+
+    func test_distill_transcriptWithToolMessages_excludesToolMessagesFromPrompt() async throws {
+        // Given
+        let sessionID = UUID(uuidString: "12121212-3434-5656-7878-909090909090")!
+        let response = #"{"summary":{"tldr":"Captured durable preferences.","bullets":[],"decisions_and_commitments":[],"open_loops":[]},"memory_entries":[]}"#
+        let mockLLM = MemoryDistillerMockLLMService(responses: [response])
+        let documentsDirectory = self.temporaryDirectoryURL.appendingPathComponent("Documents", isDirectory: true)
+        let toolMessage = "[ToolResult: calendar.create] Created event (auditId=abcd)"
+        let messages = self.makeEligibleMessages(includeToolMessage: true, toolMessageContent: toolMessage)
+        let mockMemoryIndex = MemoryDistillerMockMemoryIndex()
+        let distiller = MemoryDistiller(
+            llm: mockLLM,
+            memoryFileManager: MemoryFileManager(documentsDirectory: documentsDirectory),
+            memoryIndex: mockMemoryIndex,
+            transcriptLoader: { requestedSessionID in
+                return requestedSessionID == sessionID ? messages : nil
+            },
+            promptLoader: { "Return JSON only." }
+        )
+
+        // When
+        _ = await distiller.distill(sessionId: sessionID)
+
+        // Then
+        let generatedMessages = await mockLLM.generatedMessages
+        let llmMessages = try XCTUnwrap(generatedMessages.first)
+        let userPrompt = try XCTUnwrap(llmMessages.first(where: { $0.role == .user })?.content)
+        XCTAssertFalse(userPrompt.contains(toolMessage))
+        XCTAssertTrue(userPrompt.contains("Transcript:"))
+        XCTAssertTrue(userPrompt.contains("Here is what Ora already remembers (MEMORY.md):"))
     }
 
     func test_distill_emptyTranscript_writesSummaryAndDoesNotAppendMemoryEntries() async throws {
@@ -162,7 +216,160 @@ final class MemoryDistillerTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: summaryURL.path))
 
         let memoryContent = try String(contentsOf: verificationManager.memoryFileURL, encoding: .utf8)
-        XCTAssertEqual(memoryContent, baselineMemory)
+        XCTAssertTrue(memoryContent.contains("Existing memory line"))
+        XCTAssertFalse(memoryContent.contains("(source:"))
+    }
+
+    func test_distill_belowThreshold_skipsMemoryExtractionAndWritesSummary() async throws {
+        // Given
+        let sessionID = UUID(uuidString: "abababab-cdcd-efef-0101-121212121212")!
+        let mockLLM = MemoryDistillerMockLLMService(responses: [])
+        let mockMemoryIndex = MemoryDistillerMockMemoryIndex()
+        let documentsDirectory = self.temporaryDirectoryURL.appendingPathComponent("Documents", isDirectory: true)
+        let distillerManager = MemoryFileManager(documentsDirectory: documentsDirectory)
+        let verificationManager = MemoryFileManager(documentsDirectory: documentsDirectory)
+        let messages = [
+            Session.Message(
+                id: UUID(),
+                role: .user,
+                content: "This is message one with enough characters to matter for testing.",
+                timestamp: Date(timeIntervalSince1970: 1_739_700_000),
+                metadata: nil
+            ),
+            Session.Message(
+                id: UUID(),
+                role: .assistant,
+                content: "ack",
+                timestamp: Date(timeIntervalSince1970: 1_739_700_005),
+                metadata: nil
+            ),
+            Session.Message(
+                id: UUID(),
+                role: .user,
+                content: "Second message still below count threshold.",
+                timestamp: Date(timeIntervalSince1970: 1_739_700_010),
+                metadata: nil
+            )
+        ]
+        let distiller = MemoryDistiller(
+            llm: mockLLM,
+            memoryFileManager: distillerManager,
+            memoryIndex: mockMemoryIndex,
+            transcriptLoader: { requestedSessionID in
+                return requestedSessionID == sessionID ? messages : nil
+            },
+            promptLoader: { "Return JSON only." }
+        )
+
+        // When
+        let summary = await distiller.distill(sessionId: sessionID)
+
+        // Then
+        XCTAssertEqual(summary, SessionSummary())
+        let llmCallCount = await mockLLM.generateCallCount
+        XCTAssertEqual(llmCallCount, 0)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: verificationManager.summaryFileURL(for: sessionID).path))
+
+        let memoryContent = try String(contentsOf: verificationManager.memoryFileURL, encoding: .utf8)
+        XCTAssertEqual(memoryContent, MemoryFileManager.initialMemoryTemplate)
+    }
+
+    func test_distill_promptIncludesExistingMemoryContext() async throws {
+        // Given
+        let sessionID = UUID(uuidString: "31313131-4242-5353-6464-757575757575")!
+        let response = #"{"summary":{"tldr":"","bullets":[],"decisions_and_commitments":[],"open_loops":[]},"memory_entries":[]}"#
+        let mockLLM = MemoryDistillerMockLLMService(responses: [response])
+        let mockMemoryIndex = MemoryDistillerMockMemoryIndex()
+        let documentsDirectory = self.temporaryDirectoryURL.appendingPathComponent("Documents", isDirectory: true)
+        let manager = MemoryFileManager(documentsDirectory: documentsDirectory)
+        try manager.ensureMemoryStructureExists()
+        let existingMemory = """
+# Ora Memory
+
+## Profile
+- [fact] Name is Alex
+
+## Preferences
+- [preference] Prefers evening workouts
+
+## People
+
+## Projects
+
+## Ongoing Goals
+"""
+        try existingMemory.write(to: manager.memoryFileURL, atomically: true, encoding: .utf8)
+        let eligibleMessages = self.makeEligibleMessages()
+
+        let distiller = MemoryDistiller(
+            llm: mockLLM,
+            memoryFileManager: manager,
+            memoryIndex: mockMemoryIndex,
+            transcriptLoader: { requestedSessionID in
+                return requestedSessionID == sessionID ? eligibleMessages : nil
+            },
+            promptLoader: { "Return JSON only." }
+        )
+
+        // When
+        _ = await distiller.distill(sessionId: sessionID)
+
+        // Then
+        let generatedMessages = await mockLLM.generatedMessages
+        let llmMessages = try XCTUnwrap(generatedMessages.first)
+        let userPrompt = try XCTUnwrap(llmMessages.first(where: { $0.role == .user })?.content)
+        XCTAssertTrue(userPrompt.contains("Prefers evening workouts"))
+        XCTAssertTrue(userPrompt.contains("Only extract NEW information not already captured above."))
+    }
+
+    func test_distill_lowValueEntriesDroppedAndOutputCappedAtEight() async throws {
+        // Given
+        let sessionID = UUID(uuidString: "91919191-8282-7373-6464-555555555555")!
+        let mockMemoryIndex = MemoryDistillerMockMemoryIndex()
+        let documentsDirectory = self.temporaryDirectoryURL.appendingPathComponent("Documents", isDirectory: true)
+        let distillerManager = MemoryFileManager(documentsDirectory: documentsDirectory)
+        let verificationManager = MemoryFileManager(documentsDirectory: documentsDirectory)
+        let memoryEntries: [[String: String]] = [
+            ["section": "profile", "tag": "fact", "content": "Created 3 items using reminders tool"],
+            ["section": "profile", "tag": "fact", "content": "Entry references audit ID 123 and should be dropped."],
+            ["section": "profile", "tag": "fact", "content": "Contains uuid 123e4567-e89b-12d3-a456-426614174000 in content."],
+            ["section": "preferences", "tag": "fact", "content": "User greeted the assistant warmly during onboarding."],
+            ["section": "projects", "tag": "fact", "content": "too short"],
+            ["section": "profile", "tag": "fact", "content": "Name is Alex Moreno and this should persist as durable profile data."],
+            ["section": "preferences", "tag": "preference", "content": "Prefers evening workouts after 7pm and avoids early gym sessions."],
+            ["section": "people", "tag": "fact", "content": "Maddie is Alex's partner and regular calendar collaborator for family planning."],
+            ["section": "projects", "tag": "fact", "content": "Leading the Atlas migration project focused on replacing legacy onboarding systems."],
+            ["section": "ongoing_goals", "tag": "fact", "content": "Training for a half marathon with three scheduled runs every week."],
+            ["section": "preferences", "tag": "preference", "content": "Keeps notifications muted during deep work blocks from 9am to noon."],
+            ["section": "projects", "tag": "fact", "content": "Preparing a quarterly roadmap review for the leadership team and design org."],
+            ["section": "ongoing_goals", "tag": "fact", "content": "Practicing conversational German daily with vocabulary review and speaking drills."]
+        ]
+        let response = try self.makeResponse(memoryEntries: memoryEntries)
+        let mockLLM = MemoryDistillerMockLLMService(responses: [response])
+        let eligibleMessages = self.makeEligibleMessages()
+        let distiller = MemoryDistiller(
+            llm: mockLLM,
+            memoryFileManager: distillerManager,
+            memoryIndex: mockMemoryIndex,
+            transcriptLoader: { requestedSessionID in
+                return requestedSessionID == sessionID ? eligibleMessages : nil
+            },
+            promptLoader: { "Return JSON only." }
+        )
+
+        // When
+        _ = await distiller.distill(sessionId: sessionID)
+
+        // Then
+        let memoryContent = try String(contentsOf: verificationManager.memoryFileURL, encoding: .utf8)
+        XCTAssertFalse(memoryContent.contains("Created 3 items using reminders tool"))
+        XCTAssertFalse(memoryContent.contains("audit ID 123"))
+        XCTAssertFalse(memoryContent.contains("123e4567-e89b-12d3-a456-426614174000"))
+        XCTAssertFalse(memoryContent.contains("User greeted the assistant"))
+        XCTAssertFalse(memoryContent.contains("too short"))
+
+        let entryCount = memoryContent.components(separatedBy: "\n- [").count - 1
+        XCTAssertEqual(entryCount, 8)
     }
 
     func test_distill_emptyTranscript_triggersMemoryIndexRebuild() async throws {
@@ -188,5 +395,79 @@ final class MemoryDistillerTests: XCTestCase {
         // Then
         let rebuildCallCount = await mockMemoryIndex.rebuildCallCount
         XCTAssertEqual(rebuildCallCount, 1)
+    }
+
+    // MARK: - Helpers
+
+    private func makeEligibleMessages(
+        includeToolMessage: Bool = false,
+        toolMessageContent: String = "[ToolResult: reminder.create] Created item (auditId=123)"
+    ) -> [Session.Message] {
+        var messages = [
+            Session.Message(
+                id: UUID(),
+                role: .user,
+                content: "My name is Alex and I have been organizing my schedule around evening workouts after work.",
+                timestamp: Date(timeIntervalSince1970: 1_739_616_600),
+                metadata: nil
+            ),
+            Session.Message(
+                id: UUID(),
+                role: .assistant,
+                content: "Got it.",
+                timestamp: Date(timeIntervalSince1970: 1_739_616_620),
+                metadata: nil
+            ),
+            Session.Message(
+                id: UUID(),
+                role: .user,
+                content: "I also prefer planning meetings in the morning because my afternoons are booked most days.",
+                timestamp: Date(timeIntervalSince1970: 1_739_616_640),
+                metadata: nil
+            ),
+            Session.Message(
+                id: UUID(),
+                role: .assistant,
+                content: "Noted.",
+                timestamp: Date(timeIntervalSince1970: 1_739_616_660),
+                metadata: nil
+            ),
+            Session.Message(
+                id: UUID(),
+                role: .user,
+                content: "Please remember these preferences for future scheduling decisions over the next few months.",
+                timestamp: Date(timeIntervalSince1970: 1_739_616_680),
+                metadata: nil
+            )
+        ]
+
+        if includeToolMessage {
+            messages.append(
+                Session.Message(
+                    id: UUID(),
+                    role: .tool,
+                    content: toolMessageContent,
+                    timestamp: Date(timeIntervalSince1970: 1_739_616_700),
+                    metadata: nil
+                )
+            )
+        }
+
+        return messages
+    }
+
+    private func makeResponse(memoryEntries: [[String: String]]) throws -> String {
+        let payload: [String: Any] = [
+            "summary": [
+                "tldr": "Summary",
+                "bullets": [],
+                "decisions_and_commitments": [],
+                "open_loops": []
+            ],
+            "memory_entries": memoryEntries
+        ]
+
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        return try XCTUnwrap(String(data: data, encoding: .utf8))
     }
 }
