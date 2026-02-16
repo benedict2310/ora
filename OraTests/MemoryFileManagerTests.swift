@@ -70,7 +70,13 @@ Favorite coffee: black
 
         // Then
         let content = try String(contentsOf: manager.memoryFileURL, encoding: .utf8)
-        XCTAssertEqual(content, customContent)
+        XCTAssertTrue(content.contains("# Custom Memory"))
+        XCTAssertTrue(content.contains("Favorite coffee: black"))
+        XCTAssertTrue(content.contains("## Profile"))
+        XCTAssertTrue(content.contains("## Preferences"))
+        XCTAssertTrue(content.contains("## People"))
+        XCTAssertTrue(content.contains("## Projects"))
+        XCTAssertTrue(content.contains("## Ongoing Goals"))
         XCTAssertTrue(FileManager.default.fileExists(atPath: manager.summariesDirectory.path))
     }
 
