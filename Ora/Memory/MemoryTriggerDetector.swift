@@ -118,6 +118,10 @@ struct KeywordMemoryRetrievalCoordinator: MemoryRetrievalCoordinating {
             return
         }
 
+        self.logger.debug(
+            "Memory retrieval trigger detected (\(triggerResult.triggerType.rawValue), confidence: \(triggerResult.confidence))"
+        )
+
         let retrievedChunks = await self.memoryIndex.search(
             query: userText,
             limit: self.configuration.maxChunkCount
@@ -135,6 +139,7 @@ struct KeywordMemoryRetrievalCoordinator: MemoryRetrievalCoordinating {
         var usedTranscriptFallback = false
 
         if self.shouldUseTranscriptFallback(topPrimaryScore: topPrimaryScore) {
+            self.logger.debug("Preparing memory retrieval context with transcript fallback if primary memory confidence is low")
             let transcriptChunks = await self.memoryIndex.searchTranscriptFallback(
                 query: userText,
                 summarySessionIDs: self.extractSummarySessionIDs(from: retrievedChunks),
@@ -537,12 +542,28 @@ struct MemoryTriggerDetector: MemoryTriggerDetecting, Sendable {
 
     private static let linguisticTriggers: [String] = [
         "remember",
+        "remind me",
         "last time",
+        "last conversation",
+        "earlier conversation",
+        "previous conversation",
+        "recent conversation",
+        "from before",
+        "from our last",
+        "continue our",
         "as we discussed",
+        "as discussed",
         "what did we decide",
+        "what did we talk",
+        "what were we",
+        "what was that about",
         "my preference",
         "you told me",
-        "we agreed"
+        "you said",
+        "you mentioned",
+        "we agreed",
+        "we talked about",
+        "we discussed"
     ]
 
     private static let taskFramingTriggers: [String] = [
@@ -550,7 +571,9 @@ struct MemoryTriggerDetector: MemoryTriggerDetecting, Sendable {
         "did we decide",
         "why did we choose",
         "follow up on",
-        "follow-up on"
+        "follow-up on",
+        "what happened with",
+        "what came of"
     ]
 
     private static let entityTokenStopWords: Set<String> = [

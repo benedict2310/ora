@@ -79,6 +79,41 @@ final class MemoryTriggerDetectorTests: XCTestCase {
         XCTAssertTrue(result.matchedSignals.contains("atlas"))
     }
 
+    func test_detect_remindMe_triggersLinguistic() throws {
+        let detector = try self.makeDetector(memoryContent: "# Ora Memory\n\n## Preferences\n")
+        let result = detector.detect(userText: "Can you remind me what those meetings were about?")
+        XCTAssertTrue(result.shouldTrigger)
+        XCTAssertEqual(result.triggerType, .linguistic)
+    }
+
+    func test_detect_previousConversation_triggersLinguistic() throws {
+        let detector = try self.makeDetector(memoryContent: "# Ora Memory\n\n## Preferences\n")
+        let result = detector.detect(userText: "Check if you know anything from our previous conversation")
+        XCTAssertTrue(result.shouldTrigger)
+        XCTAssertEqual(result.triggerType, .linguistic)
+    }
+
+    func test_detect_youMentioned_triggersLinguistic() throws {
+        let detector = try self.makeDetector(memoryContent: "# Ora Memory\n\n## Preferences\n")
+        let result = detector.detect(userText: "You mentioned something about a deadline last week")
+        XCTAssertTrue(result.shouldTrigger)
+        XCTAssertEqual(result.triggerType, .linguistic)
+    }
+
+    func test_detect_lastConversation_triggersLinguistic() throws {
+        let detector = try self.makeDetector(memoryContent: "# Ora Memory\n\n## Preferences\n")
+        let result = detector.detect(userText: "Let's continue our last conversation, what was that about?")
+        XCTAssertTrue(result.shouldTrigger)
+        XCTAssertEqual(result.triggerType, .linguistic)
+    }
+
+    func test_detect_continueOur_triggersLinguistic() throws {
+        let detector = try self.makeDetector(memoryContent: "# Ora Memory\n\n## Preferences\n")
+        let result = detector.detect(userText: "Continue our discussion from this morning")
+        XCTAssertTrue(result.shouldTrigger)
+        XCTAssertEqual(result.triggerType, .linguistic)
+    }
+
     func test_detect_simpleQuestionWithoutSignals_returnsNoTrigger() throws {
         // Given
         let detector = try self.makeDetector(memoryContent: "# Ora Memory\n\n## Preferences\n")
