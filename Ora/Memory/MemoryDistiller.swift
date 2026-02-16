@@ -35,6 +35,9 @@ actor MemoryDistiller: MemoryDistilling {
     private let promptLoader: PromptLoader
     private let maxRetries: Int
     private let maxTokens: Int
+    private let minimumUserMessageCount: Int
+    private let minimumUserCharacterCount: Int
+    private let existingMemoryContextCharacterLimit: Int
 
     // MARK: - Initialization
 
@@ -45,7 +48,10 @@ actor MemoryDistiller: MemoryDistilling {
         transcriptLoader: @escaping TranscriptLoader = MemoryDistiller.defaultTranscriptLoader,
         promptLoader: @escaping PromptLoader = MemoryDistiller.loadPrompt,
         maxRetries: Int = 3,
-        maxTokens: Int = 1200
+        maxTokens: Int = 1200,
+        minimumUserMessageCount: Int = 3,
+        minimumUserCharacterCount: Int = 50,
+        existingMemoryContextCharacterLimit: Int = 2_000
     ) {
         self.llm = llm
         self.memoryFileManager = memoryFileManager
@@ -54,6 +60,9 @@ actor MemoryDistiller: MemoryDistilling {
         self.promptLoader = promptLoader
         self.maxRetries = maxRetries
         self.maxTokens = maxTokens
+        self.minimumUserMessageCount = minimumUserMessageCount
+        self.minimumUserCharacterCount = minimumUserCharacterCount
+        self.existingMemoryContextCharacterLimit = existingMemoryContextCharacterLimit
     }
 
     // MARK: - Public API
@@ -68,16 +77,18 @@ actor MemoryDistiller: MemoryDistilling {
             return nil
         }
 
+        if self.shouldSkipMemoryDistillation(for: messages) {
+            self.logger.info("Memory distillation skipped: session \(sessionId.uuidString) below threshold")
+            let emptySummary = SessionSummary()
+            await self.persistSummary(summary: emptySummary, for: sessionId)
+            return emptySummary
+        }
+
         let transcript = self.renderTranscript(messages)
 
         if transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let emptySummary = SessionSummary()
-            do {
-                try self.memoryFileManager.writeSummary(sessionId: sessionId, content: emptySummary.renderMarkdown())
-                await self.memoryIndex.rebuild()
-            } catch {
-                self.logger.error("Failed to write empty session summary for \(sessionId.uuidString): \(error.localizedDescription)")
-            }
+            await self.persistSummary(summary: emptySummary, for: sessionId)
             return emptySummary
         }
 
@@ -86,9 +97,11 @@ actor MemoryDistiller: MemoryDistilling {
 
             let prompt = self.promptLoader()
             let distillationTimestamp = Date()
+            let existingMemoryContext = self.loadExistingMemoryContext(limit: self.existingMemoryContextCharacterLimit)
             let payload = try await self.generatePayload(
                 prompt: prompt,
                 transcript: transcript,
+                existingMemoryContext: existingMemoryContext,
                 sessionId: sessionId,
                 timestamp: distillationTimestamp
             )
@@ -119,12 +132,19 @@ actor MemoryDistiller: MemoryDistilling {
     private func generatePayload(
         prompt: String,
         transcript: String,
+        existingMemoryContext: String,
         sessionId: UUID,
         timestamp: Date
     ) async throws -> DistillationPayload {
         let baseMessages = [
             LLMMessage(role: .system, content: prompt),
-            LLMMessage(role: .user, content: "Transcript:\n\n\(transcript)")
+            LLMMessage(
+                role: .user,
+                content: Self.distillationInput(
+                    transcript: transcript,
+                    existingMemoryContext: existingMemoryContext
+                )
+            )
         ]
 
         var messages = baseMessages
@@ -164,7 +184,8 @@ actor MemoryDistiller: MemoryDistilling {
     // MARK: - Transcript Rendering
 
     private func renderTranscript(_ messages: [Session.Message]) -> String {
-        guard !messages.isEmpty else {
+        let filteredMessages = messages.filter { $0.role != .tool }
+        guard !filteredMessages.isEmpty else {
             return ""
         }
 
@@ -172,14 +193,109 @@ actor MemoryDistiller: MemoryDistilling {
         timestampFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         timestampFormatter.timeZone = TimeZone(secondsFromGMT: 0)
 
-        return messages.map { message in
+        let renderedLines = filteredMessages.compactMap { message -> String? in
             let timestamp = timestampFormatter.string(from: message.timestamp)
             let role = message.role.rawValue.uppercased()
             let content = message.content
                 .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !content.isEmpty else {
+                return nil
+            }
             return "[\(timestamp)] \(role): \(content)"
-        }.joined(separator: "\n")
+        }
+
+        return renderedLines.joined(separator: "\n")
+    }
+
+    private func shouldSkipMemoryDistillation(for messages: [Session.Message]) -> Bool {
+        let userMessages = messages.filter { $0.role == .user }
+        let totalUserCharacters = userMessages.reduce(0) { partialResult, message in
+            partialResult + message.content.trimmingCharacters(in: .whitespacesAndNewlines).count
+        }
+
+        return userMessages.count < self.minimumUserMessageCount
+            || totalUserCharacters < self.minimumUserCharacterCount
+    }
+
+    private func persistSummary(summary: SessionSummary, for sessionId: UUID) async {
+        do {
+            try self.memoryFileManager.writeSummary(sessionId: sessionId, content: summary.renderMarkdown())
+            await self.memoryIndex.rebuild()
+        } catch {
+            self.logger.error("Failed to persist session summary for \(sessionId.uuidString): \(error.localizedDescription)")
+        }
+    }
+
+    private func loadExistingMemoryContext(limit: Int) -> String {
+        guard let memoryContent = try? String(contentsOf: self.memoryFileManager.memoryFileURL, encoding: .utf8) else {
+            return "No existing memory entries."
+        }
+
+        let trimmed = memoryContent.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return "No existing memory entries."
+        }
+
+        let prioritized = Self.prioritizedMemoryContext(from: trimmed)
+        return Self.truncate(prioritized, limit: limit)
+    }
+
+    private static func prioritizedMemoryContext(from content: String) -> String {
+        let sectionPriority: [MemoryEntry.Section] = [.profile, .preferences, .people, .projects, .ongoingGoals]
+        let prioritizedSections = sectionPriority.compactMap { section in
+            Self.sectionBlock(heading: section.heading, in: content)
+        }
+
+        guard !prioritizedSections.isEmpty else {
+            return content
+        }
+
+        return prioritizedSections.joined(separator: "\n\n")
+    }
+
+    private static func sectionBlock(heading: String, in content: String) -> String? {
+        guard let headingRange = content.range(of: heading) else {
+            return nil
+        }
+
+        let afterHeading = content[headingRange.upperBound...]
+        let nextHeadingRange = afterHeading.range(of: "\n## ")
+        let sectionSlice: Substring
+        if let nextHeadingRange {
+            sectionSlice = content[headingRange.lowerBound..<nextHeadingRange.lowerBound]
+        } else {
+            sectionSlice = content[headingRange.lowerBound...]
+        }
+
+        let sectionContent = String(sectionSlice).trimmingCharacters(in: .whitespacesAndNewlines)
+        return sectionContent.isEmpty ? nil : sectionContent
+    }
+
+    private static func truncate(_ text: String, limit: Int) -> String {
+        guard text.count > limit else {
+            return text
+        }
+
+        let upperBound = text.index(text.startIndex, offsetBy: limit)
+        let truncated = text[text.startIndex..<upperBound].trimmingCharacters(in: .whitespacesAndNewlines)
+        return "\(truncated)\n...[truncated]"
+    }
+
+    private static func distillationInput(transcript: String, existingMemoryContext: String) -> String {
+        return """
+Transcript:
+
+\(transcript)
+
+Here is what Ora already remembers (MEMORY.md):
+---
+\(existingMemoryContext)
+---
+
+Only extract NEW information not already captured above.
+If the conversation adds nothing new, return empty memory_entries.
+"""
     }
 
     // MARK: - Prompt Loading
@@ -197,7 +313,9 @@ actor MemoryDistiller: MemoryDistilling {
     }
 
     private static let fallbackPrompt = """
-You distill a conversation transcript into JSON.
+You are Ora's memory distiller.
+You are given a session transcript and existing MEMORY.md context.
+Extract only durable, user-relevant memory that is NEW compared to existing memory.
 
 Return ONLY one JSON object in this exact shape:
 {
@@ -224,7 +342,15 @@ Return ONLY one JSON object in this exact shape:
 }
 
 Rules:
-- Include only durable facts/preferences/decisions.
+- Section definitions:
+  - profile: identity, demographics, role, location, stable background facts.
+  - preferences: explicit likes/dislikes or stated defaults.
+  - people: named individuals and relationship to user.
+  - projects: active named projects or concrete workstreams.
+  - ongoing_goals: recurring objectives or long-running commitments.
+- Do NOT extract greetings, small talk, tool mechanics, audit IDs/UUIDs, session behavior, or assistant action restatements.
+- If conversation adds no truly new durable memory, return empty memory_entries.
+- Aim for 0-5 memory entries per session; most sessions should produce 0-2 entries.
 - If unknown, return empty arrays and empty strings.
 - No markdown, no prose, no code fences.
 """
@@ -388,6 +514,24 @@ private struct DistillationPayload: Sendable {
 
 private struct DistillationEnvelope: Decodable {
 
+    // MARK: - Constants
+
+    private static let maxMemoryEntriesPerDistillation = 8
+    private static let auditTokens = ["audit id", "audit_id", "audit-id"]
+    private static let greetingPhrases = [
+        "user greeted",
+        "user said hello",
+        "user consistently uses greeting"
+    ]
+    private static let uuidRegex = try! NSRegularExpression(
+        pattern: #"\b[0-9a-fA-F]{8}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{12}\b"#,
+        options: []
+    )
+    private static let toolMechanicsRegex = try! NSRegularExpression(
+        pattern: #"^\s*(created|updated|deleted)\s+\d+.*\busing\b.*\btool\b"#,
+        options: [.caseInsensitive]
+    )
+
     let summary: DistilledSummary
     let memoryEntries: [DistilledMemoryEntry]
 
@@ -444,6 +588,10 @@ private struct DistillationEnvelope: Decodable {
                 return nil
             }
 
+            guard !Self.isLowValueContent(content) else {
+                return nil
+            }
+
             return MemoryEntry(
                 section: section,
                 tag: tag,
@@ -454,7 +602,39 @@ private struct DistillationEnvelope: Decodable {
             )
         }
 
-        return DistillationPayload(summary: summary, memoryEntries: normalizedMemoryEntries)
+        let cappedEntries = Array(normalizedMemoryEntries.prefix(Self.maxMemoryEntriesPerDistillation))
+        return DistillationPayload(summary: summary, memoryEntries: cappedEntries)
+    }
+
+    private static func isLowValueContent(_ content: String) -> Bool {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return true
+        }
+
+        if trimmed.count < 20 {
+            return true
+        }
+
+        let lowercase = trimmed.lowercased()
+        if Self.auditTokens.contains(where: { lowercase.contains($0) }) {
+            return true
+        }
+
+        if Self.greetingPhrases.contains(where: { lowercase.contains($0) }) {
+            return true
+        }
+
+        let fullRange = NSRange(trimmed.startIndex..<trimmed.endIndex, in: trimmed)
+        if Self.uuidRegex.firstMatch(in: trimmed, options: [], range: fullRange) != nil {
+            return true
+        }
+
+        if Self.toolMechanicsRegex.firstMatch(in: trimmed, options: [], range: fullRange) != nil {
+            return true
+        }
+
+        return false
     }
 }
 

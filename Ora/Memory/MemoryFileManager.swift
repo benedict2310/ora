@@ -29,6 +29,7 @@ Add or remove details that you want Ora to remember long-term.
 """
 
     private static let writeLock = NSLock()
+    private static let fuzzyDedupThreshold = 0.85
 
     // MARK: - Properties
 
@@ -80,6 +81,7 @@ Add or remove details that you want Ora to remember long-term.
     func ensureMemoryStructureExists() throws {
         try self.fileManager.createDirectory(at: self.summariesDirectory, withIntermediateDirectories: true)
         try self.ensureMemoryTemplateExists()
+        try self.migrateLegacySectionsIfNeeded()
     }
 
     func writeSummary(sessionId: UUID, content: String) throws {
@@ -104,9 +106,11 @@ Add or remove details that you want Ora to remember long-term.
             let contentWithSections = Self.ensureRequiredSections(in: existingContent)
             var lines = Self.splitLines(contentWithSections)
             let existingFingerprints = Self.existingEntryFingerprints(in: lines)
+            let existingSectionContent = Self.existingEntryContentBySection(in: lines)
             let entriesToAppend = Self.deduplicatedEntries(
                 from: normalizedEntries,
-                existingFingerprints: existingFingerprints
+                existingFingerprints: existingFingerprints,
+                existingSectionContentBySection: existingSectionContent
             )
 
             guard !entriesToAppend.isEmpty else {
@@ -143,6 +147,21 @@ Add or remove details that you want Ora to remember long-term.
         try Self.initialMemoryTemplate.write(to: self.memoryFileURL, atomically: true, encoding: .utf8)
     }
 
+    private func migrateLegacySectionsIfNeeded() throws {
+        guard self.fileManager.fileExists(atPath: self.memoryFileURL.path) else {
+            return
+        }
+
+        try Self.withWriteLock {
+            let existingContent = (try? String(contentsOf: self.memoryFileURL, encoding: .utf8)) ?? Self.initialMemoryTemplate
+            let normalizedContent = Self.ensureRequiredSections(in: existingContent)
+            guard normalizedContent != existingContent else {
+                return
+            }
+            try normalizedContent.write(to: self.memoryFileURL, atomically: true, encoding: .utf8)
+        }
+    }
+
     private static func withWriteLock<T>(_ operation: () throws -> T) throws -> T {
         self.writeLock.lock()
         defer {
@@ -162,6 +181,8 @@ Add or remove details that you want Ora to remember long-term.
             lines = self.splitLines(Self.initialMemoryTemplate)
         }
 
+        lines = self.removingLegacyMemoryUpdateSections(from: lines)
+
         for section in MemoryEntry.Section.allCases {
             if lines.contains(section.heading) {
                 continue
@@ -176,13 +197,48 @@ Add or remove details that you want Ora to remember long-term.
         return lines.joined(separator: "\n")
     }
 
+    private static func removingLegacyMemoryUpdateSections(from lines: [String]) -> [String] {
+        var output: [String] = []
+        var isSkippingLegacySection = false
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            let isLevelTwoHeading = trimmed.hasPrefix("## ")
+
+            if isLevelTwoHeading {
+                if self.isLegacyMemoryUpdateHeading(trimmed) {
+                    isSkippingLegacySection = true
+                    continue
+                }
+                isSkippingLegacySection = false
+            }
+
+            if isSkippingLegacySection {
+                continue
+            }
+
+            output.append(line)
+        }
+
+        return output
+    }
+
+    private static func isLegacyMemoryUpdateHeading(_ heading: String) -> Bool {
+        heading
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .hasPrefix("## memory update")
+    }
+
     private static func deduplicatedEntries(
         from entries: [MemoryEntry],
-        existingFingerprints: Set<String>
+        existingFingerprints: Set<String>,
+        existingSectionContentBySection: [MemoryEntry.Section: [String]]
     ) -> [MemoryEntry] {
         var output: [MemoryEntry] = []
         var seenFingerprints = existingFingerprints
         var seenKeys: Set<String> = []
+        var seenSectionContentBySection = existingSectionContentBySection
 
         for entry in entries {
             let fingerprint = entry.dedupFingerprint
@@ -197,11 +253,30 @@ Add or remove details that you want Ora to remember long-term.
                 seenKeys.insert(key)
             }
 
+            if entry.normalizedKeyToken == nil {
+                let existingContent = seenSectionContentBySection[entry.section] ?? []
+                let normalizedContent = MemoryEntry.normalizeForDedup(entry.content)
+                if self.hasFuzzyDuplicate(normalizedContent, against: existingContent) {
+                    continue
+                }
+            }
+
             output.append(entry)
             seenFingerprints.insert(fingerprint)
+            seenSectionContentBySection[entry.section, default: []].append(MemoryEntry.normalizeForDedup(entry.content))
         }
 
         return output
+    }
+
+    private static func hasFuzzyDuplicate(_ normalizedContent: String, against candidates: [String]) -> Bool {
+        for candidate in candidates {
+            let similarity = StringSimilarity.jaroWinkler(normalizedContent, candidate)
+            if similarity >= Self.fuzzyDedupThreshold {
+                return true
+            }
+        }
+        return false
     }
 
     private static func existingEntryFingerprints(in lines: [String]) -> Set<String> {
@@ -225,6 +300,26 @@ Add or remove details that you want Ora to remember long-term.
         return fingerprints
     }
 
+    private static func existingEntryContentBySection(in lines: [String]) -> [MemoryEntry.Section: [String]] {
+        let ranges = self.sectionRanges(in: lines)
+        var contentBySection: [MemoryEntry.Section: [String]] = [:]
+
+        for (section, range) in ranges {
+            guard range.count > 1 else {
+                continue
+            }
+
+            for line in lines[(range.lowerBound + 1)..<range.upperBound] {
+                guard let content = self.entryContent(from: line) else {
+                    continue
+                }
+                contentBySection[section, default: []].append(content)
+            }
+        }
+
+        return contentBySection
+    }
+
     private static func entryPrefix(from line: String) -> String? {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.hasPrefix("- ") else {
@@ -242,6 +337,22 @@ Add or remove details that you want Ora to remember long-term.
         }
 
         return body
+    }
+
+    private static func entryContent(from line: String) -> String? {
+        guard let prefix = self.entryPrefix(from: line) else {
+            return nil
+        }
+
+        let withoutTag = prefix
+            .replacingOccurrences(of: #"^\[[^\]]+\](?:\[[^\]]+\])?\s*"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !withoutTag.isEmpty else {
+            return nil
+        }
+
+        return MemoryEntry.normalizeForDedup(withoutTag)
     }
 
     private static func sectionRanges(in lines: [String]) -> [MemoryEntry.Section: Range<Int>] {
