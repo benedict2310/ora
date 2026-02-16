@@ -34,6 +34,8 @@ struct PreferencesWindow: View {
                     ProviderPreferencesView()
                 case .models:
                     ModelsPreferencesView()
+                case .memory:
+                    MemoryPreferencesView()
                 case .permissions:
                     PermissionsPreferencesView()
                 case .about:

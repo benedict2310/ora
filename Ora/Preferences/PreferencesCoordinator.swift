@@ -84,6 +84,7 @@ enum PreferencesTab: String, CaseIterable {
     case general
     case providers
     case models
+    case memory
     case permissions
     case about
 
@@ -92,6 +93,7 @@ enum PreferencesTab: String, CaseIterable {
         case .general: return "General"
         case .providers: return "Providers"
         case .models: return "Models"
+        case .memory: return "Memory"
         case .permissions: return "Permissions"
         case .about: return "About"
         }
@@ -102,6 +104,7 @@ enum PreferencesTab: String, CaseIterable {
         case .general: return "gear"
         case .providers: return "icloud"
         case .models: return "cpu"
+        case .memory: return "brain"
         case .permissions: return "lock.shield"
         case .about: return "info.circle"
         }

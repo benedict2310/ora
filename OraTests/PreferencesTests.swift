@@ -14,8 +14,8 @@ final class PreferencesTabTests: XCTestCase {
 
     // MARK: - Tab Properties Tests
 
-    func test_allCases_hasFiveTabs() {
-        XCTAssertEqual(PreferencesTab.allCases.count, 5)
+    func test_allCases_hasSixTabs() {
+        XCTAssertEqual(PreferencesTab.allCases.count, 6)
     }
 
     func test_allCases_containsExpectedTabs() {
