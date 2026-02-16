@@ -2,7 +2,7 @@
 //  MemoryFileManager.swift
 //  Ora
 //
-//  Manages on-disk memory files in ~/Documents/Ora/Memory.
+//  Manages on-disk memory files in ~/.ora/memory.
 //
 
 import Foundation
@@ -34,15 +34,7 @@ Add or remove details that you want Ora to remember long-term.
     // MARK: - Properties
 
     private let fileManager: FileManager
-    let documentsDirectory: URL
-
-    var oraDirectory: URL {
-        self.documentsDirectory.appendingPathComponent("Ora", isDirectory: true)
-    }
-
-    var memoryDirectory: URL {
-        self.oraDirectory.appendingPathComponent("Memory", isDirectory: true)
-    }
+    let memoryDirectory: URL
 
     var summariesDirectory: URL {
         self.memoryDirectory.appendingPathComponent("Summaries", isDirectory: true)
@@ -60,15 +52,14 @@ Add or remove details that you want Ora to remember long-term.
 
     // MARK: - Initialization
 
-    init(fileManager: FileManager = .default, documentsDirectory: URL? = nil) {
+    init(fileManager: FileManager = .default, memoryDirectory: URL? = nil) {
         self.fileManager = fileManager
-        if let documentsDirectory {
-            self.documentsDirectory = documentsDirectory
-        } else if let resolvedDocumentsDirectory = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first {
-            self.documentsDirectory = resolvedDocumentsDirectory
+        if let memoryDirectory {
+            self.memoryDirectory = memoryDirectory
         } else {
-            self.documentsDirectory = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
-                .appendingPathComponent("Documents", isDirectory: true)
+            self.memoryDirectory = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+                .appendingPathComponent(".ora", isDirectory: true)
+                .appendingPathComponent("memory", isDirectory: true)
         }
     }
 

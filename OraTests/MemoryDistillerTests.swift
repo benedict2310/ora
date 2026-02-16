@@ -79,8 +79,8 @@ final class MemoryDistillerTests: XCTestCase {
         let response = #"{"summary":{"tldr":"User prefers morning meetings.","bullets":["Discussed recurring planning sync."],"decisions_and_commitments":[{"decision":"Move sync to 9am","rationale":"Improves focus time","timestamp":"2026-02-15T09:30:00Z"}],"open_loops":["Confirm Thursday slot with design team."]},"memory_entries":[{"section":"preferences","tag":"preference","content":"User prefers morning meetings.","normalized_key":"pref:meeting:morning"},{"section":"projects","tag":"fact","content":"User starts deep work at 10am."}]}"#
 
         let mockLLM = MemoryDistillerMockLLMService(responses: [response])
-        let documentsDirectory = self.temporaryDirectoryURL.appendingPathComponent("Documents", isDirectory: true)
-        let verificationManager = MemoryFileManager(documentsDirectory: documentsDirectory)
+        let memoryDirectory = self.temporaryDirectoryURL.appendingPathComponent("memory", isDirectory: true)
+        let verificationManager = MemoryFileManager(memoryDirectory: memoryDirectory)
         let messages = [
             Session.Message(
                 id: UUID(),
@@ -122,7 +122,7 @@ final class MemoryDistillerTests: XCTestCase {
         let mockMemoryIndex = MemoryDistillerMockMemoryIndex()
         let distiller = MemoryDistiller(
             llm: mockLLM,
-            memoryFileManager: MemoryFileManager(documentsDirectory: documentsDirectory),
+            memoryFileManager: MemoryFileManager(memoryDirectory: memoryDirectory),
             memoryIndex: mockMemoryIndex,
             transcriptLoader: { requestedSessionID in
                 return requestedSessionID == sessionID ? messages : nil
@@ -155,13 +155,13 @@ final class MemoryDistillerTests: XCTestCase {
         let sessionID = UUID(uuidString: "12121212-3434-5656-7878-909090909090")!
         let response = #"{"summary":{"tldr":"Captured durable preferences.","bullets":[],"decisions_and_commitments":[],"open_loops":[]},"memory_entries":[]}"#
         let mockLLM = MemoryDistillerMockLLMService(responses: [response])
-        let documentsDirectory = self.temporaryDirectoryURL.appendingPathComponent("Documents", isDirectory: true)
+        let memoryDirectory = self.temporaryDirectoryURL.appendingPathComponent("memory", isDirectory: true)
         let toolMessage = "[ToolResult: calendar.create] Created event (auditId=abcd)"
         let messages = self.makeEligibleMessages(includeToolMessage: true, toolMessageContent: toolMessage)
         let mockMemoryIndex = MemoryDistillerMockMemoryIndex()
         let distiller = MemoryDistiller(
             llm: mockLLM,
-            memoryFileManager: MemoryFileManager(documentsDirectory: documentsDirectory),
+            memoryFileManager: MemoryFileManager(memoryDirectory: memoryDirectory),
             memoryIndex: mockMemoryIndex,
             transcriptLoader: { requestedSessionID in
                 return requestedSessionID == sessionID ? messages : nil
@@ -181,13 +181,13 @@ final class MemoryDistillerTests: XCTestCase {
         XCTAssertTrue(userPrompt.contains("Here is what Ora already remembers (MEMORY.md):"))
     }
 
-    func test_distill_emptyTranscript_writesSummaryAndDoesNotAppendMemoryEntries() async throws {
+    func test_distill_emptyTranscript_returnsNilAndDoesNotWriteSummary() async throws {
         // Given
         let sessionID = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
         let mockLLM = MemoryDistillerMockLLMService(responses: [])
-        let documentsDirectory = self.temporaryDirectoryURL.appendingPathComponent("Documents", isDirectory: true)
-        let setupManager = MemoryFileManager(documentsDirectory: documentsDirectory)
-        let verificationManager = MemoryFileManager(documentsDirectory: documentsDirectory)
+        let memoryDirectory = self.temporaryDirectoryURL.appendingPathComponent("memory", isDirectory: true)
+        let setupManager = MemoryFileManager(memoryDirectory: memoryDirectory)
+        let verificationManager = MemoryFileManager(memoryDirectory: memoryDirectory)
 
         try setupManager.ensureMemoryStructureExists()
         let baselineMemory = "# Ora Memory\n\nExisting memory line"
@@ -196,7 +196,7 @@ final class MemoryDistillerTests: XCTestCase {
         let mockMemoryIndex = MemoryDistillerMockMemoryIndex()
         let distiller = MemoryDistiller(
             llm: mockLLM,
-            memoryFileManager: MemoryFileManager(documentsDirectory: documentsDirectory),
+            memoryFileManager: MemoryFileManager(memoryDirectory: memoryDirectory),
             memoryIndex: mockMemoryIndex,
             transcriptLoader: { requestedSessionID in
                 return requestedSessionID == sessionID ? [] : nil
@@ -208,26 +208,26 @@ final class MemoryDistillerTests: XCTestCase {
         let summary = await distiller.distill(sessionId: sessionID)
 
         // Then
-        XCTAssertEqual(summary, SessionSummary())
+        XCTAssertNil(summary)
         let llmCallCount = await mockLLM.generateCallCount
         XCTAssertEqual(llmCallCount, 0)
 
         let summaryURL = verificationManager.summaryFileURL(for: sessionID)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: summaryURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: summaryURL.path))
 
         let memoryContent = try String(contentsOf: verificationManager.memoryFileURL, encoding: .utf8)
         XCTAssertTrue(memoryContent.contains("Existing memory line"))
         XCTAssertFalse(memoryContent.contains("(source:"))
     }
 
-    func test_distill_belowThreshold_skipsMemoryExtractionAndWritesSummary() async throws {
+    func test_distill_belowThreshold_returnsNilAndDoesNotWriteSummary() async throws {
         // Given
         let sessionID = UUID(uuidString: "abababab-cdcd-efef-0101-121212121212")!
         let mockLLM = MemoryDistillerMockLLMService(responses: [])
         let mockMemoryIndex = MemoryDistillerMockMemoryIndex()
-        let documentsDirectory = self.temporaryDirectoryURL.appendingPathComponent("Documents", isDirectory: true)
-        let distillerManager = MemoryFileManager(documentsDirectory: documentsDirectory)
-        let verificationManager = MemoryFileManager(documentsDirectory: documentsDirectory)
+        let memoryDirectory = self.temporaryDirectoryURL.appendingPathComponent("memory", isDirectory: true)
+        let distillerManager = MemoryFileManager(memoryDirectory: memoryDirectory)
+        let verificationManager = MemoryFileManager(memoryDirectory: memoryDirectory)
         let messages = [
             Session.Message(
                 id: UUID(),
@@ -265,13 +265,10 @@ final class MemoryDistillerTests: XCTestCase {
         let summary = await distiller.distill(sessionId: sessionID)
 
         // Then
-        XCTAssertEqual(summary, SessionSummary())
+        XCTAssertNil(summary)
         let llmCallCount = await mockLLM.generateCallCount
         XCTAssertEqual(llmCallCount, 0)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: verificationManager.summaryFileURL(for: sessionID).path))
-
-        let memoryContent = try String(contentsOf: verificationManager.memoryFileURL, encoding: .utf8)
-        XCTAssertEqual(memoryContent, MemoryFileManager.initialMemoryTemplate)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: verificationManager.summaryFileURL(for: sessionID).path))
     }
 
     func test_distill_promptIncludesExistingMemoryContext() async throws {
@@ -280,8 +277,8 @@ final class MemoryDistillerTests: XCTestCase {
         let response = #"{"summary":{"tldr":"","bullets":[],"decisions_and_commitments":[],"open_loops":[]},"memory_entries":[]}"#
         let mockLLM = MemoryDistillerMockLLMService(responses: [response])
         let mockMemoryIndex = MemoryDistillerMockMemoryIndex()
-        let documentsDirectory = self.temporaryDirectoryURL.appendingPathComponent("Documents", isDirectory: true)
-        let manager = MemoryFileManager(documentsDirectory: documentsDirectory)
+        let memoryDirectory = self.temporaryDirectoryURL.appendingPathComponent("memory", isDirectory: true)
+        let manager = MemoryFileManager(memoryDirectory: memoryDirectory)
         try manager.ensureMemoryStructureExists()
         let existingMemory = """
 # Ora Memory
@@ -326,9 +323,9 @@ final class MemoryDistillerTests: XCTestCase {
         // Given
         let sessionID = UUID(uuidString: "91919191-8282-7373-6464-555555555555")!
         let mockMemoryIndex = MemoryDistillerMockMemoryIndex()
-        let documentsDirectory = self.temporaryDirectoryURL.appendingPathComponent("Documents", isDirectory: true)
-        let distillerManager = MemoryFileManager(documentsDirectory: documentsDirectory)
-        let verificationManager = MemoryFileManager(documentsDirectory: documentsDirectory)
+        let memoryDirectory = self.temporaryDirectoryURL.appendingPathComponent("memory", isDirectory: true)
+        let distillerManager = MemoryFileManager(memoryDirectory: memoryDirectory)
+        let verificationManager = MemoryFileManager(memoryDirectory: memoryDirectory)
         let memoryEntries: [[String: String]] = [
             ["section": "profile", "tag": "fact", "content": "Created 3 items using reminders tool"],
             ["section": "profile", "tag": "fact", "content": "Entry references audit ID 123 and should be dropped."],
@@ -372,16 +369,16 @@ final class MemoryDistillerTests: XCTestCase {
         XCTAssertEqual(entryCount, 8)
     }
 
-    func test_distill_emptyTranscript_triggersMemoryIndexRebuild() async throws {
+    func test_distill_emptyTranscript_doesNotTriggerMemoryIndexRebuild() async throws {
         // Given
         let sessionID = UUID(uuidString: "66666666-7777-8888-9999-aaaaaaaaaaaa")!
         let mockLLM = MemoryDistillerMockLLMService(responses: [])
         let mockMemoryIndex = MemoryDistillerMockMemoryIndex()
-        let documentsDirectory = self.temporaryDirectoryURL.appendingPathComponent("Documents", isDirectory: true)
+        let memoryDirectory = self.temporaryDirectoryURL.appendingPathComponent("memory", isDirectory: true)
 
         let distiller = MemoryDistiller(
             llm: mockLLM,
-            memoryFileManager: MemoryFileManager(documentsDirectory: documentsDirectory),
+            memoryFileManager: MemoryFileManager(memoryDirectory: memoryDirectory),
             memoryIndex: mockMemoryIndex,
             transcriptLoader: { requestedSessionID in
                 return requestedSessionID == sessionID ? [] : nil
@@ -394,7 +391,7 @@ final class MemoryDistillerTests: XCTestCase {
 
         // Then
         let rebuildCallCount = await mockMemoryIndex.rebuildCallCount
-        XCTAssertEqual(rebuildCallCount, 1)
+        XCTAssertEqual(rebuildCallCount, 0)
     }
 
     // MARK: - Helpers

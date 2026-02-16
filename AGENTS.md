@@ -294,6 +294,7 @@ For detailed triage workflows, load the `ora-testing` skill.
 ### Commit & PR Guidelines
 - Commit messages: short imperative clauses (e.g., "Add calendar tool", "Fix ASR latency"); keep commits scoped.
 - PRs/patches should list summary, commands run, screenshots/GIFs for UI changes, and linked issue/reference when relevant.
+- **Automated review (MANDATORY):** Every PR must have an `@codex review` comment posted before merging. Add the comment after creating the PR: `gh pr comment <number> --body "@codex review"`.
 
 ### Agent Notes
 - Use the provided scripts and XcodeGen; avoid adding dependencies or tooling without confirmation.

@@ -203,7 +203,7 @@ final class TranscriptRetrievalTests: XCTestCase {
 
     func test_searchTranscriptFallback_withSummarySessionScope_limitsToSummarySessions() async throws {
         // Given
-        let temporaryDirectoryURL = try self.makeTemporaryDocumentsDirectory()
+        let temporaryDirectoryURL = try self.makeTemporaryMemoryDirectory()
         defer {
             try? FileManager.default.removeItem(at: temporaryDirectoryURL)
         }
@@ -237,7 +237,7 @@ final class TranscriptRetrievalTests: XCTestCase {
             recentSnapshots: []
         )
         let index = MemoryIndex(
-            documentsDirectory: temporaryDirectoryURL,
+            memoryDirectory: temporaryDirectoryURL,
             transcriptSessionLoader: { summarySessionIDs, recentSessionLimit in
                 return await loader.load(
                     summarySessionIDs: summarySessionIDs,
@@ -269,7 +269,7 @@ final class TranscriptRetrievalTests: XCTestCase {
 
     func test_searchTranscriptFallback_withoutSummaryScope_usesRecentSessionLimit() async throws {
         // Given
-        let temporaryDirectoryURL = try self.makeTemporaryDocumentsDirectory()
+        let temporaryDirectoryURL = try self.makeTemporaryMemoryDirectory()
         defer {
             try? FileManager.default.removeItem(at: temporaryDirectoryURL)
         }
@@ -292,7 +292,7 @@ final class TranscriptRetrievalTests: XCTestCase {
             ]
         )
         let index = MemoryIndex(
-            documentsDirectory: temporaryDirectoryURL,
+            memoryDirectory: temporaryDirectoryURL,
             transcriptSessionLoader: { summarySessionIDs, recentSessionLimit in
                 return await loader.load(
                     summarySessionIDs: summarySessionIDs,
@@ -320,13 +320,13 @@ final class TranscriptRetrievalTests: XCTestCase {
         XCTAssertEqual(matches[0].turnNumber, 1)
     }
 
-    private func makeTemporaryDocumentsDirectory() throws -> URL {
+    private func makeTemporaryMemoryDirectory() throws -> URL {
         let temporaryDirectoryURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let documentsDirectoryURL = temporaryDirectoryURL
-            .appendingPathComponent("Documents", isDirectory: true)
-        try FileManager.default.createDirectory(at: documentsDirectoryURL, withIntermediateDirectories: true)
-        return documentsDirectoryURL
+        let memoryDirectoryURL = temporaryDirectoryURL
+            .appendingPathComponent("memory", isDirectory: true)
+        try FileManager.default.createDirectory(at: memoryDirectoryURL, withIntermediateDirectories: true)
+        return memoryDirectoryURL
     }
 
     private func makeMessage(role: Session.Message.Role, content: String) -> Session.Message {
