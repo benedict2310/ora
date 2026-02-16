@@ -100,6 +100,20 @@ final class MemoryTriggerDetectorTests: XCTestCase {
         XCTAssertEqual(result.triggerType, .linguistic)
     }
 
+    func test_detect_lastConversation_triggersLinguistic() throws {
+        let detector = try self.makeDetector(memoryContent: "# Ora Memory\n\n## Preferences\n")
+        let result = detector.detect(userText: "Let's continue our last conversation, what was that about?")
+        XCTAssertTrue(result.shouldTrigger)
+        XCTAssertEqual(result.triggerType, .linguistic)
+    }
+
+    func test_detect_continueOur_triggersLinguistic() throws {
+        let detector = try self.makeDetector(memoryContent: "# Ora Memory\n\n## Preferences\n")
+        let result = detector.detect(userText: "Continue our discussion from this morning")
+        XCTAssertTrue(result.shouldTrigger)
+        XCTAssertEqual(result.triggerType, .linguistic)
+    }
+
     func test_detect_simpleQuestionWithoutSignals_returnsNoTrigger() throws {
         // Given
         let detector = try self.makeDetector(memoryContent: "# Ora Memory\n\n## Preferences\n")
