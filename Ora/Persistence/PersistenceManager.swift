@@ -32,6 +32,11 @@ final class PersistenceManager {
         container.mainContext
     }
 
+    /// Background actor for heavy write operations (JSON encode/decode, saves).
+    private(set) lazy var backgroundActor: BackgroundPersistenceActor = {
+        return BackgroundPersistenceActor(modelContainer: self.container)
+    }()
+
     // MARK: - Initialization
 
     private init() {
@@ -164,7 +169,10 @@ final class PersistenceManager {
         return try? context.fetch(descriptor).first
     }
 
-    /// Append a message to the current active session
+    /// Append a message to the current active session.
+    ///
+    /// The message is added to the main-actor session immediately for UI responsiveness,
+    /// then the save is dispatched via the debounced main-context save.
     @discardableResult
     func appendMessage(
         role: Session.Message.Role,
