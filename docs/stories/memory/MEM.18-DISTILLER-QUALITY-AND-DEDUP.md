@@ -264,4 +264,8 @@ The `## Memory Update` headings (lines 6-26 in current MEMORY.md) are from an ol
 
 ## Completion Status
 
-(TBD after merge.)
+- [x] Implementation complete
+- [x] Code review passed (1 iteration)
+- [x] PR merged: #144
+- [x] Merged to main: 6890313
+- [x] Date: 2026-02-16
