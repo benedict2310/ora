@@ -14,42 +14,24 @@
 
 Improve the quality of memory entries produced by the distiller and strengthen deduplication so that MEMORY.md remains concise, high-signal, and useful. Currently, after ~57 sessions the file has grown to 258 lines with ~88% redundancy, test noise, and buried real data.
 
+### Problem Analysis
+
+**Current state (observed from production data):** After ~57 distilled sessions, MEMORY.md contains ~213 entries but only ~25 carry unique signal (~88% redundancy). Plus 3 orphaned `## Memory Update` sections from an older code path.
+
+**Root causes (prioritized by impact):**
+
+- **RC-1: Tool messages leak into the transcript.** `renderTranscript()` includes `.tool` role messages verbatim — the model extracts tool mechanics as "facts." Accounts for ~50% of junk entries.
+- **RC-2: Distiller has no awareness of existing memory.** Each session is distilled in isolation, causing semantic duplicates.
+- **RC-3: No minimum session threshold.** 55/57 sessions are trivial/synthetic but each generates 5-10 entries.
+- **RC-4: Prompt is too permissive.** No negative instructions — model extracts interaction patterns and session mechanics.
+- **RC-5: Dedup is exact-match only.** Near-identical entries with different wording pass through.
+- **RC-6: Section misclassification.** Model doesn't understand section semantics; prompt lacks section descriptions.
+
 ## 2. User Story
 
 As a user, I want MEMORY.md to contain only meaningful, non-redundant information about me so that Ora's memory is useful rather than a wall of repeated noise.
 
-## 3. Problem Analysis
-
-### Current State (observed from production data)
-
-After ~57 distilled sessions, MEMORY.md contains:
-
-| Section | Entries | Unique Signal | Redundancy Rate |
-|:--------|:--------|:--------------|:----------------|
-| Profile | 12 | ~5 | ~60% |
-| Preferences | 23 | ~4 | ~83% |
-| People | 28 | ~3 | ~89% |
-| Projects | 91 | ~8 | ~91% |
-| Ongoing Goals | 59 | ~5 | ~92% |
-| **Total** | **213** | **~25** | **~88%** |
-
-Plus 3 orphaned `## Memory Update` sections (lines 6-26) from an older code path that don't correspond to any defined section.
-
-### Root Causes (prioritized by impact)
-
-**RC-1: Tool messages leak into the transcript.** `renderTranscript()` includes `.tool` role messages verbatim — the model sees `[ToolResult: test.create] Created (auditId=A96C...)` and faithfully extracts it as a fact. This single issue accounts for ~50% of all junk entries (audit IDs, tool names, "Created N items using X tool").
-
-**RC-2: Distiller has no awareness of existing memory.** Each session is distilled in isolation. The model doesn't know "User's name is Benedict" was already extracted 3 sessions ago, so it extracts it again with slightly different wording. This is the primary driver of semantic duplicates.
-
-**RC-3: No minimum session threshold.** 55/57 sessions follow the exact same test harness pattern: "Create something" → tool result → "Hello" → "Schedule a meeting" → "Test provider setup issue". These trivial/synthetic sessions should produce 0 entries, but each generates 5-10.
-
-**RC-4: Prompt is too permissive.** The distiller prompt says "extract stable facts" but doesn't say what NOT to extract. The 7B model is eager to please and generates entries for everything, including interaction patterns ("User uses greeting phrases") and session mechanics ("Assistant confirmed completion").
-
-**RC-5: Dedup is exact-match only.** `dedupFingerprint` normalizes whitespace/case and compares exact strings. "User prefers to initiate actions with 'create' commands" vs "User prefers to initiate actions via direct commands such as 'create'" are different strings but identical semantically.
-
-**RC-6: Section misclassification.** Entries like "User consistently uses greeting phrases" appear under **People** instead of Preferences or nowhere. The model doesn't understand section semantics well enough. The prompt lacks section descriptions.
-
-## 4. Scope
+## 3. Scope
 
 ### In Scope
 
@@ -69,15 +51,34 @@ Plus 3 orphaned `## Memory Update` sections (lines 6-26) from an older code path
 - Changing the distiller JSON schema
 - Retroactive cleanup utility for existing MEMORY.md (follow-up story)
 
-## 5. Architecture Alignment
+## 4. Architecture Alignment
 
 - **Components:** `Ora/Memory/MemoryDistiller.swift`, `Ora/Memory/MemoryFileManager.swift`, `Ora/Resources/memory-distill-prompt.txt`
 - **Existing utility:** `StringSimilarity.jaroWinkler()` in `Ora/Tools/Contacts/StringSimilarity.swift`
 - **Concurrency:** No changes — all entry filtering happens synchronously during distillation
 
-## 6. Implementation Plan
+## 5. Implementation Plan (Draft)
 
-### 6.1 Strip Tool Messages from Transcript (RC-1 — highest impact)
+### 5.1 Files to Create
+
+No new files required.
+
+### 5.2 Files to Modify
+
+| File | Change |
+|:-----|:-------|
+| `Ora/Resources/memory-distill-prompt.txt` | Rewrite with negative instructions, section descriptions, selectivity guidance |
+| `Ora/Memory/MemoryDistiller.swift` | Strip `.tool` messages in `renderTranscript()`, inject existing MEMORY.md as context, add minimum session threshold, add entry cap + low-value filter |
+| `Ora/Memory/MemoryFileManager.swift` | Add fuzzy dedup in `deduplicatedEntries()`, clean up orphaned sections |
+
+### 5.3 Tests to Add
+
+| Test File | Coverage |
+|:----------|:---------|
+| `OraTests/MemoryDistillerTests.swift` | Tool message stripping, minimum session threshold, entry cap, low-value filter, existing memory injection |
+| `OraTests/MemoryUpdatePolicyTests.swift` | Fuzzy dedup with near-duplicate entries, orphaned section cleanup |
+
+### 5.4 Strip Tool Messages from Transcript (RC-1 — highest impact)
 
 In `MemoryDistiller.renderTranscript()`, filter out `.tool` role messages before rendering. The model doesn't need to see `[ToolResult: test.create] Created (auditId=...)` — it adds noise and causes the model to extract tool mechanics as "facts."
 
@@ -90,14 +91,14 @@ private func renderTranscript(_ messages: [Session.Message]) -> String {
 
 This single change eliminates the source of ~50% of junk entries.
 
-### 6.2 Feed Existing Memory as Context (RC-2 — second highest impact)
+### 5.5 Feed Existing Memory as Context (RC-2 — second highest impact)
 
 Before calling the LLM, read current MEMORY.md and inject it into the prompt:
 
 ```
 Here is what Ora already remembers (MEMORY.md):
 ---
-<existing MEMORY.md content, truncated to ~2000 chars>
+[existing MEMORY.md content, truncated to ~2000 chars]
 ---
 
 Only extract NEW information not already captured above.
@@ -106,12 +107,12 @@ If the conversation adds nothing new, return empty memory_entries.
 
 This lets the model do semantic dedup at generation time — far more powerful than post-hoc string matching. Truncate to avoid blowing the context window; prioritize Profile and Preferences sections (most likely to have duplicates).
 
-### 6.3 Minimum Session Threshold (RC-3)
+### 5.6 Minimum Session Threshold (RC-3)
 
 Skip distillation entirely for sessions that are too short to contain meaningful content:
 
 - Fewer than 3 user messages, OR
-- Total user content length < 50 characters
+- Total user content length under 50 characters
 
 These sessions still get a summary file (for completeness) but produce 0 memory entries.
 
@@ -123,7 +124,7 @@ if userMessages.count < 3 || totalUserChars < 50 {
 }
 ```
 
-### 6.4 Prompt Improvements (RC-4, RC-6)
+### 5.7 Prompt Improvements (RC-4, RC-6)
 
 Rewrite `memory-distill-prompt.txt` with:
 
@@ -155,7 +156,7 @@ A casual "Hello" conversation should produce 0 entries.
 Only extract something if you are confident it is a durable fact or preference the user would want remembered.
 ```
 
-### 6.5 Fuzzy Deduplication (RC-5)
+### 5.8 Fuzzy Deduplication (RC-5)
 
 In `MemoryFileManager.deduplicatedEntries()`, add a second pass after exact-match:
 
@@ -164,43 +165,28 @@ In `MemoryFileManager.deduplicatedEntries()`, add a second pass after exact-matc
 
 Entries with a `normalized_key` bypass fuzzy dedup (they use key-based dedup only).
 
-### 6.6 Entry Cap (safety net)
+### 5.9 Entry Cap (safety net)
 
 After parsing the model's output, truncate `memoryEntries` to a maximum of 8 entries. The model's ordering reflects priority, so keep the first N.
 
-### 6.7 Low-Value Content Filter (safety net)
+### 5.10 Low-Value Content Filter (safety net)
 
 Post-parse filter in `DistillationEnvelope.toPayload()` that drops entries matching:
 
 - Contains "audit ID" or "audit_id" or a UUID pattern (case-insensitive)
 - Matches greeting patterns: "User greeted", "User said hello", "User consistently uses greeting"
 - Pure tool mechanics: "Created N items using X tool"
-- Too short to be meaningful: content length < 20 characters
+- Too short to be meaningful: content length under 20 characters
 
-### 6.8 Clean Up Orphaned Sections
+### 5.11 Clean Up Orphaned Sections
 
 The `## Memory Update` headings (lines 6-26 in current MEMORY.md) are from an older code path. The `ensureRequiredSections()` method in MemoryFileManager should strip unrecognized `##` sections, or at minimum the template should not include them. Add a migration step that removes these on next write.
 
-### 6.9 Files to Modify
-
-| File | Change |
-|:-----|:-------|
-| `Ora/Resources/memory-distill-prompt.txt` | Rewrite with negative instructions, section descriptions, selectivity guidance |
-| `Ora/Memory/MemoryDistiller.swift` | Strip `.tool` messages in `renderTranscript()`, inject existing MEMORY.md as context, add minimum session threshold, add entry cap + low-value filter |
-| `Ora/Memory/MemoryFileManager.swift` | Add fuzzy dedup in `deduplicatedEntries()`, clean up orphaned sections |
-
-### 6.10 Tests to Add
-
-| Test File | Coverage |
-|:----------|:---------|
-| `OraTests/MemoryDistillerTests.swift` | Tool message stripping, minimum session threshold, entry cap, low-value filter, existing memory injection |
-| `OraTests/MemoryUpdatePolicyTests.swift` | Fuzzy dedup with near-duplicate entries, orphaned section cleanup |
-
-## 7. Acceptance Criteria
+## 6. Acceptance Criteria
 
 - [ ] AC-1: `.tool` role messages are excluded from the transcript sent to the distiller
 - [ ] AC-2: Existing MEMORY.md content is included in the distiller prompt as context
-- [ ] AC-3: Sessions with < 3 user messages or < 50 chars user content produce 0 memory entries
+- [ ] AC-3: Sessions with fewer than 3 user messages or fewer than 50 chars user content produce 0 memory entries
 - [ ] AC-4: Distiller prompt includes explicit negative instructions and section descriptions
 - [ ] AC-5: Near-duplicate entries (Jaro-Winkler >= 0.85 within same section) are rejected
 - [ ] AC-6: Entries containing audit IDs, UUIDs, or trivial greetings are filtered out
@@ -208,7 +194,7 @@ The `## Memory Update` headings (lines 6-26 in current MEMORY.md) are from an ol
 - [ ] AC-8: A session with real content (name, preferences, decisions) still produces correct entries in the right sections
 - [ ] AC-9: Manual E2E test starts with a clean/reset memory folder (delete existing MEMORY.md + Summaries before testing)
 
-## 8. Verification Plan
+## 7. Verification Plan
 
 ### Automated Tests
 
@@ -228,26 +214,6 @@ The `## Memory Update` headings (lines 6-26 in current MEMORY.md) are from an ol
 - [ ] Run Ora, share real info ("My name is Alex, I prefer evening workouts"), verify entries appear in correct sections
 - [ ] Run 5+ sessions, inspect MEMORY.md — verify no excessive duplication and correct section assignment
 - [ ] Run a session that uses tools (create event, search contacts), verify tool mechanics don't appear in MEMORY.md
-
-## 9. Performance / Reliability Considerations
-
-- Stripping tool messages reduces transcript size → faster LLM inference
-- Injecting existing MEMORY.md adds ~2KB to the prompt — well within Qwen 2.5's context window
-- Fuzzy dedup adds O(n*m) Jaro-Winkler comparisons per section. With typical section sizes of 5-20 (post-fix), this is negligible
-- Minimum session threshold eliminates ~90% of current distillation calls (most sessions are trivial test sessions)
-
-## 10. Risks & Mitigations
-
-- **Risk:** Overly aggressive filtering drops valid entries → **Mitigation:** Tune thresholds conservatively (JW 0.85, 8-entry cap, 20-char minimum). Entries with `normalized_key` bypass fuzzy dedup.
-- **Risk:** Injecting existing memory makes the prompt too long → **Mitigation:** Truncate to ~2000 chars, prioritize Profile + Preferences sections.
-- **Risk:** Minimum session threshold skips a short but meaningful session → **Mitigation:** 3 messages / 50 chars is very low — "My name is Alex" alone is 15 chars across 1 message. A real preference-sharing session will exceed this easily.
-- **Risk:** Prompt changes cause model to return invalid JSON → **Mitigation:** Only add instructional text, don't change the schema. Existing retry logic handles parse failures.
-
-## 11. Open Questions
-
-- Should we provide a one-time "compact MEMORY.md" utility that deduplicates the existing file? (Recommend as a follow-up story — worth doing but separate scope.)
-- What Jaro-Winkler threshold works best empirically? Start at 0.85 and tune based on testing.
-- Should the existing memory injection be the full file or just section headings + entry count? Full file gives better semantic dedup; summary is cheaper on tokens.
 
 ---
 
