@@ -56,16 +56,16 @@ User can view/edit MEMORY.md and Ora respects changes.
 
 | ID | Title | Status | Deps |
 |:---|:------|:-------|:-----|
-| MEM.14 | [MEMORY.md File Watcher](MEM.14-MEMORY-FILE-WATCHER.md) | Not Started | MEM.06, MEM.11 |
-| MEM.15 | [Memory Manager Panel](MEM.15-MEMORY-MANAGER-PANEL.md) | Not Started | MEM.06 |
+| MEM.14 | [MEMORY.md File Watcher](MEM.14-MEMORY-FILE-WATCHER.md) | Complete | MEM.06, MEM.11 |
+| MEM.15 | [Memory Manager Panel](MEM.15-MEMORY-MANAGER-PANEL.md) | Complete | MEM.06 |
 
 ### MEM.07 — Future Hardening (Post-v1)
 Performance and scalability improvements.
 
 | ID | Title | Status | Deps |
 |:---|:------|:-------|:-----|
-| MEM.16 | [Background Persistence ModelActor](MEM.16-BACKGROUND-PERSISTENCE-MODELACTOR.md) | Future | MEM.04 |
-| MEM.17 | [Transcript Storage Migration](MEM.17-TRANSCRIPT-STORAGE-MIGRATION.md) | Future | MEM.01 |
+| MEM.16 | [Background Persistence ModelActor](MEM.16-BACKGROUND-PERSISTENCE-MODELACTOR.md) | Complete | MEM.04 |
+| MEM.17 | [Transcript Storage Migration](MEM.17-TRANSCRIPT-STORAGE-MIGRATION.md) | Complete | MEM.01 |
 
 ## Implementation Order
 
@@ -75,7 +75,7 @@ Phase 2: Memory Artifacts (MEM.06 → MEM.07)
 Phase 3: Auto-Distill (MEM.08 → MEM.09)
 Phase 4: Retrieval (MEM.10 → MEM.11 → MEM.12/MEM.13)
 Phase 5: UX (MEM.14, MEM.15)
-Future: Hardening (MEM.16, MEM.17)
+Phase 6: Hardening (MEM.16, MEM.17)
 ```
 
 ## Dependency Graph
@@ -103,6 +103,6 @@ MEM.01 (Persistence Sink)
  │    └─► MEM.15 (Memory Panel)
  │
  ├─► MEM.08 (Distiller) ──► MEM.09 (Update Policy)
- ├─► MEM.16 (Background ModelActor) [Future]
- └─► MEM.17 (Storage Migration) [Future]
+ ├─► MEM.16 (Background ModelActor)
+ └─► MEM.17 (Storage Migration)
 ```
