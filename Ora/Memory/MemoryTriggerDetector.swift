@@ -129,7 +129,12 @@ struct KeywordMemoryRetrievalCoordinator: MemoryRetrievalCoordinating {
         // and small enough to include in its entirety. Selective search-based
         // retrieval caused incomplete recall when chunks lacked keyword overlap.
         let memoryFileContent = self.loadMemoryFileContent()
-        let memoryWasTruncated = (memoryFileContent?.count ?? 0) > KeywordMemoryRetrievalCoordinator.maxMemoryFileCharacters
+        // Only filter out .memory search hits when the full file was loaded
+        // and fits under the cap (i.e. it's injected verbatim). When the file
+        // failed to load or was truncated, keep .memory hits so they remain
+        // reachable via search.
+        let memoryFullyInjected = memoryFileContent != nil
+            && memoryFileContent!.count <= KeywordMemoryRetrievalCoordinator.maxMemoryFileCharacters
 
         // Fetch extra candidates so that filtering out .memory rows (when the
         // full file fits) doesn't starve non-memory supplementary results.
@@ -138,14 +143,13 @@ struct KeywordMemoryRetrievalCoordinator: MemoryRetrievalCoordinating {
             query: userText,
             limit: searchLimit
         )
-        // When MEMORY.md was truncated, keep .memory chunks so facts beyond
-        // the cutoff are still reachable via search. Otherwise filter them out
-        // since the full file is already injected verbatim.
+        // Only filter out .memory rows when the full file is injected verbatim.
+        // When the file is missing, unreadable, or truncated, keep .memory hits.
         let supplementaryChunks: [MemoryChunk]
-        if memoryWasTruncated {
-            supplementaryChunks = retrievedChunks
-        } else {
+        if memoryFullyInjected {
             supplementaryChunks = retrievedChunks.filter { $0.documentType != .memory }
+        } else {
+            supplementaryChunks = retrievedChunks
         }
 
         // Use the filtered set's top score for chunk selection so that a
