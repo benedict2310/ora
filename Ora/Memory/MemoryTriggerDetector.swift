@@ -279,10 +279,14 @@ struct KeywordMemoryRetrievalCoordinator: MemoryRetrievalCoordinating {
         if let memoryFileContent {
             let capped: String
             if memoryFileContent.count > Self.maxMemoryFileCharacters {
-                let truncated = String(memoryFileContent.prefix(Self.maxMemoryFileCharacters))
-                capped = truncated + "\n\n[…truncated — MEMORY.md exceeds \(Self.maxMemoryFileCharacters) character limit]"
+                // Keep both the start (structure/headers) and end (newest entries)
+                // so that recently distilled facts are not systematically dropped.
+                let halfBudget = Self.maxMemoryFileCharacters / 2
+                let head = String(memoryFileContent.prefix(halfBudget))
+                let tail = String(memoryFileContent.suffix(halfBudget))
+                capped = head + "\n\n[…\(memoryFileContent.count - Self.maxMemoryFileCharacters) characters omitted…]\n\n" + tail
                 self.logger.info(
-                    "MEMORY.md truncated from \(memoryFileContent.count) to \(Self.maxMemoryFileCharacters) characters"
+                    "MEMORY.md truncated from \(memoryFileContent.count) to ~\(Self.maxMemoryFileCharacters) characters (head+tail)"
                 )
             } else {
                 capped = memoryFileContent

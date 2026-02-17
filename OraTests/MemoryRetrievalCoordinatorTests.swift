@@ -260,11 +260,10 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
         )
         let messages = await conversationManager.getMessagesForLLM()
 
-        // Then — content is capped and truncation marker is present
+        // Then — content is capped with head+tail and omission marker is present
         XCTAssertEqual(messages.count, 2)
         let context = messages[1].content
-        XCTAssertTrue(context.contains("truncated"))
-        XCTAssertTrue(context.contains("\(KeywordMemoryRetrievalCoordinator.maxMemoryFileCharacters) character limit"))
+        XCTAssertTrue(context.contains("characters omitted"))
         // The raw oversized content should NOT appear in full
         XCTAssertFalse(context.contains(oversizedContent))
     }
