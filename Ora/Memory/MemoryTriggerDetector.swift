@@ -245,6 +245,10 @@ struct KeywordMemoryRetrievalCoordinator: MemoryRetrievalCoordinating {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    /// Maximum characters from MEMORY.md to inject (~1200 tokens at 0.3 tok/char).
+    /// Prevents an ever-growing memory file from crowding out conversation turns.
+    static let maxMemoryFileCharacters = 4000
+
     private func renderContextWithFullMemory(
         memoryFileContent: String?,
         supplementaryChunks: [MemoryChunk]
@@ -252,8 +256,18 @@ struct KeywordMemoryRetrievalCoordinator: MemoryRetrievalCoordinating {
         var sections: [String] = []
 
         if let memoryFileContent {
+            let capped: String
+            if memoryFileContent.count > Self.maxMemoryFileCharacters {
+                let truncated = String(memoryFileContent.prefix(Self.maxMemoryFileCharacters))
+                capped = truncated + "\n\n[…truncated — MEMORY.md exceeds \(Self.maxMemoryFileCharacters) character limit]"
+                self.logger.info(
+                    "MEMORY.md truncated from \(memoryFileContent.count) to \(Self.maxMemoryFileCharacters) characters"
+                )
+            } else {
+                capped = memoryFileContent
+            }
             sections.append(
-                "Your personal memory file (MEMORY.md) — use ALL of this when relevant:\n\n\(memoryFileContent)"
+                "Your personal memory file (MEMORY.md) — use ALL of this when relevant:\n\n\(capped)"
             )
         }
 

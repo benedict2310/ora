@@ -232,6 +232,43 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
         XCTAssertFalse(messages[1].content.contains("Additional context"))
     }
 
+    func test_prepareRetrieval_oversizedMemoryFile_isTruncated() async {
+        // Given — a MEMORY.md that exceeds the character cap
+        let oversizedContent = String(repeating: "x", count: KeywordMemoryRetrievalCoordinator.maxMemoryFileCharacters + 500)
+        try! oversizedContent.write(to: self.temporaryMemoryFileURL, atomically: true, encoding: .utf8)
+
+        let conversationManager = ConversationManager.makeTestInstance(maxContextTokens: 6000)
+        await conversationManager.startConversation(systemPrompt: "System prompt")
+
+        let coordinator = KeywordMemoryRetrievalCoordinator(
+            memoryIndex: StubMemoryIndex(chunks: []),
+            memoryFileURL: self.temporaryMemoryFileURL,
+            configuration: .default
+        )
+        let triggerResult = MemoryTriggerResult(
+            shouldTrigger: true,
+            confidence: 0.90,
+            triggerType: .linguistic,
+            matchedSignals: ["remember"]
+        )
+
+        // When
+        await coordinator.prepareRetrievalIfNeeded(
+            userText: "remember something",
+            triggerResult: triggerResult,
+            conversationManager: conversationManager
+        )
+        let messages = await conversationManager.getMessagesForLLM()
+
+        // Then — content is capped and truncation marker is present
+        XCTAssertEqual(messages.count, 2)
+        let context = messages[1].content
+        XCTAssertTrue(context.contains("truncated"))
+        XCTAssertTrue(context.contains("\(KeywordMemoryRetrievalCoordinator.maxMemoryFileCharacters) character limit"))
+        // The raw oversized content should NOT appear in full
+        XCTAssertFalse(context.contains(oversizedContent))
+    }
+
     func test_prepareRetrieval_notTriggered_doesNotInjectContext() async {
         // Given
         let conversationManager = ConversationManager.makeTestInstance(maxContextTokens: 6000)
