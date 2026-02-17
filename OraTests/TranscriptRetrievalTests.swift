@@ -75,6 +75,25 @@ actor TranscriptScopeLoaderRecorder {
 
 final class TranscriptRetrievalTests: XCTestCase {
 
+    private var temporaryMemoryFileURL: URL!
+
+    override func setUpWithError() throws {
+        let temporaryDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+        self.temporaryMemoryFileURL = temporaryDirectory.appendingPathComponent("MEMORY.md", isDirectory: false)
+        try "# Ora Memory\n\n## Profile\n- [fact] Test user\n".write(
+            to: self.temporaryMemoryFileURL, atomically: true, encoding: .utf8
+        )
+    }
+
+    override func tearDownWithError() throws {
+        if let url = self.temporaryMemoryFileURL {
+            try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+        }
+        self.temporaryMemoryFileURL = nil
+    }
+
     func test_prepareRetrieval_primaryScoreLow_usesTranscriptFallbackContext() async {
         // Given
         let now = Date(timeIntervalSince1970: 1_739_600_000)
@@ -103,6 +122,7 @@ final class TranscriptRetrievalTests: XCTestCase {
         let index = RecordingFallbackMemoryIndex(primaryChunks: primaryChunks, transcriptChunks: transcriptChunks)
         let coordinator = KeywordMemoryRetrievalCoordinator(
             memoryIndex: index,
+            memoryFileURL: self.temporaryMemoryFileURL,
             configuration: .init(
                 minTopScore: 1e-7,
                 minChunkCount: 1,
@@ -137,6 +157,7 @@ final class TranscriptRetrievalTests: XCTestCase {
 
         let messages = await conversationManager.getMessagesForLLM()
         XCTAssertEqual(messages.count, 2)
+        XCTAssertTrue(messages[1].content.contains("MEMORY.md"))
         XCTAssertTrue(messages[1].content.contains("transcript \(summarySessionID.uuidString) turn 4"))
         XCTAssertTrue(messages[1].content.contains("rollback risk was lower"))
     }
@@ -168,6 +189,7 @@ final class TranscriptRetrievalTests: XCTestCase {
         let index = RecordingFallbackMemoryIndex(primaryChunks: primaryChunks, transcriptChunks: transcriptChunks)
         let coordinator = KeywordMemoryRetrievalCoordinator(
             memoryIndex: index,
+            memoryFileURL: self.temporaryMemoryFileURL,
             configuration: .init(
                 minTopScore: 1e-7,
                 minChunkCount: 1,
@@ -198,7 +220,8 @@ final class TranscriptRetrievalTests: XCTestCase {
 
         let messages = await conversationManager.getMessagesForLLM()
         XCTAssertEqual(messages.count, 2)
-        XCTAssertTrue(messages[1].content.contains("memory • Projects"))
+        XCTAssertTrue(messages[1].content.contains("MEMORY.md"))
+        XCTAssertTrue(messages[1].content.contains("Test user"))
     }
 
     func test_searchTranscriptFallback_withSummarySessionScope_limitsToSummarySessions() async throws {
