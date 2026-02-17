@@ -256,9 +256,10 @@ actor AgentLoop {
         
         await self.persistMessage(role: .user, content: userText)
 
-        // Add user message to in-memory conversation
-        await conversationManager.addUserMessage(userText)
+        // Clear stale memory context before adding the user message so that
+        // trimContextIfNeeded() doesn't budget against the previous turn's payload.
         await self.conversationManager.clearMemoryContext()
+        await conversationManager.addUserMessage(userText)
 
         let memoryTriggerResult = self.memoryTriggerDetector.detect(userText: userText)
         if memoryTriggerResult.shouldTrigger {
