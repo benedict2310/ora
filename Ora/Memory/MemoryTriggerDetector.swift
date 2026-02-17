@@ -148,10 +148,16 @@ struct KeywordMemoryRetrievalCoordinator: MemoryRetrievalCoordinating {
             supplementaryChunks = retrievedChunks.filter { $0.documentType != .memory }
         }
 
+        // Use the filtered set's top score for chunk selection so that a
+        // high-scoring .memory row (already covered by the verbatim MEMORY.md
+        // injection) doesn't pull in low-quality supplementary chunks.
+        let topSupplementaryScore = supplementaryChunks.first?.score
+        // Use the unfiltered top score for the transcript fallback decision —
+        // a high-scoring memory hit still indicates sufficient primary recall.
         let topPrimaryScore = retrievedChunks.first?.score
         var selectedSupplementaryChunks: [MemoryChunk] = []
 
-        if let topPrimaryScore, topPrimaryScore >= self.configuration.minTopScore {
+        if let topSupplementaryScore, topSupplementaryScore >= self.configuration.minTopScore {
             selectedSupplementaryChunks = self.selectChunks(from: supplementaryChunks)
         }
 
