@@ -129,13 +129,24 @@ struct KeywordMemoryRetrievalCoordinator: MemoryRetrievalCoordinating {
         // and small enough to include in its entirety. Selective search-based
         // retrieval caused incomplete recall when chunks lacked keyword overlap.
         let memoryFileContent = self.loadMemoryFileContent()
+        let memoryWasTruncated = (memoryFileContent?.count ?? 0) > KeywordMemoryRetrievalCoordinator.maxMemoryFileCharacters
 
-        // Search for supplementary context from summaries and transcripts.
+        // Fetch extra candidates so that filtering out .memory rows (when the
+        // full file fits) doesn't starve non-memory supplementary results.
+        let searchLimit = self.configuration.maxChunkCount * 2
         let retrievedChunks = await self.memoryIndex.search(
             query: userText,
-            limit: self.configuration.maxChunkCount
+            limit: searchLimit
         )
-        let supplementaryChunks = retrievedChunks.filter { $0.documentType != .memory }
+        // When MEMORY.md was truncated, keep .memory chunks so facts beyond
+        // the cutoff are still reachable via search. Otherwise filter them out
+        // since the full file is already injected verbatim.
+        let supplementaryChunks: [MemoryChunk]
+        if memoryWasTruncated {
+            supplementaryChunks = retrievedChunks
+        } else {
+            supplementaryChunks = retrievedChunks.filter { $0.documentType != .memory }
+        }
 
         let topPrimaryScore = retrievedChunks.first?.score
         var selectedSupplementaryChunks: [MemoryChunk] = []
