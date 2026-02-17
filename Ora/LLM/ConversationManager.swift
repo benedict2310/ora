@@ -152,6 +152,7 @@ actor ConversationManager {
         if let normalized, !normalized.isEmpty {
             self.memoryContext = normalized
             self.logger.debug("Injected memory context (\(normalized.count) chars)")
+            trimContextIfNeeded()
         } else {
             self.memoryContext = nil
             self.logger.debug("Cleared memory context")
