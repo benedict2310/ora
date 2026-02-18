@@ -66,8 +66,32 @@ final class PersistenceManager {
             container = try ModelContainer(for: schema, configurations: [configuration])
             self.logger.info("SwiftData container initialized")
         } catch {
-            self.logger.error("Failed to initialize SwiftData: \(error.localizedDescription)")
-            fatalError("Failed to initialize SwiftData: \(error)")
+            self.logger.error("SwiftData initialization failed: \(error.localizedDescription) — attempting recovery")
+
+            // Recovery: delete corrupt store and retry
+            let storeFiles = [storeURL, storeURL.deletingLastPathComponent().appendingPathComponent("default.store-shm"), storeURL.deletingLastPathComponent().appendingPathComponent("default.store-wal")]
+            for file in storeFiles {
+                try? FileManager.default.removeItem(at: file)
+            }
+
+            do {
+                container = try ModelContainer(for: schema, configurations: [configuration])
+                self.logger.warning("SwiftData recovered after deleting corrupt store — previous sessions lost")
+            } catch {
+                self.logger.error("SwiftData recovery failed, falling back to in-memory store: \(error.localizedDescription)")
+                let inMemoryConfig = ModelConfiguration(
+                    schema: schema,
+                    isStoredInMemoryOnly: true,
+                    cloudKitDatabase: .none
+                )
+                do {
+                    container = try ModelContainer(for: schema, configurations: [inMemoryConfig])
+                    self.logger.warning("Running with in-memory store — data will not persist across restarts")
+                } catch {
+                    // Absolute last resort — this should never happen with an in-memory store
+                    fatalError("Failed to initialize even an in-memory SwiftData store: \(error)")
+                }
+            }
         }
     }
 
@@ -130,8 +154,18 @@ final class PersistenceManager {
             container = try ModelContainer(for: schema, configurations: [configuration])
             self.logger.info("SwiftData container initialized (in-memory: \(inMemory), custom-url: \(storeURL != nil))")
         } catch {
-            self.logger.error("Failed to initialize SwiftData: \(error.localizedDescription)")
-            fatalError("Failed to initialize SwiftData: \(error)")
+            self.logger.error("Test SwiftData init failed: \(error.localizedDescription) — falling back to in-memory")
+            // Test init: fall back to in-memory rather than crashing
+            let fallbackConfig = ModelConfiguration(
+                schema: schema,
+                isStoredInMemoryOnly: true,
+                cloudKitDatabase: .none
+            )
+            do {
+                container = try ModelContainer(for: schema, configurations: [fallbackConfig])
+            } catch {
+                fatalError("Failed to initialize even an in-memory SwiftData store in tests: \(error)")
+            }
         }
     }
 

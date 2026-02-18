@@ -85,6 +85,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func onSetupComplete() {
         self.logger.info("Setup complete, initializing main functionality")
 
+        // Clean up old data (audit log, expired sessions) to prevent unbounded growth
+        let cleanup = PersistenceManager.shared.cleanupOldData()
+        if cleanup.auditEntriesDeleted > 0 || cleanup.sessionsDeleted > 0 {
+            self.logger.info("Startup cleanup: \(cleanup.auditEntriesDeleted) audit entries, \(cleanup.sessionsDeleted) sessions removed")
+        }
+
         // Register cloud LLM provider factories
         Task {
             let anthropicModel = UserDefaults.standard.selectedAnthropicModel
@@ -199,6 +205,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NotificationCenter.default.removeObserver(observer)
         }
         if let observer = self.hotkeyPressObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = self.hotkeyReleaseObserver {
             NotificationCenter.default.removeObserver(observer)
         }
     }
