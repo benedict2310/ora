@@ -127,9 +127,12 @@ actor ConversationManager {
     }
     
     /// Estimate total tokens for current context
-    /// - Returns: Estimated token count including system prompt
+    /// - Returns: Estimated token count including system prompt and memory context
     func estimateTotalTokens() -> Int {
         var total = estimateTokens(systemPrompt)
+        if let memoryContext {
+            total += estimateTokens(memoryContext)
+        }
         for message in messages {
             total += estimateTokens(message.content)
         }
@@ -149,6 +152,7 @@ actor ConversationManager {
         if let normalized, !normalized.isEmpty {
             self.memoryContext = normalized
             self.logger.debug("Injected memory context (\(normalized.count) chars)")
+            trimContextIfNeeded()
         } else {
             self.memoryContext = nil
             self.logger.debug("Cleared memory context")
@@ -169,7 +173,10 @@ actor ConversationManager {
     /// logs a warning but preserves the message for context continuity.
     private func trimContextIfNeeded() {
         var totalTokens = estimateTokens(systemPrompt)
-        
+        if let memoryContext {
+            totalTokens += estimateTokens(memoryContext)
+        }
+
         for message in messages {
             totalTokens += estimateTokens(message.content)
         }

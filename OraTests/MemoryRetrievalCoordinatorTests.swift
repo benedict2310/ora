@@ -24,7 +24,34 @@ actor StubMemoryIndex: MemoryIndexing {
 
 final class MemoryRetrievalCoordinatorTests: XCTestCase {
 
-    func test_prepareRetrieval_triggeredAndHighScore_injectsThreeToSevenChunks() async {
+    // MARK: - Properties
+
+    private var temporaryDirectoryURL: URL!
+    private var temporaryMemoryFileURL: URL!
+
+    // MARK: - Setup
+
+    override func setUpWithError() throws {
+        self.temporaryDirectoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: self.temporaryDirectoryURL, withIntermediateDirectories: true)
+        self.temporaryMemoryFileURL = self.temporaryDirectoryURL.appendingPathComponent("MEMORY.md", isDirectory: false)
+        try "# Ora Memory\n\n## Profile\n- [fact] User's name is TestUser.\n\n## Preferences\n- [preference] Likes unit tests.\n".write(
+            to: self.temporaryMemoryFileURL, atomically: true, encoding: .utf8
+        )
+    }
+
+    override func tearDownWithError() throws {
+        if let url = self.temporaryDirectoryURL {
+            try? FileManager.default.removeItem(at: url)
+        }
+        self.temporaryDirectoryURL = nil
+        self.temporaryMemoryFileURL = nil
+    }
+
+    // MARK: - Tests
+
+    func test_prepareRetrieval_triggeredAndHighScore_injectsFullMemoryAndSupplementaryChunks() async {
         // Given
         let now = Date(timeIntervalSince1970: 1_739_599_200)
         let chunks: [MemoryChunk] = [
@@ -51,22 +78,6 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
                 sectionName: "Open Loops",
                 lastModified: now,
                 score: 3.80
-            ),
-            MemoryChunk(
-                content: "Preference: keep migration notes concise.",
-                documentType: .memory,
-                sessionID: nil,
-                sectionName: "Preferences",
-                lastModified: now,
-                score: 2.50
-            ),
-            MemoryChunk(
-                content: "TL;DR: weekly migration checkpoint accepted.",
-                documentType: .summary,
-                sessionID: UUID(uuidString: "12345678-1234-5678-9abc-def012345678"),
-                sectionName: "TL;DR",
-                lastModified: now,
-                score: 1.20
             )
         ]
 
@@ -75,6 +86,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
 
         let coordinator = KeywordMemoryRetrievalCoordinator(
             memoryIndex: StubMemoryIndex(chunks: chunks),
+            memoryFileURL: self.temporaryMemoryFileURL,
             configuration: .init(
                 minTopScore: 0.30,
                 minChunkCount: 3,
@@ -102,16 +114,13 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
         XCTAssertEqual(messages[1].role, .system)
 
         let context = messages[1].content
-        let numberedLines = context
-            .components(separatedBy: .newlines)
-            .filter { line in
-                return line.range(of: #"^\d+\."#, options: .regularExpression) != nil
-            }
-        XCTAssertGreaterThanOrEqual(numberedLines.count, 3)
-        XCTAssertLessThanOrEqual(numberedLines.count, 7)
+        XCTAssertTrue(context.contains("MEMORY.md"))
+        XCTAssertTrue(context.contains("TestUser"))
+        XCTAssertTrue(context.contains("Additional context from prior sessions"))
+        XCTAssertTrue(context.contains("rollout checkpoint"))
     }
 
-    func test_prepareRetrieval_hybridScoresAboveThreshold_injectsContext() async {
+    func test_prepareRetrieval_hybridScoresAboveThreshold_injectsFullMemory() async {
         // Given
         let now = Date(timeIntervalSince1970: 1_739_599_200)
         let chunks: [MemoryChunk] = [
@@ -138,6 +147,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
 
         let coordinator = KeywordMemoryRetrievalCoordinator(
             memoryIndex: StubMemoryIndex(chunks: chunks),
+            memoryFileURL: self.temporaryMemoryFileURL,
             configuration: .default
         )
         let triggerResult = MemoryTriggerResult(
@@ -158,10 +168,13 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
         // Then
         XCTAssertEqual(messages.count, 2)
         XCTAssertEqual(messages[1].role, .system)
+        XCTAssertTrue(messages[1].content.contains("MEMORY.md"))
+        XCTAssertTrue(messages[1].content.contains("TestUser"))
+        XCTAssertTrue(messages[1].content.contains("Likes unit tests"))
     }
 
-    func test_prepareRetrieval_topScoreBelowThreshold_doesNotInjectContext() async {
-        // Given
+    func test_prepareRetrieval_topScoreBelowThreshold_stillInjectsFullMemory() async {
+        // Given — search scores are below minTopScore, but MEMORY.md should still be injected
         let now = Date(timeIntervalSince1970: 1_739_599_200)
         let chunks: [MemoryChunk] = [
             MemoryChunk(
@@ -187,6 +200,7 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
 
         let coordinator = KeywordMemoryRetrievalCoordinator(
             memoryIndex: StubMemoryIndex(chunks: chunks),
+            memoryFileURL: self.temporaryMemoryFileURL,
             configuration: .init(
                 minTopScore: 0.30,
                 minChunkCount: 3,
@@ -209,7 +223,76 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
         )
         let messages = await conversationManager.getMessagesForLLM()
 
-        // Then
+        // Then — full MEMORY.md is injected even though search scores are low
+        XCTAssertEqual(messages.count, 2)
+        XCTAssertEqual(messages[1].role, .system)
+        XCTAssertTrue(messages[1].content.contains("MEMORY.md"))
+        XCTAssertTrue(messages[1].content.contains("TestUser"))
+        // No supplementary chunks since scores are below threshold
+        XCTAssertFalse(messages[1].content.contains("Additional context"))
+    }
+
+    func test_prepareRetrieval_oversizedMemoryFile_isTruncated() async {
+        // Given — a MEMORY.md that exceeds the character cap
+        let oversizedContent = String(repeating: "x", count: KeywordMemoryRetrievalCoordinator.maxMemoryFileCharacters + 500)
+        try! oversizedContent.write(to: self.temporaryMemoryFileURL, atomically: true, encoding: .utf8)
+
+        let conversationManager = ConversationManager.makeTestInstance(maxContextTokens: 6000)
+        await conversationManager.startConversation(systemPrompt: "System prompt")
+
+        let coordinator = KeywordMemoryRetrievalCoordinator(
+            memoryIndex: StubMemoryIndex(chunks: []),
+            memoryFileURL: self.temporaryMemoryFileURL,
+            configuration: .default
+        )
+        let triggerResult = MemoryTriggerResult(
+            shouldTrigger: true,
+            confidence: 0.90,
+            triggerType: .linguistic,
+            matchedSignals: ["remember"]
+        )
+
+        // When
+        await coordinator.prepareRetrievalIfNeeded(
+            userText: "remember something",
+            triggerResult: triggerResult,
+            conversationManager: conversationManager
+        )
+        let messages = await conversationManager.getMessagesForLLM()
+
+        // Then — content is capped with head+tail and omission marker is present
+        XCTAssertEqual(messages.count, 2)
+        let context = messages[1].content
+        XCTAssertTrue(context.contains("characters omitted"))
+        // The raw oversized content should NOT appear in full
+        XCTAssertFalse(context.contains(oversizedContent))
+    }
+
+    func test_prepareRetrieval_notTriggered_doesNotInjectContext() async {
+        // Given
+        let conversationManager = ConversationManager.makeTestInstance(maxContextTokens: 6000)
+        await conversationManager.startConversation(systemPrompt: "System prompt")
+
+        let coordinator = KeywordMemoryRetrievalCoordinator(
+            memoryIndex: StubMemoryIndex(chunks: []),
+            memoryFileURL: self.temporaryMemoryFileURL
+        )
+        let triggerResult = MemoryTriggerResult(
+            shouldTrigger: false,
+            confidence: 0.0,
+            triggerType: .none,
+            matchedSignals: []
+        )
+
+        // When
+        await coordinator.prepareRetrievalIfNeeded(
+            userText: "what's the weather",
+            triggerResult: triggerResult,
+            conversationManager: conversationManager
+        )
+        let messages = await conversationManager.getMessagesForLLM()
+
+        // Then — no trigger means no context injected
         XCTAssertEqual(messages.count, 1)
         XCTAssertEqual(messages[0].role, .system)
         XCTAssertEqual(messages[0].content, "System prompt")

@@ -278,6 +278,42 @@ final class ConversationManagerTests: XCTestCase {
         XCTAssertEqual(messages[2].role, .user)
     }
 
+    func test_memoryContext_includedInTokenEstimate() async {
+        // Given — memory context should count toward the token budget
+        let manager = ConversationManager.makeTestInstance(maxContextTokens: 6000)
+        let systemPrompt = String(repeating: "s", count: 100)  // 30 tokens
+        let memoryCtx = String(repeating: "m", count: 200)      // 60 tokens
+        await manager.startConversation(systemPrompt: systemPrompt)
+        await manager.setMemoryContext(memoryCtx)
+
+        // When
+        let tokens = await manager.estimateTotalTokens()
+
+        // Then — 100 * 0.3 + 200 * 0.3 = 30 + 60 = 90
+        XCTAssertEqual(tokens, 90)
+    }
+
+    func test_memoryContext_countedInTrimmingBudget() async {
+        // Given — large memory context should cause conversation messages to be trimmed
+        let manager = ConversationManager.makeTestInstance(maxContextTokens: 300)
+        // System: 100 chars = 30 tokens
+        await manager.startConversation(systemPrompt: String(repeating: "s", count: 100))
+        // Memory: 500 chars = 150 tokens (30 + 150 = 180 tokens used by fixed context)
+        await manager.setMemoryContext(String(repeating: "m", count: 500))
+
+        // Add several messages (each 200 chars = 60 tokens)
+        // Budget remaining: 300 - 180 = 120 tokens => room for 2 messages at 60 tokens each
+        await manager.addUserMessage(String(repeating: "a", count: 200))       // +60 = 240
+        await manager.addAssistantMessage(String(repeating: "b", count: 200))  // +60 = 300
+        await manager.addUserMessage(String(repeating: "c", count: 200))       // +60 = 360 → triggers trim
+
+        // When
+        let conversation = await manager.getConversation()
+
+        // Then — at least one old message should have been trimmed to fit budget
+        XCTAssertLessThan(conversation.count, 3, "Memory context should reduce room for conversation messages")
+    }
+
     func test_memoryContext_whenCleared_excludesAdditionalSystemMessage() async {
         // Given
         let manager = ConversationManager.makeTestInstance(maxContextTokens: 6000)
