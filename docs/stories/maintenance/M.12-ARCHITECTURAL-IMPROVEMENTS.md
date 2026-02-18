@@ -352,12 +352,12 @@ SimplePipelineController (orchestrator, ~300 lines)
 ## Code Review Findings
 
 **Reviewer:** Codex Subagent
-**Date:** 2026-02-18T15:50:42Z
-**Commit reviewed:** c7029dd
-**Iteration:** 1
+**Date:** 2026-02-18T20:58:04Z
+**Commit reviewed:** e9ffd3a
+**Iteration:** 3
 
 ### Summary
-- Files reviewed: 4
+- Files reviewed: 120
 - Build status: Pass
 
 ### Issues Found
@@ -372,9 +372,42 @@ SimplePipelineController (orchestrator, ~300 lines)
 - None.
 
 ### Future Considerations (Out of Scope)
-- None.
+- `Ora/Persistence/PersistenceManager.swift:47` - Consider adding an explicit upgrade test from the pre-Option-B SwiftData schema to confirm no user data reset occurs on migration failures.
 
 ### Approval Status
 - [x] All P0 issues resolved
 - [x] All P1 issues resolved
 - [x] Ready for merge
+
+---
+
+## Implementation Summary
+**Date:** 2026-02-18
+**Branch:** `feat/m12-phase2-reliability-fixes`
+**Commits:** 4
+**Implemented by:** codex (complexity score: 9/10)
+**Reviewed by:** codex (3 iterations)
+
+### Files Changed
+- `Ora/ASR/ASRService.swift` — FluidVAD retry logic + O(1) circular audio buffer
+- `Ora/Audio/AudioService.swift` — Increased buffer to `.bufferingNewest(50)`
+- `Ora/Memory/MemoryFileWatcher.swift` — Added `deinit` to stop DispatchSource
+- `Ora/Memory/MemoryIndex.swift` — Extracted into 3 files (MemoryIndexSchema, HybridSearcher, TranscriptIndexer)
+- `Ora/Memory/MemoryDistiller.swift` — Extracted DistillerOrchestrator
+- `Ora/Memory/MemoryTriggerDetector.swift` — Extracted MemoryScorer
+- `Ora/Overlay/OverlayWindowController.swift` — Added `deinit` to clean up monitors
+- `Ora/Orchestration/SimplePipelineController.swift` — Decomposed into 5 extension files
+- `Ora/Orchestration/PipelineStateMachine.swift` — New: enforces state transition validity
+- `Ora/Orchestration/ConfirmationHandler.swift` — New: extracted confirmation logic
+- `Ora/Orchestration/StreamingResponseHandler.swift` — New: extracted streaming logic
+- `Ora/Persistence/PersistenceManager.swift` — Removed dead migration code (Option B)
+- `Ora/Persistence/Models/Session.swift` — Removed isMigrated, MessageModel references
+- `Ora/Persistence/Models/MessageModel.swift` — Deleted (dead code removed)
+- `Ora/Preferences/Tabs/ModelsPreferencesView.swift` — Error swallowing fixed
+- `Ora/Tools/Automation/AppleScriptUtils.swift` — AppleScript errors at warning level
+- `Ora/Utilities/Logger+Ora.swift` — New: centralized logger subsystem
+- `Ora/Utilities/Constants.swift` — New: centralized timing/threshold constants
+- `Ora/Utilities/UserDefaults+Ora.swift` — New: typed UserDefaults keys
+- `Ora/Tools/ToolError.swift` — New: shared tool error protocol
+- `OraTests/ASRServiceTests.swift` — New: FluidVAD retry + circular buffer tests
+- `OraTests/Orchestration/PipelineStateMachineTests.swift` — New: state machine tests
