@@ -40,12 +40,18 @@ Do NOT extract:
 - Restatements of assistant actions or confirmations.
 - Vague statements with no durable user value.
 - Anything already represented in existing MEMORY.md context.
+- Minor rewordings of existing memory. If the same concept is already captured (even with different wording), skip it entirely.
+
+Testing and debugging:
+- Testing or debugging sessions (where the user is exercising system behavior, probing edge cases, or validating tools) should produce 0 memory entries unless the user explicitly states a durable personal preference or fact.
+- Do NOT record that a user "initiated tests", "conducted testing", or "validated system behavior" — these are session activities, not durable memory.
 
 Selectivity:
 - Aim for 0-5 memory entries per session.
 - Most sessions should produce 0-2 entries.
 - A casual greeting session should produce 0 entries.
 - If no truly new durable memory exists, return an empty memory_entries array.
+- When in doubt, prefer 0 entries over a marginal or redundant entry.
 
 Additional rules:
 - Use tags exactly: `fact`, `preference`, `fact_sensitive`.

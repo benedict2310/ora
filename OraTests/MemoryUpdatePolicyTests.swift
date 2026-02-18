@@ -264,6 +264,107 @@ Keep this exact line
         XCTAssertTrue(content.contains("## Ongoing Goals"))
     }
 
+    func test_appendEntries_crossSessionFuzzyDuplicate_rejectsNearIdenticalRewordings() throws {
+        // Given: Two separate appendEntries calls (simulating different sessions)
+        // with near-identical content (Jaro-Winkler ≈ 0.96)
+        let manager = self.makeManager()
+        try manager.ensureMemoryStructureExists()
+
+        let firstSessionID = UUID(uuidString: "aaaaaaaa-1111-2222-3333-444444444444")!
+        let secondSessionID = UUID(uuidString: "bbbbbbbb-1111-2222-3333-444444444444")!
+
+        let firstEntry = MemoryEntry(
+            section: .projects,
+            tag: .fact,
+            content: "User has initiated tests for provider setup, request shape rejection, and unavailable model scenarios to validate system functionality.",
+            sourceSessionID: firstSessionID,
+            timestamp: Date(timeIntervalSince1970: 1_739_910_000)
+        )
+        let nearDuplicate = MemoryEntry(
+            section: .projects,
+            tag: .fact,
+            content: "User has initiated tests for provider setup, request shape rejection, and unavailable model scenarios to validate system behavior under edge conditions.",
+            sourceSessionID: secondSessionID,
+            timestamp: Date(timeIntervalSince1970: 1_739_920_000)
+        )
+
+        // When: Appended in separate calls (cross-session)
+        try manager.appendEntries(entries: [firstEntry])
+        try manager.appendEntries(entries: [nearDuplicate])
+
+        // Then: Only the first entry should exist
+        let content = try String(contentsOf: manager.memoryFileURL, encoding: .utf8)
+        XCTAssertTrue(content.contains("to validate system functionality."))
+        XCTAssertFalse(content.contains("to validate system behavior under edge conditions."))
+    }
+
+    func test_appendEntries_crossSectionFuzzyDuplicate_rejectsNearIdenticalAcrossSections() throws {
+        // Given: Two entries with near-identical content but in different sections
+        let manager = self.makeManager()
+        try manager.ensureMemoryStructureExists()
+
+        let sessionID = UUID(uuidString: "cccccccc-1111-2222-3333-444444444444")!
+
+        let goalsEntry = MemoryEntry(
+            section: .ongoingGoals,
+            tag: .preference,
+            content: "User wants to check either tomorrow's or this week's calendar schedule before planning.",
+            sourceSessionID: sessionID,
+            timestamp: Date(timeIntervalSince1970: 1_739_910_000)
+        )
+        let projectsEntry = MemoryEntry(
+            section: .projects,
+            tag: .fact,
+            content: "User wants to check either tomorrow's or this week's calendar schedule before planning meetings.",
+            sourceSessionID: sessionID,
+            timestamp: Date(timeIntervalSince1970: 1_739_910_100)
+        )
+
+        // When: Both appended in one call
+        try manager.appendEntries(entries: [goalsEntry, projectsEntry])
+
+        // Then: Only the first entry (in Ongoing Goals) should exist;
+        // the cross-section duplicate in Projects should be rejected
+        let content = try String(contentsOf: manager.memoryFileURL, encoding: .utf8)
+        XCTAssertTrue(self.entryLineAppearsInsideSection(
+            content: content,
+            sectionHeading: "## Ongoing Goals",
+            entryPrefix: "- [preference] User wants to check either tomorrow's or this week's calendar schedule before planning."
+        ))
+        XCTAssertFalse(content.contains("before planning meetings."))
+    }
+
+    func test_appendEntries_crossSectionDistinctContent_allowsBothEntries() throws {
+        // Given: Two entries in different sections with genuinely different content
+        let manager = self.makeManager()
+        try manager.ensureMemoryStructureExists()
+
+        let sessionID = UUID(uuidString: "dddddddd-1111-2222-3333-444444444444")!
+
+        let goalsEntry = MemoryEntry(
+            section: .ongoingGoals,
+            tag: .preference,
+            content: "User wants to check calendar schedule each morning before starting work.",
+            sourceSessionID: sessionID,
+            timestamp: Date(timeIntervalSince1970: 1_739_910_000)
+        )
+        let projectsEntry = MemoryEntry(
+            section: .projects,
+            tag: .fact,
+            content: "Ski vacation is scheduled from February 21 to February 28 in Bad Hofkastin.",
+            sourceSessionID: sessionID,
+            timestamp: Date(timeIntervalSince1970: 1_739_910_100)
+        )
+
+        // When
+        try manager.appendEntries(entries: [goalsEntry, projectsEntry])
+
+        // Then: Both should be accepted — they are distinct content
+        let content = try String(contentsOf: manager.memoryFileURL, encoding: .utf8)
+        XCTAssertTrue(content.contains("check calendar schedule each morning"))
+        XCTAssertTrue(content.contains("Ski vacation is scheduled"))
+    }
+
     // MARK: - Helpers
 
     private func makeManager() -> MemoryFileManager {

@@ -51,7 +51,7 @@ actor MemoryDistiller: MemoryDistilling {
         maxTokens: Int = 1200,
         minimumUserMessageCount: Int = 3,
         minimumUserCharacterCount: Int = 50,
-        existingMemoryContextCharacterLimit: Int = 2_000
+        existingMemoryContextCharacterLimit: Int = 6_000
     ) {
         self.llm = llm
         self.memoryFileManager = memoryFileManager

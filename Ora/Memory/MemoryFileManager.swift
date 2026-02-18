@@ -6,10 +6,13 @@
 //
 
 import Foundation
+import os
 
 struct MemoryFileManager {
 
     // MARK: - Constants
+
+    private static let logger = Logger(subsystem: "com.ora.app", category: "memory")
 
     static let initialMemoryTemplate = """
 # Ora Memory
@@ -30,6 +33,7 @@ Add or remove details that you want Ora to remember long-term.
 
     private static let writeLock = NSLock()
     private static let fuzzyDedupThreshold = 0.85
+    private static let crossSectionFuzzyDedupThreshold = 0.90
 
     // MARK: - Properties
 
@@ -234,11 +238,13 @@ Add or remove details that you want Ora to remember long-term.
         for entry in entries {
             let fingerprint = entry.dedupFingerprint
             if seenFingerprints.contains(fingerprint) {
+                self.logger.info("Dedup: rejected entry via fingerprint match: '\(entry.content.prefix(80))'")
                 continue
             }
 
             if let key = entry.normalizedKeyToken {
                 if seenKeys.contains(key) {
+                    self.logger.info("Dedup: rejected entry via normalized key '\(key)': '\(entry.content.prefix(80))'")
                     continue
                 }
                 seenKeys.insert(key)
@@ -247,11 +253,21 @@ Add or remove details that you want Ora to remember long-term.
             if entry.normalizedKeyToken == nil {
                 let existingContent = seenSectionContentBySection[entry.section] ?? []
                 let normalizedContent = MemoryEntry.normalizeForDedup(entry.content)
-                if self.hasFuzzyDuplicate(normalizedContent, against: existingContent) {
+                if let match = self.fuzzyDuplicateMatch(normalizedContent, against: existingContent, threshold: Self.fuzzyDedupThreshold) {
+                    self.logger.info("Dedup: rejected entry via same-section fuzzy match (score=\(match.score, format: .fixed(precision: 3))): '\(entry.content.prefix(80))'")
                     continue
                 }
             }
 
+            // Cross-section fuzzy dedup: check against ALL sections with a stricter threshold
+            let normalizedContent = MemoryEntry.normalizeForDedup(entry.content)
+            let allExistingContent = seenSectionContentBySection.values.flatMap { $0 }
+            if let match = self.fuzzyDuplicateMatch(normalizedContent, against: allExistingContent, threshold: Self.crossSectionFuzzyDedupThreshold) {
+                self.logger.info("Dedup: rejected entry via cross-section fuzzy match (score=\(match.score, format: .fixed(precision: 3))): '\(entry.content.prefix(80))'")
+                continue
+            }
+
+            self.logger.info("Dedup: accepted entry in [\(entry.section.rawValue)]: '\(entry.content.prefix(80))'")
             output.append(entry)
             seenFingerprints.insert(fingerprint)
             seenSectionContentBySection[entry.section, default: []].append(MemoryEntry.normalizeForDedup(entry.content))
@@ -260,14 +276,14 @@ Add or remove details that you want Ora to remember long-term.
         return output
     }
 
-    private static func hasFuzzyDuplicate(_ normalizedContent: String, against candidates: [String]) -> Bool {
+    private static func fuzzyDuplicateMatch(_ normalizedContent: String, against candidates: [String], threshold: Double) -> (candidate: String, score: Double)? {
         for candidate in candidates {
             let similarity = StringSimilarity.jaroWinkler(normalizedContent, candidate)
-            if similarity >= Self.fuzzyDedupThreshold {
-                return true
+            if similarity >= threshold {
+                return (candidate: candidate, score: similarity)
             }
         }
-        return false
+        return nil
     }
 
     private static func existingEntryFingerprints(in lines: [String]) -> Set<String> {
