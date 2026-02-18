@@ -269,7 +269,7 @@ actor CodexOAuthManager: CodexOAuthManaging {
     static let redirectURI = "http://localhost:1455/auth/callback"
     static let originator = "codex_cli_rs"
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "codex-auth")
+    private let logger = Logger.ora(category: "codex-auth")
     private let credentialStore: CredentialStore
     private let credentialReader: CodexCredentialReading
     private let authenticator: CodexWebAuthenticating

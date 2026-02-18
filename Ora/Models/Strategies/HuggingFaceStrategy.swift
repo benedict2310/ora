@@ -11,7 +11,7 @@ import os
 /// Strategy for downloading LLM and TTS models from HuggingFace
 struct HuggingFaceStrategy: ModelDownloadStrategy, Sendable {
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "HuggingFaceStrategy")
+    private let logger = Logger.ora(category: "HuggingFaceStrategy")
     private let downloader: FileDownloader
 
     init(downloader: FileDownloader = HuggingFaceDownloader()) {

@@ -15,8 +15,8 @@ actor BackgroundPersistenceActor {
 
     // MARK: - Properties
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "persistence")
-    private let signposter = OSSignposter(logger: Logger(subsystem: "com.ora.app", category: "persistence"))
+    private let logger = Logger.ora(category: "persistence")
+    private let signposter = OSSignposter(logger: Logger.ora(category: "persistence"))
 
     // MARK: - Background Write Operations
 

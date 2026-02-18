@@ -13,7 +13,7 @@ struct MailOpenDraftTool: Tool {
     let kind: ToolKind = .read
 
     private let runner: AppleScriptRunning
-    private static let logger = Logger(subsystem: "com.ora.app", category: "MailOpenDraftTool")
+    private static let logger = Logger.ora(category: "MailOpenDraftTool")
 
     init(runner: AppleScriptRunning = AppleScriptRunner()) {
         self.runner = runner

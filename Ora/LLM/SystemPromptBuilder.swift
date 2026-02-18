@@ -27,7 +27,7 @@ struct SystemPromptBuilder {
     
     // MARK: - Properties
     
-    private static let logger = Logger(subsystem: "com.ora.app", category: "SystemPromptBuilder")
+    private static let logger = Logger.ora(category: "SystemPromptBuilder")
     
     /// The template filename (without path)
     static let templateFilename = "system-prompt.txt"

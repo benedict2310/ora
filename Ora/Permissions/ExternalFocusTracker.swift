@@ -23,7 +23,7 @@ final class ExternalFocusTracker {
 
     // MARK: - Properties
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "ExternalFocusTracker")
+    private let logger = Logger.ora(category: "ExternalFocusTracker")
     private var activeOperationCount: Int = 0
 
     var isExternalOperationActive: Bool {

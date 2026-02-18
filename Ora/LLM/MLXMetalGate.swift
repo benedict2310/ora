@@ -31,7 +31,7 @@ public actor MLXMetalGate {
 
     // MARK: - Properties
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "MLXMetalGate")
+    private let logger = Logger.ora(category: "MLXMetalGate")
 
     /// Whether the gate is currently held by a caller.
     private var inUse = false

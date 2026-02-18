@@ -34,7 +34,7 @@ final class HotkeyManager {
 
     // MARK: - Properties
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "HotkeyManager")
+    private let logger = Logger.ora(category: "HotkeyManager")
     private var configuration: HotkeyConfiguration
 
     /// Carbon event handler reference

@@ -56,7 +56,7 @@ public actor AudioPlaybackService {
 
     // MARK: - Properties
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "AudioPlayback")
+    private let logger = Logger.ora(category: "AudioPlayback")
 
     private var engine: AVAudioEngine?
     private var playerNode: AVAudioPlayerNode?

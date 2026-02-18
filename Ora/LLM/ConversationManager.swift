@@ -20,7 +20,7 @@ actor ConversationManager {
     
     // MARK: - Properties
     
-    private let logger = Logger(subsystem: "com.ora.app", category: "ConversationManager")
+    private let logger = Logger.ora(category: "ConversationManager")
     
     private var messages: [LLMMessage] = []
     private var systemPrompt: String = ""

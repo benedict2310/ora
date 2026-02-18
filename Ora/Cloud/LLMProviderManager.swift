@@ -19,7 +19,7 @@ actor LLMProviderManager: LLMServicing {
 
     static let shared = LLMProviderManager()
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "providers")
+    private let logger = Logger.ora(category: "providers")
     private let credentialStore: CredentialStore
     private let codexOAuthManager: CodexOAuthManaging
 
@@ -338,55 +338,47 @@ extension Notification.Name {
 }
 
 extension UserDefaults {
-    private enum Key {
-        static let selectedLLMProvider = "com.ora.selectedLLMProvider"
-        static let selectedAnthropicModel = "com.ora.selectedAnthropicModel"
-        static let selectedOpenAIModel = "com.ora.selectedOpenAIModel"
-        static let selectedOpenAIModelIdentifier = "com.ora.selectedOpenAIModelIdentifier"
-        static let openAIDiscoveredModelIdentifiers = "com.ora.openAI.discoveredModelIdentifiers"
-    }
-
     var selectedLLMProvider: LLMProviderType {
         get {
-            guard let raw = string(forKey: Key.selectedLLMProvider),
+            guard let raw = string(forKey: OraKey.selectedLLMProvider),
                   let type = LLMProviderType(rawValue: raw) else {
                 return .local
             }
             return type
         }
         set {
-            set(newValue.rawValue, forKey: Key.selectedLLMProvider)
+            set(newValue.rawValue, forKey: OraKey.selectedLLMProvider)
         }
     }
 
     var selectedAnthropicModel: AnthropicModel {
         get {
-            guard let raw = string(forKey: Key.selectedAnthropicModel),
+            guard let raw = string(forKey: OraKey.selectedAnthropicModel),
                   let model = AnthropicModel(rawValue: raw) else {
                 return .sonnet
             }
             return model
         }
         set {
-            set(newValue.rawValue, forKey: Key.selectedAnthropicModel)
+            set(newValue.rawValue, forKey: OraKey.selectedAnthropicModel)
         }
     }
 
     var selectedOpenAIModelIdentifier: String {
         get {
-            if let raw = string(forKey: Key.selectedOpenAIModelIdentifier),
+            if let raw = string(forKey: OraKey.selectedOpenAIModelIdentifier),
                !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 return raw
             }
-            if let legacyRaw = string(forKey: Key.selectedOpenAIModel),
+            if let legacyRaw = string(forKey: OraKey.selectedOpenAIModel),
                !legacyRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 return legacyRaw
             }
             return OpenAIModel.preferredDefault.rawValue
         }
         set {
-            set(newValue, forKey: Key.selectedOpenAIModelIdentifier)
-            set(newValue, forKey: Key.selectedOpenAIModel)
+            set(newValue, forKey: OraKey.selectedOpenAIModelIdentifier)
+            set(newValue, forKey: OraKey.selectedOpenAIModel)
         }
     }
 
@@ -404,7 +396,7 @@ extension UserDefaults {
 
     var openAIDiscoveredModelIdentifiers: [String] {
         get {
-            guard let raw = array(forKey: Key.openAIDiscoveredModelIdentifiers) as? [String] else {
+            guard let raw = array(forKey: OraKey.openAIDiscoveredModelIdentifiers) as? [String] else {
                 return []
             }
             return raw.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -418,7 +410,7 @@ extension UserDefaults {
                 seen.insert(trimmed)
                 return true
             }
-            set(deduped, forKey: Key.openAIDiscoveredModelIdentifiers)
+            set(deduped, forKey: OraKey.openAIDiscoveredModelIdentifiers)
         }
     }
 }

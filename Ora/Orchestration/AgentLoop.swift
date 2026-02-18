@@ -90,7 +90,7 @@ actor AgentLoop {
     
     // MARK: - Properties
     
-    private let logger = Logger(subsystem: "com.ora.app", category: "AgentLoop")
+    private let logger = Logger.ora(category: "AgentLoop")
     
     // Use MainActor-isolated delegate holder pattern
     @MainActor private weak var _delegate: AgentLoopDelegate?

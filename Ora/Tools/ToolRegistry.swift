@@ -17,7 +17,7 @@ actor ToolRegistry {
     
     // MARK: - Properties
     
-    private let logger = Logger(subsystem: "com.ora.app", category: "ToolRegistry")
+    private let logger = Logger.ora(category: "ToolRegistry")
     private var tools: [String: any Tool] = [:]
     
     // MARK: - Initialization

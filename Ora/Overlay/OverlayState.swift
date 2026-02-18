@@ -133,16 +133,26 @@ struct OverlayMessage: Identifiable, Equatable, Sendable {
     }
 }
 
+// MARK: - Overlay Actions
+
+@MainActor
+protocol OverlayActionHandling: AnyObject {
+    func confirmToolProposal()
+    func denyToolProposal()
+    func stopSpeechPlayback()
+}
+
 // MARK: - Overlay View Model
 
 /// Observable state for the overlay
 @MainActor
 final class OverlayViewModel: ObservableObject {
-    private let logger = Logger(subsystem: "com.ora.app", category: "OverlayViewModel")
+    private let logger = Logger.ora(category: "OverlayViewModel")
     @Published var mode: OverlayMode = .hidden
     @Published var messages: [OverlayMessage] = []
     @Published var currentProposal: ToolProposal?
     @Published var activity: OverlayActivity = .none
+    weak var actionHandler: (any OverlayActionHandling)?
 
     /// Delay before showing tool activity to avoid flicker (seconds)
     private let toolActivityRevealDelay: TimeInterval = 0.2
@@ -216,7 +226,11 @@ final class OverlayViewModel: ObservableObject {
             if self.toolActivityRevealTask == nil {
                 self.toolActivityRevealTask = Task { @MainActor [weak self] in
                     guard let self else { return }
-                    try? await Task.sleep(for: .seconds(self.toolActivityRevealDelay))
+                    do {
+                        try await Task.sleep(for: .seconds(self.toolActivityRevealDelay))
+                    } catch {
+                        return
+                    }
                     guard !Task.isCancelled else { return }
                     if let pending = self.pendingToolActivity {
                         self.activity = pending

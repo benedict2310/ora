@@ -10,7 +10,7 @@ import os
 
 struct MicrophonePermission: Sendable {
 
-    private static let logger = Logger(subsystem: "com.ora.app", category: "MicrophonePermission")
+    private static let logger = Logger.ora(category: "MicrophonePermission")
 
     /// Check current authorization status
     static func checkStatus() -> PermissionStatus {

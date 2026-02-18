@@ -13,7 +13,7 @@ actor StructuredGenerator {
     
     // MARK: - Properties
     
-    private let logger = Logger(subsystem: "com.ora.app", category: "StructuredGenerator")
+    private let logger = Logger.ora(category: "StructuredGenerator")
     private let maxRetries = 3
     private let llm: LLMServicing
     private let retryResponseSnippetLimit = 1200

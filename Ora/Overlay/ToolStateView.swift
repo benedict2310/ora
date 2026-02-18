@@ -24,6 +24,8 @@ struct ToolStateView: View {
     let mode: Mode
     let reduceTransparency: Bool
     let reduceMotion: Bool
+    let onConfirmProposal: () -> Void
+    let onDenyProposal: () -> Void
 
     @FocusState private var confirmButtonFocused: Bool
     @FocusState private var cancelButtonFocused: Bool
@@ -87,7 +89,7 @@ struct ToolStateView: View {
 
             HStack {
                 Button("Cancel") {
-                    NotificationCenter.default.post(name: .proposalDenied, object: nil)
+                    self.onDenyProposal()
                 }
                 .keyboardShortcut(.escape, modifiers: [])
                 .focused(self.$cancelButtonFocused)
@@ -97,7 +99,7 @@ struct ToolStateView: View {
                 Spacer()
 
                 Button("Confirm") {
-                    NotificationCenter.default.post(name: .proposalConfirmed, object: nil)
+                    self.onConfirmProposal()
                 }
                 .keyboardShortcut(.return, modifiers: [])
                 .buttonStyle(.borderedProminent)

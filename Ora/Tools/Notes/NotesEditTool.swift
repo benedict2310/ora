@@ -13,7 +13,7 @@ struct NotesEditTool: Tool {
     let kind: ToolKind = .mutate
 
     private let runner: AppleScriptRunning
-    private static let logger = Logger(subsystem: "com.ora.app", category: "NotesEditTool")
+    private static let logger = Logger.ora(category: "NotesEditTool")
 
     private enum EditMode: String {
         case append

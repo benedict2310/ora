@@ -17,7 +17,7 @@ actor AuditLogger {
 
     // MARK: - Properties
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "AuditLogger")
+    private let logger = Logger.ora(category: "AuditLogger")
 
     // MARK: - Initialization
 

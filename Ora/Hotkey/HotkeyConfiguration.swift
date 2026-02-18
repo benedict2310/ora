@@ -17,10 +17,6 @@ struct HotkeyConfiguration: Codable, Equatable, Sendable {
     var keyCode: UInt16
     var modifiers: UInt32
 
-    // MARK: - Constants
-
-    private static let userDefaultsKey = "com.ora.hotkeyConfiguration"
-
     /// Default hotkey: Option + Space
     static let defaultHotkey = HotkeyConfiguration(
         keyCode: UInt16(kVK_Space),
@@ -49,7 +45,7 @@ struct HotkeyConfiguration: Codable, Equatable, Sendable {
     // MARK: - Persistence
 
     static func load() -> HotkeyConfiguration {
-        guard let data = UserDefaults.standard.data(forKey: userDefaultsKey),
+        guard let data = UserDefaults.standard.oraHotkeyConfigurationData,
               let config = try? JSONDecoder().decode(HotkeyConfiguration.self, from: data) else {
             return defaultHotkey
         }
@@ -58,7 +54,7 @@ struct HotkeyConfiguration: Codable, Equatable, Sendable {
 
     func save() {
         if let data = try? JSONEncoder().encode(self) {
-            UserDefaults.standard.set(data, forKey: Self.userDefaultsKey)
+            UserDefaults.standard.oraHotkeyConfigurationData = data
         }
     }
 

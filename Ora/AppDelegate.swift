@@ -16,7 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Status bar controller (exposed for StatusBarController.shared access)
     private(set) var statusBarController: StatusBarController?
-    private let logger = Logger(subsystem: "com.ora.app", category: "AppDelegate")
+    private let logger = Logger.ora(category: "AppDelegate")
     private var setupObserver: NSObjectProtocol?
     private var hotkeyPressObserver: NSObjectProtocol?
     private var hotkeyReleaseObserver: NSObjectProtocol?

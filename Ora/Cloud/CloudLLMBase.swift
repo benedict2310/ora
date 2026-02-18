@@ -22,7 +22,7 @@ open class CloudLLMBase: LLMServicing, @unchecked Sendable {
 
     public init(apiKey: String, category: String, session: URLSession? = nil) {
         self.apiKey = apiKey
-        self.logger = Logger(subsystem: "com.ora.app", category: category)
+        self.logger = Logger.ora(category: category)
         if let session {
             self.session = session
         } else {

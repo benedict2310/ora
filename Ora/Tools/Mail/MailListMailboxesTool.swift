@@ -13,7 +13,7 @@ struct MailListMailboxesTool: Tool {
     let kind: ToolKind = .read
 
     private let runner: AppleScriptRunning
-    private static let logger = Logger(subsystem: "com.ora.app", category: "MailListMailboxesTool")
+    private static let logger = Logger.ora(category: "MailListMailboxesTool")
 
     init(runner: AppleScriptRunning = AppleScriptRunner()) {
         self.runner = runner

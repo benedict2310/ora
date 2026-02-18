@@ -104,6 +104,7 @@ final class ASRServiceTestEngine: ASREngine, @unchecked Sendable {
     var finalizeResult: ASRFinalSegment?
     var shouldThrowOnProcess = false
     var shouldThrowOnFinalize = false
+    var finalizeFrameLengths: [Int] = []
 
     private var partialHandler: (@Sendable (ASRPartial) -> Void)?
 
@@ -132,10 +133,57 @@ final class ASRServiceTestEngine: ASREngine, @unchecked Sendable {
 
     func finalize(_ buffer: AVAudioPCMBuffer, language: String?) async throws -> ASRFinalSegment? {
         finalizeCallCount += 1
+        finalizeFrameLengths.append(Int(buffer.frameLength))
         if shouldThrowOnFinalize {
             throw NSError(domain: "MockASR", code: 2, userInfo: [NSLocalizedDescriptionKey: "Mock finalize error"])
         }
         return finalizeResult
+    }
+}
+
+private actor TestFluidVAD: FluidVADServing {
+    private let shouldFailPrepare: Bool
+
+    init(shouldFailPrepare: Bool) {
+        self.shouldFailPrepare = shouldFailPrepare
+    }
+
+    func prepare() async throws {
+        if self.shouldFailPrepare {
+            throw NSError(domain: "TestFluidVAD", code: 1, userInfo: [NSLocalizedDescriptionKey: "prepare failed"])
+        }
+    }
+
+    func process(_ samples: [Float]) async throws -> FluidAudioVADResult {
+        return FluidAudioVADResult(isSpeech: false, probability: 0, transitionType: nil)
+    }
+
+    func resetState() async {}
+}
+
+private final class MutableDateSource: @unchecked Sendable {
+    var current: Date
+
+    init(current: Date) {
+        self.current = current
+    }
+}
+
+private final class LockedCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+
+    func incrementAndGet() -> Int {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        self.value += 1
+        return self.value
+    }
+
+    func get() -> Int {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        return self.value
     }
 }
 
@@ -403,5 +451,67 @@ final class ASRServiceTests: XCTestCase {
     func test_shared_instance_exists() {
         let service = ASRService.shared
         XCTAssertNotNil(service)
+    }
+
+    // MARK: - FluidVAD Retry Tests
+
+    func test_fluidVAD_retriesInitializationAfterCooldown() async throws {
+        let mockEngine = ASRServiceTestEngine()
+        mockEngine.processResult = ASRPartial(text: "partial", words: [])
+        mockEngine.finalizeResult = ASRFinalSegment(text: "final", words: [])
+
+        let dateSource = MutableDateSource(current: Date())
+        let factoryCounter = LockedCounter()
+        let service = ASRService(
+            engine: mockEngine,
+            fluidVADFactory: { _ in
+                let attempt = factoryCounter.incrementAndGet()
+                return TestFluidVAD(shouldFailPrepare: attempt == 1)
+            },
+            now: { dateSource.current },
+            fluidVADRetryCooldown: 300
+        )
+
+        try await service.prepare()
+
+        try await self.runSingleTranscriptionTurn(service: service)
+        XCTAssertEqual(factoryCounter.get(), 1, "First turn should attempt FluidVAD initialization once")
+
+        try await self.runSingleTranscriptionTurn(service: service)
+        XCTAssertEqual(factoryCounter.get(), 1, "Second turn inside cooldown should not retry FluidVAD")
+
+        dateSource.current = dateSource.current.addingTimeInterval(301)
+        try await self.runSingleTranscriptionTurn(service: service)
+        XCTAssertEqual(factoryCounter.get(), 2, "Turn after cooldown should retry FluidVAD")
+    }
+
+    private func runSingleTranscriptionTurn(service: ASRService) async throws {
+        let (stream, continuation) = AsyncStream<AudioFrame>.makeStream()
+        let eventStream = await service.transcribe(frames: stream)
+        continuation.yield(AudioFrame(samples: Array(repeating: 0.1, count: 2560)))
+        continuation.finish()
+        for try await _ in eventStream {}
+    }
+
+    func test_transcribe_capsFinalAudioBufferAtTenMinutes() async throws {
+        let mockEngine = ASRServiceTestEngine()
+        mockEngine.finalizeResult = ASRFinalSegment(text: "done", words: [])
+        let service = ASRService(engine: mockEngine)
+        try await service.prepare()
+
+        let (stream, continuation) = AsyncStream<AudioFrame>.makeStream()
+        let eventStream = await service.transcribe(frames: stream)
+
+        // 200 * 50,000 samples = 10,000,000 samples (> 9,600,000 max)
+        let chunk = Array(repeating: Float(0.2), count: 50_000)
+        for _ in 0..<200 {
+            continuation.yield(AudioFrame(samples: chunk))
+        }
+        continuation.finish()
+
+        for try await _ in eventStream {}
+
+        XCTAssertEqual(mockEngine.finalizeCallCount, 1)
+        XCTAssertEqual(mockEngine.finalizeFrameLengths.last, 9_600_000)
     }
 }

@@ -17,7 +17,7 @@ actor ModelManager {
 
     // MARK: - Properties
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "ModelManager")
+    private let logger = Logger.ora(category: "ModelManager")
     private let downloader: ModelDownloader
     private var _state = ModelsState()
     private var downloadTasks: [ModelIdentifier: Task<Void, Error>] = [:]

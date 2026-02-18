@@ -105,7 +105,9 @@ struct OverlayView: View {
                         ToolStateView(
                             mode: .executing(label: "Executing action"),
                             reduceTransparency: self.reduceTransparency,
-                            reduceMotion: self.reduceMotion
+                            reduceMotion: self.reduceMotion,
+                            onConfirmProposal: { },
+                            onDenyProposal: { }
                         )
                         .id("executing-bubble")
                     }
@@ -114,7 +116,13 @@ struct OverlayView: View {
                         ToolStateView(
                             mode: .proposal(proposal),
                             reduceTransparency: self.reduceTransparency,
-                            reduceMotion: self.reduceMotion
+                            reduceMotion: self.reduceMotion,
+                            onConfirmProposal: {
+                                self.viewModel.actionHandler?.confirmToolProposal()
+                            },
+                            onDenyProposal: {
+                                self.viewModel.actionHandler?.denyToolProposal()
+                            }
                         )
                         .id("proposal-bubble")
                     }
@@ -125,7 +133,12 @@ struct OverlayView: View {
                     }
 
                     if self.shouldShowStopSpeakingPrompt {
-                        StopSpeakingPromptView(reduceTransparency: self.reduceTransparency)
+                        StopSpeakingPromptView(
+                            reduceTransparency: self.reduceTransparency,
+                            onStopSpeaking: {
+                                self.viewModel.actionHandler?.stopSpeechPlayback()
+                            }
+                        )
                             .id("stop-speaking-prompt")
                     }
 
@@ -369,6 +382,7 @@ struct FollowUpPromptView: View {
 
 struct StopSpeakingPromptView: View {
     let reduceTransparency: Bool
+    let onStopSpeaking: () -> Void
 
     var body: some View {
         OverlayPromptView(
@@ -377,7 +391,7 @@ struct StopSpeakingPromptView: View {
             accessibilityLabel: "Stop speaking",
             reduceTransparency: self.reduceTransparency,
             action: {
-                NotificationCenter.default.post(name: .speechStopRequested, object: nil)
+                self.onStopSpeaking()
             }
         )
     }

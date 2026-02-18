@@ -11,7 +11,7 @@ import OSLog
 
 struct SentenceChunker: Sendable {
 
-    private static let logger = Logger(subsystem: "com.ora.app", category: "chunker")
+    private static let logger = Logger.ora(category: "chunker")
 
     static let defaultMinSentenceLength = 10
     static let defaultMaxChunkLength = 240

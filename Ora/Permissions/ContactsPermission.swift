@@ -10,7 +10,7 @@ import os
 
 struct ContactsPermission: Sendable {
 
-    private static let logger = Logger(subsystem: "com.ora.app", category: "ContactsPermission")
+    private static let logger = Logger.ora(category: "ContactsPermission")
 
     /// Check current authorization status
     static func checkStatus() -> PermissionStatus {

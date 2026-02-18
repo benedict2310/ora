@@ -18,7 +18,7 @@ final class OverlayWindowController {
 
     // MARK: - Properties
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "OverlayWindow")
+    private let logger = Logger.ora(category: "OverlayWindow")
     private var panel: NSPanel?
     private let viewModel = OverlayViewModel()
     private var currentSessionID: UUID = UUID()
@@ -28,12 +28,13 @@ final class OverlayWindowController {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
-    private var escapeMonitor: Any?
-    private var appDeactivationObserver: NSObjectProtocol?
-    private var appActivationObserver: NSObjectProtocol?
-    private var permissionPromptEndObserver: NSObjectProtocol?
-    private var externalFocusEndObserver: NSObjectProtocol?
-    private var visibilityRecoveryTask: Task<Void, Never>?
+    nonisolated(unsafe) private var escapeMonitor: Any?
+    nonisolated(unsafe) private var appDeactivationObserver: NSObjectProtocol?
+    nonisolated(unsafe) private var appActivationObserver: NSObjectProtocol?
+    nonisolated(unsafe) private var permissionPromptEndObserver: NSObjectProtocol?
+    nonisolated(unsafe) private var externalFocusEndObserver: NSObjectProtocol?
+    nonisolated(unsafe) private var visibilityRecoveryTask: Task<Void, Never>?
+    private var dismissMonitorsInstalled = false
 
     /// Default cancel action (override in tests)
     var cancelHandler: (() -> Void) = {
@@ -65,6 +66,33 @@ final class OverlayWindowController {
     // MARK: - Initialization
 
     private init() {}
+
+    deinit {
+        let visibilityRecoveryTask = self.visibilityRecoveryTask
+        let escapeMonitor = self.escapeMonitor
+        let appDeactivationObserver = self.appDeactivationObserver
+        let appActivationObserver = self.appActivationObserver
+        let permissionPromptEndObserver = self.permissionPromptEndObserver
+        let externalFocusEndObserver = self.externalFocusEndObserver
+
+        visibilityRecoveryTask?.cancel()
+
+        if let escapeMonitor {
+            NSEvent.removeMonitor(escapeMonitor)
+        }
+        if let appDeactivationObserver {
+            NotificationCenter.default.removeObserver(appDeactivationObserver)
+        }
+        if let appActivationObserver {
+            NotificationCenter.default.removeObserver(appActivationObserver)
+        }
+        if let permissionPromptEndObserver {
+            NotificationCenter.default.removeObserver(permissionPromptEndObserver)
+        }
+        if let externalFocusEndObserver {
+            NotificationCenter.default.removeObserver(externalFocusEndObserver)
+        }
+    }
 
     // MARK: - Public API
 
@@ -112,7 +140,11 @@ final class OverlayWindowController {
 
         let showSessionID = self.currentSessionID
         self.visibilityRecoveryTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(200))
+            do {
+                try await Task.sleep(for: .milliseconds(200))
+            } catch {
+                return
+            }
             guard let self = self, self.currentSessionID == showSessionID else { return }
             guard let panel = self.panel, panel.isVisible else { return }
 
@@ -231,7 +263,7 @@ final class OverlayWindowController {
     // MARK: - Dismiss Monitors
 
     private func addDismissMonitors() {
-        guard self.escapeMonitor == nil else { return }
+        guard !self.dismissMonitorsInstalled else { return }
 
         // Local keyboard monitor (when our panel has focus)
         self.escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -305,9 +337,15 @@ final class OverlayWindowController {
         ) { [weak self] _ in
             self?.handleExternalFocusEnded()
         }
+
+        self.dismissMonitorsInstalled = true
     }
 
     private func removeDismissMonitors() {
+        guard self.dismissMonitorsInstalled else {
+            return
+        }
+
         if let monitor = self.escapeMonitor {
             NSEvent.removeMonitor(monitor)
             self.escapeMonitor = nil
@@ -332,6 +370,8 @@ final class OverlayWindowController {
             NotificationCenter.default.removeObserver(observer)
             self.externalFocusEndObserver = nil
         }
+
+        self.dismissMonitorsInstalled = false
     }
 
     private func handleAppDeactivated() {
@@ -419,19 +459,6 @@ final class OverlayWindowController {
         // since user intentionally opened another app/folder
         self.logger.debug("External focus operation ended")
     }
-}
-
-// MARK: - Notifications
-
-extension Notification.Name {
-    /// Posted when a tool proposal is confirmed by the user
-    static let proposalConfirmed = Notification.Name("proposalConfirmed")
-
-    /// Posted when a tool proposal is denied by the user
-    static let proposalDenied = Notification.Name("proposalDenied")
-
-    /// Posted when the user requests to stop TTS playback
-    static let speechStopRequested = Notification.Name("speechStopRequested")
 }
 
 // MARK: - Overlay Panel Subclass

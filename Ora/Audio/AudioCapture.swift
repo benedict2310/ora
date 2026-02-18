@@ -51,7 +51,7 @@ final class AudioCapture: @unchecked Sendable {
     private let engine = AVAudioEngine()
     private let bus = 0
     private let bufferSize: AVAudioFrameCount = 2048
-    private let logger = Logger(subsystem: "com.ora.app", category: "AudioCapture")
+    private let logger = Logger.ora(category: "AudioCapture")
 
     /// Notification observer for device changes
     private var deviceChangeObserver: NSObjectProtocol?

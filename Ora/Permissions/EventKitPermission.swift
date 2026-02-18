@@ -10,7 +10,7 @@ import os
 
 struct EventKitPermission: Sendable {
 
-    private static let logger = Logger(subsystem: "com.ora.app", category: "EventKitPermission")
+    private static let logger = Logger.ora(category: "EventKitPermission")
 
     /// Check calendar authorization status
     static func checkCalendarStatus() -> PermissionStatus {

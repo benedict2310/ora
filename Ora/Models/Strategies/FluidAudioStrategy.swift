@@ -12,7 +12,7 @@ import os
 /// Strategy for downloading ASR models via FluidAudio SDK
 struct FluidAudioStrategy: ModelDownloadStrategy, Sendable {
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "FluidAudioStrategy")
+    private let logger = Logger.ora(category: "FluidAudioStrategy")
     static let maxEstimatedProgressBeforeVerification: Double = 0.90
 
     func download(

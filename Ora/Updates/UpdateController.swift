@@ -90,7 +90,7 @@ final class UpdateController: ObservableObject, UpdateChecking {
 
     // MARK: - Properties
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "Updates")
+    private let logger = Logger.ora(category: "Updates")
     private let updater: UpdateDriver
     private let eligibilityProvider: UpdateEligibilityProvider
     private var isApplyingUpdaterState = false

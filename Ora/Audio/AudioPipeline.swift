@@ -77,7 +77,7 @@ final class AudioPipeline: @unchecked Sendable {
     private let capture = AudioCapture()
     private let converter: AudioFormatConverter
     private let buffer: StreamingRingBuffer
-    private let logger = Logger(subsystem: "com.ora.app", category: "AudioPipeline")
+    private let logger = Logger.ora(category: "AudioPipeline")
 
     /// Pending samples accumulator for chunk-based delivery
     private let pendingSamples = OSAllocatedUnfairLock<[Float]>(initialState: [])

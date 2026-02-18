@@ -22,7 +22,7 @@ final class PermissionPromptTracker {
 
     // MARK: - Properties
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "PermissionPromptTracker")
+    private let logger = Logger.ora(category: "PermissionPromptTracker")
     private var activePrompts: Set<PermissionType> = []
 
     var isPromptActive: Bool {

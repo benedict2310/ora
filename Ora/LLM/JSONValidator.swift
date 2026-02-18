@@ -11,7 +11,7 @@ import os
 /// Validates LLM output against expected schema
 struct JSONValidator: Sendable {
     
-    private static let logger = Logger(subsystem: "com.ora.app", category: "JSONValidator")
+    private static let logger = Logger.ora(category: "JSONValidator")
     
     /// Parse raw LLM output into structured response
     static func parse(_ output: String) -> Result<LLMOutput, JSONValidationError> {

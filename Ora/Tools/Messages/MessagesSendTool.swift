@@ -13,7 +13,7 @@ struct MessagesSendTool: Tool {
     let kind: ToolKind = .mutate
 
     private let runner: AppleScriptRunning
-    private static let logger = Logger(subsystem: "com.ora.app", category: "MessagesSendTool")
+    private static let logger = Logger.ora(category: "MessagesSendTool")
 
     init(runner: AppleScriptRunning = AppleScriptRunner()) {
         self.runner = runner

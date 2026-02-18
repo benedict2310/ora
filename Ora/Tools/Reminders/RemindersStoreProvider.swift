@@ -11,7 +11,7 @@ import os
 /// Provides shared access to EKEventStore for reminders
 enum RemindersStoreProvider {
 
-    private static let logger = Logger(subsystem: "com.ora.app", category: "RemindersStoreProvider")
+    private static let logger = Logger.ora(category: "RemindersStoreProvider")
     static let fuzzyThreshold: Double = 0.85
 
     enum RemindersAccessAction: Equatable {

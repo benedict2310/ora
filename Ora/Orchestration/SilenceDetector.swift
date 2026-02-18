@@ -66,7 +66,7 @@ final class SilenceDetector {
 
     // MARK: - Properties
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "SilenceDetector")
+    private let logger = Logger.ora(category: "SilenceDetector")
 
     /// Timeout duration in seconds before silence is detected (ASR fallback)
     let timeout: TimeInterval
