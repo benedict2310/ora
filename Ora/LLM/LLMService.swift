@@ -141,38 +141,37 @@ actor LLMService: LLMServicing {
     /// Unload the model to free memory
     func unload() async {
         guard isReady else { return }
-        
+
         logger.info("Unloading LLM model...")
-        
-        // Clear KV cache first, wrapped in MLXMetalGate to prevent race with runGeneration
+
+        // Clear KV cache and GPU buffers inside the gate to prevent race with in-flight generation.
         await MLXMetalGate.shared.withExclusiveAccess {
             self.kvCache = nil
+            GPU.clearCache()
         }
-        
+
         modelContainer = nil
         isReady = false
         isWarmedUp = false
-        
-        // Clear GPU cache to release memory
-        GPU.clearCache()
-        
+
         logger.info("LLM model unloaded")
-        
+
         NotificationCenter.default.post(name: Notification.Name("LLMModelUnloaded"), object: nil)
     }
     
     /// Clear the KV cache to start fresh for a new session
     /// Call this when ending a session or starting a new conversation
     func clearCache() async {
-        // Wrap in MLXMetalGate to prevent race with runGeneration
+        // Wrap in MLXMetalGate to prevent race with runGeneration.
+        // GPU.clearCache() MUST be inside the lock — if called outside, a new generation
+        // could start between lock release and cache clear, causing Metal buffer corruption.
         await MLXMetalGate.shared.withExclusiveAccess {
             if self.kvCache != nil {
                 self.logger.info("Clearing KV cache")
                 self.kvCache = nil
             }
+            GPU.clearCache()
         }
-        // Clear GPU cache to actually release the memory (safe to do outside the lock)
-        GPU.clearCache()
     }
     
     // MARK: - Private
