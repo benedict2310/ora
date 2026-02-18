@@ -17,7 +17,7 @@ import OSLog
 /// ```
 enum OraLog {
     /// The subsystem identifier (bundle ID)
-    static let subsystem = Bundle.main.bundleIdentifier ?? "com.ora.app"
+    static let subsystem = Logger.oraSubsystem
     
     // MARK: - Core Pipeline Categories
     
