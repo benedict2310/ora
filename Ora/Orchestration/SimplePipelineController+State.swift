@@ -43,6 +43,7 @@ extension SimplePipelineController {
         let oldState = self.state
         if !self.stateMachine.canTransition(from: oldState, to: newState) {
             self.logger.error("Invalid pipeline transition attempted: \(oldState.description) -> \(newState.description)")
+            return
         }
         self.state = newState
         
