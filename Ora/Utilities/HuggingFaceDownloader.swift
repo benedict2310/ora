@@ -58,7 +58,7 @@ final class HuggingFaceDownloader: NSObject, FileDownloader, @unchecked Sendable
 
     // MARK: - Properties
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "HuggingFaceDownloader")
+    private let logger = Logger.ora(category: "HuggingFaceDownloader")
     private let urlSession: URLSession
 
     // MARK: - State for delegate callbacks
@@ -531,7 +531,7 @@ final class FileLock: @unchecked Sendable {
 
     private let lockURL: URL
     private var fileDescriptor: Int32 = -1
-    private let logger = Logger(subsystem: "com.ora.app", category: "FileLock")
+    private let logger = Logger.ora(category: "FileLock")
 
     init(url: URL) throws {
         self.lockURL = url

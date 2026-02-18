@@ -20,7 +20,7 @@ final class PersistenceManager {
 
     // MARK: - Properties
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "persistence")
+    private let logger = Logger.ora(category: "persistence")
     private let saveSignposter: OSSignposter
     private let saveDebounceInterval: Duration
     private let onContextSavedForTesting: (@MainActor () -> Void)?
@@ -46,7 +46,6 @@ final class PersistenceManager {
 
         let schema = Schema([
             Session.self,
-            MessageModel.self,
             AuditLogEntryModel.self,
             AppSettings.self
         ])
@@ -124,7 +123,6 @@ final class PersistenceManager {
 
         let schema = Schema([
             Session.self,
-            MessageModel.self,
             AuditLogEntryModel.self,
             AppSettings.self
         ])
@@ -421,34 +419,6 @@ final class PersistenceManager {
     func resetContext() {
         context.rollback()
         self.logger.debug("Context reset (in-memory objects released)")
-    }
-
-    // MARK: - Migration
-
-    /// Migrate all unmigrated sessions from blob storage to relationship storage.
-    /// Should be called once at startup. Returns count of migrated sessions.
-    @discardableResult
-    func migrateSessionsToRelationshipStorage() -> Int {
-        let descriptor = FetchDescriptor<Session>(
-            predicate: #Predicate { !$0.isMigrated }
-        )
-
-        guard let unmigrated = try? context.fetch(descriptor), !unmigrated.isEmpty else {
-            return 0
-        }
-
-        var totalMigrated = 0
-        for session in unmigrated {
-            let count = session.migrateToRelationshipStorage()
-            totalMigrated += count
-        }
-
-        if totalMigrated > 0 {
-            self.flushSave()
-            self.logger.info("Migrated \(unmigrated.count) session(s) with \(totalMigrated) message(s) to relationship storage")
-        }
-
-        return totalMigrated
     }
 
     // MARK: - App Settings

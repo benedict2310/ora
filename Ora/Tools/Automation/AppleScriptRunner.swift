@@ -51,7 +51,7 @@ extension AppleScriptRunning {
 
 /// Executes AppleScripts with timeout, error normalization, and JSON parsing
 actor AppleScriptRunner {
-    private let logger = Logger(subsystem: "com.ora.app", category: "AppleScriptRunner")
+    private let logger = Logger.ora(category: "AppleScriptRunner")
 
     /// Active processes for cancellation support
     private var activeProcesses: [UUID: Process] = [:]

@@ -48,7 +48,7 @@ actor KeychainCredentialStore: CredentialStore {
     
     // MARK: - Properties
     
-    private let logger = Logger(subsystem: "com.ora.app", category: "credentials")
+    private let logger = Logger.ora(category: "credentials")
     
     /// Keychain service name - scoped to Ora
     private static let service = "com.ora.app.credentials"

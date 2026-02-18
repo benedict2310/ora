@@ -23,7 +23,7 @@ actor PermissionsManager {
 
     // MARK: - Properties
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "PermissionsManager")
+    private let logger = Logger.ora(category: "PermissionsManager")
     private let client: PermissionsClient
     private var _state = PermissionsState()
     private static let skipPromptEnvKey = "ORA_SKIP_PERMISSION_PROMPTS"

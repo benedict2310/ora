@@ -13,7 +13,7 @@ struct RemindersCompleteTool: Tool {
     let name = "reminders.complete"
     let kind: ToolKind = .mutate
 
-    private static let logger = Logger(subsystem: "com.ora.app", category: "RemindersCompleteTool")
+    private static let logger = Logger.ora(category: "RemindersCompleteTool")
 
     var schema: ToolSchema {
         ToolSchema(

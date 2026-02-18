@@ -40,6 +40,20 @@ protocol ASRServicing: Sendable {
     func reset() async
 }
 
+// MARK: - Fluid VAD Abstraction
+
+protocol FluidVADServing: Sendable {
+    func prepare() async throws
+    func process(_ samples: [Float]) async throws -> FluidAudioVADResult
+    func resetState() async
+}
+
+extension FluidAudioVAD: FluidVADServing {
+    func resetState() async {
+        self.reset()
+    }
+}
+
 // MARK: - ASR Service
 
 /// Parakeet-based ASR service providing batch transcription.
@@ -72,9 +86,11 @@ actor ASRService: @preconcurrency ASRServicing {
 
     // MARK: - Properties
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "ASRService")
+    private let logger = Logger.ora(category: "ASRService")
     private var engine: (any ASREngine)?
     private var isReady = false
+    private let fluidVADFactory: @Sendable (FluidAudioVADConfiguration) -> any FluidVADServing
+    private let now: @Sendable () -> Date
 
     /// Minimum samples before first transcription attempt (160ms at 16kHz)
     private let minimumSamples = 2560
@@ -91,18 +107,89 @@ actor ASRService: @preconcurrency ASRServicing {
 
     /// FluidAudio neural VAD (lazily initialized on first transcription)
     /// Provides more robust speech detection than EnergyVAD (M.06 Phase 2)
-    private var fluidVAD: FluidAudioVAD?
+    private var fluidVAD: (any FluidVADServing)?
+    private var fluidVADLastFailureAt: Date?
+    private let fluidVADRetryCooldown: TimeInterval
 
-    /// Whether FluidAudioVAD initialization was attempted
-    private var fluidVADInitialized = false
+    private struct AudioSampleBuffer {
+        private var storage: [Float] = []
+        private var startIndex = 0
+        private let maxSampleCount: Int
+        private let compactionThreshold: Int
+
+        init(maxSampleCount: Int) {
+            self.maxSampleCount = maxSampleCount
+            self.compactionThreshold = maxSampleCount
+            self.storage.reserveCapacity(maxSampleCount)
+        }
+
+        var count: Int {
+            return self.storage.count - self.startIndex
+        }
+
+        var isEmpty: Bool {
+            return self.count == 0
+        }
+
+        mutating func append(contentsOf samples: [Float]) -> Int {
+            self.storage.append(contentsOf: samples)
+
+            let liveCount = self.count
+            guard liveCount > self.maxSampleCount else {
+                return 0
+            }
+
+            let trimmed = liveCount - self.maxSampleCount
+            self.startIndex += trimmed
+
+            if self.startIndex >= self.compactionThreshold {
+                self.storage.removeFirst(self.startIndex)
+                self.startIndex = 0
+            }
+
+            return trimmed
+        }
+
+        func suffix(_ sampleCount: Int) -> [Float] {
+            let liveSamples = self.storage[self.startIndex...]
+            guard liveSamples.count > sampleCount else {
+                return Array(liveSamples)
+            }
+            return Array(liveSamples.suffix(sampleCount))
+        }
+
+        func allSamples() -> [Float] {
+            return Array(self.storage[self.startIndex...])
+        }
+    }
 
     // MARK: - Initialization
 
-    private init() {}
+    private init(
+        fluidVADFactory: @escaping @Sendable (FluidAudioVADConfiguration) -> any FluidVADServing = { configuration in
+            FluidAudioVAD(configuration: configuration)
+        },
+        now: @escaping @Sendable () -> Date = Date.init,
+        fluidVADRetryCooldown: TimeInterval = OraConstants.Timing.fluidVADRetryCooldown
+    ) {
+        self.fluidVADFactory = fluidVADFactory
+        self.now = now
+        self.fluidVADRetryCooldown = fluidVADRetryCooldown
+    }
 
     /// Initialize with a custom engine (for testing)
-    init(engine: any ASREngine) {
+    init(
+        engine: any ASREngine,
+        fluidVADFactory: @escaping @Sendable (FluidAudioVADConfiguration) -> any FluidVADServing = { configuration in
+            FluidAudioVAD(configuration: configuration)
+        },
+        now: @escaping @Sendable () -> Date = Date.init,
+        fluidVADRetryCooldown: TimeInterval = OraConstants.Timing.fluidVADRetryCooldown
+    ) {
         self.engine = engine
+        self.fluidVADFactory = fluidVADFactory
+        self.now = now
+        self.fluidVADRetryCooldown = fluidVADRetryCooldown
     }
 
     // MARK: - Public API
@@ -152,7 +239,7 @@ actor ASRService: @preconcurrency ASRServicing {
     /// Reset decoder state for new session
     func reset() async {
         await engine?.reset()
-        await fluidVAD?.reset()
+        await fluidVAD?.resetState()
         logger.debug("ASR decoder reset")
     }
 
@@ -160,17 +247,21 @@ actor ASRService: @preconcurrency ASRServicing {
 
     /// Initialize or get FluidAudioVAD with settings from AppSettings
     /// Falls back to nil (triggering EnergyVAD fallback) if initialization fails
-    private func getOrInitializeFluidVAD() async -> FluidAudioVAD? {
-        // Return cached instance if available
-        if let vad = fluidVAD {
+    private func getOrInitializeFluidVAD() async -> (any FluidVADServing)? {
+        if let vad = self.fluidVAD {
             return vad
         }
 
-        // Only try to initialize once
-        guard !fluidVADInitialized else {
-            return nil
+        let now = self.now()
+        if let lastFailure = self.fluidVADLastFailureAt {
+            let elapsed = now.timeIntervalSince(lastFailure)
+            if elapsed < self.fluidVADRetryCooldown {
+                let remaining = Int((self.fluidVADRetryCooldown - elapsed).rounded(.up))
+                self.logger.notice("FluidAudioVAD unavailable; using EnergyVAD fallback (retry in ~\(remaining)s)")
+                return nil
+            }
+            self.logger.info("Retrying FluidAudioVAD initialization after cooldown")
         }
-        fluidVADInitialized = true
 
         // Get settings from AppSettings on main thread since PersistenceManager uses MainActor context
         let (minSpeechDuration, minSilenceGap) = await MainActor.run {
@@ -185,15 +276,17 @@ actor ASRService: @preconcurrency ASRServicing {
             speechPadding: 0.10
         )
 
-        let vad = FluidAudioVAD(configuration: config)
+        let vad = self.fluidVADFactory(config)
 
         do {
             try await vad.prepare()
-            fluidVAD = vad
-            logger.info("FluidAudioVAD initialized (minSpeech=\(minSpeechDuration)s, minSilence=\(minSilenceGap)s)")
+            self.fluidVAD = vad
+            self.fluidVADLastFailureAt = nil
+            self.logger.info("FluidAudioVAD initialized (minSpeech=\(minSpeechDuration)s, minSilence=\(minSilenceGap)s)")
             return vad
         } catch {
-            logger.warning("FluidAudioVAD failed to initialize, falling back to EnergyVAD: \(error.localizedDescription)")
+            self.fluidVADLastFailureAt = now
+            self.logger.warning("FluidAudioVAD failed to initialize, falling back to EnergyVAD: \(error.localizedDescription)")
             return nil
         }
     }
@@ -217,7 +310,7 @@ actor ASRService: @preconcurrency ASRServicing {
         }
 
         // Accumulate ALL audio for accurate final transcription (MacTalk approach)
-        var allAudio: [Float] = []
+        var allAudio = AudioSampleBuffer(maxSampleCount: self.maxAudioBufferSamples)
         var lastPartialText = ""
 
         // Diagnostic: Track transcription session
@@ -226,7 +319,10 @@ actor ASRService: @preconcurrency ASRServicing {
         logger.info("🎙️ Starting batch transcription session")
 
         // VAD for speech detection - try FluidAudioVAD first, fallback to EnergyVAD (M.06 Phase 2)
-        let neuralVAD = await getOrInitializeFluidVAD()
+        let neuralVAD = await self.getOrInitializeFluidVAD()
+        if neuralVAD == nil {
+            self.logger.notice("FluidAudioVAD inactive; session is using EnergyVAD fallback")
+        }
         var energyVAD = EnergyVAD(configuration: VADConfiguration())
         var lastVADState = false
 
@@ -236,13 +332,11 @@ actor ASRService: @preconcurrency ASRServicing {
         // Process frames as they arrive
         for await frame in frames {
             frameCount += 1
-            allAudio.append(contentsOf: frame.samples)
+            let trimmedSamples = allAudio.append(contentsOf: frame.samples)
 
             // Trim buffer if it exceeds 10 minutes (like MacTalk)
-            if allAudio.count > maxAudioBufferSamples {
-                let overflow = allAudio.count - maxAudioBufferSamples
-                allAudio.removeFirst(overflow)
-                logger.debug("Trimmed \(overflow) samples from buffer (exceeded 10 min limit)")
+            if trimmedSamples > 0 {
+                logger.debug("Trimmed \(trimmedSamples) samples from buffer (exceeded 10 min limit)")
             }
 
             // Run VAD on incoming frame for fast speech detection
@@ -279,18 +373,13 @@ actor ASRService: @preconcurrency ASRServicing {
 
             // For partials: only transcribe the recent window (last 10 seconds)
             // This is for UI responsiveness - the final will use the full buffer
-            if allAudio.count >= minimumSamples {
+            if allAudio.count >= self.minimumSamples {
                 processCount += 1
 
                 // Use only the recent window for partials
-                let partialSamples: [Float]
-                if allAudio.count > partialWindowSamples {
-                    partialSamples = Array(allAudio.suffix(partialWindowSamples))
-                } else {
-                    partialSamples = allAudio
-                }
+                let partialSamples = allAudio.suffix(self.partialWindowSamples)
 
-                let paddedSamples = ensureMinimumDuration(partialSamples)
+                let paddedSamples = self.ensureMinimumDuration(partialSamples)
 
                 let partial = try await engine.process(
                     samples: paddedSamples,
@@ -315,9 +404,10 @@ actor ASRService: @preconcurrency ASRServicing {
 
         // FINAL: Transcribe the ENTIRE accumulated audio buffer
         // FluidAudio's ChunkProcessor handles long audio via ~15s overlapping chunks internally
-        if !allAudio.isEmpty {
-            logger.info("🎙️ Finalizing with full audio buffer (\(allAudio.count) samples)")
-            let paddedSamples = ensureMinimumDuration(allAudio)
+        let finalAudio = allAudio.allSamples()
+        if !finalAudio.isEmpty {
+            logger.info("🎙️ Finalizing with full audio buffer (\(finalAudio.count) samples)")
+            let paddedSamples = self.ensureMinimumDuration(finalAudio)
 
             let final = try await engine.finalize(
                 samples: paddedSamples,

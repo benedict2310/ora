@@ -65,7 +65,7 @@ actor EmbeddingService: EmbeddingServicing {
 
     // MARK: - Properties
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "memory")
+    private let logger = Logger.ora(category: "memory")
     private let configuration: Configuration
     private let gpuCacheLimiter: GPUCacheLimiter
     private let gpuCacheClearer: GPUCacheClearer

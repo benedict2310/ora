@@ -104,14 +104,32 @@ final class OverlayViewsTests: XCTestCase {
         ]
 
         for proposal in proposals {
-            let view = ToolStateView(mode: .proposal(proposal), reduceTransparency: true, reduceMotion: false)
+            let view = ToolStateView(
+                mode: .proposal(proposal),
+                reduceTransparency: true,
+                reduceMotion: false,
+                onConfirmProposal: {},
+                onDenyProposal: {}
+            )
             _ = view.body
         }
 
-        let executingMotion = ToolStateView(mode: .executing(label: "Executing..."), reduceTransparency: false, reduceMotion: false)
+        let executingMotion = ToolStateView(
+            mode: .executing(label: "Executing..."),
+            reduceTransparency: false,
+            reduceMotion: false,
+            onConfirmProposal: {},
+            onDenyProposal: {}
+        )
         _ = executingMotion.body
 
-        let executingReduced = ToolStateView(mode: .executing(label: "Executing..."), reduceTransparency: true, reduceMotion: true)
+        let executingReduced = ToolStateView(
+            mode: .executing(label: "Executing..."),
+            reduceTransparency: true,
+            reduceMotion: true,
+            onConfirmProposal: {},
+            onDenyProposal: {}
+        )
         _ = executingReduced.body
     }
 

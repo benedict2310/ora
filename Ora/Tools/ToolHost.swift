@@ -47,7 +47,7 @@ actor ToolHost {
     
     // MARK: - Properties
     
-    private let logger = Logger(subsystem: "com.ora.app", category: "ToolHost")
+    private let logger = Logger.ora(category: "ToolHost")
     
     // MARK: - Initialization
     

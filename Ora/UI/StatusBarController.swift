@@ -54,7 +54,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     // MARK: - Properties
 
     private var statusItem: NSStatusItem?
-    private let logger = Logger(subsystem: "com.ora.app", category: "StatusBar")
+    private let logger = Logger.ora(category: "StatusBar")
     private var defaultActionHandler: DefaultStatusBarActionHandler?
     private weak var injectedActionHandler: StatusBarActionHandler?
     private let updateChecker: UpdateChecking

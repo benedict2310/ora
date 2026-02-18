@@ -17,7 +17,7 @@ actor TranscriptCoordinator {
 
     // MARK: - Properties
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "TranscriptCoordinator")
+    private let logger = Logger.ora(category: "TranscriptCoordinator")
 
     private var currentTask: Task<String?, Error>?
     private var finalTranscript: String?

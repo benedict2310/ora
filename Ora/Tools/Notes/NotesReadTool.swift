@@ -16,7 +16,7 @@ struct NotesReadTool: Tool {
     private static let maxMaxChars = 4000
 
     private let runner: AppleScriptRunning
-    private static let logger = Logger(subsystem: "com.ora.app", category: "NotesReadTool")
+    private static let logger = Logger.ora(category: "NotesReadTool")
 
     init(runner: AppleScriptRunning = AppleScriptRunner()) {
         self.runner = runner

@@ -13,7 +13,7 @@ struct CalendarCreateEventTool: Tool {
     let name = "calendar.create_event"
     let kind: ToolKind = .mutate
     
-    private static let logger = Logger(subsystem: "com.ora.app", category: "CalendarCreateTool")
+    private static let logger = Logger.ora(category: "CalendarCreateTool")
     
     var schema: ToolSchema {
         ToolSchema(

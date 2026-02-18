@@ -28,7 +28,7 @@ actor OpenAIModelDiscoveryService: OpenAIModelDiscovering {
 
     // MARK: - Properties
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "providers")
+    private let logger = Logger.ora(category: "providers")
     private let credentialStore: CredentialStore
     private let codexOAuthManager: (any CodexOAuthManaging)?
     private let session: URLSession

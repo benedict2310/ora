@@ -23,8 +23,7 @@ final class SetupCoordinator: NSObject, ObservableObject {
 
     // MARK: - Properties
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "SetupCoordinator")
-    private let userDefaultsKey = "com.ora.setupComplete"
+    private let logger = Logger.ora(category: "SetupCoordinator")
     private var setupWindow: NSWindow?
     private var downloadTask: Task<Void, Never>?
     
@@ -98,7 +97,7 @@ final class SetupCoordinator: NSObject, ObservableObject {
         // Sync initial state from ModelManager
         modelsState = await ModelManager.shared.state
         
-        let isComplete = UserDefaults.standard.bool(forKey: self.userDefaultsKey)
+        let isComplete = UserDefaults.standard.oraSetupComplete
 
         if isComplete {
             // Verify models are still available
@@ -119,7 +118,7 @@ final class SetupCoordinator: NSObject, ObservableObject {
 
     /// Returns true if setup has been completed
     var isSetupComplete: Bool {
-        UserDefaults.standard.bool(forKey: self.userDefaultsKey)
+        UserDefaults.standard.oraSetupComplete
     }
 
     /// Show the setup window
@@ -359,7 +358,7 @@ final class SetupCoordinator: NSObject, ObservableObject {
 
     private func completeSetup() {
         self.state.isComplete = true
-        UserDefaults.standard.set(true, forKey: self.userDefaultsKey)
+        UserDefaults.standard.oraSetupComplete = true
         self.isShowingSetup = false
         self.setupWindow?.close()
         self.setupWindow = nil

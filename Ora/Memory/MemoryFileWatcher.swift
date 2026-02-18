@@ -12,11 +12,11 @@ final class MemoryFileWatcher: Sendable {
 
     // MARK: - Constants
 
-    private static let defaultDebounceInterval: TimeInterval = 0.75
+    private static let defaultDebounceInterval: TimeInterval = OraConstants.Timing.memoryWatcherDebounceInterval
 
     // MARK: - Properties
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "memory")
+    private let logger = Logger.ora(category: "memory")
     private let fileURL: URL
     private let debounceInterval: TimeInterval
     private let onFileChanged: @Sendable () async -> Void
@@ -33,6 +33,18 @@ final class MemoryFileWatcher: Sendable {
         self.fileURL = fileURL
         self.debounceInterval = debounceInterval
         self.onFileChanged = onFileChanged
+    }
+
+    deinit {
+        let state = self.state
+        let logger = self.logger
+        Task {
+            await state.cancelDebounce()
+            if let source = await state.clearSource() {
+                source.cancel()
+            }
+            logger.debug("Stopped watching MEMORY.md in deinit")
+        }
     }
 
     // MARK: - Public API
@@ -62,7 +74,11 @@ final class MemoryFileWatcher: Sendable {
 
     func endOraWrite() async {
         // Delay clearing the flag so the DispatchSource event is still suppressed.
-        try? await Task.sleep(for: .milliseconds(200))
+        do {
+            try await Task.sleep(for: OraConstants.Timing.memoryWatcherEndWriteDelay)
+        } catch {
+            return
+        }
         await self.state.setWriteInProgress(false)
     }
 
@@ -112,7 +128,8 @@ final class MemoryFileWatcher: Sendable {
 
                 let task = Task {
                     do {
-                        try await Task.sleep(for: .milliseconds(Int(debounceInterval * 1000)))
+                        let delayMilliseconds = Int(debounceInterval * OraConstants.Timing.memoryWatcherDebounceGranularityMilliseconds)
+                        try await Task.sleep(for: .milliseconds(delayMilliseconds))
                     } catch {
                         return
                     }
@@ -151,7 +168,11 @@ final class MemoryFileWatcher: Sendable {
         }
 
         // Brief delay for filesystem to settle after atomic rename.
-        try? await Task.sleep(for: .milliseconds(50))
+        do {
+            try await Task.sleep(for: OraConstants.Timing.memoryWatcherReopenDelay)
+        } catch {
+            return
+        }
 
         await self.installSource()
     }

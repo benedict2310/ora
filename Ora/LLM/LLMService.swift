@@ -22,7 +22,7 @@ actor LLMService: LLMServicing {
     
     // MARK: - Properties
     
-    private let logger = Logger(subsystem: "com.ora.app", category: "LLMService")
+    private let logger = Logger.ora(category: "LLMService")
     
     private var modelContainer: ModelContainer?
     private var isReady = false

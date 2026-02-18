@@ -49,7 +49,7 @@ final class DefaultModelDownloader: ModelDownloader, @unchecked Sendable {
 
     // MARK: - Properties
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "ModelDownloader")
+    private let logger = Logger.ora(category: "ModelDownloader")
     private let asrStrategy: ModelDownloadStrategy
     private let huggingFaceStrategy: ModelDownloadStrategy
 

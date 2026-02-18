@@ -82,7 +82,7 @@ actor AudioService {
 
     // MARK: - Properties
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "AudioService")
+    private let logger = Logger.ora(category: "AudioService")
 
     /// Underlying audio pipeline
     private var pipeline: AudioPipeline?
@@ -107,6 +107,7 @@ actor AudioService {
     // Configuration
     private let sampleRate = 16000
     private let frameSize = 1600  // 100ms at 16kHz
+    private let streamBufferFrameLimit = 50  // 5 seconds at 100ms per frame
 
     // MARK: - Initialization
 
@@ -164,10 +165,9 @@ actor AudioService {
         let audioPipeline = pipeline ?? AudioPipeline()
         self.pipeline = audioPipeline
 
-        // Create the async stream with bounded buffering
-        // Use bufferingNewest to drop old frames if ASR consumption stalls
-        // 10 frames = 1 second of audio at 100ms per frame
-        let stream = AsyncStream<AudioFrame>(bufferingPolicy: .bufferingNewest(10)) { continuation in
+        // Create the async stream with bounded buffering.
+        // Keep a larger headroom to absorb short ASR stalls while keeping memory bounded.
+        let stream = AsyncStream<AudioFrame>(bufferingPolicy: .bufferingNewest(self.streamBufferFrameLimit)) { continuation in
             self.framesContinuation = continuation
 
             continuation.onTermination = { @Sendable _ in

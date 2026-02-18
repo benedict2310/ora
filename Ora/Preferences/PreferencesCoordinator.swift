@@ -18,7 +18,7 @@ final class PreferencesCoordinator: ObservableObject {
 
     // MARK: - Properties
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "Preferences")
+    private let logger = Logger.ora(category: "Preferences")
     private var window: NSWindow?
 
     // MARK: - Published State

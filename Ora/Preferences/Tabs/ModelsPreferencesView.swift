@@ -6,14 +6,17 @@
 //
 
 import SwiftUI
+import os
 
 struct ModelsPreferencesView: View {
 
     // MARK: - State
 
+    private let logger = Logger.ora(category: "ModelsPreferences")
     @State private var modelsState = ModelsState()
     @State private var showDeleteConfirmation = false
     @State private var modelToDelete: ModelIdentifier?
+    @State private var downloadErrorMessage: String?
 
     // MARK: - Body
 
@@ -107,6 +110,14 @@ struct ModelsPreferencesView: View {
                         .foregroundColor(.secondary)
                 }
             }
+
+            if let downloadErrorMessage {
+                Section {
+                    Label(downloadErrorMessage, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundColor(.red)
+                        .font(.caption)
+                }
+            }
         }
         .formStyle(.grouped)
         .onAppear {
@@ -141,8 +152,11 @@ struct ModelsPreferencesView: View {
     private func downloadModel(_ model: ModelIdentifier) async {
         do {
             try await ModelManager.shared.downloadModel(model)
+            self.downloadErrorMessage = nil
         } catch {
-            // Error handling - model state will reflect failure
+            let message = "Failed to download \(model.displayName): \(error.localizedDescription)"
+            self.downloadErrorMessage = message
+            self.logger.warning("\(message)")
         }
     }
 

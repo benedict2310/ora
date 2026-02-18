@@ -13,7 +13,7 @@ struct NotesRecentTool: Tool {
     let kind: ToolKind = .read
 
     private let runner: AppleScriptRunning
-    private static let logger = Logger(subsystem: "com.ora.app", category: "NotesRecentTool")
+    private static let logger = Logger.ora(category: "NotesRecentTool")
 
     private static let defaultLimit = 10
     private static let maxLimit = 50

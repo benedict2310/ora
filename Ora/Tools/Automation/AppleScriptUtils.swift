@@ -31,7 +31,7 @@ struct AppleScriptJSONEnvelope: Sendable {
 
 /// Utility functions for AppleScript execution
 enum AppleScriptUtils {
-    private static let logger = Logger(subsystem: "com.ora.app", category: "AppleScriptUtils")
+    private static let logger = Logger.ora(category: "AppleScriptUtils")
 
     /// Parse JSON from script output, handling the standard envelope format
     /// - Parameter output: Raw stdout from osascript
@@ -52,7 +52,8 @@ enum AppleScriptUtils {
             let jsonObject = try JSONSerialization.jsonObject(with: data)
             return self.convertToJSONValue(jsonObject)
         } catch {
-            self.logger.debug("Failed to parse JSON: \(error.localizedDescription)")
+            let preview = String(trimmed.prefix(200))
+            self.logger.warning("Failed to parse AppleScript JSON (preview: \(preview)): \(error.localizedDescription)")
             return nil
         }
     }
@@ -87,7 +88,8 @@ enum AppleScriptUtils {
                 code: code
             )
         } catch {
-            self.logger.debug("Failed to parse envelope: \(error.localizedDescription)")
+            let preview = String(trimmed.prefix(200))
+            self.logger.warning("Failed to parse AppleScript envelope (preview: \(preview)): \(error.localizedDescription)")
             return nil
         }
     }

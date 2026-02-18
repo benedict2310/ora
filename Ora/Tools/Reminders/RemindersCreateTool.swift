@@ -13,7 +13,7 @@ struct RemindersCreateTool: Tool {
     let name = "reminders.create"
     let kind: ToolKind = .mutate
 
-    private static let logger = Logger(subsystem: "com.ora.app", category: "RemindersCreateTool")
+    private static let logger = Logger.ora(category: "RemindersCreateTool")
 
     var schema: ToolSchema {
         ToolSchema(

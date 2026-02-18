@@ -53,7 +53,7 @@ struct GeneralPreferencesView: View {
                 }
                 .toggleStyle(.switch)
                 .onChange(of: voiceOutputEnabled) { _, newValue in
-                    UserDefaults.standard.set(newValue, forKey: "com.ora.voiceOutputEnabled")
+                    UserDefaults.standard.oraVoiceOutputEnabled = newValue
                 }
             }
 
@@ -145,7 +145,7 @@ struct GeneralPreferencesView: View {
                         }
                         .labelsHidden()
                         .onChange(of: selectedCalendarID) { _, newValue in
-                            UserDefaults.standard.set(newValue, forKey: "com.ora.defaultCalendarID")
+                            UserDefaults.standard.oraDefaultCalendarID = newValue
                         }
                     }
                 }
@@ -161,12 +161,7 @@ struct GeneralPreferencesView: View {
     // MARK: - Private Methods
 
     private func loadSettings() {
-        // Voice output defaults to true if not set
-        if UserDefaults.standard.object(forKey: "com.ora.voiceOutputEnabled") == nil {
-            voiceOutputEnabled = true
-        } else {
-            voiceOutputEnabled = UserDefaults.standard.bool(forKey: "com.ora.voiceOutputEnabled")
-        }
+        voiceOutputEnabled = UserDefaults.standard.oraVoiceOutputEnabled
 
         // Conversation mode from SwiftData settings (AC-6: default true)
         conversationModeEnabled = PersistenceManager.shared.settings.conversationModeEnabled
@@ -174,7 +169,7 @@ struct GeneralPreferencesView: View {
         // Silence timeout from SwiftData settings (default 1.0s)
         silenceTimeout = PersistenceManager.shared.settings.silenceTimeout
 
-        selectedCalendarID = UserDefaults.standard.string(forKey: "com.ora.defaultCalendarID") ?? ""
+        selectedCalendarID = UserDefaults.standard.oraDefaultCalendarID
     }
 
     private func formatTimeout(_ value: Double) -> String {

@@ -20,7 +20,7 @@ public actor KokoroEngine: KokoroEngining {
 
     // MARK: - Properties
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "KokoroEngine")
+    private let logger = Logger.ora(category: "KokoroEngine")
     private let modelPath: URL
     private let voicesPath: URL
     private var tts: KokoroTTS?

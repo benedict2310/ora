@@ -57,7 +57,7 @@ final class ProviderPreferencesViewModel: ObservableObject {
 
     // MARK: - Dependencies
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "ProviderPreferences")
+    private let logger = Logger.ora(category: "ProviderPreferences")
     private let credentialStore: CredentialStore
     private let providerManager: LLMProviderManager
     private let codexOAuthManager: CodexOAuthManaging

@@ -23,7 +23,7 @@ struct NotesSearchTool: Tool {
     ]
 
     private let runner: AppleScriptRunning
-    private static let logger = Logger(subsystem: "com.ora.app", category: "NotesSearchTool")
+    private static let logger = Logger.ora(category: "NotesSearchTool")
 
     init(runner: AppleScriptRunning = AppleScriptRunner()) {
         self.runner = runner

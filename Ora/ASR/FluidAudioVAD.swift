@@ -89,7 +89,7 @@ public actor FluidAudioVAD {
 
     // MARK: - Properties
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "FluidAudioVAD")
+    private let logger = Logger.ora(category: "FluidAudioVAD")
     private let configuration: FluidAudioVADConfiguration
 
     private var manager: VadManager?

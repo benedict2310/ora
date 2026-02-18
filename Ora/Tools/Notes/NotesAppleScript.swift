@@ -9,7 +9,7 @@ import Foundation
 import os
 
 enum NotesAppleScript {
-    private static let logger = Logger(subsystem: "com.ora.app", category: "NotesAppleScript")
+    private static let logger = Logger.ora(category: "NotesAppleScript")
     private static let jsonHelpers = """
     on json_escape(theText)
         if theText is missing value then return ""

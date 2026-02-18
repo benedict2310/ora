@@ -11,7 +11,7 @@ import os
 /// Provides shared access to EKEventStore
 enum EventStoreProvider {
     
-    private static let logger = Logger(subsystem: "com.ora.app", category: "EventStoreProvider")
+    private static let logger = Logger.ora(category: "EventStoreProvider")
 
     enum CalendarAccessAction: Equatable {
         case authorized

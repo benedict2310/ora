@@ -13,7 +13,7 @@ struct MailSearchTool: Tool {
     let kind: ToolKind = .read
 
     private let runner: AppleScriptRunning
-    private static let logger = Logger(subsystem: "com.ora.app", category: "MailSearchTool")
+    private static let logger = Logger.ora(category: "MailSearchTool")
 
     private static let defaultLimit = 5
     private static let maxLimit = 20

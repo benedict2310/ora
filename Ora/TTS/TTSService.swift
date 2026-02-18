@@ -18,7 +18,7 @@ public actor TTSService: TTSServicing {
 
     // MARK: - Properties
 
-    private let logger = Logger(subsystem: "com.ora.app", category: "TTSService")
+    private let logger = Logger.ora(category: "TTSService")
 
     private var kokoroEngine: KokoroEngining?
     private var isKokoroReady = false
