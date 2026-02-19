@@ -1,7 +1,7 @@
 # M.12 - Architectural Improvements (Phase 2 & 3)
 
 **Epic:** Maintenance
-**Status:** 🔲 Not Started
+**Status:** ✅ Complete
 **Priority:** P1 (High) for Phase 2, P2 (Medium) for Phase 3
 **Estimated Effort:** Phase 2: 3-5 days, Phase 3: 1-2 weeks
 **Dependencies:** None
@@ -61,9 +61,9 @@ The following critical issues were resolved immediately:
 - Track monitor active state independently from panel visibility
 
 **Acceptance Criteria:**
-- [ ] OverlayWindowController cleans up monitors in deinit
-- [ ] MemoryFileWatcher stops DispatchSource in deinit
-- [ ] No leaked NSEvent monitors after overlay lifecycle
+- [x] OverlayWindowController cleans up monitors in deinit
+- [x] MemoryFileWatcher stops DispatchSource in deinit
+- [x] No leaked NSEvent monitors after overlay lifecycle
 
 ---
 
@@ -85,10 +85,10 @@ The following critical issues were resolved immediately:
 3. Log SQL rollback failures at error level (critical diagnostic information)
 
 **Acceptance Criteria:**
-- [ ] Model download failures show error in UI
-- [ ] AppleScript errors logged at warning level with context
-- [ ] SQL rollback failures logged at error level
-- [ ] No empty catch blocks remain
+- [x] Model download failures show error in UI
+- [x] AppleScript errors logged at warning level with context
+- [x] SQL rollback failures logged at error level
+- [x] No empty catch blocks remain
 
 ---
 
@@ -111,9 +111,9 @@ let stream = AsyncStream<AudioFrame>(bufferingPolicy: .bufferingNewest(10)) { ..
 **Potential Fix:** Change to `.bufferingNewest(50)` or `.unbounded` with a drain timeout. Or implement a dedicated ring buffer that signals the consumer.
 
 **Acceptance Criteria:**
-- [ ] Audio frames not dropped during normal ASR processing
-- [ ] Memory bounded during extended recording sessions
-- [ ] No regression in ASR latency or accuracy
+- [x] Audio frames not dropped during normal ASR processing
+- [x] Memory bounded during extended recording sessions
+- [x] No regression in ASR latency or accuracy
 
 ---
 
@@ -129,9 +129,9 @@ let stream = AsyncStream<AudioFrame>(bufferingPolicy: .bufferingNewest(10)) { ..
 - Log when using fallback VAD so users/developers know
 
 **Acceptance Criteria:**
-- [ ] FluidVAD re-attempts initialization after cooldown period
-- [ ] Fallback to EnergyVAD is logged at notice level
-- [ ] Successful retry after transient failure verified in tests
+- [x] FluidVAD re-attempts initialization after cooldown period
+- [x] Fallback to EnergyVAD is logged at notice level
+- [x] Successful retry after transient failure verified in tests
 
 ---
 
@@ -144,9 +144,9 @@ let stream = AsyncStream<AudioFrame>(bufferingPolicy: .bufferingNewest(10)) { ..
 **Fix:** Replace with circular buffer (ring buffer) or `ArraySlice` windowing.
 
 **Acceptance Criteria:**
-- [ ] Audio buffer trimming is O(1) amortized
-- [ ] No memory spikes during 10-minute sessions
-- [ ] Existing ASR accuracy unaffected
+- [x] Audio buffer trimming is O(1) amortized
+- [x] No memory spikes during 10-minute sessions
+- [x] Existing ASR accuracy unaffected
 
 ---
 
@@ -168,9 +168,9 @@ do {
 ```
 
 **Acceptance Criteria:**
-- [ ] Task.sleep cancellation properly exits the enclosing scope
-- [ ] No `try?` on Task.sleep in non-trivial contexts
-- [ ] State transitions not triggered after cancellation
+- [x] Task.sleep cancellation properly exits the enclosing scope
+- [x] No `try?` on Task.sleep in non-trivial contexts
+- [x] State transitions not triggered after cancellation
 
 ---
 
@@ -197,11 +197,11 @@ SimplePipelineController (orchestrator, ~300 lines)
 - Remove dead `usesStreamingTTS = false` code paths (~50 lines)
 
 **Acceptance Criteria:**
-- [ ] SimplePipelineController < 400 lines
-- [ ] State machine validates all transitions
-- [ ] Dead streaming TTS code removed
-- [ ] All existing tests pass
-- [ ] No behavior changes
+- [x] SimplePipelineController < 400 lines
+- [x] State machine validates all transitions
+- [x] Dead streaming TTS code removed
+- [x] All existing tests pass
+- [x] No behavior changes
 
 ---
 
@@ -227,9 +227,9 @@ SimplePipelineController (orchestrator, ~300 lines)
 4. `OverlayPresenting` (accessed from orchestration)
 
 **Acceptance Criteria:**
-- [ ] Top 4 singletons have protocol abstractions
-- [ ] At least 5 test files use injected mocks instead of .shared
-- [ ] No behavior changes in production
+- [x] Top 4 singletons have protocol abstractions
+- [x] At least 5 test files use injected mocks instead of .shared
+- [x] No behavior changes in production
 
 ---
 
@@ -248,10 +248,10 @@ SimplePipelineController (orchestrator, ~300 lines)
 **Recommendation:** Option A if relationship storage is still desired (better query support, normalization). Option B if blob storage is sufficient (simpler, fewer moving parts).
 
 **Acceptance Criteria:**
-- [ ] Decision made and documented
-- [ ] No dead migration code remains
-- [ ] If migrated: old sessions converted, new sessions use relationships
-- [ ] If removed: all MessageModel references cleaned up
+- [x] Decision made and documented
+- [x] No dead migration code remains
+- [ ] ~~If migrated: old sessions converted, new sessions use relationships~~ (Option B chosen)
+- [x] If removed: all MessageModel references cleaned up
 
 ---
 
@@ -278,9 +278,9 @@ SimplePipelineController (orchestrator, ~300 lines)
 - `MemoryScorer.swift` — Entity overlap scoring, session filtering
 
 **Acceptance Criteria:**
-- [ ] No file exceeds 500 lines
-- [ ] All existing tests pass
-- [ ] Internal APIs unchanged (only file boundaries move)
+- [x] No file exceeds 500 lines
+- [x] All existing tests pass
+- [x] Internal APIs unchanged (only file boundaries move)
 
 ---
 
@@ -299,10 +299,10 @@ SimplePipelineController (orchestrator, ~300 lines)
 4. Create `ToolError` base protocol or generic enum
 
 **Acceptance Criteria:**
-- [ ] Logger subsystem string appears only in the extension
-- [ ] UserDefaults keys defined in one location
-- [ ] No hardcoded timing constants in business logic
-- [ ] Tool error definitions share common structure
+- [x] Logger subsystem string appears only in the extension
+- [x] UserDefaults keys defined in one location
+- [x] No hardcoded timing constants in business logic
+- [x] Tool error definitions share common structure
 
 ---
 
@@ -411,3 +411,12 @@ SimplePipelineController (orchestrator, ~300 lines)
 - `Ora/Tools/ToolError.swift` — New: shared tool error protocol
 - `OraTests/ASRServiceTests.swift` — New: FluidVAD retry + circular buffer tests
 - `OraTests/Orchestration/PipelineStateMachineTests.swift` — New: state machine tests
+
+---
+
+## Completion Status
+- [x] Implementation complete (Phase 2 + Phase 3)
+- [x] Code review passed (3 iterations, codex)
+- [x] PR merged: https://github.com/benedict2310/ora/pull/151
+- [x] Merged to main: `5aec8c8`
+- [x] Date: 2026-02-19
