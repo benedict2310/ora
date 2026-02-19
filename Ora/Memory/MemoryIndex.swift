@@ -179,6 +179,8 @@ actor MemoryIndex: MemoryIndexing {
 
             try self.ensureSchema(database: database)
             try self.replaceMemoryIndexContents(chunks: embeddedChunks, database: database)
+            // Reclaim disk space freed by DELETE — SQLite won't shrink the file without VACUUM
+            try self.execute(sql: "VACUUM;", database: database)
 
             self.logger.debug("Memory index rebuilt with \(embeddedChunks.count) chunk(s)")
         } catch {
