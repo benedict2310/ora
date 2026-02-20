@@ -74,6 +74,13 @@ Improve distiller output quality and deduplication to keep MEMORY.md concise and
 |:---|:------|:-------|:-----|
 | MEM.18 | [Distiller Quality & Deduplication](MEM.18-DISTILLER-QUALITY-AND-DEDUP.md) | Complete | MEM.08, MEM.09 |
 
+### MEM.09 — Retrieval Hardening
+Fix unbounded semantic candidate fetch and add hybrid scoring to the transcript fallback path.
+
+| ID | Title | Status | Deps |
+|:---|:------|:-------|:-----|
+| MEM.19 | [Memory Retrieval Hardening](MEM.19-RETRIEVAL-HARDENING.md) | Not Started | MEM.12, MEM.13 |
+
 ## Implementation Order
 
 ```
