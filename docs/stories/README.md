@@ -185,6 +185,7 @@ Persistent conversation history, user-visible memory artifacts, and implicit ret
 | MEM.15 | [Memory Manager Panel](memory/MEM.15-MEMORY-MANAGER-PANEL.md) | 🚧 Not Started |
 | MEM.16 | [Background Persistence ModelActor](memory/MEM.16-BACKGROUND-PERSISTENCE-MODELACTOR.md) | 📋 Future |
 | MEM.17 | [Transcript Storage Migration](memory/MEM.17-TRANSCRIPT-STORAGE-MIGRATION.md) | 📋 Future |
+| MEM.19 | [Memory Retrieval Hardening](memory/MEM.19-RETRIEVAL-HARDENING.md) | 🚧 Not Started |
 
 ### 📚 Skills (S)
 Optional orchestration playbooks that layer on top of native tools.
