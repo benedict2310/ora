@@ -107,7 +107,7 @@ agent-tools/TestSuite/
 | `agent-tools/TestSuite/Sources/AgentBench/ToolRegistry.swift` | Add mock `skills.list`, `skills.load`, `skills.read` tools |
 | `agent-tools/TestSuite/Sources/AgentBench/SystemPrompt.swift` | Add available_skills XML block rendering |
 | `agent-tools/TestSuite/Sources/AgentBench/Benchmark.swift` | Add skill metrics collection |
-| `agent-tools/TestSuite/Sources/AgentBench/AgentBenchCommand.swift` | Add `--skills` flag and skills report output |
+| `agent-tools/TestSuite/Sources/AgentBench/AgentBenchCommand.swift` | Add `--compare-config` flag (accepts `skills`); runs suite twice for uplift reporting |
 | `agent-tools/TestSuite/README.md` | Document skills evaluation usage |
 
 ### 5.3 Tests to Add
@@ -157,8 +157,10 @@ agent-tools/TestSuite/
 ### CLI Integration
 
 - [ ] AC-16: `swift run AgentBench --suite benchmarks/skills.json` runs skill eval
-- [ ] AC-17: `swift run AgentBench --skills-report` outputs skills-specific metrics
-- [ ] AC-18: `--compare` flag works for skills benchmarks (compare with/without skills)
+- [ ] AC-17: `swift run AgentBench --suite benchmarks/skills.json --output <path>` writes the skills-specific JSON report
+- [ ] AC-18: `swift run AgentBench --suite benchmarks/skills.json --compare-config skills` runs the suite **twice** (skills-enabled vs. skills-disabled, same model, same test cases) and reports uplift metrics; `--compare-config` is a new flag distinct from the existing `--compare`/`--compare-preset` model-comparison flags
+
+**Baseline comparison methodology:** both runs use the same model and same benchmark cases. The only difference is whether `{{available_skills}}` is injected into the system prompt and whether `skills.*` tools are registered. `task_success_baseline` comes from the skills-disabled run; `task_success_skills` from the enabled run.
 
 ## 7. Verification Plan
 

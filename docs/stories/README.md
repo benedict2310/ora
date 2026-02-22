@@ -192,11 +192,12 @@ Optional orchestration playbooks that layer on top of native tools.
 
 | ID | Title | Status |
 |:---|:------|:-------|
-| S.01 | [Skills Runtime](skills/S.01-SKILLS-RUNTIME.md) | 📋 Future |
-| S.02 | [Skills Evaluation](skills/S.02-SKILLS-EVALUATION.md) | 📋 Future |
-| S.03 | [Skill Scripts](skills/S.03-SKILL-SCRIPTS.md) | 📋 Future |
-| S.04 | [Skills Marketplace](skills/S.04-SKILLS-MARKETPLACE.md) | 📋 Future |
-| S.05 | [Embedding Retrieval](skills/S.05-EMBEDDING-RETRIEVAL.md) | 📋 Future |
+| S.00 | [Context Budget](skills/S.00-CONTEXT-BUDGET.md) | 🚧 Not Started |
+| S.01 | [Skills Runtime](skills/S.01-SKILLS-RUNTIME.md) | 🚧 Not Started |
+| S.02 | [Skills Evaluation](skills/S.02-SKILLS-EVALUATION.md) | 🚧 Not Started |
+| S.03 | [Skill Scripts](skills/S.03-SKILL-SCRIPTS.md) | 🚧 Not Started |
+| S.04 | [Skills Marketplace](skills/S.04-SKILLS-MARKETPLACE.md) | 📋 Distant Future |
+| S.05 | [Agent Skill Authoring](skills/S.05-AGENT-SKILL-AUTHORING.md) | 🚧 Not Started |
 
 ### ☁️ Cloud Integrations (C)
 Cloud LLM provider support (Anthropic, OpenAI) with secure credential management.
