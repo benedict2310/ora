@@ -1,10 +1,10 @@
 # S.04 - Skills Marketplace
 
 **Epic:** Skills
-**Status:** Future
-**Priority:** P3 (Low)
+**Status:** Distant Future
+**Priority:** P3 (Low) — implement S.05 (Agent Skill Authoring) first; revisit S.04 only if community skill sharing becomes a clear user demand
 **Estimated Effort:** 5 days
-**Dependencies:** S.01 (Skills Runtime), S.03 (Skill Scripts) - partial
+**Dependencies:** S.01 (Skills Runtime), S.03 (Skill Scripts) — required only if the marketplace serves skills that include `scripts/` folders; skills containing only `SKILL.md` and `references/` require only S.01
 **Target:** macOS 26 (Tahoe)
 **Design Reference:** None
 
@@ -87,6 +87,7 @@ As a user, I want to browse and install skills created by others, so that I can 
 - Skills with scripts require explicit consent
 - Checksum verification before installation
 - Option to only allow verified publishers
+- **Content sanitization (mandatory):** Marketplace-installed skill content loaded via `skills.load` must pass through `ContentSanitizer` (`Ora/Utilities/ContentSanitizer.swift`, shared with BG.05) before LLM injection. A third-party SKILL.md could contain prompt injection payloads. Sanitization strips control characters, normalizes whitespace, and enforces the 5000-char context injection limit. This is a hard requirement — marketplace skills must never be injected into the LLM context raw.
 
 ## 5. Implementation Plan (Draft)
 
@@ -158,6 +159,7 @@ As a user, I want to browse and install skills created by others, so that I can 
 | Index availability | Cache index locally, fallback to bundled |
 | Version conflicts | Clear upgrade/downgrade UX |
 | Privacy concerns | Skills fetched over HTTPS, minimal tracking |
+| **macOS sandbox entitlement** | Ora must be entitled to write to `~/Library/Application Support/Ora/Skills/`. Verify `com.apple.security.temporary-exception.files.home-relative-path.read-write` or equivalent is present in `project.yml` entitlements before implementing. If not already granted, this must be added as a pre-requisite. |
 
 ## 10. Open Questions
 

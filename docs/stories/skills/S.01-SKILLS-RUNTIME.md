@@ -141,9 +141,9 @@ All skill operations are logged:
 | `Ora/Tools/ToolRegistry.swift` | Register skills tools |
 | `Ora/LLM/SystemPromptBuilder.swift` | Add `{{available_skills}}` variable and rendering |
 | `Ora/Resources/system-prompt.txt` | Add `{{available_skills}}` placeholder |
-| `Ora/Persistence/AuditLogEntry.swift` | Add `skill_list`, `skill_load`, `skill_read` types |
+| `Ora/Persistence/AuditLogEntry.swift` | Add `.skillList`, `.skillLoad`, `.skillRead` cases to `AuditCategory` enum (camelCase, matching existing convention) |
 | `Ora/Preferences/PreferencesWindow.swift` | Add Skills tab |
-| `Ora/Overlay/OverlayView.swift` | Add skills hint text |
+| `Ora/Overlay/OverlayLayout.swift` | Add skills hint text |
 | `Ora/AppDelegate.swift` | Initialize SkillStore at startup |
 | `project.yml` | Add Skills folder to sources |
 
@@ -160,6 +160,7 @@ All skill operations are logged:
 
 - `project.yml` — Add `Ora/Skills` source folder
 - No new package dependencies (uses existing `Foundation` for YAML-like parsing)
+- **Shared utility coordination:** `ContentSanitizer` (built in BG.05 under `Ora/BackgroundTasks/Summary/`) should be promoted to `Ora/Utilities/ContentSanitizer.swift` so it can be reused here for non-bundled skill content. If BG.05 is not yet implemented when S.01 ships, a minimal version (control char stripping + whitespace normalization) can be created directly in `Ora/Utilities/` — BG.05 then adopts it.
 
 ## 6. Acceptance Criteria
 
@@ -173,7 +174,7 @@ All skill operations are logged:
 ### Skills Tools
 
 - [ ] AC-5: `skills.list` returns `[{id, name, description, source}]` for all valid skills
-- [ ] AC-6: `skills.load` returns full SKILL.md markdown for a requested id
+- [ ] AC-6: `skills.load` returns SKILL.md content for a requested id, **truncated at 5000 characters** with a `[truncated]` indicator if the file exceeds that limit — consistent with BG.07's context injection budget (~1500 tokens remaining after system prompt and conversation)
 - [ ] AC-7: `skills.read` reads files from `references/` or `assets/` only
 - [ ] AC-8: `skills.read` rejects paths with `..` or outside allowed prefixes
 
@@ -204,8 +205,16 @@ All skill operations are logged:
 
 ### Bundled Content
 
-- [ ] AC-22: One example skill is bundled in `Resources/Skills/`
-- [ ] AC-23: Skills README/manifest explains how to add new skills
+- [ ] AC-22: A **Daily Briefing** skill is bundled at `Resources/Skills/daily-briefing/SKILL.md`
+  - Folder name: `daily-briefing`
+  - Frontmatter: `name: Daily Briefing`, `description: Summarizes today's calendar events, pending reminders, and any flagged contacts into a spoken morning briefing.`
+  - Content: step-by-step instructions guiding the agent to call `calendar.query` (today), `reminders.list` (due today), optionally `contacts.search`, then compose a concise spoken summary
+- [ ] AC-23: Skills README/manifest at `Resources/Skills/README.md` explains the folder format and how to add new skills
+
+### Voice Activation — Fuzzy Matching
+
+- [ ] AC-24: Skill name lookup from voice input uses fuzzy matching (Jaro-Winkler via `StringSimilarity`, same pattern as `ContactsSearchTool`): try exact/substring match on skill `id` and `name` first, then fall back to fuzzy scoring if no exact match found
+- [ ] AC-25: Fuzzy threshold for skill matching is ≥ 0.80 Jaro-Winkler similarity
 
 ## 7. Verification Plan
 
@@ -215,7 +224,9 @@ All skill operations are logged:
 - [ ] Unit tests for path sandboxing (valid paths, traversal attempts, prefix enforcement)
 - [ ] Unit tests for SkillStore (discovery, indexing, loading, error cases)
 - [ ] Unit tests for skills tools (list, load, read with mocked store)
+- [ ] Unit tests for fuzzy skill name matching (exact match, ASR-mangled input, no-match case)
 - [ ] Integration test: full flow from discovery to tool call
+- [ ] Verify `AuditCategory` has `.skillList`, `.skillLoad`, `.skillRead` cases and they are recorded correctly
 
 ### Manual Tests
 
@@ -254,7 +265,8 @@ All skill operations are logged:
 | Risk | Mitigation |
 |:-----|:-----------|
 | YAML parsing edge cases | Use simple key-value extraction from frontmatter, not full YAML parser |
-| Large skill files slowing load | Enforce reasonable size limits (e.g., 100KB max for SKILL.md) |
+| Large skill files blowing context budget | `skills.load` truncates at 5000 chars (~1500 tokens); 100KB file size cap prevents disk abuse. File size and context budget are separate concerns — both limits apply |
+| Prompt injection via user-installed skills | Bundled skills are trusted. User-installed skills loaded via `skills.load` must pass through `ContentSanitizer` (shared utility promoted from BG.05) before LLM injection — strip control characters, normalize whitespace. Especially critical for S.04 marketplace skills |
 | Skill instructions conflicting with tools | Document that skills are guidance only; tools have final authority |
 | User confusion about skills vs tools | Clear UI labeling and documentation |
 
@@ -342,6 +354,20 @@ Rendered as (XML block injected into prompt):
     <description>Helps schedule meetings by finding slots and drafting invites.</description>
   </skill>
 </available_skills>
+```
+
+**`SystemPromptBuilder.build()` signature change:**
+
+Add a `skills: [SkillMetadata] = []` parameter alongside the existing `tools:` parameter. The renderer converts the array into the `<available_skills>` XML block. When the feature toggle is off or no skills are installed, the placeholder renders as an empty string (not an empty XML tag).
+
+```swift
+static func build(
+    currentDate: Date = Date(),
+    timezone: TimeZone = .current,
+    defaultCalendar: String? = nil,
+    tools: [ToolDefinition] = [],
+    skills: [SkillMetadata] = []          // NEW
+) -> String
 ```
 
 ### Activation Rule

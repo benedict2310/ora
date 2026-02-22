@@ -1,10 +1,11 @@
 # S.03 - Skill Scripts
 
 **Epic:** Skills
-**Status:** Future
-**Priority:** P2 (Medium)
+**Status:** Not Started
+**Priority:** P1 (High)
 **Estimated Effort:** 6 days
-**Dependencies:** S.01 (Skills Runtime), O.04 (Confirmation Flow)
+**Dependencies:** S.01 (Skills Runtime)
+**Future alignment:** When BG.02 (Worker Abstraction) is implemented, `SkillScriptWorker` should be refactored to conform to the `BackgroundWorker` protocol to inherit XPC/Container isolation. That refactor is out of scope here.
 **Target:** macOS 26 (Tahoe)
 **Design Reference:** [Anthropic Skills Standard](https://docs.anthropic.com/en/docs/agents-and-tools/skills)
 
@@ -119,6 +120,15 @@ skills/my-skill/
 
 If no manifest exists, scripts are still executable but with defaults (30s timeout, text output, no declared capabilities).
 
+**Network capability warning:** Unlike BG.03's `URLValidator` which enforces SSRF-safe URL validation for in-process HTTP requests, scripts run as child processes and **bypass all URL validation entirely** — they have full, unrestricted network access. When a script declares `capabilities: ["network"]` in its manifest (or has no manifest), the confirmation dialog must prominently surface this with distinct language:
+
+```
+⚠️  This script will have unrestricted network access.
+    It can reach any host, including local network services.
+```
+
+This warning is shown regardless of the skill's trust level (even trusted skills show it once per script version).
+
 ### 4.3 Execution Flow
 
 ```
@@ -190,7 +200,7 @@ struct ScriptEnvironment {
     // Inherited from user (read-only)
     let HOME: String
     let USER: String
-    let PATH: String  // Filtered to safe paths only
+    let PATH: String  // See allowlist below
     let LANG: String
     let TZ: String
 
@@ -201,36 +211,120 @@ struct ScriptEnvironment {
     let ORA_REQUEST_ID: String
 
     // Explicitly NOT inherited
-    // - API keys, tokens, credentials
-    // - SSH_AUTH_SOCK
-    // - AWS_*, GOOGLE_*, etc.
+    // - API keys, tokens, credentials (any var matching *TOKEN*, *KEY*, *SECRET*, *PASSWORD*)
+    // - SSH_AUTH_SOCK, SSH_AGENT_PID
+    // - AWS_*, GOOGLE_*, AZURE_*, GITHUB_*
+    // - Everything else not listed above
 }
 ```
 
-### 4.5 Supported Script Types
+**PATH allowlist** — built at runtime, including only paths that exist:
 
-| Type | Shebang Example | Detection |
-|:-----|:----------------|:----------|
-| Bash | `#!/bin/bash` | `.sh`, shebang |
-| Zsh | `#!/bin/zsh` | `.zsh`, shebang |
-| Python 3 | `#!/usr/bin/env python3` | `.py`, shebang |
+```
+/usr/bin
+/bin
+/usr/sbin
+/sbin
+/usr/local/bin     (included if directory exists — standard Homebrew on Intel)
+/opt/homebrew/bin  (included if directory exists — standard Homebrew on Apple Silicon)
+```
+
+This lets system interpreters (`python3`, `node`, `ruby`) and Homebrew-installed tools work without exposing user-specific paths like `~/.local/bin` or custom `PATH` modifications.
+
+### 4.5 Supported Script Types & Shebang Validation
+
+| Type | Shebang Example | Extension Fallback |
+|:-----|:----------------|:-------------------|
+| Bash | `#!/bin/bash` | `.sh` |
+| Zsh | `#!/bin/zsh` | `.zsh` |
+| Python 3 | `#!/usr/bin/env python3` | `.py` |
 | AppleScript | `#!/usr/bin/osascript` | `.scpt`, `.applescript` |
-| Ruby | `#!/usr/bin/env ruby` | `.rb`, shebang |
-| Node.js | `#!/usr/bin/env node` | `.js`, `.mjs`, shebang |
+| Ruby | `#!/usr/bin/env ruby` | `.rb` |
+| Node.js | `#!/usr/bin/env node` | `.js`, `.mjs` |
 
-Execution uses the shebang; extension is fallback for detection only.
+**Shebang parsing rules** (implemented in `ScriptSandbox.parseShebang(at:)`):
 
-### 4.6 Integration with Existing Patterns
+1. Read first line of script file; strip `\r` (handle CRLF)
+2. Line must start with `#!` — otherwise reject with `.invalidShebang`
+3. Max shebang line length: 256 characters — reject longer lines
+4. Extract interpreter: everything after `#!`, trimmed
+5. Two forms are supported:
+   - **Direct path**: `#!/bin/bash` — interpreter is `/bin/bash`. Must exist on disk.
+   - **`env` indirection**: `#!/usr/bin/env python3` — resolve `python3` against the PATH allowlist. `/usr/bin/env` itself must exist; reject any other form of `env` path.
+6. **Reject** `#!/usr/bin/env -S ...` (env with flags) — too complex, potential bypass vector
+7. Resolved interpreter must exist on disk — if not, return `.interpreterNotFound` with the interpreter name so the error message can suggest installing it
+8. Extension-only detection (no shebang): use the fallback table above to infer interpreter — but this path is only taken if the file has no first-line `#!` at all
 
-**ToolHost Integration:**
-- `SkillsRunScriptTool` implements `Tool` protocol
-- Uses existing confirmation flow via `ToolHost.execute()`
-- `kind = .mutate` ensures confirmation requirement
+### 4.6 Tool Schema
+
+```
+name:        skills.run_script
+kind:        .read  (confirmation managed by tool, not ToolHost — see below)
+description: Run a script from a skill's scripts/ folder. Call skills.load()
+             first to see available scripts and their required arguments.
+
+parameters:
+  skill_id  String  required  The skill ID containing the script (e.g. "weather-helper")
+  script    String  required  Script filename relative to scripts/ (e.g. "fetch_weather.py")
+  args      [String] optional Positional arguments. Refer to the skill's SKILL.md for
+                              required arguments. Default: []
+
+returns:
+  exit_code        Int     Process exit code (0 = success)
+  stdout           String  Captured stdout (truncated at 64KB)
+  stderr           String  Captured stderr (truncated at 64KB)
+  execution_time_ms Int    Wall clock time in milliseconds
+  truncated        Bool    True if stdout was truncated
+```
+
+### 4.7 Argument Passing
+
+Arguments are passed as **positional command-line arguments** via `Process.arguments`:
+
+```swift
+process.executableURL = URL(fileURLWithPath: interpreter)
+process.arguments = [resolvedScript.path] + arguments
+// e.g. ["/path/to/scripts/fetch_weather.py", "San Francisco"]
+```
+
+`Process.arguments` is an array — no shell is involved, so there is no injection risk from argument values. Arguments are passed verbatim.
+
+The LLM learns what arguments a script expects from the SKILL.md content (loaded via `skills.load`). Skill authors **must** document available scripts and their arguments in the SKILL.md. Bundled skills must follow this requirement.
+
+### 4.8 Confirmation Ownership
+
+`skills.run_script` has `kind = .read` so `ToolHost` does **not** show a generic confirmation dialog. The tool manages confirmation internally based on trust level:
+
+```
+execute(args:)
+  │
+  ├── global kill switch off? → throw .scriptsDisabled
+  │
+  ├── trustLevel == .bundled  → run directly (no dialog)
+  │
+  ├── trustLevel == .trusted  → network warning dialog if network-capable
+  │                              AND hash changed since warning last shown
+  │                              → then run
+  │
+  └── trustLevel == .untrusted → show trust-aware confirmation dialog
+                                   ├── cancel → throw .confirmationDenied
+                                   ├── confirm → run
+                                   └── confirm + "trust this skill"
+                                         → grantTrust(), then run
+```
+
+The trust-aware dialog is shown via `@MainActor` dispatch, consistent with other confirmation UI in Ora.
+
+### 4.9 Integration with Existing Patterns
+
+**Standalone actor — no BG.02 dependency now:**
+- `SkillScriptWorker` is a standalone `actor` using `Foundation.Process` directly
+- Scripts are synchronous from the agent's perspective — `SkillsRunScriptTool` awaits inline
+- Future: when BG.02 is built, align `SkillScriptWorker` with `BackgroundWorker` protocol to gain XPC/Container isolation without changing call sites
 
 **Audit Logging:**
 - Extend `AuditCategory` with `.scriptExecution`
-- Log script hash to detect tampering
-- Log full command line and exit code
+- Log: skill, script filename, args (redacted if sensitive), SHA-256 hash of script file, exit code, execution time, whether confirmation was shown
 
 **ToolRegistry:**
 - Register `skills.run_script` alongside other skills tools
@@ -241,20 +335,21 @@ Execution uses the shebang; extension is fallback for detection only.
 
 | File | Purpose |
 |:-----|:--------|
-| `Ora/Skills/ScriptManifest.swift` | Parse and validate `scripts/manifest.json` |
-| `Ora/Skills/ScriptRunner.swift` | Process spawning, output capture, timeout |
-| `Ora/Skills/ScriptEnvironment.swift` | Environment variable filtering and Ora context |
-| `Ora/Skills/ScriptTrustManager.swift` | Trust levels, hash tracking, revocation |
-| `Ora/Skills/ScriptSandbox.swift` | Path validation, size limits, shebang parsing |
-| `Ora/Tools/Skills/SkillsRunScriptTool.swift` | Tool implementation |
+| `Ora/Skills/ScriptManifest.swift` | Parse and validate `scripts/manifest.json`; defaults when manifest absent |
+| `Ora/Skills/SkillScriptWorker.swift` | Standalone `actor`; `Foundation.Process` spawning, stdout/stderr capture, timeout + SIGTERM/SIGKILL, output truncation. Future: refactor to conform to `BackgroundWorker` (BG.02) for XPC/Container isolation. |
+| `Ora/Skills/ScriptEnvironment.swift` | Build filtered env dict from allowlist; inject `ORA_*` context vars |
+| `Ora/Skills/ScriptTrustManager.swift` | Trust levels (bundled/trusted/untrusted), SHA-256 hash tracking, revocation; persists to `AppSettings.scriptTrustRecordsJSON` in SwiftData |
+| `Ora/Skills/ScriptSandbox.swift` | Path validation (no traversal, must be inside `scripts/`), shebang parsing per spec in §4.5, size limit enforcement |
+| `Ora/Tools/Skills/SkillsRunScriptTool.swift` | `kind = .read`; trust check + conditional confirmation dialog + `SkillScriptWorker.run()` + audit log |
 
 ### 5.2 Files to Modify
 
 | File | Change |
 |:-----|:-------|
 | `Ora/Tools/ToolRegistry.swift` | Register `skills.run_script` tool |
-| `Ora/Persistence/AuditLogEntry.swift` | Add `scriptExecution` category |
+| `Ora/Persistence/AuditLogEntry.swift` | Add `.scriptExecution` case to `AuditCategory` enum |
 | `Ora/Persistence/AuditLogger.swift` | Add `recordScriptExecution()` method |
+| `Ora/Persistence/Models/AppSettings.swift` | Add `scriptTrustRecordsJSON: String?` field for trust persistence |
 | `Ora/Preferences/Tabs/SkillsPreferencesView.swift` | Add script settings section |
 | `Ora/Skills/SkillStore.swift` | Expose script manifest info |
 | `Ora/Skills/SkillMetadata.swift` | Add `hasScripts: Bool` field |
@@ -264,7 +359,7 @@ Execution uses the shebang; extension is fallback for detection only.
 | File | Coverage |
 |:-----|:---------|
 | `OraTests/Skills/ScriptManifestTests.swift` | Manifest parsing, validation, defaults |
-| `OraTests/Skills/ScriptRunnerTests.swift` | Execution, timeout, output capture, signals |
+| `OraTests/Skills/SkillScriptWorkerTests.swift` | Execution, timeout, output capture, signals; uses mock scripts in a temp directory |
 | `OraTests/Skills/ScriptEnvironmentTests.swift` | Env filtering, Ora context injection |
 | `OraTests/Skills/ScriptTrustManagerTests.swift` | Trust levels, hash validation, revocation |
 | `OraTests/Skills/ScriptSandboxTests.swift` | Path validation, shebang parsing, size limits |
@@ -289,46 +384,55 @@ Execution uses the shebang; extension is fallback for detection only.
 ### Trust Model
 
 - [ ] AC-6: Bundled skills' scripts execute without confirmation
-- [ ] AC-7: Untrusted user skills require per-execution confirmation
+- [ ] AC-7: Untrusted user skills require per-execution confirmation; the confirmation dialog is shown by `SkillsRunScriptTool` (not ToolHost's generic dialog, because `kind = .read`)
 - [ ] AC-8: User can mark a skill as "trusted" in Settings
-- [ ] AC-9: Trusted skill scripts execute without confirmation
-- [ ] AC-10: Script content changes (hash mismatch) revoke trust
+- [ ] AC-9: Trusted skill scripts execute without confirmation (subject to AC-10)
+- [ ] AC-10: Script content changes (hash mismatch) revoke trust automatically
 - [ ] AC-11: Global toggle disables all script execution
 
 ### Execution
 
-- [ ] AC-12: `skills.run_script` tool executes scripts via Process API
-- [ ] AC-13: Scripts run with controlled environment variables
-- [ ] AC-14: Working directory is skill's `scripts/` folder
-- [ ] AC-15: Default timeout is 30 seconds, configurable per-script
-- [ ] AC-16: SIGTERM sent on timeout, SIGKILL after 5s grace period
-- [ ] AC-17: Exit codes are captured and returned to agent
+- [ ] AC-12: `skills.run_script` has `kind = .read` — ToolHost does not show a generic confirmation dialog; the tool manages all confirmation logic internally
+- [ ] AC-13: `skills.run_script` executes scripts via `Foundation.Process` (no shell intermediary)
+- [ ] AC-14: Arguments are passed as positional command-line args via `Process.arguments` — no shell interpolation, values passed verbatim
+- [ ] AC-15: Scripts run with controlled environment variables (filtered per §4.4 allowlist)
+- [ ] AC-16: Working directory is skill's `scripts/` folder
+- [ ] AC-17: Default timeout is 30 seconds, configurable per-script in manifest
+- [ ] AC-18: SIGTERM sent on timeout, SIGKILL after 5s grace period
+- [ ] AC-19: Exit codes are captured and returned to agent
+- [ ] AC-20: Scripts declaring `capabilities: ["network"]` in manifest (or with no manifest) display a network warning in the confirmation dialog — even for trusted skills, once per script version (hash-keyed)
 
 ### Output Handling
 
-- [ ] AC-18: stdout and stderr captured separately
-- [ ] AC-19: Output truncated at 64KB with indicator
-- [ ] AC-20: JSON output parsed and returned as structured data
-- [ ] AC-21: Non-zero exit code returns error with stderr
+- [ ] AC-21: stdout and stderr captured separately
+- [ ] AC-22: Output truncated at 64KB with indicator
+- [ ] AC-23: JSON output parsed and returned as structured data
+- [ ] AC-24: Non-zero exit code returns error with stderr
 
 ### Audit & Logging
 
-- [ ] AC-22: All script executions logged to audit trail
-- [ ] AC-23: Audit includes: skill, script, args, hash, exit code
-- [ ] AC-24: Audit includes: execution time, confirmation status
+- [ ] AC-25: All script executions logged to audit trail
+- [ ] AC-26: Audit includes: skill, script, args, SHA-256 hash of script file, exit code
+- [ ] AC-27: Audit includes: execution time, whether confirmation was shown
 
 ### Settings UI
 
-- [ ] AC-25: Script execution toggle in Skills preferences
-- [ ] AC-26: Per-skill trust management (trust/revoke)
-- [ ] AC-27: View script trust status and hashes
+- [ ] AC-28: Script execution toggle in Skills preferences
+- [ ] AC-29: Per-skill trust management (trust/revoke)
+- [ ] AC-30: View script trust status and stored hashes
 
 ## 7. Verification Plan
 
 ### Automated Tests
 
 - [ ] Unit tests for manifest parsing (valid, invalid, missing)
-- [ ] Unit tests for shebang detection and validation
+- [ ] Unit tests for shebang validation — edge cases:
+  - CRLF-terminated first line is stripped and parsed correctly
+  - `#!/usr/bin/env -S python3` is rejected (env with flags)
+  - Direct path to non-existent interpreter returns `.interpreterNotFound`
+  - Shebang line exceeding 256 chars is rejected
+  - File with no `#!` on first line uses extension fallback table
+  - Non-`/usr/bin/env` env path (e.g., `/opt/homebrew/bin/env`) is rejected
 - [ ] Unit tests for environment filtering
 - [ ] Unit tests for trust manager (grant, revoke, hash check)
 - [ ] Unit tests for path sandboxing
@@ -399,40 +503,40 @@ Execution uses the shebang; extension is fallback for detection only.
 
 ---
 
-## Phased Implementation
+## Implementation Order
 
-Given the security sensitivity, consider implementing in phases:
+All three layers ship together as part of this story. Recommended build order within the sprint:
 
-### Phase 1: Bundled Scripts Only
-- Only scripts in bundled skills can execute
-- Auto-approved, no confirmation needed
-- Full audit logging
-- Establishes execution infrastructure
+### Layer 1: Execution Infrastructure
+Build `SkillScriptWorker`, `ScriptEnvironment`, `ScriptSandbox` (shebang + path validation). Write `SkillsRunScriptTool` with `kind = .read`. At this point only bundled scripts work — user scripts are blocked pending Layer 2.
 
-### Phase 2: User Scripts with Confirmation
-- User skill scripts require per-execution confirmation
-- Confirmation dialog shows script details
-- No trust persistence yet
+### Layer 2: Confirmation & Trust
+Add `ScriptTrustManager` with bundled/trusted/untrusted levels. Wire the trust-aware confirmation dialog in `SkillsRunScriptTool`. Add `AppSettings.scriptTrustRecordsJSON` for persistence. All trust model ACs (AC-6 through AC-11) become testable here.
 
-### Phase 3: Trust Management
-- Add "Trust this skill" option
-- Hash-based trust invalidation
-- Settings UI for trust management
+### Layer 3: Settings & Polish
+Add script settings section to `SkillsPreferencesView` (global toggle, per-skill trust UI). Add `ScriptManifest` parsing and network capability warning. All AC-28 through AC-30 become testable here.
+
+**All acceptance criteria (AC-1 through AC-30) must pass before the story is considered complete.**
 
 ---
 
 ## Implementation Details
 
-### ScriptRunner Actor
+### SkillScriptWorker Actor
+
+`SkillScriptWorker` is responsible only for **execution mechanics** — path resolution, shebang parsing, env building, spawning the process, capturing output, and enforcing the timeout. Trust checking and confirmation dialogs are handled upstream by `SkillsRunScriptTool`.
 
 ```swift
-public actor ScriptRunner {
+/// Standalone actor for script execution. No trust logic here — all trust/confirmation
+/// decisions are made by SkillsRunScriptTool before calling run().
+/// Future: refactor to conform to BackgroundWorker (BG.02) for XPC/Container isolation.
+public actor SkillScriptWorker {
 
     public struct ScriptResult: Sendable {
         public let exitCode: Int32
         public let stdout: String
         public let stderr: String
-        public let executionTime: TimeInterval
+        public let executionTimeMs: Int
         public let truncated: Bool
     }
 
@@ -445,10 +549,8 @@ public actor ScriptRunner {
         case outputTooLarge
         case pathTraversal
         case scriptsDisabled
-        case confirmationDenied
     }
 
-    private let trustManager: ScriptTrustManager
     private let sandbox: ScriptSandbox
     private let maxOutputBytes = 64 * 1024
     private let defaultTimeout: TimeInterval = 30
@@ -456,30 +558,29 @@ public actor ScriptRunner {
 
     public func run(
         skillID: String,
+        skillRoot: URL,
         scriptPath: String,
-        arguments: [String],
-        confirmed: Bool
+        arguments: [String]
     ) async throws -> ScriptResult {
-        // 1. Validate path
-        let resolvedPath = try sandbox.resolve(skillID: skillID, scriptPath: scriptPath)
+        // 1. Validate path (no traversal, must be inside scripts/)
+        let resolvedScript = try sandbox.resolve(skillRoot: skillRoot, scriptPath: scriptPath)
 
-        // 2. Check trust
-        let trustLevel = await trustManager.trustLevel(for: skillID)
-        if trustLevel == .untrusted && !confirmed {
-            throw ScriptError.confirmationDenied
-        }
+        // 2. Parse shebang and validate interpreter exists on disk
+        let interpreter = try sandbox.parseShebang(at: resolvedScript)
 
-        // 3. Parse shebang and validate interpreter
-        let interpreter = try sandbox.parseShebang(at: resolvedPath)
+        // 3. Build filtered environment
+        let env = ScriptEnvironment.build(
+            skillID: skillID,
+            skillRoot: skillRoot,
+            scriptName: resolvedScript.lastPathComponent
+        )
 
-        // 4. Build environment
-        let env = ScriptEnvironment.build(skillID: skillID, scriptPath: scriptPath)
-
-        // 5. Execute with timeout
+        // 4. Execute with timeout
         return try await executeWithTimeout(
             interpreter: interpreter,
-            script: resolvedPath,
+            script: resolvedScript,
             arguments: arguments,
+            workingDirectory: resolvedScript.deletingLastPathComponent(),
             environment: env.asDictionary()
         )
     }
@@ -488,10 +589,16 @@ public actor ScriptRunner {
         interpreter: String,
         script: URL,
         arguments: [String],
+        workingDirectory: URL,
         environment: [String: String]
     ) async throws -> ScriptResult {
-        // Process execution with timeout, signal handling, output capture
-        // ...
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: interpreter)
+        process.arguments = [script.path] + arguments   // positional, no shell
+        process.currentDirectoryURL = workingDirectory
+        process.environment = environment
+        // stdout/stderr pipe setup, async read with output size enforcement,
+        // timeout watchdog with SIGTERM then SIGKILL after killGracePeriod...
     }
 }
 ```
@@ -507,7 +614,10 @@ public actor ScriptTrustManager {
         case untrusted    // Requires per-execution confirmation
     }
 
+    // Trust records persisted as JSON in AppSettings (SwiftData) under key
+    // "scriptTrustRecords". Loaded at init, saved on every grant/revoke.
     private var trustedSkills: [String: TrustedSkillRecord] = [:]
+    private let persistenceManager: PersistenceManager
 
     struct TrustedSkillRecord: Codable {
         let skillID: String
@@ -522,18 +632,20 @@ public actor ScriptTrustManager {
     }
 
     public func grantTrust(skillID: String, scripts: [URL]) async {
-        // Compute hashes, store record
+        // Compute hashes, store record, persist to AppSettings
     }
 
     public func revokeTrust(skillID: String) async {
-        // Remove from trusted set
+        // Remove from trusted set, persist to AppSettings
     }
 
     public func validateHashes(skillID: String) async -> Bool {
-        // Recompute hashes, compare with stored
+        // Recompute hashes, compare with stored; revoke automatically on mismatch
     }
 }
 ```
+
+**Persistence note:** Trust records survive app restarts. They are stored as a JSON-encoded `[String: TrustedSkillRecord]` blob in `AppSettings.scriptTrustRecordsJSON` (a new `String?` field on the SwiftData `AppSettings` model). `ScriptTrustManager` reads this on init and writes it on every `grantTrust` / `revokeTrust` call.
 
 ### Confirmation Dialog Content
 
@@ -558,19 +670,6 @@ When confirmation is required, show:
 │                                                     │
 └─────────────────────────────────────────────────────┘
 ```
-
----
-
-## Notes
-
-This story is prioritized as **Future/P2** because:
-
-1. Core skills (S.01) must be validated first
-2. Security model requires careful design review
-3. Confirmation flow (O.04) should be complete first
-4. User research on trust UX would be valuable
-
-The phased approach allows shipping value incrementally while managing risk.
 
 ---
 
