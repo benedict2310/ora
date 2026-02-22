@@ -1,7 +1,7 @@
 # S.00 - Context Budget
 
 **Epic:** Skills
-**Status:** Not Started
+**Status:** Complete
 **Priority:** P0 (Critical Path) — prerequisite for S.01 and all subsequent Skills stories
 **Estimated Effort:** 1 day
 **Dependencies:** None
@@ -219,4 +219,8 @@ None.
 
 ## Completion Status
 
-(TBD after merge.)
+- [x] Implementation complete
+- [x] Code review passed (1 iteration — codex)
+- [x] PR merged: https://github.com/benedict2310/ora/pull/157
+- [x] Merged to main: 2f32191
+- [x] Date: 2026-02-22
