@@ -180,6 +180,7 @@ final class SystemPromptBuilderTests: XCTestCase {
                 name: "calendar.create",
                 description: "Create an event",
                 parameters: ["title": "string", "start": "date"],
+                requiredParameters: ["title", "start"],
                 requiresConfirmation: true
             )
         ]
@@ -193,9 +194,11 @@ final class SystemPromptBuilderTests: XCTestCase {
         )
         
         XCTAssertTrue(result.contains("calendar.list"), "Should include first tool name")
-        XCTAssertTrue(result.contains("List all calendars"), "Should include first tool description")
+        XCTAssertTrue(result.contains("calendar.list: List all calendars"), "Should include compact read-only line")
         XCTAssertTrue(result.contains("calendar.create"), "Should include second tool name")
-        XCTAssertTrue(result.contains("Requires confirmation"), "Should indicate confirmation requirement")
+        XCTAssertTrue(result.contains("calendar.create[confirm]"), "Should indicate confirmation requirement")
+        XCTAssertTrue(result.contains("title:str*"), "Should mark required params with *")
+        XCTAssertTrue(result.contains("start:datetime*"), "Should abbreviate date types")
     }
     
     // MARK: - Build Tests
@@ -260,27 +263,104 @@ final class SystemPromptBuilderTests: XCTestCase {
         
         let result = SystemPromptBuilder.encodeToolSchemas(tools)
         
-        XCTAssertTrue(result.contains("test.tool"), "Should contain tool name")
-        XCTAssertTrue(result.contains("A test tool"), "Should contain description")
-        XCTAssertFalse(result.contains("Parameters"), "Should not mention parameters when empty")
-        XCTAssertFalse(result.contains("confirmation"), "Should not mention confirmation when not required")
+        XCTAssertEqual(result, "test.tool: A test tool")
+        XCTAssertFalse(result.contains("["), "Tools with no parameters should omit parameter block")
     }
     
-    func test_encodeToolSchemas_toolWithParamsAndConfirmation() {
+    func test_encodeToolSchemas_usesCompactSingleLineFormat() {
         let tools = [
             ToolDefinition(
-                name: "calendar.create",
-                description: "Create an event",
-                parameters: ["title": "string"],
+                name: "alpha.read",
+                description: "Read alpha data.",
+                parameters: ["query": "string"],
+                requiredParameters: ["query"],
+                requiresConfirmation: false
+            ),
+            ToolDefinition(
+                name: "beta.write",
+                description: "Write beta data. Requires confirmation.",
+                parameters: ["enabled": "boolean"],
+                requiredParameters: ["enabled"],
                 requiresConfirmation: true
             )
         ]
-        
+
         let result = SystemPromptBuilder.encodeToolSchemas(tools)
-        
-        XCTAssertTrue(result.contains("Parameters:"), "Should mention parameters")
-        XCTAssertTrue(result.contains("title"), "Should include parameter name")
-        XCTAssertTrue(result.contains("Requires confirmation"), "Should indicate confirmation requirement")
+        let lines = result.components(separatedBy: "\n")
+
+        XCTAssertEqual(lines.count, 2, "Should emit one line per tool")
+        XCTAssertFalse(result.hasSuffix("\n"), "Should not end with trailing blank lines")
+        XCTAssertEqual(lines[0], "alpha.read: Read alpha data [query:str*]")
+        XCTAssertEqual(lines[1], "beta.write[confirm]: Write beta data [enabled:bool*]")
+    }
+
+    func test_encodeToolSchemas_marksRequiredAndUsesTypeAbbreviations() {
+        let tools = [
+            ToolDefinition(
+                name: "types.demo",
+                description: "Type mapping.",
+                parameterSchemas: [
+                    "when": ToolParameterDefinition(type: "string", format: "date-time"),
+                    "count": ToolParameterDefinition(type: "number"),
+                    "flag": ToolParameterDefinition(type: "boolean"),
+                    "tags": ToolParameterDefinition(type: "array<string>"),
+                    "title": ToolParameterDefinition(type: "string")
+                ],
+                requiredParameters: ["when", "title"],
+                requiresConfirmation: false
+            )
+        ]
+
+        let result = SystemPromptBuilder.encodeToolSchemas(tools)
+
+        XCTAssertEqual(
+            result,
+            "types.demo: Type mapping [count:int, flag:bool, tags:str[], title:str*, when:datetime*]"
+        )
+    }
+
+    func test_encodeToolSchemas_defaultToolSet_containsAllToolNamesAndStaysCompact() async {
+        let tools = await self.loadDefaultToolDefinitions()
+        let result = SystemPromptBuilder.encodeToolSchemas(tools)
+        let lines = result.components(separatedBy: "\n")
+
+        XCTAssertEqual(tools.count, 37, "Expected current default registry to expose 37 tools")
+        XCTAssertEqual(lines.count, tools.count, "Should emit one non-empty line per tool")
+        XCTAssertTrue(lines.allSatisfy { !$0.trimmingCharacters(in: .whitespaces).isEmpty }, "No blank lines allowed")
+        XCTAssertLessThanOrEqual(result.count, 3_500, "Compact tool block should remain within budget")
+
+        for tool in tools {
+            XCTAssertNotNil(self.encodedLine(for: tool.name, in: result), "Missing tool line for \(tool.name)")
+        }
+    }
+
+    func test_encodeToolSchemas_defaultToolSet_confirmMarkerMatchesMutatingTools() async {
+        let tools = await self.loadDefaultToolDefinitions()
+        let result = SystemPromptBuilder.encodeToolSchemas(tools)
+
+        for tool in tools {
+            guard let line = self.encodedLine(for: tool.name, in: result) else {
+                XCTFail("Missing encoded line for \(tool.name)")
+                continue
+            }
+
+            if tool.requiresConfirmation {
+                XCTAssertTrue(line.hasPrefix("\(tool.name)[confirm]:"), "Mutating tool must include [confirm]")
+            } else {
+                XCTAssertTrue(line.hasPrefix("\(tool.name):"), "Read-only tool must omit [confirm]")
+                XCTAssertFalse(line.hasPrefix("\(tool.name)[confirm]:"), "Read-only tool must omit [confirm]")
+            }
+        }
+    }
+
+    func test_build_withDefaultToolSet_producesValidNonEmptyPromptWithAllTools() async {
+        let tools = await self.loadDefaultToolDefinitions()
+        let prompt = SystemPromptBuilder.build(tools: tools)
+
+        XCTAssertFalse(prompt.isEmpty)
+        for tool in tools {
+            XCTAssertTrue(prompt.contains(tool.name), "Prompt should include \(tool.name)")
+        }
     }
     
     // MARK: - Fallback Template Tests
@@ -308,6 +388,32 @@ final class SystemPromptBuilderTests: XCTestCase {
     }
     
     // MARK: - Helpers
+
+    private func encodedLine(for toolName: String, in encoded: String) -> String? {
+        encoded
+            .components(separatedBy: "\n")
+            .first { line in
+                line.hasPrefix("\(toolName):") || line.hasPrefix("\(toolName)[confirm]:")
+            }
+    }
+
+    private func loadDefaultToolDefinitions() async -> [ToolDefinition] {
+        let registry = ToolRegistry.makeTestInstance()
+        await registry.registerDefaultTools()
+        let schemas = await registry.schemas()
+
+        return schemas.map { schema in
+            ToolDefinition(
+                name: schema.name,
+                description: schema.description,
+                parameterSchemas: schema.parameters.mapValues { parameter in
+                    ToolParameterDefinition(type: parameter.type, format: parameter.format)
+                },
+                requiredParameters: schema.requiredParameters,
+                requiresConfirmation: schema.requiresConfirmation
+            )
+        }
+    }
     
     private func createTestDate(
         year: Int,
