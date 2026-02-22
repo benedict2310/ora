@@ -11,6 +11,10 @@ import XCTest
 final class ConversationManagerTests: XCTestCase {
     
     // MARK: - AC-1: System Prompt Tests
+
+    func test_defaultMaxContextTokens_is32000() {
+        XCTAssertEqual(ConversationManager.defaultMaxContextTokens, 32_000)
+    }
     
     func test_systemPromptIncludedAsFirstMessage() async {
         let manager = ConversationManager.makeTestInstance(maxContextTokens: 6000)
@@ -24,6 +28,17 @@ final class ConversationManagerTests: XCTestCase {
         XCTAssertEqual(messages[0].role, .system)
         XCTAssertEqual(messages[0].content, "You are a helpful assistant.")
         XCTAssertEqual(messages[1].role, .user)
+    }
+
+    func test_estimateTotalTokens_freshSessionUnderDefaultBudget() async {
+        let manager = ConversationManager.makeTestInstance()
+        let prompt = await self.makeRealisticSystemPrompt()
+
+        await manager.startConversation(systemPrompt: prompt)
+
+        let tokens = await manager.estimateTotalTokens()
+        XCTAssertGreaterThan(tokens, 0)
+        XCTAssertLessThan(tokens, ConversationManager.defaultMaxContextTokens)
     }
     
     func test_emptySystemPromptNotIncluded() async {
@@ -259,6 +274,23 @@ final class ConversationManagerTests: XCTestCase {
         XCTAssertEqual(messages[5].content, "Thanks! What about tomorrow?")
     }
 
+    func test_defaultBudget_doesNotTrimTwentyTurnConversation() async {
+        let manager = ConversationManager.makeTestInstance()
+        let prompt = await self.makeRealisticSystemPrompt()
+        let userMessage = String(repeating: "u", count: 200)
+        let assistantMessage = String(repeating: "a", count: 200)
+
+        await manager.startConversation(systemPrompt: prompt)
+
+        for _ in 1...20 {
+            await manager.addUserMessage(userMessage)
+            await manager.addAssistantMessage(assistantMessage)
+        }
+
+        let messageCount = await manager.messageCount()
+        XCTAssertEqual(messageCount, 40, "Default 32K budget should retain all 20 turns")
+    }
+
     func test_memoryContext_whenSet_includesAdditionalSystemMessage() async {
         // Given
         let manager = ConversationManager.makeTestInstance(maxContextTokens: 6000)
@@ -329,5 +361,27 @@ final class ConversationManagerTests: XCTestCase {
         XCTAssertEqual(messages.count, 2)
         XCTAssertEqual(messages[0].role, .system)
         XCTAssertEqual(messages[1].role, .user)
+    }
+
+    // MARK: - Helpers
+
+    private func makeRealisticSystemPrompt() async -> String {
+        let registry = ToolRegistry.makeTestInstance()
+        await registry.registerDefaultTools()
+        let schemas = await registry.schemas()
+
+        let definitions = schemas.map { schema in
+            ToolDefinition(
+                name: schema.name,
+                description: schema.description,
+                parameterSchemas: schema.parameters.mapValues { parameter in
+                    ToolParameterDefinition(type: parameter.type, format: parameter.format)
+                },
+                requiredParameters: schema.requiredParameters,
+                requiresConfirmation: schema.requiresConfirmation
+            )
+        }
+
+        return SystemPromptBuilder.build(tools: definitions)
     }
 }

@@ -132,15 +132,23 @@ struct SystemPromptBuilder {
             return "No tools available."
         }
 
-        var lines: [String] = []
-        for tool in tools {
-            let accessLabel = tool.requiresConfirmation ? "Requires confirmation" : "Read-only"
-            lines.append("- \(tool.name) (\(accessLabel)): \(tool.description)")
-            if !tool.parameters.isEmpty {
-                let params = tool.parameters.map { "\($0.key): \($0.value)" }.joined(separator: ", ")
-                lines.append("  Parameters: \(params)")
+        let sortedTools = tools.sorted { $0.name < $1.name }
+        let lines = sortedTools.map { tool in
+            var line = "\(tool.name)"
+            if tool.requiresConfirmation {
+                line += "[confirm]"
             }
+
+            line += ": \(compactDescription(tool.description))"
+
+            let parameterString = encodeParameterList(for: tool)
+            if !parameterString.isEmpty {
+                line += " [\(parameterString)]"
+            }
+
+            return line
         }
+
         return lines.joined(separator: "\n")
     }
     
@@ -167,26 +175,157 @@ struct SystemPromptBuilder {
         let minutes = (absSeconds % 3600) / 60
         return String(format: "UTC%@%02d:%02d", sign, hours, minutes)
     }
+
+    private static func encodeParameterList(for tool: ToolDefinition) -> String {
+        guard !tool.parameters.isEmpty else {
+            return ""
+        }
+
+        let orderedNames = tool.parameters.keys.sorted()
+        return orderedNames.compactMap { name in
+            guard let parameter = tool.parameters[name] else {
+                return nil
+            }
+
+            let shortType = abbreviatedType(type: parameter.type, format: parameter.format)
+            let requiredSuffix = tool.requiredParameters.contains(name) ? "*" : ""
+            return "\(name):\(shortType)\(requiredSuffix)"
+        }
+        .joined(separator: ", ")
+    }
+
+    private static func abbreviatedType(type: String, format: String?) -> String {
+        let normalizedType = type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let normalizedFormat = format?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        if normalizedFormat == "date-time" {
+            return "datetime"
+        }
+
+        if normalizedType == "date" || normalizedType == "datetime" {
+            return "datetime"
+        }
+
+        if normalizedType == "number" || normalizedType == "integer" || normalizedType == "int" {
+            return "int"
+        }
+
+        if normalizedType == "boolean" || normalizedType == "bool" {
+            return "bool"
+        }
+
+        if normalizedType == "string[]" ||
+            normalizedType == "[string]" ||
+            normalizedType == "array<string>" ||
+            normalizedType == "array[string]" ||
+            normalizedType == "array_of_strings" ||
+            (normalizedType.contains("array") && normalizedType.contains("string")) {
+            return "str[]"
+        }
+
+        return "str"
+    }
+
+    private static func compactDescription(_ description: String) -> String {
+        var compact = normalizeWhitespace(description)
+        compact = compact.replacingOccurrences(
+            of: "Requires confirmation.",
+            with: "",
+            options: .caseInsensitive
+        )
+        compact = compact.replacingOccurrences(
+            of: "Requires confirmation",
+            with: "",
+            options: .caseInsensitive
+        )
+        compact = normalizeWhitespace(compact)
+
+        if let sentenceEnd = compact.firstIndex(of: ".") {
+            compact = String(compact[..<sentenceEnd])
+        }
+
+        compact = compact.trimmingCharacters(in: CharacterSet(charactersIn: " ,.;:-"))
+        if compact.count > 52 {
+            compact = String(compact.prefix(52))
+            if let lastSpace = compact.lastIndex(of: " ") {
+                compact = String(compact[..<lastSpace])
+            }
+        }
+
+        return compact.isEmpty ? "execute tool" : compact
+    }
+
+    private static func normalizeWhitespace(_ value: String) -> String {
+        value
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
 }
 
 // MARK: - Tool Definition
+
+struct ToolParameterDefinition: Sendable {
+    let type: String
+    let format: String?
+
+    init(type: String, format: String? = nil) {
+        self.type = type
+        self.format = format
+    }
+
+    init(schemaDescriptor: String) {
+        let descriptor = schemaDescriptor.trimmingCharacters(in: .whitespacesAndNewlines)
+        let components = descriptor.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+        let parsedType = components.first.map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
+        let fallbackType = parsedType.isEmpty ? descriptor : parsedType
+
+        var parsedFormat: String?
+        if let openIndex = descriptor.lastIndex(of: "("),
+           let closeIndex = descriptor.lastIndex(of: ")"),
+           openIndex < closeIndex {
+            let formatStart = descriptor.index(after: openIndex)
+            parsedFormat = String(descriptor[formatStart..<closeIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        self.type = fallbackType.isEmpty ? "string" : fallbackType
+        self.format = parsedFormat
+    }
+}
 
 /// Tool definition for system prompt
 struct ToolDefinition: Sendable {
     let name: String
     let description: String
-    let parameters: [String: String]  // name -> type description
+    let parameters: [String: ToolParameterDefinition]
+    let requiredParameters: Set<String>
     let requiresConfirmation: Bool
     
     init(
         name: String,
         description: String,
         parameters: [String: String] = [:],
+        requiredParameters: [String] = [],
         requiresConfirmation: Bool = false
     ) {
         self.name = name
         self.description = description
-        self.parameters = parameters
+        self.parameters = parameters.mapValues { ToolParameterDefinition(schemaDescriptor: $0) }
+        self.requiredParameters = Set(requiredParameters)
+        self.requiresConfirmation = requiresConfirmation
+    }
+
+    init(
+        name: String,
+        description: String,
+        parameterSchemas: [String: ToolParameterDefinition],
+        requiredParameters: [String] = [],
+        requiresConfirmation: Bool = false
+    ) {
+        self.name = name
+        self.description = description
+        self.parameters = parameterSchemas
+        self.requiredParameters = Set(requiredParameters)
         self.requiresConfirmation = requiresConfirmation
     }
 }

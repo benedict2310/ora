@@ -21,6 +21,8 @@ actor ConversationManager {
     // MARK: - Properties
     
     private let logger = Logger.ora(category: "ConversationManager")
+    // Qwen 3 4B supports 262K tokens; 32K is a conservative cap that leaves ~29K for conversation after the system prompt
+    static let defaultMaxContextTokens: Int = 32_000
     
     private var messages: [LLMMessage] = []
     private var systemPrompt: String = ""
@@ -35,13 +37,13 @@ actor ConversationManager {
     
     // MARK: - Initialization
     
-    private init(maxContextTokens: Int = 6000) {
+    private init(maxContextTokens: Int = ConversationManager.defaultMaxContextTokens) {
         self.maxContextTokens = maxContextTokens
     }
     
     /// Create a test instance with custom token limit
     /// - Parameter maxContextTokens: Maximum tokens allowed before trimming
-    static func makeTestInstance(maxContextTokens: Int) -> ConversationManager {
+    static func makeTestInstance(maxContextTokens: Int = ConversationManager.defaultMaxContextTokens) -> ConversationManager {
         return ConversationManager(maxContextTokens: maxContextTokens)
     }
     

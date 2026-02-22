@@ -174,11 +174,48 @@ None.
 
 ## Implementation Summary
 
-(TBD after implementation.)
+**Date:** 2026-02-22
+**Branch:** `feat/S.00-context-budget`
+**Commits:** 2
+**Implemented by:** codex (complexity score: 7/10)
+**Reviewed by:** codex (1 iteration — pi unavailable, ToS violation)
+
+### Files Changed
+- `Ora/LLM/ConversationManager.swift` — raised `maxContextTokens` default to 32,000 with model-capacity comment
+- `Ora/LLM/SystemPromptBuilder.swift` — rewrote `encodeToolSchemas(_:)` to emit compact one-line-per-tool format
+- `Ora/Orchestration/AgentLoop.swift` — minor alignment update
+- `OraTests/LLM/ConversationManagerTests.swift` — added tests for 32K budget and 20-turn no-trim scenario
+- `OraTests/LLM/SystemPromptBuilderTests.swift` — updated golden expectations; added snapshot, `[confirm]`, `*` marker, and char-count tests
 
 ## Code Review Findings
 
-(TBD by review agent.)
+**Reviewer:** Codex Subagent
+**Date:** 2026-02-22T17:11:10Z
+**Commit reviewed:** df1fb9d
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 5
+- Build status: Pass
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- None.
+
+#### P1 - Major (Should fix)
+- None.
+
+#### P2 - Minor (Can defer)
+- None.
+
+### Future Considerations (Out of Scope)
+- None.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
 
 ## Completion Status
 

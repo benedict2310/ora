@@ -180,7 +180,10 @@ actor AgentLoop {
             ToolDefinition(
                 name: schema.name,
                 description: schema.description,
-                parameters: schema.parameters.mapValues { $0.descriptionString },
+                parameterSchemas: schema.parameters.mapValues { parameter in
+                    ToolParameterDefinition(type: parameter.type, format: parameter.format)
+                },
+                requiredParameters: schema.requiredParameters,
                 requiresConfirmation: schema.requiresConfirmation
             )
         }
