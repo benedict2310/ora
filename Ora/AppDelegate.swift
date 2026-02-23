@@ -51,6 +51,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Initialize persistence
         _ = PersistenceManager.shared
 
+        // Build skills index in the background at startup
+        Task.detached(priority: .utility) {
+            await SkillStore.shared.rebuildIndex()
+        }
+
         // Initialize status bar
         self.statusBarController = StatusBarController()
 

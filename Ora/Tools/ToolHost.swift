@@ -99,6 +99,7 @@ actor ToolHost {
         // This must be done here to get proper values, not type-tagged JSON
         let parameters = self.jsonValueToAnyDict(args)
         let action = tool.kind.rawValue
+        let auditCategory = self.auditCategory(for: toolName)
         
         // Serialize to JSON string (String is Sendable) for crossing actor boundary
         let parametersJSON: String
@@ -123,6 +124,7 @@ actor ToolHost {
             let entry = AuditLogger.shared.recordToolCall(
                 tool: toolName,
                 action: action,
+                category: auditCategory,
                 parameters: params,
                 userConfirmed: confirmed,
                 sessionID: sessionID
@@ -175,6 +177,19 @@ actor ToolHost {
         case .null: return NSNull()
         case .array(let arr): return arr.map { self.jsonValueToAny($0) }
         case .object(let dict): return self.jsonValueToAnyDict(dict)
+        }
+    }
+
+    private func auditCategory(for toolName: String) -> AuditCategory {
+        switch toolName {
+        case "skills.list":
+            return .skillList
+        case "skills.load":
+            return .skillLoad
+        case "skills.read":
+            return .skillRead
+        default:
+            return .toolExecution
         }
     }
 }

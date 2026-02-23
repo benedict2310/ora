@@ -29,6 +29,7 @@ actor AuditLogger {
     func recordToolCall(
         tool: String,
         action: String,
+        category: AuditCategory = .toolExecution,
         parameters: [String: Any],
         userConfirmed: Bool,
         sessionID: UUID?
@@ -36,7 +37,7 @@ actor AuditLogger {
         let entry = PersistenceManager.shared.recordToolExecution(
             toolName: tool,
             action: action,
-            category: .toolExecution,
+            category: category,
             summary: "\(tool).\(action)",
             parameters: parameters,
             userConfirmed: userConfirmed,
