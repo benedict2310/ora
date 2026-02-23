@@ -540,9 +540,9 @@ final class CalendarToolsTests: XCTestCase {
         XCTAssertNotNil(edit)
         XCTAssertNotNil(delete)
         
-        // Verify count (5 calendar + 4 reminders + 1 contacts + 7 notes + 2 messages + 7 mail + 11 system = 37)
+        // Verify count (5 calendar + 4 reminders + 1 contacts + 3 skills + 7 notes + 2 messages + 7 mail + 11 system = 40)
         let allTools = await ToolRegistry.shared.allTools()
-        XCTAssertEqual(allTools.count, 37)
+        XCTAssertEqual(allTools.count, 40)
     }
 
     func test_calendarToolSchemas() async {
@@ -550,7 +550,7 @@ final class CalendarToolsTests: XCTestCase {
         await ToolRegistry.shared.registerDefaultTools()
 
         let schemas = await ToolRegistry.shared.schemas()
-        XCTAssertEqual(schemas.count, 37)
+        XCTAssertEqual(schemas.count, 40)
         
         let names = Set(schemas.map { $0.name })
         XCTAssertTrue(names.contains("calendar.query"))
