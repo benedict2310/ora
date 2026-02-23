@@ -162,6 +162,7 @@ final class SimplePipelineController: ObservableObject {
         // Reset overlay for new session
         self.logger.info("Resetting overlay for new session")
         self.overlayPresenter.model.reset()
+        self.refreshSkillsHint()
         
         self.transition(to: .listening)
 
@@ -256,6 +257,20 @@ final class SimplePipelineController: ObservableObject {
         self.transition(to: .idle)
         self.setOverlayActivity(.none)
         self.overlayPresenter.hide(animated: true)
+    }
+
+    private func refreshSkillsHint() {
+        Task { @MainActor in
+            let hintText: String?
+            if await SkillsFeatureGate.isEnabled() {
+                let skills = await SkillStore.shared.list()
+                hintText = OverlayLayout.skillsHintText(for: skills)
+            } else {
+                hintText = nil
+            }
+
+            self.overlayPresenter.model.skillsHintText = hintText
+        }
     }
 
     /// Stop speaking without closing the overlay

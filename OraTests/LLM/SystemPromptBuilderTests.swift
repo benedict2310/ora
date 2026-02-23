@@ -28,6 +28,7 @@ final class SystemPromptBuilderTests: XCTestCase {
         XCTAssertTrue(template.contains("{{timezone_offset}}"), "Template should contain {{timezone_offset}}")
         XCTAssertTrue(template.contains("{{default_calendar}}"), "Template should contain {{default_calendar}}")
         XCTAssertTrue(template.contains("{{tools}}"), "Template should contain {{tools}}")
+        XCTAssertTrue(template.contains("{{available_skills}}"), "Template should contain {{available_skills}}")
     }
     
     func test_loadTemplate_containsOraIdentity() {
@@ -200,6 +201,33 @@ final class SystemPromptBuilderTests: XCTestCase {
         XCTAssertTrue(result.contains("title:str*"), "Should mark required params with *")
         XCTAssertTrue(result.contains("start:datetime*"), "Should abbreviate date types")
     }
+
+    func test_resolveVariables_replacesAvailableSkillsBlock() {
+        let template = "{{available_skills}}"
+        let skills = [
+            SkillMetadata(
+                id: "daily-briefing",
+                name: "Daily Briefing",
+                description: "Morning summary workflow",
+                source: .bundled,
+                rootURL: URL(fileURLWithPath: "/tmp/daily-briefing", isDirectory: true),
+                version: "1.0.0"
+            )
+        ]
+
+        let result = SystemPromptBuilder.resolveVariables(
+            in: template,
+            currentDate: Date(),
+            timezone: .current,
+            defaultCalendar: nil,
+            tools: [],
+            skills: skills
+        )
+
+        XCTAssertTrue(result.contains("<available_skills>"))
+        XCTAssertTrue(result.contains("skill id=\"daily-briefing\""))
+        XCTAssertTrue(result.contains("<description>Morning summary workflow</description>"))
+    }
     
     // MARK: - Build Tests
     
@@ -294,6 +322,28 @@ final class SystemPromptBuilderTests: XCTestCase {
         XCTAssertEqual(lines[1], "beta.write[confirm]: Write beta data [enabled:bool*]")
     }
 
+    func test_encodeSkillsMetadata_emptyList_returnsEmptyString() {
+        XCTAssertEqual(SystemPromptBuilder.encodeSkillsMetadata([]), "")
+    }
+
+    func test_encodeSkillsMetadata_escapesXMLReservedCharacters() {
+        let skills = [
+            SkillMetadata(
+                id: "ops&qa",
+                name: "Ops <QA>",
+                description: "Use \"safe\" checks & outputs",
+                source: .user,
+                rootURL: URL(fileURLWithPath: "/tmp/ops-qa", isDirectory: true),
+                version: nil
+            )
+        ]
+
+        let result = SystemPromptBuilder.encodeSkillsMetadata(skills)
+        XCTAssertTrue(result.contains("id=\"ops&amp;qa\""))
+        XCTAssertTrue(result.contains("name=\"Ops &lt;QA&gt;\""))
+        XCTAssertTrue(result.contains("<description>Use &quot;safe&quot; checks &amp; outputs</description>"))
+    }
+
     func test_encodeToolSchemas_marksRequiredAndUsesTypeAbbreviations() {
         let tools = [
             ToolDefinition(
@@ -324,10 +374,10 @@ final class SystemPromptBuilderTests: XCTestCase {
         let result = SystemPromptBuilder.encodeToolSchemas(tools)
         let lines = result.components(separatedBy: "\n")
 
-        XCTAssertEqual(tools.count, 37, "Expected current default registry to expose 37 tools")
+        XCTAssertEqual(tools.count, 40, "Expected current default registry to expose 40 tools")
         XCTAssertEqual(lines.count, tools.count, "Should emit one non-empty line per tool")
         XCTAssertTrue(lines.allSatisfy { !$0.trimmingCharacters(in: .whitespaces).isEmpty }, "No blank lines allowed")
-        XCTAssertLessThanOrEqual(result.count, 3_500, "Compact tool block should remain within budget")
+        XCTAssertLessThanOrEqual(result.count, 3_800, "Compact tool block should remain within budget")
 
         for tool in tools {
             XCTAssertNotNil(self.encodedLine(for: tool.name, in: result), "Missing tool line for \(tool.name)")

@@ -40,6 +40,9 @@ final class AppSettings {
     /// Controls how long to wait after last speech before auto-submitting
     var silenceTimeout: Double = 1.0
 
+    /// Skills feature flag (S.01)
+    var skillsEnabled: Bool = true
+
     // MARK: - VAD Settings (M.06)
 
     /// Minimum speech duration in seconds before detecting speech start

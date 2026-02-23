@@ -89,4 +89,16 @@ enum OverlayLayout {
 
     /// Duration for hide animation
     static let hideAnimationDuration: TimeInterval = 0.15
+
+    // MARK: - Skills Hint
+
+    static func skillsHintText(for skills: [SkillMetadata]) -> String? {
+        guard !skills.isEmpty else {
+            return nil
+        }
+
+        let names = skills.map(\.name).joined(separator: ", ")
+        let activationName = skills[0].name
+        return "Available skills: \(names) — say 'use \(activationName) skill' to activate"
+    }
 }

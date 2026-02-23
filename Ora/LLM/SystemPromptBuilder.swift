@@ -22,6 +22,7 @@ import os
 /// - `{{timezone_offset}}` - Timezone offset (e.g., "UTC-08:00")
 /// - `{{default_calendar}}` - User's default calendar name
 /// - `{{tools}}` - Available tool descriptions
+/// - `{{available_skills}}` - Available skills metadata in XML
 ///
 struct SystemPromptBuilder {
     
@@ -40,12 +41,14 @@ struct SystemPromptBuilder {
     ///   - timezone: The timezone to use (defaults to current)
     ///   - defaultCalendar: User's default calendar name
     ///   - tools: Available tool definitions
+    ///   - skills: Available skill metadata
     /// - Returns: The resolved system prompt string
     static func build(
         currentDate: Date = Date(),
         timezone: TimeZone = .current,
         defaultCalendar: String? = nil,
-        tools: [ToolDefinition] = []
+        tools: [ToolDefinition] = [],
+        skills: [SkillMetadata] = []
     ) -> String {
         let template = loadTemplate()
         return resolveVariables(
@@ -53,7 +56,8 @@ struct SystemPromptBuilder {
             currentDate: currentDate,
             timezone: timezone,
             defaultCalendar: defaultCalendar,
-            tools: tools
+            tools: tools,
+            skills: skills
         )
     }
     
@@ -96,7 +100,8 @@ struct SystemPromptBuilder {
         currentDate: Date,
         timezone: TimeZone,
         defaultCalendar: String?,
-        tools: [ToolDefinition]
+        tools: [ToolDefinition],
+        skills: [SkillMetadata] = []
     ) -> String {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "EEEE, MMMM d, yyyy"
@@ -120,6 +125,7 @@ struct SystemPromptBuilder {
         result = result.replacingOccurrences(of: "{{timezone_offset}}", with: formatUTCOffset(for: timezone, date: currentDate))
         result = result.replacingOccurrences(of: "{{default_calendar}}", with: defaultCalendar ?? "Default")
         result = result.replacingOccurrences(of: "{{tools}}", with: encodeToolSchemas(tools))
+        result = result.replacingOccurrences(of: "{{available_skills}}", with: encodeSkillsMetadata(skills))
         
         return result
     }
@@ -166,6 +172,30 @@ struct SystemPromptBuilder {
     
     Respond with valid JSON only.
     """
+
+    static func encodeSkillsMetadata(_ skills: [SkillMetadata]) -> String {
+        guard !skills.isEmpty else {
+            return ""
+        }
+
+        let sortedSkills = skills.sorted { lhs, rhs in
+            lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        }
+
+        var lines: [String] = ["<available_skills>"]
+        for skill in sortedSkills {
+            let id = xmlEscaped(skill.id)
+            let name = xmlEscaped(skill.name)
+            let description = xmlEscaped(skill.description)
+
+            lines.append("  <skill id=\"\(id)\" name=\"\(name)\">")
+            lines.append("    <description>\(description)</description>")
+            lines.append("  </skill>")
+        }
+        lines.append("</available_skills>")
+
+        return lines.joined(separator: "\n")
+    }
 
     private static func formatUTCOffset(for timezone: TimeZone, date: Date) -> String {
         let seconds = timezone.secondsFromGMT(for: date)
@@ -260,6 +290,14 @@ struct SystemPromptBuilder {
             .components(separatedBy: .whitespacesAndNewlines)
             .filter { !$0.isEmpty }
             .joined(separator: " ")
+    }
+
+    private static func xmlEscaped(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
     }
 }
 

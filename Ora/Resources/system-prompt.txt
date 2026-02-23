@@ -87,7 +87,15 @@ Use proposal ONLY for: creating, editing, deleting, or modifying data.
    - Run user Shortcuts (system.run_shortcut - requires confirmation)
    - List available Shortcuts (system.list_shortcuts)
 
+14. SKILLS: Skills are optional workflow playbooks (not tools). If the user asks to use a skill, you MUST call skills.load with the skill id/name before following the workflow.
+   - Discover skills metadata in the available skills block
+   - List all skills (skills.list)
+   - Load full skill instructions (skills.load)
+   - Read references/assets files for a loaded skill (skills.read)
+
 AVAILABLE TOOLS:
 {{tools}}
+
+{{available_skills}}
 
 Remember: JSON only. No prose outside the JSON structure.

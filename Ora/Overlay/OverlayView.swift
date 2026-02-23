@@ -132,6 +132,18 @@ struct OverlayView: View {
                             .id("followup-prompt")
                     }
 
+                    if self.shouldShowSkillsHint,
+                       let skillsHintText = self.viewModel.skillsHintText {
+                        OverlayPromptView(
+                            text: skillsHintText,
+                            iconName: "sparkles",
+                            accessibilityLabel: skillsHintText,
+                            reduceTransparency: self.reduceTransparency,
+                            action: nil
+                        )
+                        .id("skills-hint")
+                    }
+
                     if self.shouldShowStopSpeakingPrompt {
                         StopSpeakingPromptView(
                             reduceTransparency: self.reduceTransparency,
@@ -262,6 +274,15 @@ struct OverlayView: View {
 
     private var shouldShowStopSpeakingPrompt: Bool {
         self.viewModel.activity == .speaking
+    }
+
+    private var shouldShowSkillsHint: Bool {
+        switch self.viewModel.mode {
+        case .hidden:
+            return false
+        default:
+            return true
+        }
     }
 
     private var voiceInputAccessibilityLabel: String {

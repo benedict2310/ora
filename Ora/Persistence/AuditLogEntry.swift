@@ -74,6 +74,9 @@ enum AuditCategory: String, Sendable {
     case confirmation
     case error
     case stateChange
+    case skillList
+    case skillLoad
+    case skillRead
 }
 
 // MARK: - Sendable Conformance

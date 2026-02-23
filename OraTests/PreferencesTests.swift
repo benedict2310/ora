@@ -14,17 +14,22 @@ final class PreferencesTabTests: XCTestCase {
 
     // MARK: - Tab Properties Tests
 
-    func test_allCases_hasSixTabs() {
-        XCTAssertEqual(PreferencesTab.allCases.count, 6)
+    func test_allCases_hasSevenTabs() {
+        XCTAssertEqual(PreferencesTab.allCases.count, 7)
     }
 
     func test_allCases_containsExpectedTabs() {
         let allCases = PreferencesTab.allCases
         XCTAssertTrue(allCases.contains(.general))
+        XCTAssertTrue(allCases.contains(.skills))
         XCTAssertTrue(allCases.contains(.providers))
         XCTAssertTrue(allCases.contains(.models))
         XCTAssertTrue(allCases.contains(.permissions))
         XCTAssertTrue(allCases.contains(.about))
+    }
+
+    func test_title_skills_returnsSkills() {
+        XCTAssertEqual(PreferencesTab.skills.title, "Skills")
     }
 
     func test_title_general_returnsGeneral() {
@@ -55,6 +60,10 @@ final class PreferencesTabTests: XCTestCase {
         XCTAssertEqual(PreferencesTab.models.icon, "cpu")
     }
 
+    func test_icon_skills_returnsSparkles() {
+        XCTAssertEqual(PreferencesTab.skills.icon, "sparkles")
+    }
+
     func test_icon_providers_returnsICloud() {
         XCTAssertEqual(PreferencesTab.providers.icon, "icloud")
     }
@@ -69,6 +78,7 @@ final class PreferencesTabTests: XCTestCase {
 
     func test_rawValue_matchesExpected() {
         XCTAssertEqual(PreferencesTab.general.rawValue, "general")
+        XCTAssertEqual(PreferencesTab.skills.rawValue, "skills")
         XCTAssertEqual(PreferencesTab.providers.rawValue, "providers")
         XCTAssertEqual(PreferencesTab.models.rawValue, "models")
         XCTAssertEqual(PreferencesTab.permissions.rawValue, "permissions")
@@ -104,6 +114,9 @@ final class PreferencesCoordinatorTests: XCTestCase {
         coordinator.selectedTab = .providers
         XCTAssertEqual(coordinator.selectedTab, .providers)
 
+        coordinator.selectedTab = .skills
+        XCTAssertEqual(coordinator.selectedTab, .skills)
+
         coordinator.selectedTab = .models
         XCTAssertEqual(coordinator.selectedTab, .models)
 
@@ -122,6 +135,9 @@ final class PreferencesCoordinatorTests: XCTestCase {
 
         coordinator.selectTab(.providers)
         XCTAssertEqual(coordinator.selectedTab, .providers)
+
+        coordinator.selectTab(.skills)
+        XCTAssertEqual(coordinator.selectedTab, .skills)
 
         coordinator.selectTab(.models)
         XCTAssertEqual(coordinator.selectedTab, .models)

@@ -187,8 +187,15 @@ actor AgentLoop {
                 requiresConfirmation: schema.requiresConfirmation
             )
         }
-        
-        let systemPrompt = SystemPromptBuilder.build(tools: toolDefinitions)
+
+        let skills: [SkillMetadata]
+        if await SkillsFeatureGate.isEnabled() {
+            skills = await SkillStore.shared.list()
+        } else {
+            skills = []
+        }
+
+        let systemPrompt = SystemPromptBuilder.build(tools: toolDefinitions, skills: skills)
         
         // Start fresh conversation with system prompt
         await conversationManager.startConversation(systemPrompt: systemPrompt)

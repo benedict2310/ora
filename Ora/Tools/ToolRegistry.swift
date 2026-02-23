@@ -70,6 +70,11 @@ actor ToolRegistry {
         // Contacts tools
         register(ContactsSearchTool())
 
+        // Skills tools
+        register(SkillsListTool())
+        register(SkillsLoadTool())
+        register(SkillsReadTool())
+
         // Notes tools
         register(NotesCreateTool())
         register(NotesSearchTool())
