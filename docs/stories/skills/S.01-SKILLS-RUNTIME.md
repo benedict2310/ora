@@ -426,4 +426,8 @@ If you use a skill, you MUST call skills.load(id) first to get its full instruct
 
 ## Completion Status
 
-(TBD after merge.)
+- [x] Implementation complete
+- [x] Code review passed (self-review, 1 P1 fix applied)
+- [x] PR merged: https://github.com/benedict2310/ora/pull/159
+- [x] Merged to main: 23cc89d
+- [x] Date: 2026-02-23
