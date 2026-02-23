@@ -47,24 +47,25 @@ struct SkillsReadTool: Tool {
             throw ToolHostError.validationFailed(self.name, "Missing required parameters")
         }
 
-        let data = try await self.skillStore.readFile(id: requestedID, relativePath: path)
+        let (data, metadata) = try await self.skillStore.readFile(id: requestedID, relativePath: path)
+        let resolvedID = metadata.id
 
         if let text = String(data: data, encoding: .utf8) {
             let payload: JSONValue = .object([
-                "id": .string(requestedID),
+                "id": .string(resolvedID),
                 "path": .string(path),
                 "encoding": .string("utf8"),
                 "content": .string(text)
             ])
-            return .success(payload, summary: "Read \(path) from skill '\(requestedID)'.")
+            return .success(payload, summary: "Read \(path) from skill '\(metadata.name)'.")
         }
 
         let payload: JSONValue = .object([
-            "id": .string(requestedID),
+            "id": .string(resolvedID),
             "path": .string(path),
             "encoding": .string("base64"),
             "content": .string(data.base64EncodedString())
         ])
-        return .success(payload, summary: "Read binary file \(path) from skill '\(requestedID)'.")
+        return .success(payload, summary: "Read binary file \(path) from skill '\(metadata.name)'.")
     }
 }

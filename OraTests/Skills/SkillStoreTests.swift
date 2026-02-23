@@ -125,9 +125,10 @@ final class SkillStoreTests: XCTestCase {
         )
 
         await store.rebuildIndex()
-        let data = try await store.readFile(id: "daily-briefing", relativePath: "references/guide.txt")
+        let (data, metadata) = try await store.readFile(id: "daily-briefing", relativePath: "references/guide.txt")
 
         XCTAssertEqual(String(data: data, encoding: .utf8), expected)
+        XCTAssertEqual(metadata.id, "daily-briefing")
     }
 
     // MARK: - Helpers

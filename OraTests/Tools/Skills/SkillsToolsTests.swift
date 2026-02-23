@@ -119,6 +119,21 @@ final class SkillsToolsTests: XCTestCase {
         XCTAssertEqual(object["name"]?.stringValue, "Daily Briefing")
     }
 
+    func test_skillsRead_fuzzyMatching_returnsResolvedID() async throws {
+        let tool = SkillsReadTool(skillStore: store)
+
+        let result = try await tool.execute(args: [
+            "id": .string("daly breifing"),
+            "path": .string("references/guide.txt")
+        ])
+
+        guard case .object(let object) = result.json else {
+            return XCTFail("Expected object payload")
+        }
+
+        XCTAssertEqual(object["id"]?.stringValue, "daily-briefing")
+    }
+
     func test_toolHost_recordsSkillAuditCategories() async throws {
         await ToolRegistry.shared.register(SkillsListTool(skillStore: store))
         await ToolRegistry.shared.register(SkillsLoadTool(skillStore: store))

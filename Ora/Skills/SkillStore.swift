@@ -77,12 +77,12 @@ actor SkillStore {
         return SkillDocument(meta: metadata, markdown: sanitized)
     }
 
-    func readFile(id: String, relativePath: String) throws -> Data {
+    func readFile(id: String, relativePath: String) throws -> (data: Data, metadata: SkillMetadata) {
         let metadata = try resolveSkill(for: id)
         let fileURL = try SkillPathSandbox.resolve(root: metadata.rootURL, relativePath: relativePath)
 
         try validateFileSize(at: fileURL)
-        return try Data(contentsOf: fileURL)
+        return (try Data(contentsOf: fileURL), metadata)
     }
 
     func resolveMatch(for query: String, threshold: Double = SkillStore.fuzzyMatchThreshold) -> SkillMetadata? {
