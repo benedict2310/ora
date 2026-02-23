@@ -152,6 +152,7 @@ final class OverlayViewModel: ObservableObject {
     @Published var messages: [OverlayMessage] = []
     @Published var currentProposal: ToolProposal?
     @Published var activity: OverlayActivity = .none
+    @Published var skillsHintText: String?
     weak var actionHandler: (any OverlayActionHandling)?
 
     /// Delay before showing tool activity to avoid flicker (seconds)
