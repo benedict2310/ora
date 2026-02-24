@@ -198,6 +198,7 @@ Optional orchestration playbooks that layer on top of native tools.
 | S.03 | [Skill Scripts](skills/S.03-SKILL-SCRIPTS.md) | 🚧 Not Started |
 | S.04 | [Skills Marketplace](skills/S.04-SKILLS-MARKETPLACE.md) | 📋 Distant Future |
 | S.05 | [Agent Skill Authoring](skills/S.05-AGENT-SKILL-AUTHORING.md) | 🚧 Not Started |
+| S.06 | [Tool Discovery](skills/S.06-TOOL-DISCOVERY.md) | 🚧 Not Started |
 
 ### ☁️ Cloud Integrations (C)
 Cloud LLM provider support (Anthropic, OpenAI) with secure credential management.

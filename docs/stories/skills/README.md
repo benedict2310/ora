@@ -16,14 +16,15 @@ Skills follow the [Anthropic Skills Standard](https://docs.anthropic.com/en/docs
 
 | ID | Title | Status | Priority |
 |:---|:------|:-------|:---------|
-| S.00 | [Context Budget](S.00-CONTEXT-BUDGET.md) | 🚧 Not Started | P0 |
-| S.01 | [Skills Runtime](S.01-SKILLS-RUNTIME.md) | 🚧 Not Started | P1 |
+| S.00 | [Context Budget](S.00-CONTEXT-BUDGET.md) | ✅ Complete | P0 |
+| S.01 | [Skills Runtime](S.01-SKILLS-RUNTIME.md) | ✅ Complete | P1 |
 | S.02 | [Skills Evaluation](S.02-SKILLS-EVALUATION.md) | 🚧 Not Started | P2 |
 | S.03 | [Skill Scripts](S.03-SKILL-SCRIPTS.md) | 🚧 Not Started | P1 |
 | S.04 | [Skills Marketplace](S.04-SKILLS-MARKETPLACE.md) | 📋 Distant Future | P3 |
 | S.05 | [Agent Skill Authoring](S.05-AGENT-SKILL-AUTHORING.md) | 🚧 Not Started | P1 |
+| S.06 | [Tool Discovery](S.06-TOOL-DISCOVERY.md) | 🚧 Not Started | P1 |
 
-> **Embedding-based skill retrieval (removed):** At current skill counts, BM25/keyword ranking via the existing `Memory/HybridScorer.swift` is sufficient. Revisit if retrieval quality becomes a measurable problem at scale.
+> **Embedding-based tool/skill retrieval:** S.06 implements BM25-based tool discovery using `Memory/HybridScorer.swift`. This supersedes the earlier note about "embedding-based skill retrieval (removed)" — BM25 is sufficient and ships in S.06.
 >
 > **S.04 (Marketplace) vs S.05 (Agent Authoring):** S.05 covers the primary use case — personalized, locally-authored skills with no third-party trust concerns. S.04 is only worth pursuing if community skill sharing becomes a clear user demand.
 
@@ -40,9 +41,11 @@ O.02 Agent Loop (✅ Complete)
          │                            │
          ├── S.02 Skills Evaluation   ├── S.05 Agent Skill Authoring
          │                            │
-         └── S.03 Skill Scripts ◄─────┘ (BG.02 alignment is future refactor, not a hard dep)
-              │
-              └── S.04 Marketplace (distant future)
+         ├── S.03 Skill Scripts ◄─────┘ (BG.02 alignment is future refactor, not a hard dep)
+         │    │
+         │    └── S.04 Marketplace (distant future)
+         │
+         └── S.06 Tool Discovery (BM25 index over deferred tools)
 ```
 
 ## Storage Locations
