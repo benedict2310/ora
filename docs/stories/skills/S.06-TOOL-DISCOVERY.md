@@ -138,7 +138,7 @@ calendar.edit_event[⚠]: Edit an existing calendar event
 - `Ora/Tools/Reminders/RemindersListTool.swift` — add `var loadPolicy: ToolLoadPolicy { .core }`
 - `Ora/Tools/Skills/SkillsListTool.swift` — add `var loadPolicy: ToolLoadPolicy { .core }`
 - `Ora/Tools/System/SystemOpenAppTool.swift` — add `var loadPolicy: ToolLoadPolicy { .core }`
-- `Ora/Tools/Skills/ToolRegistry.swift` — register `ToolDiscoveryTool` in `registerDefaultTools`
+- `Ora/Tools/ToolRegistry.swift` — register `ToolDiscoveryTool` in `registerDefaultTools`
 - `Ora/Orchestration/ConversationManager.swift` — clear discovered schema cache on `reset()`
 
 ### 5.3 Tests to Add
