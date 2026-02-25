@@ -14,10 +14,12 @@ import XCTest
 actor AgentLoopMockLLMService: LLMServicing {
     var responses: [String] = []
     private var responseIndex = 0
+    private var messageBatches: [[LLMMessage]] = []
     
     func setResponses(_ responses: [String]) {
         self.responses = responses
         self.responseIndex = 0
+        self.messageBatches = []
     }
     
     func warmup() async throws {
@@ -29,6 +31,7 @@ actor AgentLoopMockLLMService: LLMServicing {
     }
     
     func generate(messages: [LLMMessage], maxTokens: Int) async -> AsyncThrowingStream<LLMDelta, Error> {
+        self.messageBatches.append(messages)
         let response = responseIndex < responses.count ? responses[responseIndex] : "{\"type\": \"response\", \"text\": \"Default\"}"
         responseIndex += 1
         
@@ -44,6 +47,10 @@ actor AgentLoopMockLLMService: LLMServicing {
     
     func clearCache() async {
         // No-op for testing
+    }
+
+    func capturedMessageBatches() -> [[LLMMessage]] {
+        self.messageBatches
     }
 }
 
@@ -158,6 +165,7 @@ final class AgentLoopTests: XCTestCase {
     var agentLoop: AgentLoop!
     
     override func setUp() async throws {
+        await ToolRegistry.shared.clear()
         mockLLM = AgentLoopMockLLMService()
         structuredGenerator = StructuredGenerator(llm: mockLLM)
         toolRegistry = ToolRegistry.makeTestInstance()
@@ -172,6 +180,10 @@ final class AgentLoopTests: XCTestCase {
             toolRegistry: toolRegistry,
             conversationManager: conversationManager
         )
+    }
+
+    override func tearDown() async throws {
+        await ToolRegistry.shared.clear()
     }
     
     // MARK: - Response Tests
@@ -303,6 +315,96 @@ final class AgentLoopTests: XCTestCase {
             XCTAssertTrue(message.contains("limit"))
         } else {
             XCTFail("Expected error result, got \(result)")
+        }
+    }
+
+    func test_process_discoverThenExecute_refreshesPromptForNextStep() async throws {
+        let discoverTool = ToolDiscoveryTool()
+        let deferredTool = AgentLoopMockReadTool(name: "messages.send", result: "Sent")
+        let localConversation = ConversationManager.makeTestInstance(maxContextTokens: 6000)
+        let localLoop = AgentLoop(
+            maxStepsPerTurn: 6,
+            maxToolCallsPerTurn: 3,
+            maxTokensPerTurn: 800,
+            structuredGenerator: self.structuredGenerator,
+            toolHost: .shared,
+            toolRegistry: .shared,
+            conversationManager: localConversation
+        )
+
+        await ToolRegistry.shared.register(discoverTool)
+        await ToolRegistry.shared.register(deferredTool)
+
+        await self.mockLLM.setResponses([
+            """
+            {"type": "tool_call", "tool": "tools.discover", "args": {"query": "send a message", "limit": 3}}
+            """,
+            """
+            {"type": "tool_call", "tool": "messages.send", "args": {}}
+            """,
+            """
+            {"type": "response", "text": "Sent your message."}
+            """
+        ])
+
+        let result = try await localLoop.process(userText: "Send a message to Alex")
+
+        if case .response(let text) = result {
+            XCTAssertEqual(text, "Sent your message.")
+        } else {
+            XCTFail("Expected response result, got \(result)")
+        }
+
+        let batches = await self.mockLLM.capturedMessageBatches()
+        XCTAssertGreaterThanOrEqual(batches.count, 2)
+
+        let firstSystemPrompt = batches[0].first(where: { $0.role == .system })?.content ?? ""
+        let secondSystemPrompt = batches[1].first(where: { $0.role == .system })?.content ?? ""
+
+        XCTAssertFalse(firstSystemPrompt.contains("DISCOVERED TOOLS (CURRENT SESSION):"))
+        XCTAssertTrue(secondSystemPrompt.contains("DISCOVERED TOOLS (CURRENT SESSION):"))
+        XCTAssertTrue(secondSystemPrompt.contains("messages.send:"))
+    }
+
+    func test_process_toolsDiscover_doesNotConsumeBusinessToolBudget() async throws {
+        let discoverTool = ToolDiscoveryTool()
+        let businessTool = AgentLoopMockReadTool(name: "test.query", result: "Result")
+        let localConversation = ConversationManager.makeTestInstance(maxContextTokens: 6000)
+
+        await ToolRegistry.shared.register(discoverTool)
+        await ToolRegistry.shared.register(businessTool)
+
+        let budgetedLoop = AgentLoop(
+            maxStepsPerTurn: 6,
+            maxToolCallsPerTurn: 1,
+            maxTokensPerTurn: 800,
+            structuredGenerator: self.structuredGenerator,
+            toolHost: .shared,
+            toolRegistry: .shared,
+            conversationManager: localConversation
+        )
+
+        await self.mockLLM.setResponses([
+            """
+            {"type": "tool_call", "tool": "tools.discover", "args": {"query": "send a message", "limit": 3}}
+            """,
+            """
+            {"type": "tool_call", "tool": "tools.discover", "args": {"query": "search my files", "limit": 3}}
+            """,
+            """
+            {"type": "tool_call", "tool": "test.query", "args": {}}
+            """,
+            """
+            {"type": "response", "text": "Done"}
+            """
+        ])
+
+        let result = try await budgetedLoop.process(userText: "Do the thing")
+
+        if case .response(let text) = result {
+            XCTAssertEqual(text, "Done")
+        } else {
+            XCTFail("Expected response result, got \(result)")
         }
     }
     
