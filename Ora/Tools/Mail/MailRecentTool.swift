@@ -12,6 +12,10 @@ struct MailRecentTool: Tool {
     let name = "mail.recent"
     let kind: ToolKind = .read
 
+    var loadPolicy: ToolLoadPolicy {
+        .core
+    }
+
     private let runner: AppleScriptRunning
     private static let logger = Logger.ora(category: "MailRecentTool")
 

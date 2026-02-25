@@ -88,6 +88,13 @@ actor ConversationManager {
         trimContextIfNeeded()
         logger.debug("Added tool result (\(content.count) chars), total messages: \(self.messages.count)")
     }
+
+    /// Update the system prompt in-place without clearing conversation history.
+    /// - Parameter systemPrompt: The updated system prompt
+    func updateSystemPrompt(_ systemPrompt: String) {
+        self.systemPrompt = systemPrompt
+        logger.debug("Updated system prompt in-place (\(systemPrompt.count) chars)")
+    }
     
     /// Get all messages formatted for LLM generation
     /// - Returns: Array of messages with system prompt as first element

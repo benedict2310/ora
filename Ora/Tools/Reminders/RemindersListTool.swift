@@ -24,6 +24,10 @@ struct RemindersListTool: Tool {
     let name = "reminders.list"
     let kind: ToolKind = .read
 
+    var loadPolicy: ToolLoadPolicy {
+        .core
+    }
+
     private static let logger = Logger.ora(category: "RemindersListTool")
 
     var schema: ToolSchema {

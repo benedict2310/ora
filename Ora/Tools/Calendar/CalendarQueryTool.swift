@@ -11,6 +11,10 @@ import Foundation
 struct CalendarQueryTool: Tool {
     let name = "calendar.query"
     let kind: ToolKind = .read
+
+    var loadPolicy: ToolLoadPolicy {
+        .core
+    }
     
     var schema: ToolSchema {
         ToolSchema(

@@ -11,6 +11,10 @@ import AppKit
 struct SystemOpenAppTool: Tool {
     let name = "system.open_app"
     let kind: ToolKind = .read  // No confirmation needed
+
+    var loadPolicy: ToolLoadPolicy {
+        .core
+    }
     
     var schema: ToolSchema {
         ToolSchema(
