@@ -1,220 +1,210 @@
-# S.06 - Tool Discovery
+# S.06 - Dynamic Tool Discovery (Client-Side)
 
 **Epic:** Skills
 **Status:** Not Started
 **Priority:** P1 (High)
-**Estimated Effort:** 4 days
-**Dependencies:** S.01 (Skills Runtime — complete)
+**Estimated Effort:** 5 days
+**Dependencies:** S.01-SKILLS-RUNTIME (complete), S.00-CONTEXT-BUDGET (complete)
 **Target:** macOS 26 (Tahoe)
 **Design Reference:** [Anthropic Tool Search Tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool)
+**Last Updated:** February 25, 2026
 
 ---
 
-## 1. Objective
+## 1. Title and Summary
 
-Ora currently loads all 40 tool schemas into the LLM context on every turn. This is already past the empirically measured degradation threshold (~30–50 tools) at which tool selection accuracy drops significantly. As new integrations land (BG series, C series, S.03 skill scripts, S.05 agent-authored tools), this will only worsen.
+Ora currently registers 40 tools and injects all tool schemas into prompt context at session start. This story introduces provider-agnostic, client-side dynamic tool discovery so the agent carries only core schemas by default, discovers deferred schemas on demand via `tools.discover`, and keeps discovered schemas for the rest of the session. This follows Anthropic's recommended pattern for custom tools, while preserving Ora's existing local/cloud architecture, confirmation guardrails, and audit pipeline.
 
-This story introduces a **two-tier tool loading model**:
+## 2. Architecture Context and Reuse Guidance
 
-1. **Core tools** — a small set (~5) of high-frequency, read-only tools whose full schemas are always injected into the system prompt.
-2. **Deferred tools** — all other tools; they appear only as a compact one-line catalog in the prompt. The agent calls `tools.discover` to fetch full schemas for whichever deferred tools it needs, and discovered schemas persist for the remainder of the session.
+### Current architecture constraints
 
-The discovery index is built at startup using BM25 ranking over tool names, descriptions, and parameter names via the existing `Memory/HybridScorer.swift` infrastructure.
+- Tool execution and guardrails already live in `ToolHost` and must stay the source of truth for validation, confirmation, and audit logging.
+- Tool definitions come from `ToolRegistry.schemas()` and are currently injected once at `AgentLoop.startSession(...)`.
+- `ConversationManager` currently supports `startConversation(systemPrompt:)`, but does not support in-place system prompt updates.
+- Ora supports Local, OpenAI, and Anthropic providers through `LLMProviderManager`; tool discovery must remain provider-agnostic.
 
-**Urgency:** With 40 tools already registered, this is a present-day problem, not a future concern.
+### Reuse decisions (do not reinvent)
 
-## 2. User Story
+- Reuse `ToolRegistry` actor as the single owner for tool metadata, discovery index, and per-session discovered sets.
+- Reuse `ToolHost.executeWithAudit(...)` for `tools.discover` logging instead of adding a separate audit path.
+- Reuse `SystemPromptBuilder` as the only formatter for tool prompt sections.
+- Reuse existing unit test suites (`ToolRegistryTests`, `SystemPromptBuilderTests`, `AgentLoopTests`) and add focused discovery tests.
 
-As Ora, when the user makes a request that requires a less-common tool (e.g., sending a message, running a Shortcut, searching files), I want to discover the relevant tool schema on demand rather than carrying all 40 schemas in every prompt, so that my context budget stays focused on the conversation and my tool selection accuracy stays high.
+### Why this is client-side (not provider-native)
 
-As a developer, I want each tool to declare its own load policy (core vs. deferred) alongside its existing schema, so the classification lives where the tool is defined and is easy to audit.
+- Anthropic's `tool_search` is designed for Anthropic server tools; Ora tools are local/custom Swift tools.
+- Ora's Anthropic/OpenAI providers are currently plain streaming text adapters and do not expose native provider tool-calling contracts.
+- A provider-native path would create provider divergence and break local/cloud parity; this story intentionally avoids that.
 
-## 3. Scope
+## 3. Proposed Changes and Architecture Improvements
 
-### In Scope
+### 3.1 Add load policy on tools
 
-- `ToolLoadPolicy` enum (`.core` / `.deferred`) added to `Tool` protocol with a default of `.deferred`
-- Core tools annotated with `.core`: `CalendarQueryTool`, `ContactsSearchTool`, `RemindersListTool`, `SkillsListTool`, `SystemOpenAppTool`
-- BM25 index built at startup in `ToolRegistry` from all deferred tool schemas (name + description + parameter names concatenated as corpus)
-- `ToolDiscoveryTool` (`tools.discover`): accepts a `query` string, returns full schemas for top-5 deferred tool matches
-- `SystemPromptBuilder` change: injects full schemas for core tools + a compact `[name]: [one-line description]` catalog for deferred tools under a `## Available Tools (search with tools.discover)` heading
-- Discovered schemas injected into the assistant context and cached for the session in `ConversationManager`
-- Audit logging of every `tools.discover` call (query, matches surfaced, session ID)
-- Token budget estimate logged at startup (core schema tokens + compact catalog tokens)
-- Tests: BM25 index correctness, top-N retrieval, session cache behaviour, schema injection format
+- Add `ToolLoadPolicy` with `.core` and `.deferred`.
+- Extend `Tool` protocol with `var loadPolicy: ToolLoadPolicy { get }` defaulting to `.deferred`.
+- Mark the following as `.core`:
+  - `calendar.query`
+  - `contacts.search`
+  - `reminders.list`
+  - `system.open_app`
+  - `mail.recent`
+  - `tools.discover` (must be core so discovery is always reachable)
 
-### Out of Scope
+### 3.2 Add deterministic-first discovery index
 
-- Embedding/vector-based retrieval (BM25 is sufficient at current scale; revisit at 100+ tools)
-- Dynamic tool registration after startup
-- Changing the `Tool` protocol's `execute`/`validate` contracts
-- Per-user tool preference or ranking
-- UI surface for the discovery catalog
-- Removing any existing tools
+- Add a lightweight `ToolDiscoveryIndex` (in-memory, Foundation-only) with:
+  - Deterministic pass first: exact tool-name/domain/keyword matches.
+  - BM25 fallback: rank by `name + description + parameter names`.
+  - Configurable `topK` default 5, max 8.
+- Build/rebuild index when default tools are registered.
 
-## 4. Architecture Alignment
+### 3.3 Add `tools.discover` tool
 
-### Component Boundaries
+- New read-only tool `tools.discover`.
+- Input:
+  - `query` (required)
+  - `limit` (optional)
+- Output:
+  - top matches with full tool schemas (name, description, parameters, requiredParameters, requiresConfirmation).
+  - short summary listing matched tool names for audit readability.
+- Empty/blank query returns validation error.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                       ToolRegistry (actor)                      │
-├─────────────────────────────────────────────────────────────────┤
-│  coreTools: [any Tool]         — always in system prompt        │
-│  deferredTools: [any Tool]     — in compact catalog             │
-│  bm25Index: ToolBM25Index      — built at registerDefaultTools  │
-│  discoveredSchemas: SessionCache — per-session discovered set   │
-└─────────────────────────────────────────────────────────────────┘
-         │ search(query:topK:)
-         ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  ToolDiscoveryTool  (kind: .read, name: "tools.discover")       │
-│  — BM25 query → top-5 ToolSchemas → JSON result                 │
-│  — adds discovered schemas to session cache                      │
-└─────────────────────────────────────────────────────────────────┘
-         │ full schemas for session
-         ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  SystemPromptBuilder                                            │
-│  — encodeToolSchemas(coreTools) → full schemas block            │
-│  — encodeCompactCatalog(deferredTools) → catalog block          │
-│  — encodeToolSchemas(sessionDiscovered) → discovered block      │
-└─────────────────────────────────────────────────────────────────┘
-```
+### 3.4 Add session-scoped discovered schema cache
 
-### Concurrency Model
+- Store discovered tool names per session in `ToolRegistry`.
+- Session key source:
+  - Use `AgentLoop` session id when present.
+  - If external session id is nil, use an internal `toolDiscoverySessionID` created on session start.
+- Clear discovered cache on `AgentLoop.endSession()`.
 
-- `ToolRegistry` is already an `actor`; `bm25Index` and `discoveredSchemas` live inside it — no new concurrency primitives needed.
-- `ToolDiscoveryTool.execute` calls `await ToolRegistry.shared.search(...)` from inside the existing async tool execution flow.
-- Session cache is keyed by `Session.id` and cleared on `ConversationManager.reset()`.
+### 3.5 Refresh system prompt during loop (critical integration fix)
 
-### BM25 Index Details
+- Add `ConversationManager.updateSystemPrompt(_:)` to replace system prompt without clearing history.
+- In `AgentLoop`, refresh prompt before each generation step using:
+  - core schemas,
+  - compact deferred catalog,
+  - discovered schemas for current session.
+- This ensures a just-discovered tool becomes available on the next loop step without restarting the session.
 
-`ToolBM25Index` is a lightweight struct (not `HybridScorer` directly — that's tied to SwiftData memory retrieval). It implements the same BM25 formula using only `Foundation`:
+### 3.6 Update prompt instructions
 
-- **Corpus document per tool:** `"\(tool.name) \(tool.schema.description) \(tool.schema.parameters.keys.joined(separator: " "))"`
-- **Parameters:** k1 = 1.5, b = 0.75 (standard defaults)
-- **Index built once** at `registerDefaultTools()` completion; O(n) build, O(n) per query at n=40–100 tools (negligible)
-- No external dependencies, no on-disk persistence
+- Update `Ora/Resources/system-prompt.txt`:
+  - Instruct model to call `tools.discover` when needed tool is not in core/discovered sections.
+  - Instruct model to avoid repeated discovery for already-discovered tools.
+  - Keep confirmation rules unchanged.
 
-### System Prompt Format
+### 3.7 Tool call budget behavior
 
-```
-## Core Tools
-[full schema block — same format as today]
+- `tools.discover` should not consume the same budget as business tools.
+- In `AgentLoop`, exclude `tools.discover` from `maxToolCallsPerTurn` counting to avoid premature budget exhaustion.
 
-## Available Tools (use tools.discover to load full schema)
-tools.discover: Search and load schemas for additional tools
-calendar.create_event[⚠]: Create a new calendar event
-calendar.edit_event[⚠]: Edit an existing calendar event
-...
+## 4. File Touch List (with rationale)
 
-## Discovered Tools (this session)
-[full schemas for tools discovered via tools.discover — grows during session]
-```
+| File | Change | Why |
+|:-----|:-------|:----|
+| `Ora/Tools/ToolProtocol.swift` | Add `ToolLoadPolicy` and default `loadPolicy` | Tool-level classification lives with tool contract |
+| `Ora/Tools/ToolRegistry.swift` | Add core/deferred filtering, discovery index, discovered cache APIs | Keep tool metadata/discovery in one actor |
+| `Ora/Tools/ToolDiscoveryTool.swift` (new) | Implement `tools.discover` | Discovery entrypoint for the agent |
+| `Ora/Orchestration/AgentLoop.swift` | Prompt refresh each loop step, session-scoped discovery key, budget exemption for `tools.discover` | Makes dynamic discovery actually effective |
+| `Ora/LLM/ConversationManager.swift` | Add `updateSystemPrompt(_:)` | Allows in-place prompt updates |
+| `Ora/LLM/SystemPromptBuilder.swift` | Add formatting for core/deferred/discovered sections | Prompt structure for dynamic loading |
+| `Ora/Resources/system-prompt.txt` | Add discovery behavior rules | Model policy and behavior alignment |
+| `Ora/Tools/Calendar/CalendarQueryTool.swift` | Mark `.core` | High-frequency core |
+| `Ora/Tools/Contacts/ContactsSearchTool.swift` | Mark `.core` | High-frequency core |
+| `Ora/Tools/Reminders/RemindersListTool.swift` | Mark `.core` | High-frequency core |
+| `Ora/Tools/System/SystemOpenAppTool.swift` | Mark `.core` | High-frequency core |
+| `Ora/Tools/Mail/MailRecentTool.swift` | Mark `.core` | High-frequency core |
+| `OraTests/Tools/ToolRegistryTests.swift` | Add discovery/index/cache tests | Prevent ranking/cache regressions |
+| `OraTests/LLM/SystemPromptBuilderTests.swift` | Add three-section prompt assertions | Prevent prompt-shape regressions |
+| `OraTests/LLM/ConversationManagerTests.swift` | Add prompt update tests | Ensure history remains intact |
+| `OraTests/Orchestration/AgentLoopTests.swift` | Add discover-then-execute and budget tests | Validate orchestration behavior |
+| `OraTests/Tools/ToolDiscoveryTests.swift` (new) | Focused index + tool tests | Tight coverage for discovery mechanics |
 
-`[⚠]` marks tools that require confirmation, preserving the existing guardrails signal.
+## 5. Implementation Steps (ordered)
 
-### Guardrails & Audit Logging
+1. Extend `Tool` protocol with `loadPolicy`; default `.deferred`.
+2. Mark the selected core tools and add new `tools.discover` tool.
+3. Implement `ToolDiscoveryIndex` (deterministic-first + BM25 fallback) and wire it into `ToolRegistry`.
+4. Add `ToolRegistry` APIs:
+   - core schemas
+   - deferred compact catalog rows
+   - discovered schemas for session
+   - discover-and-cache by query/session.
+5. Add `ConversationManager.updateSystemPrompt(_:)`.
+6. Update `SystemPromptBuilder` to emit:
+   - Core tools (full schema)
+   - Deferred catalog (compact one-line entries)
+   - Discovered tools (full schema, session-scoped)
+7. Update `AgentLoop`:
+   - maintain tool-discovery session key,
+   - rebuild/update prompt before each generation step,
+   - exempt `tools.discover` from business tool-call budget.
+8. Update system prompt instructions for discovery discipline.
+9. Add tests and run full suite via `./build.sh test`.
 
-- `ToolDiscoveryTool` is `kind: .read` — no confirmation required.
-- Every call is audit-logged: `{ tool: "tools.discover", query: "...", matches: ["...", ...], sessionId: "..." }`.
-- Discovered schemas never bypass confirmation gates on the underlying mutating tools.
+## 6. Tests and Validation
 
-## 5. Implementation Plan (Draft)
+### Automated
 
-### 5.1 Files to Create
+- New `ToolDiscoveryTests`:
+  - index builds for deferred tools.
+  - `"send a message"` ranks `messages.send` top-3.
+  - `"search my files"` ranks `system.search_files` top-3.
+  - blank query fails validation.
+  - session cache accumulates discovered tools.
+- `ToolRegistryTests`:
+  - `schemas()` remains backward-compatible.
+  - new filtered schema/catalog APIs return expected sets.
+- `SystemPromptBuilderTests`:
+  - three sections present.
+  - deferred rows use compact format with confirmation indicator.
+  - discovered section appears only when non-empty.
+- `ConversationManagerTests`:
+  - `updateSystemPrompt(_:)` preserves conversation messages.
+- `AgentLoopTests`:
+  - discover on step N enables deferred tool call on step N+1.
+  - `tools.discover` does not exhaust `maxToolCallsPerTurn`.
 
-- `Ora/Tools/ToolDiscoveryTool.swift` — `tools.discover` implementation + `ToolBM25Index` struct
-- `OraTests/ToolDiscoveryTests.swift` — unit tests for index, retrieval, and session cache
+### Manual
 
-### 5.2 Files to Modify
+- `"open Spotify"` should call `system.open_app` without discovery.
+- `"send a message to Mom"` should call `tools.discover` then `messages.send`.
+- `"run my morning shortcut"` should call `tools.discover` then `system.run_shortcut`.
+- Repeating a deferred-tool request in same session should not require repeated discovery.
+- Verify logs with `./build.sh logs --category tools` and audit entries in Preferences.
 
-- `Ora/Tools/ToolProtocol.swift` — add `var loadPolicy: ToolLoadPolicy { get }` with default `.deferred`; add `ToolLoadPolicy` enum
-- `Ora/Tools/ToolRegistry.swift` — split `tools` dict into `coreTools`/`deferredTools`; add `bm25Index`; add `search(query:topK:)` and `addDiscovered(_:session:)`; update `registerDefaultTools` to call `buildIndex()`; update `schemas()` to accept policy filter
-- `Ora/LLM/SystemPromptBuilder.swift` — update `build(...)` signature to accept `discoveredTools: [ToolDefinition]`; add `encodeCompactCatalog` formatter; update `{{tools}}` replacement to emit three sections
-- `Ora/Tools/Calendar/CalendarQueryTool.swift` — add `var loadPolicy: ToolLoadPolicy { .core }`
-- `Ora/Tools/Contacts/ContactsSearchTool.swift` — add `var loadPolicy: ToolLoadPolicy { .core }`
-- `Ora/Tools/Reminders/RemindersListTool.swift` — add `var loadPolicy: ToolLoadPolicy { .core }`
-- `Ora/Tools/Skills/SkillsListTool.swift` — add `var loadPolicy: ToolLoadPolicy { .core }`
-- `Ora/Tools/System/SystemOpenAppTool.swift` — add `var loadPolicy: ToolLoadPolicy { .core }`
-- `Ora/Tools/ToolRegistry.swift` — register `ToolDiscoveryTool` in `registerDefaultTools`
-- `Ora/Orchestration/ConversationManager.swift` — clear discovered schema cache on `reset()`
+## 7. Acceptance Criteria
 
-### 5.3 Tests to Add
+- [ ] AC-1: `ToolLoadPolicy` exists and all tools default to `.deferred` unless explicitly marked.
+- [ ] AC-2: Core tools are exactly: `calendar.query`, `contacts.search`, `reminders.list`, `system.open_app`, `mail.recent`, `tools.discover`.
+- [ ] AC-3: `ToolRegistry` builds and serves discovery index for deferred tools.
+- [ ] AC-4: `tools.discover` returns full schemas and caches discovered tool names per session.
+- [ ] AC-5: `tools.discover("send a message")` includes `messages.send` in top-3.
+- [ ] AC-6: `tools.discover("search my files")` includes `system.search_files` in top-3.
+- [ ] AC-7: `AgentLoop` refreshes prompt each generation step so discovered schemas are visible next step.
+- [ ] AC-8: Prompt output includes three sections: core full schemas, deferred compact catalog, discovered full schemas.
+- [ ] AC-9: `ConversationManager.updateSystemPrompt(_:)` updates system prompt without clearing non-system messages.
+- [ ] AC-10: `tools.discover` executions are audit-logged via existing `ToolHost` flow with query and matched names visible in parameters/summary.
+- [ ] AC-11: `tools.discover` does not consume business tool-call budget.
+- [ ] AC-12: Initial prompt tool block (core + deferred catalog, no discovered tools) is at most 45% of full-all-tools schema size baseline.
+- [ ] AC-13: `./build.sh test` passes with no regressions.
 
-- `OraTests/ToolDiscoveryTests.swift`:
-  - `test_bm25Index_buildsFromRegistry` — verify index contains all deferred tools
-  - `test_bm25Index_ranksSendMessageHighest` — query "send a message" returns `messages.send` in top-3
-  - `test_bm25Index_ranksCalendarCreateHighest` — query "create a meeting" returns `calendar.create_event` in top-3
-  - `test_bm25Index_topKRespectsLimit` — topK=2 returns exactly 2 results
-  - `test_bm25Index_emptyQueryReturnsEmpty` — empty/whitespace query returns `[]`
-  - `test_toolDiscoveryTool_executesAndReturnsSchemas` — execute returns valid JSON with `tools` array
-  - `test_sessionCache_persistsAcrossCalls` — second discover call in same session includes previously discovered tools
-  - `test_sessionCache_clearsOnReset` — ConversationManager.reset() clears discovered set
-  - `test_systemPromptBuilder_emitsThreeSections` — built prompt contains core block, catalog block, discovered block
+## 8. Risks and Open Questions
 
-### 5.4 Dependencies/Config
+### Risks
 
-- No new Swift packages required
-- No `project.yml` changes
-- `ToolBM25Index` is self-contained in `ToolDiscoveryTool.swift`
+- Discovery miss from ASR noise.
+  - Mitigation: deterministic keyword aliases + BM25 fallback + clear failure summary.
+- Overuse of discovery calls.
+  - Mitigation: explicit prompt instruction and budget exemption only for `tools.discover`, not all read tools.
+- Prompt churn due to per-step refresh.
+  - Mitigation: refresh only when prompt content hash changes.
 
-## 6. Acceptance Criteria
+### Decisions
 
-- [ ] AC-1: `ToolLoadPolicy` enum exists with `.core` and `.deferred` cases; `Tool` protocol has `loadPolicy` with default `.deferred`
-- [ ] AC-2: Exactly 5 tools are annotated `.core` (CalendarQuery, ContactsSearch, RemindersList, SkillsList, SystemOpenApp); all others default to `.deferred`
-- [ ] AC-3: `ToolRegistry.buildIndex()` runs at startup and produces a BM25 index covering all deferred tools
-- [ ] AC-4: `tools.discover` query "send a message" returns `messages.send` in the top-3 results
-- [ ] AC-5: `tools.discover` query "search my files" returns `system.search_files` in the top-3 results
-- [ ] AC-6: `tools.discover` with an empty query returns an error result (not a crash)
-- [ ] AC-7: System prompt contains exactly three sections: core tool schemas, deferred compact catalog, discovered tool schemas
-- [ ] AC-8: Compact catalog lines follow the format `tool_name[⚠]: one-line description` (⚠ only for mutating tools)
-- [ ] AC-9: A tool schema discovered via `tools.discover` persists in the session cache and appears in the next turn's prompt discovered section
-- [ ] AC-10: `ConversationManager.reset()` clears the discovered schema cache
-- [ ] AC-11: Every `tools.discover` execution is audit-logged with query and matched tool names
-- [ ] AC-12: Token count for core schemas + compact catalog is ≤40% of the previous all-schemas count (measured at 40 tools baseline)
-- [ ] AC-13: All new tests pass; no existing tests regress
-
-## 7. Verification Plan
-
-### Automated Tests
-
-- [ ] `OraTests/ToolDiscoveryTests.swift` — all 9 test cases above pass
-- [ ] Existing `ToolRegistryTests` still pass (registry API backwards-compatible)
-- [ ] `SystemPromptBuilderTests` updated to cover three-section format
-
-### Manual Tests
-
-- [ ] Launch app; open Overlay; say "open Spotify" — SystemOpenApp fires without discovery call (it's core)
-- [ ] Say "send a message to Mom" — agent calls `tools.discover` with a relevant query, then calls `messages.send`
-- [ ] Say "run my morning routine shortcut" — agent calls `tools.discover`, finds `system.run_shortcut`, executes it
-- [ ] Say "search my files for budget" — agent calls `tools.discover`, finds `system.search_files`
-- [ ] In a multi-turn session, ask about messages twice — second turn reuses cached schema without a second discover call
-- [ ] Inspect logs: `./build.sh logs --category tools` — verify BM25 index build log and discovery query logs appear
-- [ ] Run `./build.sh test` — all tests pass
-
-## 8. Performance / Reliability Considerations
-
-- **Index build time:** O(n) at n=40 tools; expected under 1ms. Logged via `os_signpost` if over 5ms.
-- **Query time:** O(n×q) where q = query term count; expected under 1ms at n=40–100.
-- **Token savings:** At 40 tools, estimated reduction from ~16K → ~5K tokens for the tool section (core schemas ~3K + compact catalog ~1.5K + zero discovered on first turn).
-- **No ML dependencies:** Pure BM25, no embeddings, no CoreML — works without model warmup.
-- **Graceful degradation:** If the index fails to build (malformed tool schema), `tools.discover` returns an error result; core tools are unaffected and the session continues normally.
-- **Session cache growth:** Bounded by the number of deferred tools (~35 max); no memory concern.
-
-## 9. Risks & Mitigations
-
-- **BM25 retrieval misses for voice input** — ASR produces approximate text; BM25 is tolerant of single-word variations but can miss on entirely wrong words. Mitigation: keep tool descriptions rich with synonyms (e.g., "send" and "compose" in `messages.send` description); add `usage_examples` field to `ToolSchema` in a follow-up if needed.
-- **Agent over-discovers** — the agent may call `tools.discover` on every turn even when core tools suffice. Mitigation: system prompt instructs to use core tools directly; monitor via audit log; tune prompt if frequency is too high.
-- **Backwards compatibility** — existing tests that call `ToolRegistry.schemas()` expect all tools. Mitigation: add `schemas(policy: ToolLoadPolicy?)` overload; keep `schemas()` returning all tools for test compatibility.
-- **Description quality** — 97.1% of tools in the wild have description quality issues; poor descriptions degrade BM25 accuracy. Mitigation: this story improves descriptions as part of adding `loadPolicy` annotations to each tool file (each tool file touched gets a description review pass).
-
-## 10. Open Questions
-
-- Should `tools.discover` return top-3 or top-5? Top-5 gives more recall; top-3 saves tokens. Default to 5; make it configurable via a constant.
-- Should the compact catalog be sorted by domain (calendar, reminders, …) or by name? Domain grouping aids human readability of the prompt; name sort is simpler. Prefer domain grouping.
-- Should `ToolDiscoveryTool` itself be a core tool? It should always be in context so the agent can always call it. Add it to core tools (it has a trivial schema — name + one parameter).
+- Deferred catalog is grouped by domain (calendar, reminders, contacts, notes, messages, mail, system, skills), not alphabetically. Domain grouping improves model readability and mirrors how the system prompt already organizes context.
+- `tools.discover` results include an optional numeric `score` (0.0–1.0) per match. Implementer must include this in the JSON output so the model can reason about match confidence when multiple candidates are close.
 
 ---
 
