@@ -12,6 +12,10 @@ struct ContactsSearchTool: Tool {
     let name = "contacts.search"
     let kind: ToolKind = .read
 
+    var loadPolicy: ToolLoadPolicy {
+        .core
+    }
+
     var schema: ToolSchema {
         ToolSchema(
             name: name,

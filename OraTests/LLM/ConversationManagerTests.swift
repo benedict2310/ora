@@ -250,6 +250,23 @@ final class ConversationManagerTests: XCTestCase {
         let count = await manager.messageCount()
         XCTAssertEqual(count, 0)
     }
+
+    func test_updateSystemPrompt_preservesConversationMessages() async {
+        let manager = ConversationManager.makeTestInstance(maxContextTokens: 6000)
+
+        await manager.startConversation(systemPrompt: "Original system prompt")
+        await manager.addUserMessage("First user turn")
+        await manager.addAssistantMessage("First assistant turn")
+
+        await manager.updateSystemPrompt("Updated system prompt")
+
+        let messages = await manager.getMessagesForLLM()
+        XCTAssertEqual(messages.count, 3)
+        XCTAssertEqual(messages[0].role, .system)
+        XCTAssertEqual(messages[0].content, "Updated system prompt")
+        XCTAssertEqual(messages[1].content, "First user turn")
+        XCTAssertEqual(messages[2].content, "First assistant turn")
+    }
     
     func test_multiTurnConversation() async {
         let manager = ConversationManager.makeTestInstance(maxContextTokens: 6000)

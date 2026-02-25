@@ -102,6 +102,9 @@ actor AgentLoop {
     private let maxPersistedToolSummaryCharacters: Int = 500
     
     private var currentSessionID: UUID?
+    private var toolDiscoveryFallbackSessionID: UUID?
+    private var sessionSkills: [SkillMetadata] = []
+    private var lastSystemPromptHash: Int?
     
     /// Whether a session is active (conversation has been initialized)
     private var sessionActive: Bool = false
@@ -169,33 +172,24 @@ actor AgentLoop {
     /// - Parameter sessionID: Optional session ID for audit logging
     func startSession(sessionID: UUID? = nil) async {
         self.currentSessionID = sessionID
+        self.toolDiscoveryFallbackSessionID = UUID()
         self.sessionActive = true
         self.pendingProposal = nil
+        self.lastSystemPromptHash = nil
         
         logger.info("Starting new agent session")
-        
-        // Build system prompt with tool definitions
-        let toolSchemas = await toolRegistry.schemas()
-        let toolDefinitions = toolSchemas.map { schema in
-            ToolDefinition(
-                name: schema.name,
-                description: schema.description,
-                parameterSchemas: schema.parameters.mapValues { parameter in
-                    ToolParameterDefinition(type: parameter.type, format: parameter.format)
-                },
-                requiredParameters: schema.requiredParameters,
-                requiresConfirmation: schema.requiresConfirmation
-            )
-        }
 
-        let skills: [SkillMetadata]
         if await SkillsFeatureGate.isEnabled() {
-            skills = await SkillStore.shared.list()
+            self.sessionSkills = await SkillStore.shared.list()
         } else {
-            skills = []
+            self.sessionSkills = []
         }
 
-        let systemPrompt = SystemPromptBuilder.build(tools: toolDefinitions, skills: skills)
+        if let sessionID = self.currentToolDiscoverySessionID() {
+            await self.toolRegistry.clearDiscoveredTools(for: sessionID)
+        }
+        let systemPrompt = await self.buildSystemPrompt()
+        self.lastSystemPromptHash = systemPrompt.hashValue
         
         // Start fresh conversation with system prompt
         await conversationManager.startConversation(systemPrompt: systemPrompt)
@@ -217,7 +211,16 @@ actor AgentLoop {
 
         self.sessionActive = false
         self.pendingProposal = nil
+        self.sessionSkills = []
+        self.lastSystemPromptHash = nil
+
+        let discoverySessions = self.activeToolDiscoverySessionIDs()
+        for sessionID in discoverySessions {
+            await self.toolRegistry.clearDiscoveredTools(for: sessionID)
+        }
+
         self.currentSessionID = nil
+        self.toolDiscoveryFallbackSessionID = nil
         
         // Clear conversation to free memory
         await conversationManager.clear()
@@ -257,6 +260,9 @@ actor AgentLoop {
         if !sessionActive {
             await startSession(sessionID: sessionID)
         } else if let sid = sessionID {
+            if self.currentSessionID == nil, let fallbackSessionID = self.toolDiscoveryFallbackSessionID {
+                await self.toolRegistry.migrateDiscoveredTools(from: fallbackSessionID, to: sid)
+            }
             self.currentSessionID = sid
         }
         
@@ -359,6 +365,8 @@ actor AgentLoop {
         // Emit composing activity when starting to generate
         await notifyDelegateActivity(.composing)
 
+        await refreshSystemPromptIfNeeded()
+
         let messages = await conversationManager.getMessagesForLLM()
         let output = try await structuredGenerator.generate(
             messages: messages,
@@ -396,6 +404,8 @@ actor AgentLoop {
         while steps < maxStepsPerTurn {
             steps += 1
             logger.debug("Agent loop step \(steps)/\(self.maxStepsPerTurn)")
+
+            await refreshSystemPromptIfNeeded()
 
             // Emit planning activity before each generation step
             await notifyDelegateActivity(.planning)
@@ -441,13 +451,20 @@ actor AgentLoop {
 
             case .toolCall(let tool, let args):
                 // Read-only tool call - execute automatically
-                guard toolCalls < maxToolCallsPerTurn else {
-                    logger.warning("Tool call limit reached")
-                    return .error("I've reached my limit for this request. Please try a simpler question.")
+                let countsTowardBudget = tool != ToolDiscoveryTool.toolName
+                if countsTowardBudget {
+                    guard toolCalls < maxToolCallsPerTurn else {
+                        logger.warning("Tool call limit reached")
+                        return .error("I've reached my limit for this request. Please try a simpler question.")
+                    }
+                    toolCalls += 1
+                } else {
+                    logger.debug("tools.discover exempt from business tool-call budget")
                 }
-                toolCalls += 1
 
-                logger.info("Executing tool: \(tool) args=\(args.keys.sorted().joined(separator: ","))")
+                let executionArgs = self.preparedArgsForExecution(tool: tool, args: args)
+
+                logger.info("Executing tool: \(tool) args=\(executionArgs.keys.sorted().joined(separator: ","))")
 
                 // Emit toolCall activity before execution
                 await notifyDelegateActivity(.toolCall(name: tool))
@@ -455,7 +472,7 @@ actor AgentLoop {
                 do {
                     let execution = try await toolHost.executeWithAudit(
                         toolName: tool,
-                        args: args,
+                        args: executionArgs,
                         confirmed: true,  // Read tools don't need confirmation
                         sessionID: currentSessionID
                     )
@@ -523,6 +540,92 @@ actor AgentLoop {
         // Budget exhausted
         logger.warning("Agent loop budget exhausted after \(steps) steps")
         return .error("I wasn't able to complete that request. Could you try something simpler?")
+    }
+
+    // MARK: - Private - Prompt Refresh
+
+    private func refreshSystemPromptIfNeeded() async {
+        guard self.sessionActive else {
+            return
+        }
+
+        let prompt = await self.buildSystemPrompt()
+        let promptHash = prompt.hashValue
+
+        guard self.lastSystemPromptHash != promptHash else {
+            return
+        }
+
+        self.lastSystemPromptHash = promptHash
+        await self.conversationManager.updateSystemPrompt(prompt)
+        self.logger.debug("Updated system prompt for active session")
+    }
+
+    private func buildSystemPrompt() async -> String {
+        let coreSchemas = await self.toolRegistry.coreSchemas()
+        let deferredCatalogRows = await self.toolRegistry.deferredCatalogRows()
+        let discoveredSchemas: [ToolSchema]
+
+        if let sessionID = self.currentToolDiscoverySessionID() {
+            discoveredSchemas = await self.toolRegistry.discoveredSchemas(for: sessionID)
+        } else {
+            discoveredSchemas = []
+        }
+
+        let coreTools = coreSchemas.map { Self.toolDefinition(from: $0) }
+        let discoveredTools = discoveredSchemas.map { Self.toolDefinition(from: $0) }
+        let deferredCatalog = deferredCatalogRows.map { row in
+            DeferredToolCatalogEntry(
+                domain: row.domain,
+                name: row.name,
+                requiresConfirmation: row.requiresConfirmation
+            )
+        }
+
+        return SystemPromptBuilder.build(
+            tools: coreTools,
+            deferredCatalog: deferredCatalog,
+            discoveredTools: discoveredTools,
+            skills: self.sessionSkills
+        )
+    }
+
+    private func currentToolDiscoverySessionID() -> UUID? {
+        self.currentSessionID ?? self.toolDiscoveryFallbackSessionID
+    }
+
+    private func activeToolDiscoverySessionIDs() -> Set<UUID> {
+        var ids: Set<UUID> = []
+        if let current = self.currentSessionID {
+            ids.insert(current)
+        }
+        if let fallback = self.toolDiscoveryFallbackSessionID {
+            ids.insert(fallback)
+        }
+        return ids
+    }
+
+    private func preparedArgsForExecution(tool: String, args: [String: JSONValue]) -> [String: JSONValue] {
+        guard tool == ToolDiscoveryTool.toolName,
+              let sessionID = self.currentToolDiscoverySessionID() else {
+            return args
+        }
+
+        var prepared = args
+        prepared[ToolDiscoveryTool.sessionIDArgumentKey] = .string(sessionID.uuidString)
+        return prepared
+    }
+
+    private static func toolDefinition(from schema: ToolSchema) -> ToolDefinition {
+        ToolDefinition(
+            name: schema.name,
+            description: schema.description,
+            parameterSchemas: schema.parameters.mapValues { parameter in
+                ToolParameterDefinition(type: parameter.type, format: parameter.format)
+            },
+            requiredParameters: schema.requiredParameters,
+            requiresConfirmation: schema.requiresConfirmation
+        )
     }
     
     // MARK: - Private - Delegate Notifications

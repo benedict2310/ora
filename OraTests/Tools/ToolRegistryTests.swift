@@ -44,6 +44,11 @@ final class ToolRegistryTests: XCTestCase {
         XCTAssertEqual(schemas.count, 1)
         XCTAssertEqual(schemas.first?.name, "mock.read")
     }
+
+    func test_toolLoadPolicy_defaultsToDeferred() {
+        let tool = MockReadTool()
+        XCTAssertEqual(tool.loadPolicy, .deferred)
+    }
     
     func test_registerDefaultToolsIfNeeded_registersOnFirstCall() async {
         // Ensure registry is empty
@@ -78,6 +83,70 @@ final class ToolRegistryTests: XCTestCase {
         
         // Cleanup
         await ToolRegistry.shared.clear()
+    }
+
+    func test_coreTools_areExactExpectedSet() async {
+        await ToolRegistry.shared.registerDefaultTools()
+
+        let names = await ToolRegistry.shared.coreSchemas().map(\.name)
+
+        XCTAssertEqual(
+            Set(names),
+            Set([
+                "calendar.query",
+                "contacts.search",
+                "reminders.list",
+                "system.open_app",
+                "mail.recent",
+                "tools.discover"
+            ])
+        )
+    }
+
+    func test_deferredCatalog_excludesCoreTools() async {
+        await ToolRegistry.shared.registerDefaultTools()
+
+        let deferred = await ToolRegistry.shared.deferredCatalogRows()
+        let deferredNames = Set(deferred.map(\.name))
+
+        XCTAssertFalse(deferredNames.contains("calendar.query"))
+        XCTAssertFalse(deferredNames.contains("tools.discover"))
+        XCTAssertTrue(deferredNames.contains("messages.send"))
+        XCTAssertTrue(deferredNames.contains("system.search_files"))
+    }
+
+    func test_discoveryIndex_containsDeferredToolsOnly() async {
+        await ToolRegistry.shared.registerDefaultTools()
+
+        let indexedNames = Set(await ToolRegistry.shared.discoveryIndexedToolNames())
+
+        XCTAssertFalse(indexedNames.contains("calendar.query"))
+        XCTAssertFalse(indexedNames.contains("tools.discover"))
+        XCTAssertTrue(indexedNames.contains("messages.send"))
+        XCTAssertTrue(indexedNames.contains("system.search_files"))
+    }
+
+    func test_discoverTools_cachesDiscoveredNamesPerSession() async {
+        await ToolRegistry.shared.registerDefaultTools()
+
+        let sessionID = UUID()
+        _ = await ToolRegistry.shared.discoverTools(query: "send a message", limit: 3, sessionID: sessionID)
+        _ = await ToolRegistry.shared.discoverTools(query: "search my files", limit: 3, sessionID: sessionID)
+
+        let discoveredNames = await ToolRegistry.shared.discoveredToolNames(for: sessionID)
+
+        XCTAssertTrue(discoveredNames.contains("messages.send"))
+        XCTAssertTrue(discoveredNames.contains("system.search_files"))
+    }
+
+    func test_discoveredSchemas_returnsSchemasForSession() async {
+        await ToolRegistry.shared.registerDefaultTools()
+
+        let sessionID = UUID()
+        _ = await ToolRegistry.shared.discoverTools(query: "send a message", limit: 3, sessionID: sessionID)
+
+        let discovered = await ToolRegistry.shared.discoveredSchemas(for: sessionID).map(\.name)
+        XCTAssertTrue(discovered.contains("messages.send"))
     }
 }
 

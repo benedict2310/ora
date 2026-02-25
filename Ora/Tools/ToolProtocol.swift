@@ -13,6 +13,12 @@ enum ToolKind: String, Sendable {
     case mutate  // Requires confirmation
 }
 
+/// Tool loading policy for prompt injection
+enum ToolLoadPolicy: Sendable, Equatable {
+    case core
+    case deferred
+}
+
 /// Result of tool execution
 struct ToolResult: Sendable {
     let json: JSONValue
@@ -66,6 +72,9 @@ protocol Tool: Sendable {
     
     /// Tool schema for LLM
     var schema: ToolSchema { get }
+
+    /// Whether tool schema is included by default or discovered on demand
+    var loadPolicy: ToolLoadPolicy { get }
     
     /// Validate arguments before execution
     func validate(args: [String: JSONValue]) throws
@@ -78,5 +87,9 @@ extension Tool {
     /// Whether confirmation is required
     var requiresConfirmation: Bool {
         kind == .mutate
+    }
+
+    var loadPolicy: ToolLoadPolicy {
+        .deferred
     }
 }

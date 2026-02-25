@@ -27,7 +27,9 @@ final class SystemPromptBuilderTests: XCTestCase {
         XCTAssertTrue(template.contains("{{timezone}}"), "Template should contain {{timezone}}")
         XCTAssertTrue(template.contains("{{timezone_offset}}"), "Template should contain {{timezone_offset}}")
         XCTAssertTrue(template.contains("{{default_calendar}}"), "Template should contain {{default_calendar}}")
-        XCTAssertTrue(template.contains("{{tools}}"), "Template should contain {{tools}}")
+        XCTAssertTrue(template.contains("{{core_tools}}"), "Template should contain {{core_tools}}")
+        XCTAssertTrue(template.contains("{{deferred_tools_catalog}}"), "Template should contain {{deferred_tools_catalog}}")
+        XCTAssertTrue(template.contains("{{discovered_tools_section}}"), "Template should contain {{discovered_tools_section}}")
         XCTAssertTrue(template.contains("{{available_skills}}"), "Template should contain {{available_skills}}")
     }
     
@@ -374,7 +376,7 @@ final class SystemPromptBuilderTests: XCTestCase {
         let result = SystemPromptBuilder.encodeToolSchemas(tools)
         let lines = result.components(separatedBy: "\n")
 
-        XCTAssertEqual(tools.count, 40, "Expected current default registry to expose 40 tools")
+        XCTAssertEqual(tools.count, 41, "Expected current default registry to expose 41 tools")
         XCTAssertEqual(lines.count, tools.count, "Should emit one non-empty line per tool")
         XCTAssertTrue(lines.allSatisfy { !$0.trimmingCharacters(in: .whitespaces).isEmpty }, "No blank lines allowed")
         XCTAssertLessThanOrEqual(result.count, 3_800, "Compact tool block should remain within budget")
@@ -411,6 +413,78 @@ final class SystemPromptBuilderTests: XCTestCase {
         for tool in tools {
             XCTAssertTrue(prompt.contains(tool.name), "Prompt should include \(tool.name)")
         }
+    }
+
+    func test_build_dynamicToolSections_containsCoreAndDeferredAndDiscovered() async {
+        let coreTools = await self.loadCoreToolDefinitions()
+        let deferredCatalog = await self.loadDeferredCatalogEntries()
+        let discoveredTools = [
+            ToolDefinition(
+                name: "messages.send",
+                description: "Send a message to a contact.",
+                parameterSchemas: [
+                    "handle": ToolParameterDefinition(type: "string"),
+                    "message": ToolParameterDefinition(type: "string")
+                ],
+                requiredParameters: ["handle", "message"],
+                requiresConfirmation: true
+            )
+        ]
+
+        let prompt = SystemPromptBuilder.build(
+            tools: coreTools,
+            deferredCatalog: deferredCatalog,
+            discoveredTools: discoveredTools
+        )
+
+        XCTAssertTrue(prompt.contains("CORE TOOLS (FULL SCHEMAS):"))
+        XCTAssertTrue(prompt.contains("DEFERRED TOOL CATALOG (COMPACT):"))
+        XCTAssertTrue(prompt.contains("DISCOVERED TOOLS (CURRENT SESSION):"))
+        XCTAssertTrue(prompt.contains("messages.send[confirm]:"))
+    }
+
+    func test_build_withoutDiscoveredTools_omitsDiscoveredSection() async {
+        let coreTools = await self.loadCoreToolDefinitions()
+        let deferredCatalog = await self.loadDeferredCatalogEntries()
+
+        let prompt = SystemPromptBuilder.build(
+            tools: coreTools,
+            deferredCatalog: deferredCatalog,
+            discoveredTools: []
+        )
+
+        XCTAssertFalse(prompt.contains("DISCOVERED TOOLS (CURRENT SESSION):"))
+    }
+
+    func test_encodeDeferredToolCatalog_usesCompactRowsWithConfirmationIndicator() {
+        let catalog = [
+            DeferredToolCatalogEntry(domain: "calendar", name: "calendar.find_slots", requiresConfirmation: false),
+            DeferredToolCatalogEntry(domain: "calendar", name: "calendar.create_event", requiresConfirmation: true),
+            DeferredToolCatalogEntry(domain: "messages", name: "messages.send", requiresConfirmation: true)
+        ]
+
+        let encoded = SystemPromptBuilder.encodeDeferredToolCatalog(catalog)
+
+        XCTAssertTrue(encoded.contains("calendar:"))
+        XCTAssertTrue(encoded.contains("- calendar.find_slots"))
+        XCTAssertTrue(encoded.contains("- calendar.create_event [confirm]"))
+        XCTAssertTrue(encoded.contains("messages:"))
+        XCTAssertTrue(encoded.contains("- messages.send [confirm]"))
+    }
+
+    func test_initialDynamicToolBlock_withNoDiscoveredTools_isAtMost45PercentOfFullSchemas() async {
+        let allTools = await self.loadDefaultToolDefinitions()
+        let coreTools = await self.loadCoreToolDefinitions()
+        let deferredCatalog = await self.loadDeferredCatalogEntries()
+
+        let fullBaseline = SystemPromptBuilder.encodeToolSchemas(allTools).count
+        let initialBlock = [
+            SystemPromptBuilder.encodeToolSchemas(coreTools),
+            SystemPromptBuilder.encodeDeferredToolCatalog(deferredCatalog)
+        ].joined(separator: "\n")
+
+        let threshold = Int(Double(fullBaseline) * 0.45)
+        XCTAssertLessThanOrEqual(initialBlock.count, threshold)
     }
     
     // MARK: - Fallback Template Tests
@@ -461,6 +535,38 @@ final class SystemPromptBuilderTests: XCTestCase {
                 },
                 requiredParameters: schema.requiredParameters,
                 requiresConfirmation: schema.requiresConfirmation
+            )
+        }
+    }
+
+    private func loadCoreToolDefinitions() async -> [ToolDefinition] {
+        let registry = ToolRegistry.makeTestInstance()
+        await registry.registerDefaultTools()
+        let schemas = await registry.coreSchemas()
+
+        return schemas.map { schema in
+            ToolDefinition(
+                name: schema.name,
+                description: schema.description,
+                parameterSchemas: schema.parameters.mapValues { parameter in
+                    ToolParameterDefinition(type: parameter.type, format: parameter.format)
+                },
+                requiredParameters: schema.requiredParameters,
+                requiresConfirmation: schema.requiresConfirmation
+            )
+        }
+    }
+
+    private func loadDeferredCatalogEntries() async -> [DeferredToolCatalogEntry] {
+        let registry = ToolRegistry.makeTestInstance()
+        await registry.registerDefaultTools()
+        let rows = await registry.deferredCatalogRows()
+
+        return rows.map { row in
+            DeferredToolCatalogEntry(
+                domain: row.domain,
+                name: row.name,
+                requiresConfirmation: row.requiresConfirmation
             )
         }
     }

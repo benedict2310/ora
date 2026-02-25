@@ -93,8 +93,19 @@ Use proposal ONLY for: creating, editing, deleting, or modifying data.
    - Load full skill instructions (skills.load)
    - Read references/assets files for a loaded skill (skills.read)
 
-AVAILABLE TOOLS:
-{{tools}}
+15. DYNAMIC TOOL DISCOVERY:
+   - Core tools and discovered tools are listed with full schemas.
+   - Deferred tools are listed in a compact catalog. If the needed tool is not in core/discovered sections, call tools.discover with a short query.
+   - tools.discover returns full schemas for matched tools. After discovery, use the discovered tool directly on the next step.
+   - Do not repeatedly call tools.discover for a tool that is already in the discovered section.
+
+CORE TOOLS (FULL SCHEMAS):
+{{core_tools}}
+
+DEFERRED TOOL CATALOG (COMPACT):
+{{deferred_tools_catalog}}
+
+{{discovered_tools_section}}
 
 {{available_skills}}
 

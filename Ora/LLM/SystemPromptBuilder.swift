@@ -21,7 +21,9 @@ import os
 /// - `{{timezone}}` - Timezone identifier (e.g., "America/Los_Angeles")
 /// - `{{timezone_offset}}` - Timezone offset (e.g., "UTC-08:00")
 /// - `{{default_calendar}}` - User's default calendar name
-/// - `{{tools}}` - Available tool descriptions
+/// - `{{core_tools}}` - Core tool schemas
+/// - `{{deferred_tools_catalog}}` - Deferred tool catalog rows
+/// - `{{discovered_tools_section}}` - Session-discovered tool schemas
 /// - `{{available_skills}}` - Available skills metadata in XML
 ///
 struct SystemPromptBuilder {
@@ -40,7 +42,9 @@ struct SystemPromptBuilder {
     ///   - currentDate: The current date/time (defaults to now)
     ///   - timezone: The timezone to use (defaults to current)
     ///   - defaultCalendar: User's default calendar name
-    ///   - tools: Available tool definitions
+    ///   - tools: Core tool definitions (backward-compatible parameter name)
+    ///   - deferredCatalog: Deferred tools in compact catalog form
+    ///   - discoveredTools: Session-discovered tools in full schema form
     ///   - skills: Available skill metadata
     /// - Returns: The resolved system prompt string
     static func build(
@@ -48,6 +52,8 @@ struct SystemPromptBuilder {
         timezone: TimeZone = .current,
         defaultCalendar: String? = nil,
         tools: [ToolDefinition] = [],
+        deferredCatalog: [DeferredToolCatalogEntry] = [],
+        discoveredTools: [ToolDefinition] = [],
         skills: [SkillMetadata] = []
     ) -> String {
         let template = loadTemplate()
@@ -57,6 +63,8 @@ struct SystemPromptBuilder {
             timezone: timezone,
             defaultCalendar: defaultCalendar,
             tools: tools,
+            deferredCatalog: deferredCatalog,
+            discoveredTools: discoveredTools,
             skills: skills
         )
     }
@@ -101,6 +109,8 @@ struct SystemPromptBuilder {
         timezone: TimeZone,
         defaultCalendar: String?,
         tools: [ToolDefinition],
+        deferredCatalog: [DeferredToolCatalogEntry] = [],
+        discoveredTools: [ToolDefinition] = [],
         skills: [SkillMetadata] = []
     ) -> String {
         let dateFormatter = DateFormatter()
@@ -124,7 +134,10 @@ struct SystemPromptBuilder {
         result = result.replacingOccurrences(of: "{{timezone}}", with: timezone.identifier)
         result = result.replacingOccurrences(of: "{{timezone_offset}}", with: formatUTCOffset(for: timezone, date: currentDate))
         result = result.replacingOccurrences(of: "{{default_calendar}}", with: defaultCalendar ?? "Default")
-        result = result.replacingOccurrences(of: "{{tools}}", with: encodeToolSchemas(tools))
+        result = result.replacingOccurrences(of: "{{tools}}", with: encodeToolSchemas(tools))  // backward compatibility
+        result = result.replacingOccurrences(of: "{{core_tools}}", with: encodeToolSchemas(tools))
+        result = result.replacingOccurrences(of: "{{deferred_tools_catalog}}", with: encodeDeferredToolCatalog(deferredCatalog))
+        result = result.replacingOccurrences(of: "{{discovered_tools_section}}", with: encodeDiscoveredToolsSection(discoveredTools))
         result = result.replacingOccurrences(of: "{{available_skills}}", with: encodeSkillsMetadata(skills))
         
         return result
@@ -156,6 +169,47 @@ struct SystemPromptBuilder {
         }
 
         return lines.joined(separator: "\n")
+    }
+
+    static func encodeDeferredToolCatalog(_ catalog: [DeferredToolCatalogEntry]) -> String {
+        guard !catalog.isEmpty else {
+            return "No deferred tools available."
+        }
+
+        let grouped = Dictionary(grouping: catalog) { $0.domain }
+        let orderedDomains = orderedDomains(from: grouped.keys)
+
+        var lines: [String] = []
+        for domain in orderedDomains {
+            guard let rows = grouped[domain] else {
+                continue
+            }
+
+            lines.append("\(domain):")
+            for row in rows.sorted(by: { $0.name < $1.name }) {
+                let confirmationSuffix = row.requiresConfirmation ? " [confirm]" : ""
+                lines.append("- \(row.name)\(confirmationSuffix)")
+            }
+            lines.append("")
+        }
+
+        if lines.last?.isEmpty == true {
+            lines.removeLast()
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
+    static func encodeDiscoveredToolsSection(_ tools: [ToolDefinition]) -> String {
+        guard !tools.isEmpty else {
+            return ""
+        }
+
+        let encoded = encodeToolSchemas(tools)
+        return """
+        DISCOVERED TOOLS (CURRENT SESSION):
+        \(encoded)
+        """
     }
     
     // MARK: - Fallback
@@ -299,6 +353,25 @@ struct SystemPromptBuilder {
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")
     }
+
+    private static func orderedDomains<S: Sequence>(from domains: S) -> [String] where S.Element == String {
+        let preferredOrder = [
+            "calendar",
+            "reminders",
+            "contacts",
+            "notes",
+            "messages",
+            "mail",
+            "system",
+            "skills"
+        ]
+
+        let uniqueDomains = Set(domains)
+        var ordered: [String] = preferredOrder.filter { uniqueDomains.contains($0) }
+        let extras = uniqueDomains.subtracting(Set(preferredOrder)).sorted()
+        ordered.append(contentsOf: extras)
+        return ordered
+    }
 }
 
 // MARK: - Tool Definition
@@ -366,4 +439,10 @@ struct ToolDefinition: Sendable {
         self.requiredParameters = Set(requiredParameters)
         self.requiresConfirmation = requiresConfirmation
     }
+}
+
+struct DeferredToolCatalogEntry: Sendable {
+    let domain: String
+    let name: String
+    let requiresConfirmation: Bool
 }
