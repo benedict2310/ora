@@ -90,9 +90,13 @@ actor ConversationManager {
     }
 
     /// Update the system prompt in-place without clearing conversation history.
+    ///
+    /// Re-trims context after updating so that a larger prompt (e.g. due to
+    /// newly-discovered tool schemas) does not push total tokens over budget.
     /// - Parameter systemPrompt: The updated system prompt
     func updateSystemPrompt(_ systemPrompt: String) {
         self.systemPrompt = systemPrompt
+        trimContextIfNeeded()
         logger.debug("Updated system prompt in-place (\(systemPrompt.count) chars)")
     }
     
