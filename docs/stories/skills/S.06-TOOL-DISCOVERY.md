@@ -176,19 +176,19 @@ Ora currently registers 40 tools and injects all tool schemas into prompt contex
 
 ## 7. Acceptance Criteria
 
-- [ ] AC-1: `ToolLoadPolicy` exists and all tools default to `.deferred` unless explicitly marked.
-- [ ] AC-2: Core tools are exactly: `calendar.query`, `contacts.search`, `reminders.list`, `system.open_app`, `mail.recent`, `tools.discover`.
-- [ ] AC-3: `ToolRegistry` builds and serves discovery index for deferred tools.
-- [ ] AC-4: `tools.discover` returns full schemas and caches discovered tool names per session.
-- [ ] AC-5: `tools.discover("send a message")` includes `messages.send` in top-3.
-- [ ] AC-6: `tools.discover("search my files")` includes `system.search_files` in top-3.
-- [ ] AC-7: `AgentLoop` refreshes prompt each generation step so discovered schemas are visible next step.
-- [ ] AC-8: Prompt output includes three sections: core full schemas, deferred compact catalog, discovered full schemas.
-- [ ] AC-9: `ConversationManager.updateSystemPrompt(_:)` updates system prompt without clearing non-system messages.
-- [ ] AC-10: `tools.discover` executions are audit-logged via existing `ToolHost` flow with query and matched names visible in parameters/summary.
-- [ ] AC-11: `tools.discover` does not consume business tool-call budget.
-- [ ] AC-12: Initial prompt tool block (core + deferred catalog, no discovered tools) is at most 45% of full-all-tools schema size baseline.
-- [ ] AC-13: `./build.sh test` passes with no regressions.
+- [x] AC-1: `ToolLoadPolicy` exists and all tools default to `.deferred` unless explicitly marked.
+- [x] AC-2: Core tools are exactly: `calendar.query`, `contacts.search`, `reminders.list`, `system.open_app`, `mail.recent`, `tools.discover`.
+- [x] AC-3: `ToolRegistry` builds and serves discovery index for deferred tools.
+- [x] AC-4: `tools.discover` returns full schemas and caches discovered tool names per session.
+- [x] AC-5: `tools.discover("send a message")` includes `messages.send` in top-3.
+- [x] AC-6: `tools.discover("search my files")` includes `system.search_files` in top-3.
+- [x] AC-7: `AgentLoop` refreshes prompt each generation step so discovered schemas are visible next step.
+- [x] AC-8: Prompt output includes three sections: core full schemas, deferred compact catalog, discovered full schemas.
+- [x] AC-9: `ConversationManager.updateSystemPrompt(_:)` updates system prompt without clearing non-system messages.
+- [x] AC-10: `tools.discover` executions are audit-logged via existing `ToolHost` flow with query and matched names visible in parameters/summary.
+- [x] AC-11: `tools.discover` does not consume business tool-call budget.
+- [x] AC-12: Initial prompt tool block (core + deferred catalog, no discovered tools) is at most 45% of full-all-tools schema size baseline.
+- [x] AC-13: `./build.sh test` passes with no regressions.
 
 ## 8. Risks and Open Questions
 
@@ -210,11 +210,67 @@ Ora currently registers 40 tools and injects all tool schemas into prompt contex
 
 ## Implementation Summary
 
-(TBD after implementation.)
+**Date:** 2026-02-25
+**Branch:** `feat/s06-tool-discovery`
+**Commits:** 2 implementation commits
+**Implemented by:** codex (complexity score: 10/10)
+**Reviewed by:** Claude Code orchestrator (1 iteration)
+
+### Files Changed
+- `Ora/Tools/ToolProtocol.swift` — Added `ToolLoadPolicy` enum and `loadPolicy` protocol requirement
+- `Ora/Tools/ToolDiscoveryIndex.swift` — New: deterministic-first + BM25 fallback discovery index
+- `Ora/Tools/ToolDiscoveryTool.swift` — New: `tools.discover` tool implementation
+- `Ora/Tools/ToolRegistry.swift` — Core/deferred filtering, discovery index, session cache APIs
+- `Ora/Tools/Calendar/CalendarQueryTool.swift` — Marked `.core`
+- `Ora/Tools/Contacts/ContactsSearchTool.swift` — Marked `.core`
+- `Ora/Tools/Reminders/RemindersListTool.swift` — Marked `.core`
+- `Ora/Tools/System/SystemOpenAppTool.swift` — Marked `.core`
+- `Ora/Tools/Mail/MailRecentTool.swift` — Marked `.core`
+- `Ora/LLM/ConversationManager.swift` — Added `updateSystemPrompt(_:)` for in-place updates
+- `Ora/LLM/SystemPromptBuilder.swift` — Three-section prompt (core / deferred catalog / discovered)
+- `Ora/Orchestration/AgentLoop.swift` — Prompt refresh per step, budget exemption for `tools.discover`
+- `Ora/Resources/system-prompt.txt` — Discovery behavior instructions
+- `OraTests/Tools/ToolDiscoveryTests.swift` — New: index, ranking, cache, validation tests
+- `OraTests/Tools/ToolRegistryTests.swift` — Core/deferred filtering, discovery index tests
+- `OraTests/LLM/SystemPromptBuilderTests.swift` — Three-section assertions, AC-12 baseline
+- `OraTests/LLM/ConversationManagerTests.swift` — `updateSystemPrompt` history-preservation test
+- `OraTests/Orchestration/AgentLoopTests.swift` — Discover-then-execute, budget exemption tests
 
 ## Code Review Findings
 
-(TBD by review agent.)
+**Reviewed by:** Claude Code orchestrator
+**Date:** 2026-02-25
+**Iteration:** 1
+
+### AC Coverage
+
+| AC | Status |
+|:---|:-------|
+| AC-1: `ToolLoadPolicy` exists, defaults to `.deferred` | PASS |
+| AC-2: Core tools exactly the specified 6 | PASS |
+| AC-3: `ToolRegistry` builds discovery index for deferred tools | PASS |
+| AC-4: `tools.discover` returns full schemas and caches per session | PASS |
+| AC-5: `"send a message"` includes `messages.send` in top-3 | PASS |
+| AC-6: `"search my files"` includes `system.search_files` in top-3 | PASS |
+| AC-7: `AgentLoop` refreshes prompt each step for discovered tools | PASS |
+| AC-8: Prompt has three sections: core, deferred, discovered | PASS |
+| AC-9: `updateSystemPrompt(_:)` preserves conversation history | PASS |
+| AC-10: `tools.discover` audit-logged with query and matched names | PASS |
+| AC-11: `tools.discover` exempt from business tool-call budget | PASS |
+| AC-12: Initial prompt ≤ 45% of full-all-tools baseline | PASS |
+| AC-13: `./build.sh test` passes with no regressions (1462/1462) | PASS |
+
+### Issues
+
+**P0:** None
+**P1:** None
+**P2 (minor, non-blocking):**
+- `ToolDiscoveryIndex` immutability is implicit (safe, but could use a comment)
+- `tools.discover` outside AgentLoop uses throwaway UUID for session — acceptable by design
+
+### Verdict
+
+- [x] Ready for merge
 
 ## Completion Status
 
