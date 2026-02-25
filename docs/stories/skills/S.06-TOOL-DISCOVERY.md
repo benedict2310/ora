@@ -274,4 +274,8 @@ Ora currently registers 40 tools and injects all tool schemas into prompt contex
 
 ## Completion Status
 
-(TBD after merge.)
+- [x] Implementation complete
+- [x] Code review passed (1 iteration — codex flagged 1 P1 fix, applied and re-verified)
+- [x] PR merged: https://github.com/benedict2310/ora/pull/162
+- [x] Merged to main: `3767bd3`
+- [x] Date: 2026-02-25
