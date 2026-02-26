@@ -1,7 +1,7 @@
 # S.01 - Skills Runtime
 
 **Epic:** Skills
-**Status:** Not Started
+**Status:** Complete (Re-verified on `main` 2026-02-26)
 **Priority:** P1 (High)
 **Estimated Effort:** 5 days
 **Dependencies:** O.02 (Agent Loop), L.04 (System Prompt)
@@ -166,69 +166,71 @@ All skill operations are logged:
 
 ### Discovery & Validation
 
-- [ ] AC-1: App scans bundled (`Resources/Skills/`) and user (`~/Library/Application Support/Ora/Skills/`) roots at startup
-- [ ] AC-2: Skills without `SKILL.md` or missing frontmatter `name`/`description` are ignored (logged as warning)
-- [ ] AC-3: Startup indexing parses frontmatter only (no full SKILL.md content load)
-- [ ] AC-4: Rescan button in preferences rebuilds the skill index
+- [x] AC-1: App scans bundled (`Resources/Skills/`) and user (`~/Library/Application Support/Ora/Skills/`) roots at startup
+- [x] AC-2: Skills without `SKILL.md` or missing frontmatter `name`/`description` are ignored (logged as warning)
+- [x] AC-3: Startup indexing parses frontmatter only (no full SKILL.md content load)
+- [x] AC-4: Rescan button in preferences rebuilds the skill index
 
 ### Skills Tools
 
-- [ ] AC-5: `skills.list` returns `[{id, name, description, source}]` for all valid skills
-- [ ] AC-6: `skills.load` returns SKILL.md content for a requested id, **truncated at 5000 characters** with a `[truncated]` indicator if the file exceeds that limit — consistent with BG.07's context injection budget (~1500 tokens remaining after system prompt and conversation)
-- [ ] AC-7: `skills.read` reads files from `references/` or `assets/` only
-- [ ] AC-8: `skills.read` rejects paths with `..` or outside allowed prefixes
+- [x] AC-5: `skills.list` returns `[{id, name, description, source}]` for all valid skills
+- [x] AC-6: `skills.load` returns SKILL.md content for a requested id, **truncated at 5000 characters** with a `[truncated]` indicator if the file exceeds that limit — consistent with BG.07's context injection budget (~1500 tokens remaining after system prompt and conversation)
+- [x] AC-7: `skills.read` reads files from `references/` or `assets/` only
+- [x] AC-8: `skills.read` rejects paths with `..` or outside allowed prefixes
 
 ### Prompt Integration
 
-- [ ] AC-9: System prompt includes available_skills XML metadata block each turn
-- [ ] AC-10: Block contains only id, name, description (no full content)
-- [ ] AC-11: Agent can call `skills.load` to get full instructions when needed
+- [x] AC-9: System prompt includes available_skills XML metadata block each turn
+- [x] AC-10: Block contains only id, name, description (no full content)
+- [x] AC-11: Agent can call `skills.load` to get full instructions when needed
 
 ### Voice Activation
 
-- [ ] AC-12: User can say "use the X skill" and the agent loads that skill
-- [ ] AC-13: Overlay shows hint text: "Available skills: X, Y, Z — say 'use X skill' to activate"
+- [x] AC-12: User can say "use the X skill" and the agent loads that skill
+- [x] AC-13: Overlay shows hint text: "Available skills: X, Y, Z — say 'use X skill' to activate"
 
 ### Settings UI
 
-- [ ] AC-14: New "Skills" tab in Preferences window
-- [ ] AC-15: Toggle to enable/disable skills feature
-- [ ] AC-16: List showing installed skills (bundled/user, name, description)
-- [ ] AC-17: "Rescan Skills" button to refresh index
-- [ ] AC-18: "Open Skills Folder" button opens user skills directory in Finder
+- [x] AC-14: New "Skills" tab in Preferences window
+- [x] AC-15: Toggle to enable/disable skills feature
+- [x] AC-16: List showing installed skills (bundled/user, name, description)
+- [x] AC-17: "Rescan Skills" button to refresh index
+- [x] AC-18: "Open Skills Folder" button opens user skills directory in Finder
 
 ### Safety & Audit
 
-- [ ] AC-19: Skill usage never bypasses confirmation gates for mutating tools
-- [ ] AC-20: `skill_list`, `skill_load`, `skill_read` operations recorded in audit log
-- [ ] AC-21: Audit entries include skillId, path (for read), timestamp
+- [x] AC-19: Skill usage never bypasses confirmation gates for mutating tools
+- [x] AC-20: `skill_list`, `skill_load`, `skill_read` operations recorded in audit log
+- [x] AC-21: Audit entries include skillId, path (for read), timestamp
 
 ### Bundled Content
 
-- [ ] AC-22: A **Daily Briefing** skill is bundled at `Resources/Skills/daily-briefing/SKILL.md`
+- [x] AC-22: A **Daily Briefing** skill is bundled at `Resources/Skills/daily-briefing/SKILL.md`
   - Folder name: `daily-briefing`
   - Frontmatter: `name: Daily Briefing`, `description: Summarizes today's calendar events, pending reminders, and any flagged contacts into a spoken morning briefing.`
   - Content: step-by-step instructions guiding the agent to call `calendar.query` (today), `reminders.list` (due today), optionally `contacts.search`, then compose a concise spoken summary
-- [ ] AC-23: Skills README/manifest at `Resources/Skills/README.md` explains the folder format and how to add new skills
+- [x] AC-23: Skills README/manifest at `Resources/Skills/README.md` explains the folder format and how to add new skills
 
 ### Voice Activation — Fuzzy Matching
 
-- [ ] AC-24: Skill name lookup from voice input uses fuzzy matching (Jaro-Winkler via `StringSimilarity`, same pattern as `ContactsSearchTool`): try exact/substring match on skill `id` and `name` first, then fall back to fuzzy scoring if no exact match found
-- [ ] AC-25: Fuzzy threshold for skill matching is ≥ 0.80 Jaro-Winkler similarity
+- [x] AC-24: Skill name lookup from voice input uses fuzzy matching (Jaro-Winkler via `StringSimilarity`, same pattern as `ContactsSearchTool`): try exact/substring match on skill `id` and `name` first, then fall back to fuzzy scoring if no exact match found
+- [x] AC-25: Fuzzy threshold for skill matching is ≥ 0.80 Jaro-Winkler similarity
 
 ## 7. Verification Plan
 
 ### Automated Tests
 
-- [ ] Unit tests for YAML frontmatter parsing (valid, invalid, missing fields)
-- [ ] Unit tests for path sandboxing (valid paths, traversal attempts, prefix enforcement)
-- [ ] Unit tests for SkillStore (discovery, indexing, loading, error cases)
-- [ ] Unit tests for skills tools (list, load, read with mocked store)
-- [ ] Unit tests for fuzzy skill name matching (exact match, ASR-mangled input, no-match case)
-- [ ] Integration test: full flow from discovery to tool call
-- [ ] Verify `AuditCategory` has `.skillList`, `.skillLoad`, `.skillRead` cases and they are recorded correctly
+- [x] Unit tests for YAML frontmatter parsing (valid, invalid, missing fields)
+- [x] Unit tests for path sandboxing (valid paths, traversal attempts, prefix enforcement)
+- [x] Unit tests for SkillStore (discovery, indexing, loading, error cases)
+- [x] Unit tests for skills tools (list, load, read with mocked store)
+- [x] Unit tests for fuzzy skill name matching (exact match, ASR-mangled input, no-match case)
+- [x] Integration test: full flow from discovery to tool call
+- [x] Verify `AuditCategory` has `.skillList`, `.skillLoad`, `.skillRead` cases and they are recorded correctly
 
 ### Manual Tests
+
+_Re-verification note (2026-02-26): manual UI/voice checks were not re-run in this pass; completion is based on merged implementation plus automated test validation._
 
 - [ ] Build app, verify skills are discovered at startup (check logs)
 - [ ] Add a skill to user folder, rescan, verify it appears
@@ -392,6 +394,23 @@ If you use a skill, you MUST call skills.load(id) first to get its full instruct
 **Created:** `Ora/Skills/` (SkillMetadata, SkillDocument, SkillError, SkillFrontmatterParser, SkillPathSandbox, SkillStore, SkillsFeatureGate), `Ora/Tools/Skills/` (SkillsListTool, SkillsLoadTool, SkillsReadTool), `Ora/Utilities/ContentSanitizer`, `Ora/Preferences/Tabs/SkillsPreferencesView`, `Ora/Resources/Skills/README.md`, `Ora/Resources/Skills/daily-briefing/SKILL.md`, test files under `OraTests/Skills/` and `OraTests/Tools/Skills/`.
 
 **Modified:** ToolRegistry (registered skills tools), SystemPromptBuilder (skills parameter + XML encoding), system-prompt.txt (available_skills placeholder), AuditLogEntry (skillList/skillLoad/skillRead categories), PreferencesWindow (Skills tab), OverlayLayout/OverlayState/OverlayView (hint text), AppSettings (skillsEnabled), AgentLoop (feature-gated skills pass-through), SimplePipelineController (hint text update), AppDelegate (rebuildIndex at startup).
+
+## Re-Verification (Post-Merge)
+
+**Date:** 2026-02-26  
+**Branch/HEAD:** `main` @ `d30c1d7`  
+**Scope:** code audit + targeted automated tests
+
+- Verified merged implementation commit is present on `main`: `23cc89d` (`feat(skills): S.01 Skills Runtime — discovery, tools, prompt integration, preferences UI`)
+- Verified story completion doc commit is present on `main`: `2cd3882` (`docs: mark S.01 complete with PR and merge SHA`)
+- Confirmed runtime artifacts exist in repository paths for skills core, tools, prompt integration, UI, and resources
+- Ran targeted tests:
+  - `SkillFrontmatterParserTests`
+  - `SkillPathSandboxTests`
+  - `SkillStoreTests`
+  - `SkillsToolsTests`
+  - `SystemPromptBuilderTests`
+- Result: **51/51 tests passed** (`** TEST SUCCEEDED **`)
 
 ## Code Review Findings
 
