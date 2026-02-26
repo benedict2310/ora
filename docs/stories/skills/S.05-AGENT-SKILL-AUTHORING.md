@@ -4,7 +4,7 @@
 **Status:** Not Started
 **Priority:** P1 (High)
 **Estimated Effort:** 3 days
-**Dependencies:** S.01 (Skills Runtime)
+**Dependencies:** S.01 (Skills Runtime), S.06 (Dynamic Tool Discovery)
 **Target:** macOS 26 (Tahoe)
 **Design Reference:** None
 
@@ -30,6 +30,7 @@ As a user, I want to tell Ora "create a skill for my Monday planning routine" an
 - "Created by Ora" badge in Skills Preferences list
 - Slug generation and collision handling
 - Audit logging for all authoring operations
+- Compatibility with S.06 deferred-tool flow (`skills.create|update|delete` are discoverable through `tools.discover`)
 
 ### Out of Scope
 
@@ -54,6 +55,8 @@ public enum Source: String, Codable, Sendable {
 Agent tools can only mutate `source == .agent` skills. Bundled and user skills are immutable to the agent — attempting to update or delete them returns an error.
 
 ### New Tools
+
+Under S.06, these tools should keep default `loadPolicy = .deferred` (not core). The agent should discover them via `tools.discover` in fresh sessions when needed.
 
 #### `skills.create`
 
@@ -187,6 +190,7 @@ All authoring operations are logged with new `AuditCategory` cases:
 | `Ora/Tools/ToolRegistry.swift` | Register `skills.create`, `skills.update`, `skills.delete` |
 | `Ora/Persistence/AuditLogEntry.swift` | Add `.skillCreate`, `.skillUpdate`, `.skillDelete` cases to `AuditCategory` |
 | `Ora/Preferences/Tabs/SkillsPreferencesView.swift` | Show source badge (Bundled / User / Created by Ora) per skill |
+| `OraTests/Tools/ToolDiscoveryTests.swift` | Verify `tools.discover` can surface `skills.create|update|delete` |
 
 ### 5.3 Tests to Add
 
@@ -233,6 +237,7 @@ All authoring operations are logged with new `AuditCategory` cases:
 
 - [ ] AC-16: Skills Preferences list shows source badge: "Bundled", "User-installed", or "Created by Ora"
 - [ ] AC-17: `.skillCreate`, `.skillUpdate`, `.skillDelete` events recorded in audit log with `contentHash`
+- [ ] AC-18: `skills.create`, `skills.update`, and `skills.delete` remain deferred tools and are discoverable via `tools.discover` in fresh sessions
 
 ## 7. Verification Plan
 
@@ -244,6 +249,7 @@ All authoring operations are logged with new `AuditCategory` cases:
 - [ ] `skills.update`: overwrites file, index updated; rejects non-agent skill
 - [ ] `skills.delete`: removes folder, index updated; rejects non-agent skill
 - [ ] Source restriction: attempt to update bundled skill → descriptive error
+- [ ] Tool discovery: `tools.discover("create skill")` / `("update skill")` / `("delete skill")` surfaces the corresponding skills authoring tool
 - [ ] Audit entries: correct category, skillId, contentHash for each operation
 
 ### Manual Tests

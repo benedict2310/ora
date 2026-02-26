@@ -4,7 +4,7 @@
 **Status:** Not Started
 **Priority:** P1 (High)
 **Estimated Effort:** 6 days
-**Dependencies:** S.01 (Skills Runtime)
+**Dependencies:** S.01 (Skills Runtime), S.06 (Dynamic Tool Discovery)
 **Future alignment:** When BG.02 (Worker Abstraction) is implemented, `SkillScriptWorker` should be refactored to conform to the `BackgroundWorker` protocol to inherit XPC/Container isolation. That refactor is out of scope here.
 **Target:** macOS 26 (Tahoe)
 **Design Reference:** [Anthropic Skills Standard](https://docs.anthropic.com/en/docs/agents-and-tools/skills)
@@ -32,6 +32,7 @@ As a power user, I want skills to include helper scripts (Python, shell, AppleSc
 - Structured output parsing (JSON support)
 - Per-script and per-skill trust management
 - Full audit logging with script content hash
+- Compatibility with S.06 deferred-tool flow (`skills.run_script` remains discoverable via `tools.discover`)
 
 ### Out of Scope
 
@@ -328,6 +329,7 @@ The trust-aware dialog is shown via `@MainActor` dispatch, consistent with other
 
 **ToolRegistry:**
 - Register `skills.run_script` alongside other skills tools
+- Keep `skills.run_script` on default `loadPolicy = .deferred` (do not mark as core)
 
 ## 5. Implementation Plan (Draft)
 
@@ -346,13 +348,14 @@ The trust-aware dialog is shown via `@MainActor` dispatch, consistent with other
 
 | File | Change |
 |:-----|:-------|
-| `Ora/Tools/ToolRegistry.swift` | Register `skills.run_script` tool |
+| `Ora/Tools/ToolRegistry.swift` | Register `skills.run_script` tool (deferred) |
 | `Ora/Persistence/AuditLogEntry.swift` | Add `.scriptExecution` case to `AuditCategory` enum |
 | `Ora/Persistence/AuditLogger.swift` | Add `recordScriptExecution()` method |
 | `Ora/Persistence/Models/AppSettings.swift` | Add `scriptTrustRecordsJSON: String?` field for trust persistence |
 | `Ora/Preferences/Tabs/SkillsPreferencesView.swift` | Add script settings section |
 | `Ora/Skills/SkillStore.swift` | Expose script manifest info |
 | `Ora/Skills/SkillMetadata.swift` | Add `hasScripts: Bool` field |
+| `OraTests/Tools/ToolDiscoveryTests.swift` | Verify `tools.discover` surfaces `skills.run_script` when requested |
 
 ### 5.3 Tests to Add
 
@@ -392,7 +395,7 @@ The trust-aware dialog is shown via `@MainActor` dispatch, consistent with other
 
 ### Execution
 
-- [ ] AC-12: `skills.run_script` has `kind = .read` — ToolHost does not show a generic confirmation dialog; the tool manages all confirmation logic internally
+- [ ] AC-12: `skills.run_script` has `kind = .read` and keeps default `loadPolicy = .deferred` — ToolHost does not show a generic confirmation dialog; the tool manages all confirmation logic internally; tool remains discoverable via `tools.discover`
 - [ ] AC-13: `skills.run_script` executes scripts via `Foundation.Process` (no shell intermediary)
 - [ ] AC-14: Arguments are passed as positional command-line args via `Process.arguments` — no shell interpolation, values passed verbatim
 - [ ] AC-15: Scripts run with controlled environment variables (filtered per §4.4 allowlist)
@@ -438,6 +441,7 @@ The trust-aware dialog is shown via `@MainActor` dispatch, consistent with other
 - [ ] Unit tests for path sandboxing
 - [ ] Unit tests for output truncation and JSON parsing
 - [ ] Unit tests for timeout and signal handling
+- [ ] Unit tests for `tools.discover` ranking/visibility of `skills.run_script`
 - [ ] Integration test for full execution flow with mock script
 
 ### Manual Tests
@@ -450,6 +454,7 @@ The trust-aware dialog is shown via `@MainActor` dispatch, consistent with other
 - [ ] Test output truncation with a script that prints 100KB
 - [ ] Test JSON output parsing with a Python script
 - [ ] Disable scripts globally, verify tool returns error
+- [ ] From a fresh session, request script execution and verify agent can discover `skills.run_script` via `tools.discover` before first use
 - [ ] Verify audit log contains all expected fields
 
 ## 8. Performance / Reliability Considerations
