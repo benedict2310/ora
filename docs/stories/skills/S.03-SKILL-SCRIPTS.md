@@ -340,9 +340,10 @@ The trust-aware dialog is shown via `@MainActor` dispatch, consistent with other
 | `Ora/Skills/ScriptManifest.swift` | Parse and validate `scripts/manifest.json`; defaults when manifest absent |
 | `Ora/Skills/SkillScriptWorker.swift` | Standalone `actor`; `Foundation.Process` spawning, stdout/stderr capture, timeout + SIGTERM/SIGKILL, output truncation. Future: refactor to conform to `BackgroundWorker` (BG.02) for XPC/Container isolation. |
 | `Ora/Skills/ScriptEnvironment.swift` | Build filtered env dict from allowlist; inject `ORA_*` context vars |
-| `Ora/Skills/ScriptTrustManager.swift` | Trust levels (bundled/trusted/untrusted), SHA-256 hash tracking, revocation; persists to `AppSettings.scriptTrustRecordsJSON` in SwiftData |
+| `Ora/Skills/ScriptTrustManager.swift` | Trust levels (bundled/trusted/untrusted), SHA-256 hash tracking, revocation; persists via SwiftData `ScriptTrustRecordModel` |
 | `Ora/Skills/ScriptSandbox.swift` | Path validation (no traversal, must be inside `scripts/`), shebang parsing per spec in §4.5, size limit enforcement |
 | `Ora/Tools/Skills/SkillsRunScriptTool.swift` | `kind = .read`; trust check + conditional confirmation dialog + `SkillScriptWorker.run()` + audit log |
+| `Ora/Persistence/Models/ScriptTrustRecordModel.swift` | SwiftData model for per-skill trust state and script hash map |
 
 ### 5.2 Files to Modify
 
@@ -351,7 +352,7 @@ The trust-aware dialog is shown via `@MainActor` dispatch, consistent with other
 | `Ora/Tools/ToolRegistry.swift` | Register `skills.run_script` tool (deferred) |
 | `Ora/Persistence/AuditLogEntry.swift` | Add `.scriptExecution` case to `AuditCategory` enum |
 | `Ora/Persistence/AuditLogger.swift` | Add `recordScriptExecution()` method |
-| `Ora/Persistence/Models/AppSettings.swift` | Add `scriptTrustRecordsJSON: String?` field for trust persistence |
+| `Ora/Persistence/PersistenceManager.swift` | Add CRUD helpers for `ScriptTrustRecordModel` fetch/upsert/delete |
 | `Ora/Preferences/Tabs/SkillsPreferencesView.swift` | Add script settings section |
 | `Ora/Skills/SkillStore.swift` | Expose script manifest info |
 | `Ora/Skills/SkillMetadata.swift` | Add `hasScripts: Bool` field |
@@ -423,6 +424,7 @@ The trust-aware dialog is shown via `@MainActor` dispatch, consistent with other
 - [ ] AC-28: Script execution toggle in Skills preferences
 - [ ] AC-29: Per-skill trust management (trust/revoke)
 - [ ] AC-30: View script trust status and stored hashes
+- [ ] AC-31: Trust records persist in dedicated SwiftData `ScriptTrustRecordModel` rows (not `AppSettings` JSON blob)
 
 ## 7. Verification Plan
 
@@ -438,6 +440,7 @@ The trust-aware dialog is shown via `@MainActor` dispatch, consistent with other
   - Non-`/usr/bin/env` env path (e.g., `/opt/homebrew/bin/env`) is rejected
 - [ ] Unit tests for environment filtering
 - [ ] Unit tests for trust manager (grant, revoke, hash check)
+- [ ] Unit tests for trust-record persistence lifecycle (`ScriptTrustRecordModel` upsert/fetch/delete)
 - [ ] Unit tests for path sandboxing
 - [ ] Unit tests for output truncation and JSON parsing
 - [ ] Unit tests for timeout and signal handling
@@ -516,12 +519,12 @@ All three layers ship together as part of this story. Recommended build order wi
 Build `SkillScriptWorker`, `ScriptEnvironment`, `ScriptSandbox` (shebang + path validation). Write `SkillsRunScriptTool` with `kind = .read`. At this point only bundled scripts work — user scripts are blocked pending Layer 2.
 
 ### Layer 2: Confirmation & Trust
-Add `ScriptTrustManager` with bundled/trusted/untrusted levels. Wire the trust-aware confirmation dialog in `SkillsRunScriptTool`. Add `AppSettings.scriptTrustRecordsJSON` for persistence. All trust model ACs (AC-6 through AC-11) become testable here.
+Add `ScriptTrustManager` with bundled/trusted/untrusted levels. Wire the trust-aware confirmation dialog in `SkillsRunScriptTool`. Add `ScriptTrustRecordModel` + `PersistenceManager` helpers for persistence. All trust model ACs (AC-6 through AC-11) plus persistence AC-31 become testable here.
 
 ### Layer 3: Settings & Polish
 Add script settings section to `SkillsPreferencesView` (global toggle, per-skill trust UI). Add `ScriptManifest` parsing and network capability warning. All AC-28 through AC-30 become testable here.
 
-**All acceptance criteria (AC-1 through AC-30) must pass before the story is considered complete.**
+**All acceptance criteria (AC-1 through AC-31) must pass before the story is considered complete.**
 
 ---
 
@@ -619,20 +622,12 @@ public actor ScriptTrustManager {
         case untrusted    // Requires per-execution confirmation
     }
 
-    // Trust records persisted as JSON in AppSettings (SwiftData) under key
-    // "scriptTrustRecords". Loaded at init, saved on every grant/revoke.
-    private var trustedSkills: [String: TrustedSkillRecord] = [:]
+    // Trust records persisted in SwiftData ScriptTrustRecordModel rows.
     private let persistenceManager: PersistenceManager
-
-    struct TrustedSkillRecord: Codable {
-        let skillID: String
-        let grantedAt: Date
-        let scriptHashes: [String: String]  // scriptPath -> SHA256
-    }
 
     public func trustLevel(for skillID: String) async -> TrustLevel {
         // Check if bundled
-        // Check if user-trusted with valid hashes
+        // Check persisted trust row + hash validation
         // Default to untrusted
     }
 
@@ -650,7 +645,7 @@ public actor ScriptTrustManager {
 }
 ```
 
-**Persistence note:** Trust records survive app restarts. They are stored as a JSON-encoded `[String: TrustedSkillRecord]` blob in `AppSettings.scriptTrustRecordsJSON` (a new `String?` field on the SwiftData `AppSettings` model). `ScriptTrustManager` reads this on init and writes it on every `grantTrust` / `revokeTrust` call.
+**Persistence note:** Trust records survive app restarts. They are stored as dedicated SwiftData `ScriptTrustRecordModel` rows (one row per trusted skill, including hash map metadata). `ScriptTrustManager` reads/writes via `PersistenceManager` helper methods on every `grantTrust` / `revokeTrust` / hash-validation update.
 
 ### Confirmation Dialog Content
 

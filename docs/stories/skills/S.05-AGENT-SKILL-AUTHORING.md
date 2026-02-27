@@ -26,7 +26,7 @@ As a user, I want to tell Ora "create a skill for my Monday planning routine" an
 - `skills.update` tool — agent rewrites an existing agent-created skill
 - `skills.delete` tool — agent removes an agent-created skill
 - `SkillMetadata.Source.agent` new source type
-- Confirmation dialog with scrollable SKILL.md content preview
+- Dedicated modal confirmation dialog with scrollable SKILL.md content preview
 - "Created by Ora" badge in Skills Preferences list
 - Slug generation and collision handling
 - Audit logging for all authoring operations
@@ -48,11 +48,17 @@ As a user, I want to tell Ora "create a skill for my Monday planning routine" an
 public enum Source: String, Codable, Sendable {
     case bundled   // Ora.app/Contents/Resources/Skills/ — read-only to agent
     case user      // ~/Library/…/Ora/Skills/           — read-only to agent
-    case agent     // ~/Library/…/Ora/Skills/           — agent CRUD allowed
+    case agent     // ~/Library/…/Ora/AgentSkills/      — agent CRUD allowed
 }
 ```
 
 Agent tools can only mutate `source == .agent` skills. Bundled and user skills are immutable to the agent — attempting to update or delete them returns an error.
+
+### Storage Layout (Decision)
+
+- User-authored skills stay under `~/Library/Application Support/Ora/Skills/`
+- Agent-authored skills are isolated under `~/Library/Application Support/Ora/AgentSkills/`
+- `SkillStore` scans bundled + user + agent roots, but `skills.create` must reject IDs that already exist in any source to prevent ambiguous shadowing
 
 ### New Tools
 
@@ -71,7 +77,7 @@ Under S.06, these tools should keep default `loadPolicy = .deferred` (not core).
 1. Agent generates SKILL.md content based on conversation context
 2. Tool validates: name non-empty, content has frontmatter, slug not reserved
 3. Confirmation dialog shows proposed content — user approves or cancels
-4. On approval: write to `~/Library/…/Ora/Skills/<slug>/SKILL.md`, trigger `SkillStore.rebuildIndex()`
+4. On approval: write to `~/Library/…/Ora/AgentSkills/<slug>/SKILL.md`, trigger `SkillStore.rebuildIndex()`
 5. Skill immediately available in subsequent turns
 
 #### `skills.update`
@@ -84,6 +90,8 @@ Under S.06, these tools should keep default `loadPolicy = .deferred` (not core).
 | Confirmation | Shows new content preview |
 | Restriction | Rejects if `source != .agent` — bundled/user skills are immutable |
 
+`id` matching is exact only for mutating operations. No fuzzy matching for `skills.update`.
+
 #### `skills.delete`
 
 | Property | Value |
@@ -94,15 +102,17 @@ Under S.06, these tools should keep default `loadPolicy = .deferred` (not core).
 | Confirmation | Shows skill name and description before deletion |
 | Restriction | Rejects if `source != .agent` |
 
+`id` matching is exact only for mutating operations. No fuzzy matching for `skills.delete`.
+
 ### Slug Generation
 
 ```
 name: "Monday Planning Routine"
 slug: "monday-planning-routine"     // lowercase, hyphens, max 40 chars
-path: ~/Library/…/Ora/Skills/monday-planning-routine/SKILL.md
+path: ~/Library/…/Ora/AgentSkills/monday-planning-routine/SKILL.md
 ```
 
-Collision handling: if `monday-planning-routine` already exists, try `monday-planning-routine-2`, `-3`, etc. (up to `-9`, then error).
+Collision handling: if `monday-planning-routine` already exists in the **agent** root, try `monday-planning-routine-2`, `-3`, etc. (up to `-9`, then error). If the base slug already exists in bundled/user roots, reject create with an explicit conflict error (do not shadow another source).
 
 ### SKILL.md Format Written by Agent
 
@@ -130,6 +140,8 @@ Use when the user asks about their week, Monday planning, or weekly review.
 The agent is responsible for generating well-structured content. No schema validation beyond frontmatter parsing — if the frontmatter is valid, it saves.
 
 ### Confirmation Dialog — `skills.create` / `skills.update`
+
+Use a dedicated modal sheet/dialog for this flow (not the inline overlay proposal bubble), because the payload is multi-line markdown that requires full review.
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -186,10 +198,12 @@ All authoring operations are logged with new `AuditCategory` cases:
 | File | Change |
 |:-----|:-------|
 | `Ora/Skills/SkillMetadata.swift` | Add `.agent` case to `Source` enum |
-| `Ora/Skills/SkillStore.swift` | Add `create(name:content:)`, `update(id:content:)`, `delete(id:)` methods; enforce source restriction on mutating operations |
+| `Ora/Models/ModelPaths.swift` | Add `agentSkillsRoot` path helper |
+| `Ora/Skills/SkillStore.swift` | Add `Roots.agent`, scan third root, add `create(name:content:)`, `update(id:content:)`, `delete(id:)`, enforce exact-ID source restriction on mutating operations |
 | `Ora/Tools/ToolRegistry.swift` | Register `skills.create`, `skills.update`, `skills.delete` |
 | `Ora/Persistence/AuditLogEntry.swift` | Add `.skillCreate`, `.skillUpdate`, `.skillDelete` cases to `AuditCategory` |
 | `Ora/Preferences/Tabs/SkillsPreferencesView.swift` | Show source badge (Bundled / User / Created by Ora) per skill |
+| `Ora/UI/` (new modal view) | Add dedicated scrollable skill content confirmation modal for create/update/delete |
 | `OraTests/Tools/ToolDiscoveryTests.swift` | Verify `tools.discover` can surface `skills.create|update|delete` |
 
 ### 5.3 Tests to Add
@@ -208,7 +222,7 @@ All authoring operations are logged with new `AuditCategory` cases:
 
 ### Create
 
-- [ ] AC-1: `skills.create` writes a valid SKILL.md to `~/Library/…/Ora/Skills/<slug>/SKILL.md`
+- [ ] AC-1: `skills.create` writes a valid SKILL.md to `~/Library/…/Ora/AgentSkills/<slug>/SKILL.md`
 - [ ] AC-2: Created skill is immediately discoverable after `rebuildIndex()` completes
 - [ ] AC-3: Confirmation dialog shows full proposed SKILL.md content (scrollable)
 - [ ] AC-4: Slug is derived from name: lowercase, hyphens, max 40 chars
@@ -219,25 +233,29 @@ All authoring operations are logged with new `AuditCategory` cases:
 - [ ] AC-6: `skills.update` overwrites content of an existing agent-created skill
 - [ ] AC-7: `skills.update` returns error if skill `source != .agent`
 - [ ] AC-8: `skills.update` requires confirmation showing new content
+- [ ] AC-9: `skills.update` matches `id` exactly only; fuzzy matching is not allowed for mutating operations
 
 ### Delete
 
-- [ ] AC-9: `skills.delete` removes the skill folder and triggers `rebuildIndex()`
-- [ ] AC-10: `skills.delete` returns error if skill `source != .agent`
-- [ ] AC-11: `skills.delete` requires confirmation showing skill name and description
+- [ ] AC-10: `skills.delete` removes the skill folder and triggers `rebuildIndex()`
+- [ ] AC-11: `skills.delete` returns error if skill `source != .agent`
+- [ ] AC-12: `skills.delete` requires confirmation showing skill name and description
+- [ ] AC-13: `skills.delete` matches `id` exactly only; fuzzy matching is not allowed for mutating operations
 
 ### Safety
 
-- [ ] AC-12: Agent cannot create, update, or delete bundled skills
-- [ ] AC-13: Agent cannot create, update, or delete user-installed skills
-- [ ] AC-14: All three tools respect existing tool confirmation gate (kind = `.mutate`)
-- [ ] AC-15: Content sanitized via `ContentSanitizer` before write (control chars stripped)
+- [ ] AC-14: Agent cannot create, update, or delete bundled skills
+- [ ] AC-15: Agent cannot create, update, or delete user-installed skills
+- [ ] AC-16: `skills.create` rejects IDs/slugs that conflict with bundled/user skills (no cross-source shadowing)
+- [ ] AC-17: All three tools respect existing tool confirmation gate (kind = `.mutate`)
+- [ ] AC-18: Content sanitized via `ContentSanitizer` before write (control chars stripped)
 
 ### UI & Audit
 
-- [ ] AC-16: Skills Preferences list shows source badge: "Bundled", "User-installed", or "Created by Ora"
-- [ ] AC-17: `.skillCreate`, `.skillUpdate`, `.skillDelete` events recorded in audit log with `contentHash`
-- [ ] AC-18: `skills.create`, `skills.update`, and `skills.delete` remain deferred tools and are discoverable via `tools.discover` in fresh sessions
+- [ ] AC-19: Skills Preferences list shows source badge: "Bundled", "User-installed", or "Created by Ora"
+- [ ] AC-20: `skills.create`/`skills.update` use a dedicated scrollable modal confirmation UI (not inline overlay proposal)
+- [ ] AC-21: `.skillCreate`, `.skillUpdate`, `.skillDelete` events recorded in audit log with `contentHash`
+- [ ] AC-22: `skills.create`, `skills.update`, and `skills.delete` remain deferred tools and are discoverable via `tools.discover` in fresh sessions
 
 ## 7. Verification Plan
 
@@ -246,9 +264,10 @@ All authoring operations are logged with new `AuditCategory` cases:
 - [ ] Slug generation: normal name, special characters, unicode, very long name, empty string
 - [ ] Collision: existing slug → appends `-2`; all `-2`…`-9` taken → error
 - [ ] `skills.create`: writes file, index updated, returns correct metadata
-- [ ] `skills.update`: overwrites file, index updated; rejects non-agent skill
-- [ ] `skills.delete`: removes folder, index updated; rejects non-agent skill
+- [ ] `skills.update`: overwrites file, index updated; rejects non-agent skill; rejects fuzzy/non-exact id lookups
+- [ ] `skills.delete`: removes folder, index updated; rejects non-agent skill; rejects fuzzy/non-exact id lookups
 - [ ] Source restriction: attempt to update bundled skill → descriptive error
+- [ ] Collision policy: create fails when slug conflicts with bundled/user skill id
 - [ ] Tool discovery: `tools.discover("create skill")` / `("update skill")` / `("delete skill")` surfaces the corresponding skills authoring tool
 - [ ] Audit entries: correct category, skillId, contentHash for each operation
 
