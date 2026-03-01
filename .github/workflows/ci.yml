@@ -83,7 +83,7 @@ jobs:
 
       - name: Parse test results
         if: always()
-        run: python3 scripts/xcresult_summary.py .artifacts/TestResults.xcresult --tolerate-crashes 2
+        run: python3 scripts/xcresult_summary.py .artifacts/TestResults.xcresult
 
       - name: Upload test results on failure
         if: failure()
