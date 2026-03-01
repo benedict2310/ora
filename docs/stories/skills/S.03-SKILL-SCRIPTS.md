@@ -765,12 +765,92 @@ When confirmation is required, show:
 
 ## Code Review Findings
 
-- No separate review pass recorded in this branch.
+**Reviewer:** Claude Sonnet 4.6
+**Date:** 2026-03-01
+**Commit reviewed:** 58ec6e2
+
+### Summary
+- Files reviewed: 47 changed files (9 new, 38 modified)
+- Build status: Pass (pre-review)
+- Tests run: targeted suite per implementation summary
+
+---
+
+### Issues Found
+
+#### P0 — Critical (must fix before merge)
+
+- [ ] **`SkillScriptWorker.swift:173-183` — Unbounded memory accumulation in `readAllBytes`**
+  `readAllBytes` accumulates ALL bytes from the pipe into a `Data` before `truncate()` is called. A script printing gigabytes of output will grow the buffer without bound, crashing Ora with OOM before the 64KB limit is ever applied. The size check must happen *during* the read loop, not after. Example fix: break from `handle.bytes` once accumulated size exceeds `maxOutputBytes + 1` and set a truncation flag, then pass the already-capped buffer to the caller. (Also: iterating `handle.bytes` byte-by-byte is O(n) async steps — for 64KB that is 65,536 continuation suspensions; prefer `read(upToCount:)` in a loop.)
+
+- [ ] **`SkillScriptWorker.swift:89-96` — stdout/stderr Tasks leak if `process.run()` throws**
+  `stdoutTask` and `stderrTask` are started *before* `process.run()`. If `process.run()` throws (e.g., interpreter exists on disk but is not executable — see P1-3), no process ever writes to the pipes. The tasks block in `handle.bytes` indefinitely until the `Pipe` objects are garbage-collected. There is no cleanup path around the `try process.run()` call. A `do/catch` wrapping `process.run()` should close both pipe read ends and cancel/await both tasks on failure.
+
+#### P1 — Major (should fix before merge)
+
+- [ ] **`ScriptSandbox.swift:18-20` — Symlink traversal: `standardizedFileURL` does not resolve symlinks**
+  Both `scriptsRoot` and `candidate` are computed with `.standardizedFileURL`, which removes `.` and `..` components but does NOT follow symlinks. A user-installed skill can place `scripts/evil.sh` as a symlink pointing to an arbitrary file outside the skill root (e.g., `/tmp/exploit.sh`). The path-containment guard passes (the symlink path is inside `scripts/`), but the executed interpreter target is the symlink destination. The authorization dialog shows the symlink path, not the real path. Fix: use `.resolvingSymlinksInPath()` on both `scriptsRoot` and `candidate`, and re-verify containment on the resolved paths.
+
+- [ ] **`SkillsRunScriptTool.swift:75-77` vs `137-139` — TOCTOU: script can change between authorization and execution**
+  The script SHA-256 is computed in `authorizationPlan()` during preflight and stored in `context["script_hash"]`. Actual execution happens seconds later in `execute()`, which recomputes the hash independently. There is no check that the hash computed at execution matches the hash that was authorized. A trusted skill's script modified in the gap between `authorizationPlan` and `execute` will run the new version — bypassing the hash-based trust check that should have required re-authorization. Fix: read `context["script_hash"]` in `execute()`, recompute the live hash, and refuse to execute if they differ (throw a clear error directing the user to re-run).
+
+- [ ] **`SkillScriptWorker.swift:160-171` — TOCTOU race in `awaitTermination` → potential hang**
+  `withCheckedContinuation` checks `process.isRunning`, then sets `process.terminationHandler`. These two operations are not atomic. If the process exits between the check and the handler assignment, the handler is never called and the continuation is never resumed — the `awaitTermination` call hangs forever, blocking the actor and the entire sequential-execution guarantee. Standard fix: set the `terminationHandler` *first*, then check `isRunning` and immediately resume the continuation if the process has already exited.
+
+- [ ] **`ScriptSandbox.swift:129` — `isExecutableFile || fileExists` allows non-executable interpreters through preflight**
+  For direct-path shebangs (`#!/bin/bash`, etc.) the guard is:
+  ```swift
+  guard FileManager.default.isExecutableFile(atPath: trimmed)
+        || FileManager.default.fileExists(atPath: trimmed) else { … }
+  ```
+  The `|| fileExists` arm passes non-executable files (e.g., a file with `644` permissions). The sandbox returns a non-executable path as the interpreter. `process.run()` then fails at launch time — triggering P0-2. The correct check is `isExecutableFile` alone (which already implies existence on macOS). Remove the `|| fileExists` branch.
+
+- [ ] **Missing `ScriptAuthorizationPolicyTests`**
+  The verification plan explicitly requires "Unit tests for script authorization policy (bundled/trusted/untrusted, hash mismatch, network warning rules)." No `ScriptAuthorizationPolicyTests.swift` was delivered. `SkillsRunScriptToolTests` covers bundled auto-allow and untrusted prompt cases but does not cover: (a) trusted skill with matching hash auto-allows, (b) trusted skill with hash mismatch falls back to untrusted prompt, (c) network warning shown when manifest absent, (d) network warning suppressed after acknowledgment. These scenarios are testable with mock/stub `ScriptTrustManager` and `ScriptSandbox`.
+
+---
+
+#### P2 — Minor (can fix in follow-up)
+
+- [ ] **`ScriptSandbox.swift:136-147` — `resolveCommand` does not reject command names containing `/`**
+  If a shebang is `#!/usr/bin/env ../../opt/homebrew/bin/python3`, `parts[1]` = `../../opt/homebrew/bin/python3` is passed to `resolveCommand`. `URL.appendingPathComponent("../../opt/homebrew/bin/python3")` constructs a path that resolves outside the allowlisted directory. `fileExists` passes, the escaped path is returned as the interpreter. The kernel won't execute a non-executable file, so practical harm is low, but it violates the allowlist invariant. Fix: guard that `command` contains no `/`.
+
+- [ ] **`ScriptManifest.swift:63` — No file-size limit on `manifest.json`**
+  `Data(contentsOf: manifestURL)` loads the entire file. `ScriptSandbox.maxScriptFileBytes` (100 KB) guards script files but there is no analogous limit for the manifest. Add a size check (suggest same 100 KB cap) before calling `Data(contentsOf:)`.
+
+- [ ] **`ScriptSandbox.swift:33-35` — `manifest.json` rejection throws misleading `.pathTraversal`**
+  Attempting to execute `manifest.json` as a script throws `ScriptSandboxError.pathTraversal(scriptPath)`. Semantically this is wrong — `manifest.json` is not a traversal attempt, it's an invalid script target. Change to `ScriptSandboxError.scriptNotFound(scriptPath)` with a descriptive message like `"manifest.json is not executable"`.
+
+- [ ] **`ToolAuthorization.swift:13,40` — `issuedAt` field on ticket and receipt is never read**
+  Both `ToolExecutionTicket` and `ToolAuthorizationReceipt` store `issuedAt: Date` but no expiration check exists anywhere. Either add an expiry guard in `executeAuthorized` (e.g., reject tickets older than 5 minutes) or remove the field to eliminate dead code and avoid confusion.
+
+- [ ] **`ToolHost.swift:93-121` — `executeWithAudit(confirmed:)` legacy path can auto-approve any mutate tool**
+  If `confirmed: true` is passed to `executeWithAudit`, any tool that returns `.requiresUser` from preflight is silently auto-approved with `approveOnce`. This path is not used by `AgentLoop.runLoop()` (which now goes through `preflight + executeAuthorized` correctly), but the API remains callable. It is a footgun that contradicts AC-13. Consider either removing it or adding an assertion/precondition that `confirmed` is only valid for tools with `authorizationPlan == .none`.
+
+- [ ] **`ScriptTrustManagerTests.swift:27,33` / `SkillsRunScriptToolTests.swift:51-56` — Tests mutate `PersistenceManager.shared` (production singleton)**
+  `clearScriptTrustRecords()` and `updateSettings()` are called on the shared production manager. If tests run in a context where the production store is present (common in local dev), this silently modifies production data. The trust-manager and run-script-tool tests should use `PersistenceManager.createForTesting(inMemory: true)` and inject it through the `ScriptTrustManager`/`SkillsRunScriptTool` initializers. This requires making `ScriptTrustManager.init(sandbox:persistenceManager:)` accept a `PersistenceManager` parameter (currently the actor hard-codes `PersistenceManager.shared` via `MainActor.run`).
+
+---
+
+### Future Considerations (Out of Scope)
+
+- `AuditLogger.recordSuccess` / `recordFailure` (pre-existing): O(n) scan over up to 1000 entries to find the entry by ID on every tool completion. Pre-existing; not introduced by S.03.
+- No ticket expiry: confirmed-but-never-executed tickets accumulate in `pendingAuthorizations` indefinitely. Low risk (one ticket per tool call, short-lived sessions), but worth revisiting if session durations grow.
+
+---
+
+### Approval Status
+
+- [ ] All P0 issues resolved
+- [ ] All P1 issues resolved or deferred with approval
+- [ ] Coverage gaps addressed (ScriptAuthorizationPolicyTests)
+- [ ] Ready for merge
 
 ## Completion Status
 
-- [x] Implementation complete in working tree
+- [x] Implementation complete
 - [x] Build passes
 - [x] Targeted script/authorization tests pass
-- [ ] Full suite green (`AudioPlaybackServiceTests` remain failing in this environment)
+- [ ] Full suite green (`AudioPlaybackServiceTests` remain failing in this environment — pre-existing)
+- [ ] Code review P0/P1 issues resolved
 - [ ] PR / merge metadata pending

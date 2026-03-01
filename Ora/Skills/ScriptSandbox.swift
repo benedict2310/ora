@@ -13,12 +13,16 @@ struct ScriptSandbox: Sendable {
     private static let maxShebangCharacters = 256
 
     func resolve(skillRoot: URL, scriptPath: String) throws -> URL {
+        // resolvingSymlinksInPath() is required instead of standardizedFileURL because
+        // standardizedFileURL does NOT follow symlinks. Without resolving symlinks a
+        // scripts/evil.sh → /tmp/exploit.sh symlink would pass the prefix check below
+        // and execute the target outside the skill root (P1-1 fix).
         let scriptsRoot = skillRoot
             .appendingPathComponent("scripts", isDirectory: true)
-            .standardizedFileURL
+            .resolvingSymlinksInPath()
         let candidate = scriptsRoot
             .appendingPathComponent(scriptPath, isDirectory: false)
-            .standardizedFileURL
+            .resolvingSymlinksInPath()
 
         guard candidate.path.hasPrefix(scriptsRoot.path + "/") || candidate == scriptsRoot else {
             throw ScriptSandboxError.pathTraversal(scriptPath)
@@ -31,7 +35,7 @@ struct ScriptSandbox: Sendable {
         }
 
         if candidate.lastPathComponent == "manifest.json" {
-            throw ScriptSandboxError.pathTraversal(scriptPath)
+            throw ScriptSandboxError.scriptNotFound(scriptPath)
         }
 
         try self.validateSize(of: candidate)
@@ -126,7 +130,10 @@ struct ScriptSandbox: Sendable {
             throw ScriptSandboxError.invalidShebang("Interpreter must be an absolute path.")
         }
 
-        guard FileManager.default.isExecutableFile(atPath: trimmed) || FileManager.default.fileExists(atPath: trimmed) else {
+        // isExecutableFile is sufficient: it implies existence and checks execute permission.
+        // The previous `|| fileExists` allowed non-executable files through, which caused
+        // process.run() to fail at launch time and leaked the pipe reader tasks (P1-3 fix).
+        guard FileManager.default.isExecutableFile(atPath: trimmed) else {
             throw ScriptSandboxError.interpreterNotFound(trimmed)
         }
 

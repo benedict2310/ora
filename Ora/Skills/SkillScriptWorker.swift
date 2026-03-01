@@ -85,15 +85,27 @@ actor SkillScriptWorker {
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
+        // Start readers before run() so the pipes are drained as the process writes.
+        // Size-limited reads prevent unbounded memory growth (P0-1).
         let start = Date()
+        let limit = self.maxOutputBytes
         let stdoutTask = Task.detached(priority: .utility) {
-            try await Self.readAllBytes(from: stdoutPipe.fileHandleForReading)
+            try await Self.readLimited(from: stdoutPipe.fileHandleForReading, limit: limit)
         }
         let stderrTask = Task.detached(priority: .utility) {
-            try await Self.readAllBytes(from: stderrPipe.fileHandleForReading)
+            try await Self.readLimited(from: stderrPipe.fileHandleForReading, limit: limit)
         }
 
-        try process.run()
+        // Clean up reader tasks if process.run() fails (P0-2).
+        do {
+            try process.run()
+        } catch {
+            stdoutPipe.fileHandleForReading.closeFile()
+            stderrPipe.fileHandleForReading.closeFile()
+            _ = try? await stdoutTask.value
+            _ = try? await stderrTask.value
+            throw error
+        }
 
         let exitCode: Int32
         do {
@@ -106,18 +118,16 @@ actor SkillScriptWorker {
             throw error
         }
 
-        let stdoutData = (try? await stdoutTask.value) ?? Data()
-        let stderrData = (try? await stderrTask.value) ?? Data()
+        let stdoutResult = (try? await stdoutTask.value) ?? (data: Data(), truncated: false)
+        let stderrResult = (try? await stderrTask.value) ?? (data: Data(), truncated: false)
         let elapsedMs = Int(Date().timeIntervalSince(start) * 1000.0)
-        let stdoutCapture = Self.truncate(stdoutData, limit: self.maxOutputBytes)
-        let stderrCapture = Self.truncate(stderrData, limit: self.maxOutputBytes)
 
         return ScriptResult(
             exitCode: exitCode,
-            stdout: stdoutCapture.string,
-            stderr: stderrCapture.string,
+            stdout: String(data: stdoutResult.data, encoding: .utf8) ?? String(decoding: stdoutResult.data, as: UTF8.self),
+            stderr: String(data: stderrResult.data, encoding: .utf8) ?? String(decoding: stderrResult.data, as: UTF8.self),
             executionTimeMs: elapsedMs,
-            truncated: stdoutCapture.truncated || stderrCapture.truncated
+            truncated: stdoutResult.truncated || stderrResult.truncated
         )
     }
 
@@ -159,36 +169,46 @@ actor SkillScriptWorker {
 
     private static func awaitTermination(_ process: Process) async -> Int32 {
         await withCheckedContinuation { continuation in
-            if !process.isRunning {
-                continuation.resume(returning: process.terminationStatus)
-                return
-            }
-
+            // Set the handler first to avoid the race where the process exits
+            // between an isRunning check and handler registration (P1-4).
+            nonisolated(unsafe) var didResume = false
             process.terminationHandler = { terminatedProcess in
+                guard !didResume else { return }
+                didResume = true
                 continuation.resume(returning: terminatedProcess.terminationStatus)
             }
+            // If the process already exited before we set the handler,
+            // the handler won't fire — resume manually.
+            if !process.isRunning, !didResume {
+                didResume = true
+                continuation.resume(returning: process.terminationStatus)
+            }
         }
     }
 
-    private static func readAllBytes(from handle: FileHandle) async throws -> Data {
-        defer {
-            try? handle.close()
-        }
-
+    /// Reads bytes from `handle` up to `limit`, then drains (discards) the rest.
+    ///
+    /// Draining is required to prevent the child process from blocking when the
+    /// pipe buffer fills. The returned `truncated` flag is true when output was
+    /// discarded. Bounded reads prevent unbounded memory growth (P0-1 fix).
+    private static func readLimited(
+        from handle: FileHandle,
+        limit: Int
+    ) async throws -> (data: Data, truncated: Bool) {
+        defer { try? handle.close() }
         var data = Data()
+        var truncated = false
         for try await byte in handle.bytes {
-            data.append(byte)
+            if data.count < limit {
+                data.append(byte)
+            } else {
+                truncated = true
+                // Continue draining so the child process is never blocked on a full pipe.
+            }
         }
-        return data
-    }
-
-    private static func truncate(_ data: Data, limit: Int) -> (string: String, truncated: Bool) {
-        guard data.count > limit else {
-            return (String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self), false)
+        if truncated {
+            data.append(contentsOf: Array("\n[truncated]".utf8))
         }
-
-        var truncated = data.prefix(limit)
-        truncated.append(contentsOf: Array("\n[truncated]".utf8))
-        return (String(decoding: truncated, as: UTF8.self), true)
+        return (data, truncated)
     }
 }

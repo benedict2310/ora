@@ -138,6 +138,24 @@ struct SkillsRunScriptTool: Tool {
         let config = manifest.config(for: scriptURL.lastPathComponent)
         let scriptHash = try self.sandbox.scriptHash(at: scriptURL)
 
+        // TOCTOU mitigation (P1-2): re-validate trust status at execution time.
+        // If a trusted skill's script was modified after preflight granted auto-approval,
+        // ScriptTrustManager.status() will have revoked the trust record and returned
+        // .untrusted with non-empty storedHashes — the signature of a mid-flight hash change.
+        if metadata.source == .user {
+            let trustStatus = try await self.trustManager.status(for: metadata)
+            if trustStatus.level == .untrusted, !trustStatus.storedHashes.isEmpty {
+                throw ScriptToolFailure(
+                    message: "'\(scriptURL.lastPathComponent)' was modified since it was authorized. Please run the command again.",
+                    payload: [
+                        "skill_id": .string(metadata.id),
+                        "script": .string(scriptURL.lastPathComponent),
+                        "script_hash": .string(scriptHash)
+                    ]
+                )
+            }
+        }
+
         do {
             let result = try await self.worker.run(
                 skillID: metadata.id,
