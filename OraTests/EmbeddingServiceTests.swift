@@ -103,6 +103,8 @@ final class EmbeddingServiceTests: XCTestCase {
         // Given
         let service = EmbeddingService(
             configuration: .init(vectorDimension: 128, gpuCacheLimitBytes: 8 * 1024 * 1024),
+            gpuCacheLimiter: { _ in },
+            gpuCacheClearer: { },
             batchEmbedder: { texts in
                 return Self.makeTestVectors(texts: texts, dimension: 128)
             }
@@ -122,6 +124,8 @@ final class EmbeddingServiceTests: XCTestCase {
         // Given
         let service = EmbeddingService(
             configuration: .init(vectorDimension: 256, gpuCacheLimitBytes: 8 * 1024 * 1024),
+            gpuCacheLimiter: { _ in },
+            gpuCacheClearer: { },
             batchEmbedder: { texts in
                 return Self.makeTestVectors(texts: texts, dimension: 256)
             }
