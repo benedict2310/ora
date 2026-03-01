@@ -52,9 +52,9 @@ enum AgentActivity: Equatable, Sendable {
 enum AgentResult: Sendable {
     /// Direct response text
     case response(text: String)
-    
-    /// Proposal for mutation requiring confirmation
-    case proposal(summary: String, tool: String, args: [String: JSONValue])
+
+    /// Authorization request requiring user approval
+    case authorizationRequest(ToolProposal)
     
     /// Error during processing
     case error(String)
@@ -71,10 +71,17 @@ protocol AgentLoopDelegate: AnyObject, Sendable {
 }
 
 /// Pending proposal awaiting user confirmation
-struct PendingProposal: Sendable {
-    let summary: String
-    let tool: String
-    let args: [String: JSONValue]
+struct PendingAuthorization: Sendable {
+    let ticket: ToolExecutionTicket
+    let prompt: ToolAuthorizationPrompt
+
+    var tool: String {
+        self.ticket.toolName
+    }
+
+    var summary: String {
+        self.prompt.summary
+    }
 }
 
 /// Core agent loop for agentic tool use
@@ -110,7 +117,7 @@ actor AgentLoop {
     private var sessionActive: Bool = false
     
     /// Pending proposal awaiting user confirmation
-    private var pendingProposal: PendingProposal?
+    private var pendingAuthorization: PendingAuthorization?
     
     /// Current activity state to prevent duplicate updates
     private var currentActivity: AgentActivity?
@@ -174,7 +181,7 @@ actor AgentLoop {
         self.currentSessionID = sessionID
         self.toolDiscoveryFallbackSessionID = UUID()
         self.sessionActive = true
-        self.pendingProposal = nil
+        self.pendingAuthorization = nil
         self.lastSystemPromptHash = nil
         
         logger.info("Starting new agent session")
@@ -210,7 +217,7 @@ actor AgentLoop {
         }
 
         self.sessionActive = false
-        self.pendingProposal = nil
+        self.pendingAuthorization = nil
         self.sessionSkills = []
         self.lastSystemPromptHash = nil
 
@@ -237,13 +244,24 @@ actor AgentLoop {
     }
     
     /// Get the pending proposal (if any)
-    func getPendingProposal() -> PendingProposal? {
-        return pendingProposal
+    func getPendingAuthorization() -> PendingAuthorization? {
+        return pendingAuthorization
+    }
+
+    func getPendingProposal() -> PendingAuthorization? {
+        return pendingAuthorization
     }
     
     /// Clear the pending proposal (on deny or cancel)
-    func clearPendingProposal() {
-        pendingProposal = nil
+    func clearPendingAuthorization() async {
+        if let pendingAuthorization {
+            await self.toolHost.cancel(ticketID: pendingAuthorization.ticket.id)
+        }
+        pendingAuthorization = nil
+    }
+
+    func clearPendingProposal() async {
+        await self.clearPendingAuthorization()
     }
     
     /// Process user input and return response (session-aware)
@@ -293,11 +311,6 @@ actor AgentLoop {
         // Run agent loop
         let result = await runLoop()
         
-        // Store proposal for later execution if needed
-        if case .proposal(let summary, let tool, let args) = result {
-            self.pendingProposal = PendingProposal(summary: summary, tool: tool, args: args)
-        }
-        
         return result
     }
     
@@ -310,23 +323,28 @@ actor AgentLoop {
     ///   - tool: The tool name to execute
     ///   - args: The tool arguments
     /// - Returns: The tool execution result
-    func executeConfirmedTool(
-        tool: String,
-        args: [String: JSONValue]
-    ) async throws -> ToolResult {
-        logger.info("Executing confirmed tool: \(tool) with args: \(args.keys.joined(separator: ", "))")
+    func executeAuthorizedPending(decision: ToolAuthorizationDecision) async throws -> ToolResult {
+        guard let pendingAuthorization else {
+            throw ToolHostError.invalidAuthorizationTicket
+        }
+
+        let tool = pendingAuthorization.ticket.toolName
+        logger.info("Executing authorized tool: \(tool)")
 
         // Emit toolCall activity before execution
         await notifyDelegateActivity(.toolCall(name: tool))
 
         do {
-            let execution = try await toolHost.executeWithAudit(
-                toolName: tool,
-                args: args,
-                confirmed: true,
-                sessionID: currentSessionID
+            let receipt = try await self.toolHost.authorize(
+                ticketID: pendingAuthorization.ticket.id,
+                decision: decision
+            )
+            let execution = try await self.toolHost.executeAuthorized(
+                ticket: pendingAuthorization.ticket,
+                receipt: receipt
             )
             let result = execution.result
+            self.pendingAuthorization = nil
 
             // Emit toolResult activity after execution
             await notifyDelegateActivity(.toolResult(name: tool))
@@ -347,10 +365,36 @@ actor AgentLoop {
         } catch {
             // Emit toolResult even on failure
             await notifyDelegateActivity(.toolResult(name: tool))
+            self.pendingAuthorization = nil
 
             logger.error("Tool \(tool) execution failed: \(error.localizedDescription)")
             throw error
         }
+    }
+
+    func executeConfirmedTool(
+        tool: String,
+        args: [String: JSONValue]
+    ) async throws -> ToolResult {
+        let preflight = try await self.toolHost.preflight(
+            toolName: tool,
+            args: args,
+            sessionID: self.currentSessionID
+        )
+
+        guard case .requiresUser = preflight.disposition else {
+            if case .allowed(let receipt) = preflight.disposition {
+                let execution = try await self.toolHost.executeAuthorized(ticket: preflight.ticket, receipt: receipt)
+                return execution.result
+            }
+            throw ToolHostError.confirmationRequired(tool)
+        }
+
+        self.pendingAuthorization = PendingAuthorization(
+            ticket: preflight.ticket,
+            prompt: ToolAuthorizationPrompt(title: "Confirm Action", summary: "Allow \(tool) to run?")
+        )
+        return try await self.executeAuthorizedPending(decision: .approveOnce)
     }
     
     /// Generate follow-up response after tool execution
@@ -470,12 +514,24 @@ actor AgentLoop {
                 await notifyDelegateActivity(.toolCall(name: tool))
 
                 do {
-                    let execution = try await toolHost.executeWithAudit(
+                    let preflight = try await self.toolHost.preflight(
                         toolName: tool,
                         args: executionArgs,
-                        confirmed: true,  // Read tools don't need confirmation
                         sessionID: currentSessionID
                     )
+                    let execution: ToolExecutionRecord
+
+                    switch preflight.disposition {
+                    case .allowed(let receipt):
+                        execution = try await self.toolHost.executeAuthorized(
+                            ticket: preflight.ticket,
+                            receipt: receipt
+                        )
+
+                    case .requiresUser(let prompt):
+                        self.pendingAuthorization = PendingAuthorization(ticket: preflight.ticket, prompt: prompt)
+                        return .authorizationRequest(self.toolProposal(for: tool, prompt: prompt))
+                    }
                     let result = execution.result
 
                     // Emit toolResult activity after execution
@@ -527,9 +583,18 @@ actor AgentLoop {
                 continue
                 
             case .proposal(let summary, let tool, let args):
-                // Mutation requires confirmation - return to orchestrator
                 logger.info("Agent proposing: \(summary)")
-                return .proposal(summary: summary, tool: tool, args: args)
+                let request = try? await self.authorizationRequest(
+                    tool: tool,
+                    args: args,
+                    preferredSummary: summary
+                )
+
+                if let request {
+                    return .authorizationRequest(request)
+                }
+
+                return .error("I couldn't prepare that action for confirmation.")
                 
             case .error(let message):
                 logger.warning("LLM returned error: \(message)")
@@ -625,6 +690,60 @@ actor AgentLoop {
             },
             requiredParameters: schema.requiredParameters,
             requiresConfirmation: schema.requiresConfirmation
+        )
+    }
+
+    private func authorizationRequest(
+        tool: String,
+        args: [String: JSONValue],
+        preferredSummary: String?
+    ) async throws -> ToolProposal {
+        let executionArgs = self.preparedArgsForExecution(tool: tool, args: args)
+        let preflight = try await self.toolHost.preflight(
+            toolName: tool,
+            args: executionArgs,
+            sessionID: self.currentSessionID
+        )
+
+        switch preflight.disposition {
+        case .requiresUser(let prompt):
+            let customizedPrompt = self.prompt(prompt, overridingSummaryWith: preferredSummary)
+            self.pendingAuthorization = PendingAuthorization(ticket: preflight.ticket, prompt: customizedPrompt)
+            return self.toolProposal(for: tool, prompt: customizedPrompt)
+
+        case .allowed:
+            await self.toolHost.cancel(ticketID: preflight.ticket.id)
+            throw ToolHostError.confirmationRequired(tool)
+        }
+    }
+
+    private func prompt(
+        _ prompt: ToolAuthorizationPrompt,
+        overridingSummaryWith summary: String?
+    ) -> ToolAuthorizationPrompt {
+        guard let summary, !summary.isEmpty else {
+            return prompt
+        }
+
+        return ToolAuthorizationPrompt(
+            title: prompt.title,
+            summary: summary,
+            details: prompt.details,
+            confirmLabel: prompt.confirmLabel,
+            cancelLabel: prompt.cancelLabel,
+            trustLabel: prompt.trustLabel
+        )
+    }
+
+    private func toolProposal(for toolName: String, prompt: ToolAuthorizationPrompt) -> ToolProposal {
+        ToolProposal(
+            toolName: toolName,
+            title: prompt.title,
+            summary: prompt.summary,
+            details: prompt.details,
+            confirmLabel: prompt.confirmLabel,
+            cancelLabel: prompt.cancelLabel,
+            trustLabel: prompt.trustLabel
         )
     }
     

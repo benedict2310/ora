@@ -39,7 +39,8 @@ struct SkillsListTool: Tool {
                 "id": .string(metadata.id),
                 "name": .string(metadata.name),
                 "description": .string(metadata.description),
-                "source": .string(metadata.source.rawValue)
+                "source": .string(metadata.source.rawValue),
+                "has_scripts": .bool(metadata.hasScripts)
             ])
         }
 

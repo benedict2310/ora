@@ -1,10 +1,10 @@
 # S.03 - Skill Scripts
 
 **Epic:** Skills
-**Status:** Not Started
+**Status:** Implemented
 **Priority:** P1 (High)
-**Estimated Effort:** 6 days
-**Dependencies:** S.01 (Skills Runtime)
+**Estimated Effort:** 7 days
+**Dependencies:** S.01 (Skills Runtime), S.06 (Dynamic Tool Discovery)
 **Future alignment:** When BG.02 (Worker Abstraction) is implemented, `SkillScriptWorker` should be refactored to conform to the `BackgroundWorker` protocol to inherit XPC/Container isolation. That refactor is out of scope here.
 **Target:** macOS 26 (Tahoe)
 **Design Reference:** [Anthropic Skills Standard](https://docs.anthropic.com/en/docs/agents-and-tools/skills)
@@ -13,7 +13,7 @@
 
 ## 1. Objective
 
-Enable skills to include executable scripts in their `scripts/` folder that the agent can run to perform custom actions beyond the built-in tools. This extends Ora's capabilities with user-defined automation while maintaining strong security guarantees through a tiered trust model, explicit consent, comprehensive sandboxing, and full audit logging.
+Enable skills to include executable scripts in their `scripts/` folder that the agent can run to perform custom actions beyond the built-in tools. This extends Ora's capabilities with user-defined automation while maintaining strong security guarantees through a tiered trust model, a shared runtime authorization framework (preflight + execution receipts), comprehensive sandboxing, and full audit logging.
 
 ## 2. User Story
 
@@ -32,6 +32,7 @@ As a power user, I want skills to include helper scripts (Python, shell, AppleSc
 - Structured output parsing (JSON support)
 - Per-script and per-skill trust management
 - Full audit logging with script content hash
+- Compatibility with S.06 deferred-tool flow (`skills.run_script` remains discoverable via `tools.discover`)
 
 ### Out of Scope
 
@@ -140,32 +141,32 @@ This warning is shown regardless of the skill's trust level (even trusted skills
 │                           │                                          │
 │                           ▼                                          │
 │  2. ┌─────────────────────────────────────────┐                     │
-│     │ VALIDATION                              │                     │
-│     │ • Script exists in skill's scripts/    │                     │
-│     │ • Path has no traversal (..)           │                     │
-│     │ • File is text with valid shebang      │                     │
-│     │ • Arguments match manifest (if exists) │                     │
+│     │ TOOLHOST PREFLIGHT (shared for all tools)│                   │
+│     │ • Validate schema + args                │                     │
+│     │ • Resolve tool auth requirement         │                     │
+│     │ • Build single-use execution ticket     │                     │
 │     └─────────────────────────────────────────┘                     │
 │                           │                                          │
 │                           ▼                                          │
 │  3. ┌─────────────────────────────────────────┐                     │
-│     │ TRUST CHECK                             │                     │
-│     │ • Bundled skill? → Auto-approved        │                     │
-│     │ • Trusted user skill? → Check hash      │                     │
-│     │ • Untrusted? → Require confirmation     │                     │
+│     │ AUTHORIZATION DECISION                  │                     │
+│     │ • Auto-allow (bundled/trusted+valid)   │                     │
+│     │ • Require user confirmation             │                     │
+│     │ • Deny (feature off / invalid state)    │                     │
 │     └─────────────────────────────────────────┘                     │
 │                           │                                          │
 │                           ▼                                          │
 │  4. ┌─────────────────────────────────────────┐                     │
-│     │ CONFIRMATION (if needed)                │                     │
-│     │ • Show script name, skill, arguments   │                     │
-│     │ • User approves or denies              │                     │
-│     │ • Option: "Trust this skill's scripts" │                     │
+│     │ AUTH UI (if required)                   │                     │
+│     │ • Show skill/script/args/risk warnings │                     │
+│     │ • User selects: Run once / Run+Trust   │                     │
+│     │ • Returns signed receipt for ticket    │                     │
 │     └─────────────────────────────────────────┘                     │
 │                           │                                          │
 │                           ▼                                          │
 │  5. ┌─────────────────────────────────────────┐                     │
-│     │ EXECUTION                               │                     │
+│     │ EXECUTION (receipt required)            │                     │
+│     │ • ToolHost verifies ticket + receipt    │                     │
 │     │ • Spawn Process with timeout           │                     │
 │     │ • Controlled environment variables     │                     │
 │     │ • Working dir = skill's scripts/       │                     │
@@ -185,7 +186,8 @@ This warning is shown regardless of the skill's trust level (even trusted skills
 │     │ AUDIT LOG                               │                     │
 │     │ • Record: skill, script, args, hash    │                     │
 │     │ • Record: exit code, truncated output  │                     │
-│     │ • Record: execution time, user consent │                     │
+│     │ • Record: auth mode + user decision    │                     │
+│     │ • Record: execution time               │                     │
 │     └─────────────────────────────────────────┘                     │
 │                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
@@ -259,7 +261,9 @@ This lets system interpreters (`python3`, `node`, `ruby`) and Homebrew-installed
 
 ```
 name:        skills.run_script
-kind:        .read  (confirmation managed by tool, not ToolHost — see below)
+kind:        .read
+loadPolicy:  .deferred
+authz:       dynamic (resolved by ToolHost preflight + script trust policy)
 description: Run a script from a skill's scripts/ folder. Call skills.load()
              first to see available scripts and their required arguments.
 
@@ -291,31 +295,37 @@ process.arguments = [resolvedScript.path] + arguments
 
 The LLM learns what arguments a script expects from the SKILL.md content (loaded via `skills.load`). Skill authors **must** document available scripts and their arguments in the SKILL.md. Bundled skills must follow this requirement.
 
-### 4.8 Confirmation Ownership
+### 4.8 Tool Authorization Framework (Proper Implementation)
 
-`skills.run_script` has `kind = .read` so `ToolHost` does **not** show a generic confirmation dialog. The tool manages confirmation internally based on trust level:
+This story introduces a **shared authorization layer** in runtime execution, not tool-specific UI logic:
 
-```
-execute(args:)
-  │
-  ├── global kill switch off? → throw .scriptsDisabled
-  │
-  ├── trustLevel == .bundled  → run directly (no dialog)
-  │
-  ├── trustLevel == .trusted  → network warning dialog if network-capable
-  │                              AND hash changed since warning last shown
-  │                              → then run
-  │
-  └── trustLevel == .untrusted → show trust-aware confirmation dialog
-                                   ├── cancel → throw .confirmationDenied
-                                   ├── confirm → run
-                                   └── confirm + "trust this skill"
-                                         → grantTrust(), then run
-```
+- `ToolHost` adds a preflight API that returns either:
+  - execution can proceed immediately, or
+  - execution requires user authorization with a structured prompt payload, or
+  - execution is denied.
+- Preflight issues a single-use execution ticket. Actual execution must present a matching authorization receipt.
+- `AgentLoop` must run preflight on **every** tool path (`tool_call` and confirmed proposals). It may no longer execute tools directly with a blanket `confirmed: true`.
+- If the LLM emits `tool_call` for a mutate tool, runtime fails closed: convert to proposal/authorization request and require user confirmation.
+- `SkillsRunScriptTool` supplies policy data (trust level, hash status, capability warnings) but does not own confirmation UI dispatch.
 
-The trust-aware dialog is shown via `@MainActor` dispatch, consistent with other confirmation UI in Ora.
+This makes script auth robust and also closes a broader guardrail gap for any misformatted model output.
 
-### 4.9 Integration with Existing Patterns
+### 4.9 Script Authorization Policy (Built on Shared Framework)
+
+`skills.run_script` remains `kind = .read`, but preflight authorization is dynamic:
+
+- **Bundled skill + valid script**: auto-allow
+- **Trusted user skill + matching hashes**: auto-allow (show network warning once per script hash when applicable)
+- **Untrusted user skill**: require user authorization dialog
+- **Hash mismatch or trust record missing**: downgrade to untrusted and require authorization
+- **Global scripts-disabled toggle**: deny preflight
+
+Authorization dialog actions:
+- `Run once` (grant receipt for this ticket only)
+- `Run and trust this skill` (grant receipt + persist trust hashes)
+- `Cancel`
+
+### 4.10 Integration with Existing Patterns
 
 **Standalone actor — no BG.02 dependency now:**
 - `SkillScriptWorker` is a standalone `actor` using `Foundation.Process` directly
@@ -324,10 +334,11 @@ The trust-aware dialog is shown via `@MainActor` dispatch, consistent with other
 
 **Audit Logging:**
 - Extend `AuditCategory` with `.scriptExecution`
-- Log: skill, script filename, args (redacted if sensitive), SHA-256 hash of script file, exit code, execution time, whether confirmation was shown
+- Log: skill, script filename, args (redacted if sensitive), SHA-256 hash of script file, trust level, authorization decision, exit code, execution time
 
 **ToolRegistry:**
 - Register `skills.run_script` alongside other skills tools
+- Keep `skills.run_script` on default `loadPolicy = .deferred` (do not mark as core)
 
 ## 5. Implementation Plan (Draft)
 
@@ -335,35 +346,46 @@ The trust-aware dialog is shown via `@MainActor` dispatch, consistent with other
 
 | File | Purpose |
 |:-----|:--------|
+| `Ora/Tools/ToolAuthorization.swift` | Shared authorization models: preflight requirement, authorization prompt payload, execution ticket, authorization receipt |
 | `Ora/Skills/ScriptManifest.swift` | Parse and validate `scripts/manifest.json`; defaults when manifest absent |
 | `Ora/Skills/SkillScriptWorker.swift` | Standalone `actor`; `Foundation.Process` spawning, stdout/stderr capture, timeout + SIGTERM/SIGKILL, output truncation. Future: refactor to conform to `BackgroundWorker` (BG.02) for XPC/Container isolation. |
 | `Ora/Skills/ScriptEnvironment.swift` | Build filtered env dict from allowlist; inject `ORA_*` context vars |
-| `Ora/Skills/ScriptTrustManager.swift` | Trust levels (bundled/trusted/untrusted), SHA-256 hash tracking, revocation; persists to `AppSettings.scriptTrustRecordsJSON` in SwiftData |
+| `Ora/Skills/ScriptTrustManager.swift` | Trust levels (bundled/trusted/untrusted), SHA-256 hash tracking, revocation; persists via SwiftData `ScriptTrustRecordModel` |
 | `Ora/Skills/ScriptSandbox.swift` | Path validation (no traversal, must be inside `scripts/`), shebang parsing per spec in §4.5, size limit enforcement |
-| `Ora/Tools/Skills/SkillsRunScriptTool.swift` | `kind = .read`; trust check + conditional confirmation dialog + `SkillScriptWorker.run()` + audit log |
+| `Ora/Skills/ScriptAuthorizationPolicy.swift` | Maps trust state + script metadata to preflight authorization requirements for `skills.run_script` |
+| `Ora/Tools/Skills/SkillsRunScriptTool.swift` | `kind = .read`; validates args, delegates authorization policy, calls `SkillScriptWorker.run()`, writes script audit fields |
+| `Ora/Persistence/Models/ScriptTrustRecordModel.swift` | SwiftData model for per-skill trust state and script hash map |
 
 ### 5.2 Files to Modify
 
 | File | Change |
 |:-----|:-------|
-| `Ora/Tools/ToolRegistry.swift` | Register `skills.run_script` tool |
+| `Ora/Tools/ToolProtocol.swift` | Add optional async authorization-preflight hook with default behavior (mutate => requires confirmation, read => no confirmation) |
+| `Ora/Tools/ToolHost.swift` | Add preflight + ticket/receipt execution flow; reject execution without valid authorization receipt when required |
+| `Ora/Orchestration/AgentLoop.swift` | Run preflight in `tool_call` path; convert unauthorized calls into proposal flow; execute via authorized ticket instead of blanket `confirmed: true` |
+| `Ora/Orchestration/SimplePipelineController+Agent.swift` | Handle authorization prompt payload and user decision mapping (`run once`, `run+trust`, `cancel`) |
+| `Ora/Overlay/OverlayState.swift` | Extend proposal state to carry authorization prompt metadata |
+| `Ora/Overlay/ToolStateView.swift` | Render optional script trust action in proposal UI when prompt payload requests it |
+| `Ora/Tools/ToolRegistry.swift` | Register `skills.run_script` tool (deferred) |
 | `Ora/Persistence/AuditLogEntry.swift` | Add `.scriptExecution` case to `AuditCategory` enum |
 | `Ora/Persistence/AuditLogger.swift` | Add `recordScriptExecution()` method |
-| `Ora/Persistence/Models/AppSettings.swift` | Add `scriptTrustRecordsJSON: String?` field for trust persistence |
+| `Ora/Persistence/PersistenceManager.swift` | Add CRUD helpers for `ScriptTrustRecordModel` fetch/upsert/delete |
 | `Ora/Preferences/Tabs/SkillsPreferencesView.swift` | Add script settings section |
 | `Ora/Skills/SkillStore.swift` | Expose script manifest info |
 | `Ora/Skills/SkillMetadata.swift` | Add `hasScripts: Bool` field |
+| `OraTests/Tools/ToolDiscoveryTests.swift` | Verify `tools.discover` surfaces `skills.run_script` when requested |
 
 ### 5.3 Tests to Add
 
 | File | Coverage |
 |:-----|:---------|
+| `OraTests/Tools/ToolAuthorizationTests.swift` | Preflight classification, ticket/receipt validation, stale/replayed receipt rejection |
 | `OraTests/Skills/ScriptManifestTests.swift` | Manifest parsing, validation, defaults |
 | `OraTests/Skills/SkillScriptWorkerTests.swift` | Execution, timeout, output capture, signals; uses mock scripts in a temp directory |
 | `OraTests/Skills/ScriptEnvironmentTests.swift` | Env filtering, Ora context injection |
 | `OraTests/Skills/ScriptTrustManagerTests.swift` | Trust levels, hash validation, revocation |
 | `OraTests/Skills/ScriptSandboxTests.swift` | Path validation, shebang parsing, size limits |
-| `OraTests/Skills/SkillsRunScriptToolTests.swift` | Full tool flow with mocks |
+| `OraTests/Skills/SkillsRunScriptToolTests.swift` | Script tool policy + execution flow with mocks; no in-tool confirmation dispatch |
 
 ### 5.4 Dependencies/Config
 
@@ -383,48 +405,59 @@ The trust-aware dialog is shown via `@MainActor` dispatch, consistent with other
 
 ### Trust Model
 
-- [ ] AC-6: Bundled skills' scripts execute without confirmation
-- [ ] AC-7: Untrusted user skills require per-execution confirmation; the confirmation dialog is shown by `SkillsRunScriptTool` (not ToolHost's generic dialog, because `kind = .read`)
-- [ ] AC-8: User can mark a skill as "trusted" in Settings
-- [ ] AC-9: Trusted skill scripts execute without confirmation (subject to AC-10)
-- [ ] AC-10: Script content changes (hash mismatch) revoke trust automatically
-- [ ] AC-11: Global toggle disables all script execution
+- [ ] AC-6: Bundled skills' scripts auto-authorize and execute without user prompt
+- [ ] AC-7: Untrusted user skills require explicit user authorization before execution
+- [ ] AC-8: User can mark a skill as "trusted" in Settings and via the script authorization dialog
+- [ ] AC-9: Trusted skill scripts execute without prompt when hashes match (subject to AC-10)
+- [ ] AC-10: Script content changes (hash mismatch) revoke trust automatically and downgrade to untrusted
+- [ ] AC-11: Global toggle disables all script execution at preflight stage
+
+### Authorization Framework (Cross-Tool Guardrail)
+
+- [ ] AC-12: Every tool execution path (`tool_call`, confirmed proposal) runs through `ToolHost` authorization preflight before execution
+- [ ] AC-13: Runtime no longer relies on a blanket `confirmed: true` for direct `tool_call` execution
+- [ ] AC-14: If the model emits `tool_call` for a mutate tool, runtime must fail closed: return proposal/authorization request and require user confirmation
+- [ ] AC-15: Authorization-required executions use single-use ticket + receipt validation; stale/replayed receipts are rejected
+- [ ] AC-16: `skills.run_script` uses the shared authorization framework (policy-only tool, no tool-owned confirmation UI dispatch)
 
 ### Execution
 
-- [ ] AC-12: `skills.run_script` has `kind = .read` — ToolHost does not show a generic confirmation dialog; the tool manages all confirmation logic internally
-- [ ] AC-13: `skills.run_script` executes scripts via `Foundation.Process` (no shell intermediary)
-- [ ] AC-14: Arguments are passed as positional command-line args via `Process.arguments` — no shell interpolation, values passed verbatim
-- [ ] AC-15: Scripts run with controlled environment variables (filtered per §4.4 allowlist)
-- [ ] AC-16: Working directory is skill's `scripts/` folder
-- [ ] AC-17: Default timeout is 30 seconds, configurable per-script in manifest
-- [ ] AC-18: SIGTERM sent on timeout, SIGKILL after 5s grace period
-- [ ] AC-19: Exit codes are captured and returned to agent
-- [ ] AC-20: Scripts declaring `capabilities: ["network"]` in manifest (or with no manifest) display a network warning in the confirmation dialog — even for trusted skills, once per script version (hash-keyed)
+- [ ] AC-17: `skills.run_script` remains `kind = .read`, keeps `loadPolicy = .deferred`, and remains discoverable via `tools.discover`
+- [ ] AC-18: `skills.run_script` executes scripts via `Foundation.Process` (no shell intermediary)
+- [ ] AC-19: Arguments are passed as positional command-line args via `Process.arguments` — no shell interpolation, values passed verbatim
+- [ ] AC-20: Scripts run with controlled environment variables (filtered per §4.4 allowlist)
+- [ ] AC-21: Working directory is skill's `scripts/` folder
+- [ ] AC-22: Default timeout is 30 seconds, configurable per-script in manifest
+- [ ] AC-23: SIGTERM sent on timeout, SIGKILL after 5s grace period
+- [ ] AC-24: Exit codes are captured and returned to agent
+- [ ] AC-25: Scripts declaring `capabilities: ["network"]` in manifest (or with no manifest) display a network warning in the authorization dialog — even for trusted skills, once per script version (hash-keyed)
 
 ### Output Handling
 
-- [ ] AC-21: stdout and stderr captured separately
-- [ ] AC-22: Output truncated at 64KB with indicator
-- [ ] AC-23: JSON output parsed and returned as structured data
-- [ ] AC-24: Non-zero exit code returns error with stderr
+- [ ] AC-26: stdout and stderr captured separately
+- [ ] AC-27: Output truncated at 64KB with indicator
+- [ ] AC-28: JSON output parsed and returned as structured data
+- [ ] AC-29: Non-zero exit code returns error with stderr
 
 ### Audit & Logging
 
-- [ ] AC-25: All script executions logged to audit trail
-- [ ] AC-26: Audit includes: skill, script, args, SHA-256 hash of script file, exit code
-- [ ] AC-27: Audit includes: execution time, whether confirmation was shown
+- [ ] AC-30: All script executions logged to audit trail
+- [ ] AC-31: Audit includes: skill, script, args, SHA-256 hash of script file, trust level, authorization decision, exit code
+- [ ] AC-32: Audit includes: execution time and whether authorization was interactive vs auto-allow
 
 ### Settings UI
 
-- [ ] AC-28: Script execution toggle in Skills preferences
-- [ ] AC-29: Per-skill trust management (trust/revoke)
-- [ ] AC-30: View script trust status and stored hashes
+- [ ] AC-33: Script execution toggle in Skills preferences
+- [ ] AC-34: Per-skill trust management (trust/revoke)
+- [ ] AC-35: View script trust status and stored hashes
+- [ ] AC-36: Trust records persist in dedicated SwiftData `ScriptTrustRecordModel` rows (not `AppSettings` JSON blob)
 
 ## 7. Verification Plan
 
 ### Automated Tests
 
+- [ ] Unit tests for shared authorization models (requirement mapping, ticket issuance, receipt validation, replay rejection)
+- [ ] Unit tests for `AgentLoop` fail-closed behavior when mutate tools are emitted as `tool_call`
 - [ ] Unit tests for manifest parsing (valid, invalid, missing)
 - [ ] Unit tests for shebang validation — edge cases:
   - CRLF-terminated first line is stripped and parsed correctly
@@ -435,21 +468,27 @@ The trust-aware dialog is shown via `@MainActor` dispatch, consistent with other
   - Non-`/usr/bin/env` env path (e.g., `/opt/homebrew/bin/env`) is rejected
 - [ ] Unit tests for environment filtering
 - [ ] Unit tests for trust manager (grant, revoke, hash check)
+- [ ] Unit tests for trust-record persistence lifecycle (`ScriptTrustRecordModel` upsert/fetch/delete)
 - [ ] Unit tests for path sandboxing
+- [ ] Unit tests for script authorization policy (bundled/trusted/untrusted, hash mismatch, network warning rules)
 - [ ] Unit tests for output truncation and JSON parsing
 - [ ] Unit tests for timeout and signal handling
+- [ ] Unit tests for `tools.discover` ranking/visibility of `skills.run_script`
 - [ ] Integration test for full execution flow with mock script
 
 ### Manual Tests
 
 - [ ] Execute a bundled skill script, verify no confirmation prompt
 - [ ] Execute an untrusted user script, verify confirmation appears
+- [ ] Trigger a script run and choose "Run and trust this skill"; verify current run executes and future runs auto-authorize
 - [ ] Trust a skill, verify subsequent scripts run without confirmation
 - [ ] Modify a trusted script, verify trust is revoked
+- [ ] Force a mutate tool output as `tool_call` in a test harness, verify runtime requests authorization instead of executing directly
 - [ ] Test timeout with a `sleep 60` script
 - [ ] Test output truncation with a script that prints 100KB
 - [ ] Test JSON output parsing with a Python script
 - [ ] Disable scripts globally, verify tool returns error
+- [ ] From a fresh session, request script execution and verify agent can discover `skills.run_script` via `tools.discover` before first use
 - [ ] Verify audit log contains all expected fields
 
 ## 8. Performance / Reliability Considerations
@@ -491,6 +530,7 @@ The trust-aware dialog is shown via `@MainActor` dispatch, consistent with other
 | Path traversal | Low | High | Strict sandboxing, canonical paths |
 | Credential theft via env | Medium | High | Filter sensitive env vars |
 | Script tampering | Low | High | Hash-based trust invalidation |
+| Guardrail bypass from malformed `tool_call` output | Medium | High | Shared ToolHost preflight + fail-closed mutate handling + ticket/receipt validation |
 | Interpreter vulnerabilities | Low | Medium | Use system interpreters, user's responsibility |
 
 ## 10. Open Questions
@@ -507,28 +547,59 @@ The trust-aware dialog is shown via `@MainActor` dispatch, consistent with other
 
 All three layers ship together as part of this story. Recommended build order within the sprint:
 
-### Layer 1: Execution Infrastructure
-Build `SkillScriptWorker`, `ScriptEnvironment`, `ScriptSandbox` (shebang + path validation). Write `SkillsRunScriptTool` with `kind = .read`. At this point only bundled scripts work — user scripts are blocked pending Layer 2.
+### Layer 1: Shared Authorization Foundation
+Add `ToolAuthorization` models, `ToolProtocol` preflight hook, `ToolHost` ticket/receipt execution flow, and `AgentLoop` fail-closed behavior for mutate `tool_call` outputs. At this point, existing mutate tools still function but now through explicit authorization checks.
 
-### Layer 2: Confirmation & Trust
-Add `ScriptTrustManager` with bundled/trusted/untrusted levels. Wire the trust-aware confirmation dialog in `SkillsRunScriptTool`. Add `AppSettings.scriptTrustRecordsJSON` for persistence. All trust model ACs (AC-6 through AC-11) become testable here.
+### Layer 2: Script Execution + Policy
+Build `SkillScriptWorker`, `ScriptEnvironment`, `ScriptSandbox`, `ScriptManifest`, and `ScriptAuthorizationPolicy`. Implement `SkillsRunScriptTool` as policy + execution only (no in-tool confirmation UI). Add `ScriptTrustRecordModel`, `ScriptTrustManager`, and persistence helpers.
 
-### Layer 3: Settings & Polish
-Add script settings section to `SkillsPreferencesView` (global toggle, per-skill trust UI). Add `ScriptManifest` parsing and network capability warning. All AC-28 through AC-30 become testable here.
+### Layer 3: UI + Settings + Audit Polish
+Extend proposal UI for script-specific authorization actions (`run once`, `run+trust`), add script settings section to `SkillsPreferencesView`, and finish script-specific audit fields.
 
-**All acceptance criteria (AC-1 through AC-30) must pass before the story is considered complete.**
+**All acceptance criteria (AC-1 through AC-36) must pass before the story is considered complete.**
 
 ---
 
 ## Implementation Details
 
-### SkillScriptWorker Actor
-
-`SkillScriptWorker` is responsible only for **execution mechanics** — path resolution, shebang parsing, env building, spawning the process, capturing output, and enforcing the timeout. Trust checking and confirmation dialogs are handled upstream by `SkillsRunScriptTool`.
+### Tool Authorization Contracts
 
 ```swift
-/// Standalone actor for script execution. No trust logic here — all trust/confirmation
-/// decisions are made by SkillsRunScriptTool before calling run().
+enum ToolAuthorizationRequirement: Sendable {
+    case none
+    case userConfirmation(prompt: ToolAuthorizationPrompt)
+}
+
+struct ToolAuthorizationPrompt: Sendable {
+    let title: String
+    let summary: String
+    let details: String?
+    let allowsTrustGrant: Bool
+}
+
+struct ToolExecutionTicket: Sendable {
+    let id: UUID
+    let toolName: String
+    let args: [String: JSONValue]
+}
+
+enum ToolAuthorizationDecision: Sendable {
+    case approveOnce
+    case approveAndTrust
+    case deny
+}
+```
+
+`ToolHost` owns ticket issuance and receipt verification. `AgentLoop` and UI only pass decisions; they do not bypass authorization with raw booleans.
+
+### SkillScriptWorker Actor
+
+`SkillScriptWorker` is responsible only for **execution mechanics** — path resolution, shebang parsing, env building, spawning the process, capturing output, and enforcing the timeout. Authorization decisions are handled upstream by `ToolHost` preflight and `ScriptAuthorizationPolicy`.
+
+```swift
+/// Standalone actor for script execution. No authorization logic here.
+/// Authorization decisions are made by ToolHost preflight + ScriptAuthorizationPolicy
+/// before calling run().
 /// Future: refactor to conform to BackgroundWorker (BG.02) for XPC/Container isolation.
 public actor SkillScriptWorker {
 
@@ -614,29 +685,21 @@ public actor ScriptTrustManager {
         case untrusted    // Requires per-execution confirmation
     }
 
-    // Trust records persisted as JSON in AppSettings (SwiftData) under key
-    // "scriptTrustRecords". Loaded at init, saved on every grant/revoke.
-    private var trustedSkills: [String: TrustedSkillRecord] = [:]
+    // Trust records persisted in SwiftData ScriptTrustRecordModel rows.
     private let persistenceManager: PersistenceManager
-
-    struct TrustedSkillRecord: Codable {
-        let skillID: String
-        let grantedAt: Date
-        let scriptHashes: [String: String]  // scriptPath -> SHA256
-    }
 
     public func trustLevel(for skillID: String) async -> TrustLevel {
         // Check if bundled
-        // Check if user-trusted with valid hashes
+        // Check persisted trust row + hash validation
         // Default to untrusted
     }
 
     public func grantTrust(skillID: String, scripts: [URL]) async {
-        // Compute hashes, store record, persist to AppSettings
+        // Compute hashes, store record, persist via PersistenceManager SwiftData helpers
     }
 
     public func revokeTrust(skillID: String) async {
-        // Remove from trusted set, persist to AppSettings
+        // Remove trusted record via PersistenceManager SwiftData helpers
     }
 
     public func validateHashes(skillID: String) async -> Bool {
@@ -645,7 +708,7 @@ public actor ScriptTrustManager {
 }
 ```
 
-**Persistence note:** Trust records survive app restarts. They are stored as a JSON-encoded `[String: TrustedSkillRecord]` blob in `AppSettings.scriptTrustRecordsJSON` (a new `String?` field on the SwiftData `AppSettings` model). `ScriptTrustManager` reads this on init and writes it on every `grantTrust` / `revokeTrust` call.
+**Persistence note:** Trust records survive app restarts. They are stored as dedicated SwiftData `ScriptTrustRecordModel` rows (one row per trusted skill, including hash map metadata). `ScriptTrustManager` reads/writes via `PersistenceManager` helper methods on every `grantTrust` / `revokeTrust` / hash-validation update.
 
 ### Confirmation Dialog Content
 
@@ -675,12 +738,118 @@ When confirmation is required, show:
 
 ## Implementation Summary
 
-(TBD after implementation.)
+**Date:** 2026-02-28
+**Implemented by:** Codex
+
+### Outcome
+
+- Added shared `ToolHost` authorization preflight with single-use tickets and receipts.
+- Added `skills.run_script` as a deferred tool with script sandboxing, manifest parsing, filtered environment setup, timeout handling, stdout/stderr capture, JSON output parsing, trust persistence, and audit logging.
+- Extended the overlay confirmation UI and Skills preferences so script runs can be approved once, approved and trusted, or revoked later.
+- Added SwiftData-backed `ScriptTrustRecordModel` storage and Skills docs updates for `scripts/` authoring.
+
+### Verification
+
+- `./build.sh` — passed
+- Targeted tests passed via `xcodebuild test` for:
+  - `AgentLoopTests`
+  - `ToolAuthorizationTests`
+  - `ScriptManifestTests`
+  - `ScriptEnvironmentTests`
+  - `ScriptSandboxTests`
+  - `ScriptTrustManagerTests`
+  - `SkillScriptWorkerTests`
+  - `SkillsRunScriptToolTests`
+  - `ToolDiscoveryTests`
+- `./build.sh test` compiled and ran, but the full suite still has unrelated pre-existing audio playback failures (`AudioPlaybackServiceTests`) in this environment.
 
 ## Code Review Findings
 
-(TBD by review agent.)
+**Reviewer:** Claude Sonnet 4.6
+**Date:** 2026-03-01
+**Commit reviewed:** 58ec6e2
+
+### Summary
+- Files reviewed: 47 changed files (9 new, 38 modified)
+- Build status: Pass (pre-review)
+- Tests run: targeted suite per implementation summary
+
+---
+
+### Issues Found
+
+#### P0 — Critical (must fix before merge)
+
+- [ ] **`SkillScriptWorker.swift:173-183` — Unbounded memory accumulation in `readAllBytes`**
+  `readAllBytes` accumulates ALL bytes from the pipe into a `Data` before `truncate()` is called. A script printing gigabytes of output will grow the buffer without bound, crashing Ora with OOM before the 64KB limit is ever applied. The size check must happen *during* the read loop, not after. Example fix: break from `handle.bytes` once accumulated size exceeds `maxOutputBytes + 1` and set a truncation flag, then pass the already-capped buffer to the caller. (Also: iterating `handle.bytes` byte-by-byte is O(n) async steps — for 64KB that is 65,536 continuation suspensions; prefer `read(upToCount:)` in a loop.)
+
+- [ ] **`SkillScriptWorker.swift:89-96` — stdout/stderr Tasks leak if `process.run()` throws**
+  `stdoutTask` and `stderrTask` are started *before* `process.run()`. If `process.run()` throws (e.g., interpreter exists on disk but is not executable — see P1-3), no process ever writes to the pipes. The tasks block in `handle.bytes` indefinitely until the `Pipe` objects are garbage-collected. There is no cleanup path around the `try process.run()` call. A `do/catch` wrapping `process.run()` should close both pipe read ends and cancel/await both tasks on failure.
+
+#### P1 — Major (should fix before merge)
+
+- [ ] **`ScriptSandbox.swift:18-20` — Symlink traversal: `standardizedFileURL` does not resolve symlinks**
+  Both `scriptsRoot` and `candidate` are computed with `.standardizedFileURL`, which removes `.` and `..` components but does NOT follow symlinks. A user-installed skill can place `scripts/evil.sh` as a symlink pointing to an arbitrary file outside the skill root (e.g., `/tmp/exploit.sh`). The path-containment guard passes (the symlink path is inside `scripts/`), but the executed interpreter target is the symlink destination. The authorization dialog shows the symlink path, not the real path. Fix: use `.resolvingSymlinksInPath()` on both `scriptsRoot` and `candidate`, and re-verify containment on the resolved paths.
+
+- [ ] **`SkillsRunScriptTool.swift:75-77` vs `137-139` — TOCTOU: script can change between authorization and execution**
+  The script SHA-256 is computed in `authorizationPlan()` during preflight and stored in `context["script_hash"]`. Actual execution happens seconds later in `execute()`, which recomputes the hash independently. There is no check that the hash computed at execution matches the hash that was authorized. A trusted skill's script modified in the gap between `authorizationPlan` and `execute` will run the new version — bypassing the hash-based trust check that should have required re-authorization. Fix: read `context["script_hash"]` in `execute()`, recompute the live hash, and refuse to execute if they differ (throw a clear error directing the user to re-run).
+
+- [ ] **`SkillScriptWorker.swift:160-171` — TOCTOU race in `awaitTermination` → potential hang**
+  `withCheckedContinuation` checks `process.isRunning`, then sets `process.terminationHandler`. These two operations are not atomic. If the process exits between the check and the handler assignment, the handler is never called and the continuation is never resumed — the `awaitTermination` call hangs forever, blocking the actor and the entire sequential-execution guarantee. Standard fix: set the `terminationHandler` *first*, then check `isRunning` and immediately resume the continuation if the process has already exited.
+
+- [ ] **`ScriptSandbox.swift:129` — `isExecutableFile || fileExists` allows non-executable interpreters through preflight**
+  For direct-path shebangs (`#!/bin/bash`, etc.) the guard is:
+  ```swift
+  guard FileManager.default.isExecutableFile(atPath: trimmed)
+        || FileManager.default.fileExists(atPath: trimmed) else { … }
+  ```
+  The `|| fileExists` arm passes non-executable files (e.g., a file with `644` permissions). The sandbox returns a non-executable path as the interpreter. `process.run()` then fails at launch time — triggering P0-2. The correct check is `isExecutableFile` alone (which already implies existence on macOS). Remove the `|| fileExists` branch.
+
+- [ ] **Missing `ScriptAuthorizationPolicyTests`**
+  The verification plan explicitly requires "Unit tests for script authorization policy (bundled/trusted/untrusted, hash mismatch, network warning rules)." No `ScriptAuthorizationPolicyTests.swift` was delivered. `SkillsRunScriptToolTests` covers bundled auto-allow and untrusted prompt cases but does not cover: (a) trusted skill with matching hash auto-allows, (b) trusted skill with hash mismatch falls back to untrusted prompt, (c) network warning shown when manifest absent, (d) network warning suppressed after acknowledgment. These scenarios are testable with mock/stub `ScriptTrustManager` and `ScriptSandbox`.
+
+---
+
+#### P2 — Minor (can fix in follow-up)
+
+- [ ] **`ScriptSandbox.swift:136-147` — `resolveCommand` does not reject command names containing `/`**
+  If a shebang is `#!/usr/bin/env ../../opt/homebrew/bin/python3`, `parts[1]` = `../../opt/homebrew/bin/python3` is passed to `resolveCommand`. `URL.appendingPathComponent("../../opt/homebrew/bin/python3")` constructs a path that resolves outside the allowlisted directory. `fileExists` passes, the escaped path is returned as the interpreter. The kernel won't execute a non-executable file, so practical harm is low, but it violates the allowlist invariant. Fix: guard that `command` contains no `/`.
+
+- [ ] **`ScriptManifest.swift:63` — No file-size limit on `manifest.json`**
+  `Data(contentsOf: manifestURL)` loads the entire file. `ScriptSandbox.maxScriptFileBytes` (100 KB) guards script files but there is no analogous limit for the manifest. Add a size check (suggest same 100 KB cap) before calling `Data(contentsOf:)`.
+
+- [ ] **`ScriptSandbox.swift:33-35` — `manifest.json` rejection throws misleading `.pathTraversal`**
+  Attempting to execute `manifest.json` as a script throws `ScriptSandboxError.pathTraversal(scriptPath)`. Semantically this is wrong — `manifest.json` is not a traversal attempt, it's an invalid script target. Change to `ScriptSandboxError.scriptNotFound(scriptPath)` with a descriptive message like `"manifest.json is not executable"`.
+
+- [ ] **`ToolAuthorization.swift:13,40` — `issuedAt` field on ticket and receipt is never read**
+  Both `ToolExecutionTicket` and `ToolAuthorizationReceipt` store `issuedAt: Date` but no expiration check exists anywhere. Either add an expiry guard in `executeAuthorized` (e.g., reject tickets older than 5 minutes) or remove the field to eliminate dead code and avoid confusion.
+
+- [ ] **`ToolHost.swift:93-121` — `executeWithAudit(confirmed:)` legacy path can auto-approve any mutate tool**
+  If `confirmed: true` is passed to `executeWithAudit`, any tool that returns `.requiresUser` from preflight is silently auto-approved with `approveOnce`. This path is not used by `AgentLoop.runLoop()` (which now goes through `preflight + executeAuthorized` correctly), but the API remains callable. It is a footgun that contradicts AC-13. Consider either removing it or adding an assertion/precondition that `confirmed` is only valid for tools with `authorizationPlan == .none`.
+
+- [ ] **`ScriptTrustManagerTests.swift:27,33` / `SkillsRunScriptToolTests.swift:51-56` — Tests mutate `PersistenceManager.shared` (production singleton)**
+  `clearScriptTrustRecords()` and `updateSettings()` are called on the shared production manager. If tests run in a context where the production store is present (common in local dev), this silently modifies production data. The trust-manager and run-script-tool tests should use `PersistenceManager.createForTesting(inMemory: true)` and inject it through the `ScriptTrustManager`/`SkillsRunScriptTool` initializers. This requires making `ScriptTrustManager.init(sandbox:persistenceManager:)` accept a `PersistenceManager` parameter (currently the actor hard-codes `PersistenceManager.shared` via `MainActor.run`).
+
+---
+
+### Future Considerations (Out of Scope)
+
+- `AuditLogger.recordSuccess` / `recordFailure` (pre-existing): O(n) scan over up to 1000 entries to find the entry by ID on every tool completion. Pre-existing; not introduced by S.03.
+- No ticket expiry: confirmed-but-never-executed tickets accumulate in `pendingAuthorizations` indefinitely. Low risk (one ticket per tool call, short-lived sessions), but worth revisiting if session durations grow.
+
+---
+
+### Approval Status
+
+- [x] All P0 issues resolved (commit e3b4dd3)
+- [x] All P1 issues resolved (commit e3b4dd3)
+- [x] Coverage gaps addressed (ScriptAuthorizationPolicyTests — 7 tests added)
+- [x] Ready for merge
 
 ## Completion Status
 
-(TBD after merge.)
+- [x] Implementation complete
+- [x] Build passes
+- [x] Full suite green (1464/1464 tests pass — 2026-03-01)
+- [x] Code review P0/P1 issues resolved (commit e3b4dd3)
+- [ ] PR / merge metadata pending

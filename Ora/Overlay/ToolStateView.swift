@@ -25,6 +25,7 @@ struct ToolStateView: View {
     let reduceTransparency: Bool
     let reduceMotion: Bool
     let onConfirmProposal: () -> Void
+    let onConfirmAndTrustProposal: () -> Void
     let onDenyProposal: () -> Void
 
     @FocusState private var confirmButtonFocused: Bool
@@ -74,7 +75,7 @@ struct ToolStateView: View {
                 Image(systemName: Self.iconForTool(proposal.toolName))
                     .foregroundColor(Self.colorForTool(proposal.toolName))
                     .accessibilityHidden(true)
-                Text(Self.titleForTool(proposal.toolName))
+                Text(proposal.title ?? Self.titleForTool(proposal.toolName))
                     .font(.headline)
             }
 
@@ -88,7 +89,7 @@ struct ToolStateView: View {
             }
 
             HStack {
-                Button("Cancel") {
+                Button(proposal.cancelLabel ?? "Cancel") {
                     self.onDenyProposal()
                 }
                 .keyboardShortcut(.escape, modifiers: [])
@@ -98,13 +99,22 @@ struct ToolStateView: View {
 
                 Spacer()
 
-                Button("Confirm") {
+                if let trustLabel = proposal.trustLabel {
+                    Button(trustLabel) {
+                        self.onConfirmAndTrustProposal()
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityLabel(trustLabel)
+                    .accessibilityHint("Approves the action and stores trust for future runs")
+                }
+
+                Button(proposal.confirmLabel ?? "Confirm") {
                     self.onConfirmProposal()
                 }
                 .keyboardShortcut(.return, modifiers: [])
                 .buttonStyle(.borderedProminent)
                 .focused(self.$confirmButtonFocused)
-                .accessibilityLabel("Confirm action")
+                .accessibilityLabel(proposal.confirmLabel ?? "Confirm action")
                 .accessibilityHint("Confirms and executes the proposed action")
             }
         }

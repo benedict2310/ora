@@ -19,4 +19,5 @@ struct SkillMetadata: Sendable, Codable, Hashable {
     let source: Source
     let rootURL: URL
     let version: String?
+    let hasScripts: Bool
 }

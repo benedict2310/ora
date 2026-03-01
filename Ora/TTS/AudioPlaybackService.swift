@@ -50,6 +50,11 @@ public enum AudioPlaybackError: LocalizedError, Sendable {
 /// AVAudioEngine callbacks are forwarded safely via actor isolation.
 public actor AudioPlaybackService {
 
+    private enum PlaybackMode {
+        case live
+        case simulated
+    }
+
     // MARK: - Singleton
 
     public static let shared = AudioPlaybackService()
@@ -57,31 +62,38 @@ public actor AudioPlaybackService {
     // MARK: - Properties
 
     private let logger = Logger.ora(category: "AudioPlayback")
+    private let playbackMode: PlaybackMode
 
     private var engine: AVAudioEngine?
     private var playerNode: AVAudioPlayerNode?
+    private var isPreparedState = false
     private var isPlaying = false
 
     /// Buffer management for jitter prevention
     /// Track scheduled vs completed buffers by duration
     private let targetBufferDuration: TimeInterval = 0.8  // 800ms jitter buffer
     private var bufferedDuration: TimeInterval = 0
+    private var simulatedBufferTasks: [UUID: Task<Void, Never>] = [:]
 
     // MARK: - Initialization
 
-    private init() {}
+    private init() {
+        self.playbackMode = .live
+    }
     
     /// Initialize with custom engine (for testing)
-    init(engine: AVAudioEngine?, playerNode: AVAudioPlayerNode?) {
+    init(engine: AVAudioEngine?, playerNode: AVAudioPlayerNode?, simulateOutput: Bool = false) {
+        self.playbackMode = simulateOutput ? .simulated : .live
         self.engine = engine
         self.playerNode = playerNode
+        self.isPreparedState = simulateOutput ? false : (engine != nil && playerNode != nil)
     }
 
     // MARK: - Public API
 
     /// Check if engine is prepared
     public var isPrepared: Bool {
-        engine != nil && playerNode != nil
+        isPreparedState
     }
 
     /// Check if currently playing
@@ -94,7 +106,13 @@ public actor AudioPlaybackService {
     /// Call this before first use (e.g., at app startup or when TTS is enabled).
     /// Safe to call multiple times - will return immediately if already prepared.
     public func prepare() throws {
-        guard engine == nil else { return }
+        guard !isPreparedState else { return }
+
+        guard playbackMode == .live else {
+            isPreparedState = true
+            logger.info("Audio playback engine ready (simulated)")
+            return
+        }
 
         let engine = AVAudioEngine()
         let playerNode = AVAudioPlayerNode()
@@ -121,6 +139,7 @@ public actor AudioPlaybackService {
 
         self.engine = engine
         self.playerNode = playerNode
+        self.isPreparedState = true
 
         logger.info("Audio playback engine ready")
     }
@@ -136,14 +155,19 @@ public actor AudioPlaybackService {
     /// 3. Wait for all audio to complete before returning
     /// 4. Handle cancellation gracefully
     public func play(chunks: AsyncThrowingStream<AudioChunk, Error>) async throws {
-        guard let playerNode = playerNode else {
+        guard isPreparedState else {
             throw AudioPlaybackError.notPrepared
         }
 
         isPlaying = true
         bufferedDuration = 0
 
-        playerNode.play()
+        if playbackMode == .live {
+            guard let playerNode = playerNode else {
+                throw AudioPlaybackError.notPrepared
+            }
+            playerNode.play()
+        }
 
         do {
             for try await chunk in chunks {
@@ -152,18 +176,25 @@ public actor AudioPlaybackService {
                 // Skip empty marker chunks (e.g., from fallback TTS)
                 guard !chunk.isEmpty else { continue }
 
-                // Convert chunk to AVAudioPCMBuffer
-                guard let buffer = createBuffer(from: chunk) else {
-                    logger.warning("Failed to create buffer from chunk")
-                    continue
-                }
-
                 // Schedule for playback with completion callback
                 let chunkDuration = chunk.duration
                 bufferedDuration += chunkDuration
-                
-                playerNode.scheduleBuffer(buffer) { [weak self] in
-                    Task { await self?.onBufferComplete(duration: chunkDuration) }
+
+                switch playbackMode {
+                case .live:
+                    guard let buffer = createBuffer(from: chunk) else {
+                        logger.warning("Failed to create buffer from chunk")
+                        bufferedDuration = max(0, bufferedDuration - chunkDuration)
+                        continue
+                    }
+                    guard let playerNode = playerNode else {
+                        throw AudioPlaybackError.notPrepared
+                    }
+                    playerNode.scheduleBuffer(buffer) { [weak self] in
+                        Task { await self?.onBufferComplete(duration: chunkDuration) }
+                    }
+                case .simulated:
+                    scheduleSimulatedBuffer(duration: chunkDuration)
                 }
 
                 // Throttle if buffer is getting too large (2x target)
@@ -194,6 +225,7 @@ public actor AudioPlaybackService {
     /// Clears all scheduled buffers and resets state.
     public func stop() {
         playerNode?.stop()
+        cancelSimulatedBuffers()
         bufferedDuration = 0
         isPlaying = false
         logger.debug("Playback stopped")
@@ -212,6 +244,7 @@ public actor AudioPlaybackService {
         
         engine = nil
         playerNode = nil
+        isPreparedState = false
         logger.info("Audio playback engine shutdown")
     }
 
@@ -244,6 +277,31 @@ public actor AudioPlaybackService {
     /// Called when a buffer finishes playing
     private func onBufferComplete(duration: TimeInterval) {
         bufferedDuration = max(0, bufferedDuration - duration)
+    }
+
+    private func scheduleSimulatedBuffer(duration: TimeInterval) {
+        let bufferID = UUID()
+        let task = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(duration))
+            } catch {
+                return
+            }
+            await self?.completeSimulatedBuffer(id: bufferID, duration: duration)
+        }
+        simulatedBufferTasks[bufferID] = task
+    }
+
+    private func completeSimulatedBuffer(id: UUID, duration: TimeInterval) {
+        simulatedBufferTasks[id] = nil
+        onBufferComplete(duration: duration)
+    }
+
+    private func cancelSimulatedBuffers() {
+        for task in simulatedBufferTasks.values {
+            task.cancel()
+        }
+        simulatedBufferTasks.removeAll()
     }
 
     /// Wait for all scheduled buffers to complete

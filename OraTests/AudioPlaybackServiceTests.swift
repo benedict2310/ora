@@ -11,11 +11,15 @@ import XCTest
 
 final class AudioPlaybackServiceTests: XCTestCase {
 
+    private func makeService() -> AudioPlaybackService {
+        AudioPlaybackService(engine: nil, playerNode: nil, simulateOutput: true)
+    }
+
     // MARK: - Prepare Tests
 
     func test_prepareInitializesEngine() async throws {
         // Given
-        let service = AudioPlaybackService(engine: nil, playerNode: nil)
+        let service = makeService()
         
         // When
         try await service.prepare()
@@ -27,7 +31,7 @@ final class AudioPlaybackServiceTests: XCTestCase {
 
     func test_prepareIsIdempotent() async throws {
         // Given
-        let service = AudioPlaybackService(engine: nil, playerNode: nil)
+        let service = makeService()
         
         // When: Call prepare multiple times
         try await service.prepare()
@@ -41,7 +45,7 @@ final class AudioPlaybackServiceTests: XCTestCase {
 
     func test_isPrepared_falseInitially() async {
         // Given
-        let service = AudioPlaybackService(engine: nil, playerNode: nil)
+        let service = makeService()
         
         // Then
         let isPrepared = await service.isPrepared
@@ -52,7 +56,7 @@ final class AudioPlaybackServiceTests: XCTestCase {
 
     func test_playThrowsWhenNotPrepared() async {
         // Given
-        let service = AudioPlaybackService(engine: nil, playerNode: nil)
+        let service = makeService()
         let emptyStream = AsyncThrowingStream<AudioChunk, Error> { $0.finish() }
         
         // When/Then
@@ -68,7 +72,7 @@ final class AudioPlaybackServiceTests: XCTestCase {
 
     func test_playEmptyChunksSkipped() async throws {
         // Given
-        let service = AudioPlaybackService(engine: nil, playerNode: nil)
+        let service = makeService()
         try await service.prepare()
         
         // Create stream with only empty chunks
@@ -88,7 +92,7 @@ final class AudioPlaybackServiceTests: XCTestCase {
 
     func test_playStreamsChunks() async throws {
         // Given
-        let service = AudioPlaybackService(engine: nil, playerNode: nil)
+        let service = makeService()
         try await service.prepare()
         
         // Create stream with audio chunks
@@ -112,7 +116,7 @@ final class AudioPlaybackServiceTests: XCTestCase {
 
     func test_stopClearsQueue() async throws {
         // Given
-        let service = AudioPlaybackService(engine: nil, playerNode: nil)
+        let service = makeService()
         try await service.prepare()
         
         // Create a slow stream
@@ -145,7 +149,7 @@ final class AudioPlaybackServiceTests: XCTestCase {
 
     func test_stopIsIdempotent() async throws {
         // Given
-        let service = AudioPlaybackService(engine: nil, playerNode: nil)
+        let service = makeService()
         try await service.prepare()
         
         // When: Stop multiple times without playing
@@ -162,7 +166,7 @@ final class AudioPlaybackServiceTests: XCTestCase {
 
     func test_shutdownCleansUp() async throws {
         // Given
-        let service = AudioPlaybackService(engine: nil, playerNode: nil)
+        let service = makeService()
         try await service.prepare()
         
         // Verify prepared
@@ -188,7 +192,7 @@ final class AudioPlaybackServiceTests: XCTestCase {
 
     func test_playingState_duringPlayback() async throws {
         // Given
-        let service = AudioPlaybackService(engine: nil, playerNode: nil)
+        let service = makeService()
         try await service.prepare()
         
         // Initially not playing

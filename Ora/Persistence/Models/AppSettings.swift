@@ -43,6 +43,9 @@ final class AppSettings {
     /// Skills feature flag (S.01)
     var skillsEnabled: Bool = true
 
+    /// Global script execution feature flag (S.03)
+    var scriptsEnabled: Bool = true
+
     // MARK: - VAD Settings (M.06)
 
     /// Minimum speech duration in seconds before detecting speech start

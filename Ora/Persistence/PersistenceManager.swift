@@ -47,7 +47,8 @@ final class PersistenceManager {
         let schema = Schema([
             Session.self,
             AuditLogEntryModel.self,
-            AppSettings.self
+            AppSettings.self,
+            ScriptTrustRecordModel.self
         ])
 
         let storeURL = FileManager.default
@@ -124,7 +125,8 @@ final class PersistenceManager {
         let schema = Schema([
             Session.self,
             AuditLogEntryModel.self,
-            AppSettings.self
+            AppSettings.self,
+            ScriptTrustRecordModel.self
         ])
 
         let configuration: ModelConfiguration
@@ -442,6 +444,62 @@ final class PersistenceManager {
         let settings = self.settings
         update(settings)
         self.saveContext()
+    }
+
+    // MARK: - Script Trust
+
+    func scriptTrustRecord(skillID: String) -> ScriptTrustRecordModel? {
+        let descriptor = FetchDescriptor<ScriptTrustRecordModel>(
+            predicate: #Predicate { $0.skillID == skillID }
+        )
+        return try? self.context.fetch(descriptor).first
+    }
+
+    func allScriptTrustRecords() -> [ScriptTrustRecordModel] {
+        let descriptor = FetchDescriptor<ScriptTrustRecordModel>(
+            sortBy: [SortDescriptor(\.skillID, order: .forward)]
+        )
+        return (try? self.context.fetch(descriptor)) ?? []
+    }
+
+    func upsertScriptTrustRecord(
+        skillID: String,
+        scriptHashes: [String: String],
+        acknowledgedNetworkHashes: Set<String>,
+        trustedAt: Date = Date()
+    ) {
+        let record = self.scriptTrustRecord(skillID: skillID)
+            ?? ScriptTrustRecordModel(
+                skillID: skillID,
+                scriptHashesData: (try? JSONEncoder().encode([String: String]())) ?? Data(),
+                acknowledgedNetworkHashesData: (try? JSONEncoder().encode([String]())) ?? Data()
+            )
+
+        if record.modelContext == nil {
+            self.context.insert(record)
+        }
+
+        record.trustedAt = trustedAt
+        record.scriptHashes = scriptHashes
+        record.acknowledgedNetworkHashes = acknowledgedNetworkHashes
+        self.saveContext()
+    }
+
+    func deleteScriptTrustRecord(skillID: String) {
+        guard let record = self.scriptTrustRecord(skillID: skillID) else {
+            return
+        }
+        self.context.delete(record)
+        self.saveContext()
+    }
+
+    func clearScriptTrustRecords() {
+        do {
+            try self.context.delete(model: ScriptTrustRecordModel.self)
+            self.saveContext()
+        } catch {
+            self.logger.error("Failed to clear script trust records: \(error.localizedDescription)")
+        }
     }
 
     /// Immediately persist any pending changes, cancelling a scheduled debounced save first.

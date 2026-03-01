@@ -4,7 +4,7 @@
 **Status:** Not Started
 **Priority:** P2 (Medium)
 **Estimated Effort:** 3 days
-**Dependencies:** S.01 (Skills Runtime)
+**Dependencies:** S.01 (Skills Runtime), S.06 (Dynamic Tool Discovery)
 **Target:** macOS 26 (Tahoe)
 **Design Reference:** None
 
@@ -24,6 +24,7 @@ As a developer, I want to measure how reliably the agent activates the correct s
 
 - Skills-specific benchmark scenarios in `agent-tools/TestSuite`
 - Metrics: activation accuracy, load discipline, task success uplift, latency impact
+- Discovery discipline metrics for deferred skill tools (`tools.discover` path)
 - JSON report output (`~/Library/Application Support/Ora/Evals/{timestamp}-skills.json`)
 - Integration with existing `AgentBench` CLI
 - At least N=20 skill-related test scenarios
@@ -48,6 +49,7 @@ The existing `agent-tools/TestSuite` provides:
 
 This story extends the TestSuite to:
 - Add mock `skills.*` tools
+- Mirror S.06 dynamic discovery behavior (`tools.discover`, core/deferred load policy, session-discovered schemas)
 - Add skill-specific benchmark scenarios
 - Add skill-specific judgment criteria
 - Report skill metrics
@@ -75,6 +77,7 @@ agent-tools/TestSuite/
 | Metric | Description |
 |:-------|:------------|
 | `activation_accuracy` | % of tests where correct skill was chosen (when one exists) |
+| `discovery_discipline` | % of skill-tool turns where deferred skills tools are preceded by `tools.discover` in a fresh session |
 | `load_discipline` | % of tests where `skills.load` was called before using skill content |
 | `task_success_baseline` | Success rate without skills enabled |
 | `task_success_skills` | Success rate with skills enabled |
@@ -104,7 +107,9 @@ agent-tools/TestSuite/
 
 | File | Change |
 |:-----|:-------|
+| `agent-tools/TestSuite/Sources/AgentBench/ToolProtocol.swift` | Add/align `ToolLoadPolicy` for parity with app runtime |
 | `agent-tools/TestSuite/Sources/AgentBench/ToolRegistry.swift` | Add mock `skills.list`, `skills.load`, `skills.read` tools |
+| `agent-tools/TestSuite/Sources/AgentBench/ToolDiscoveryTool.swift` | Ensure deferred skill tools can be discovered in benchmarks |
 | `agent-tools/TestSuite/Sources/AgentBench/SystemPrompt.swift` | Add available_skills XML block rendering |
 | `agent-tools/TestSuite/Sources/AgentBench/Benchmark.swift` | Add skill metrics collection |
 | `agent-tools/TestSuite/Sources/AgentBench/AgentBenchCommand.swift` | Add `--compare-config` flag (accepts `skills`); runs suite twice for uplift reporting |
@@ -134,33 +139,34 @@ agent-tools/TestSuite/
 
 - [ ] AC-4: `SkillsMock` provides configurable skill metadata and content
 - [ ] AC-5: Mock `skills.list`, `skills.load`, `skills.read` tools register in test registry
-- [ ] AC-6: System prompt includes mock available_skills XML block during tests
+- [ ] AC-6: System prompt includes mock `available_skills` XML block and S.06-style dynamic tool sections (core/deferred/discovered) during tests
 
 ### Metrics Collection
 
 - [ ] AC-7: Benchmark runner tracks skill activation (which skill was loaded, if any)
 - [ ] AC-8: Benchmark runner tracks whether `skills.load` preceded skill content usage
 - [ ] AC-9: Latency tracked separately for skill operations
+- [ ] AC-10: Benchmark runner tracks deferred skill-tool discovery discipline (`tools.discover` before `skills.*` in fresh sessions)
 
 ### Judgment Criteria
 
-- [ ] AC-10: Test passes if correct skill chosen (or no skill when none expected)
-- [ ] AC-11: Test warns if skill content used without calling `skills.load` first
-- [ ] AC-12: Task success judged independently of skill choice
+- [ ] AC-11: Test passes if correct skill chosen (or no skill when none expected)
+- [ ] AC-12: Test warns if skill content used without calling `skills.load` first
+- [ ] AC-13: Task success judged independently of skill choice
 
 ### Reporting
 
-- [ ] AC-13: Skills eval outputs JSON report to `~/Library/Application Support/Ora/Evals/`
-- [ ] AC-14: Report includes all metrics (activation accuracy, load discipline, uplift, latencies)
-- [ ] AC-15: Report includes per-test breakdown and summary
+- [ ] AC-14: Skills eval outputs JSON report to `~/Library/Application Support/Ora/Evals/`
+- [ ] AC-15: Report includes all metrics (activation accuracy, discovery discipline, load discipline, uplift, latencies)
+- [ ] AC-16: Report includes per-test breakdown and summary
 
 ### CLI Integration
 
-- [ ] AC-16: `swift run AgentBench --suite benchmarks/skills.json` runs skill eval
-- [ ] AC-17: `swift run AgentBench --suite benchmarks/skills.json --output <path>` writes the skills-specific JSON report
-- [ ] AC-18: `swift run AgentBench --suite benchmarks/skills.json --compare-config skills` runs the suite **twice** (skills-enabled vs. skills-disabled, same model, same test cases) and reports uplift metrics; `--compare-config` is a new flag distinct from the existing `--compare`/`--compare-preset` model-comparison flags
+- [ ] AC-17: `swift run AgentBench --suite benchmarks/skills.json` runs skill eval
+- [ ] AC-18: `swift run AgentBench --suite benchmarks/skills.json --output <path>` writes the skills-specific JSON report
+- [ ] AC-19: `swift run AgentBench --suite benchmarks/skills.json --compare-config skills` runs the suite **twice** (skills-enabled vs. skills-disabled, same model, same test cases) and reports uplift metrics; `--compare-config` is a new flag distinct from the existing `--compare`/`--compare-preset` model-comparison flags
 
-**Baseline comparison methodology:** both runs use the same model and same benchmark cases. The only difference is whether `{{available_skills}}` is injected into the system prompt and whether `skills.*` tools are registered. `task_success_baseline` comes from the skills-disabled run; `task_success_skills` from the enabled run.
+**Baseline comparison methodology:** both runs use the same model and same benchmark cases and keep S.06 dynamic discovery behavior enabled. The only differences are whether `{{available_skills}}` is injected and whether `skills.*` tools are registered in the registry. `tools.discover` remains available in both runs. `task_success_baseline` comes from the skills-disabled run; `task_success_skills` from the enabled run.
 
 ## 7. Verification Plan
 
@@ -168,6 +174,7 @@ agent-tools/TestSuite/
 
 - [ ] Unit tests for SkillsMock (metadata, content, errors)
 - [ ] Unit tests for SkillsJudge (activation, load discipline logic)
+- [ ] Unit tests for discovery-discipline scoring when `skills.*` are deferred
 - [ ] Integration test: run skill benchmark suite, verify metrics reported
 
 ### Manual Tests
@@ -175,6 +182,7 @@ agent-tools/TestSuite/
 - [ ] Run full skills benchmark suite (`swift run AgentBench --suite benchmarks/skills.json`)
 - [ ] Verify report is written to expected location
 - [ ] Verify metrics are reasonable (non-zero activation accuracy, etc.)
+- [ ] Verify discovery-discipline metric behaves as expected in fresh sessions
 - [ ] Run comparison: baseline vs skills-enabled, verify uplift calculated
 
 ## 8. Performance / Reliability Considerations

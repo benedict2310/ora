@@ -172,6 +172,7 @@ actor ToolRegistry {
         register(SkillsListTool())
         register(SkillsLoadTool())
         register(SkillsReadTool())
+        register(SkillsRunScriptTool())
 
         // Notes tools
         register(NotesCreateTool())

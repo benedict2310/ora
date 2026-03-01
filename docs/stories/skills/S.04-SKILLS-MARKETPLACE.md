@@ -4,7 +4,7 @@
 **Status:** Distant Future
 **Priority:** P3 (Low) — implement S.05 (Agent Skill Authoring) first; revisit S.04 only if community skill sharing becomes a clear user demand
 **Estimated Effort:** 5 days
-**Dependencies:** S.01 (Skills Runtime), S.03 (Skill Scripts) — required only if the marketplace serves skills that include `scripts/` folders; skills containing only `SKILL.md` and `references/` require only S.01
+**Dependencies:** S.01 (Skills Runtime), S.06 (Dynamic Tool Discovery), S.03 (Skill Scripts) — S.03 is required only if the marketplace serves skills that include `scripts/` folders; skills containing only `SKILL.md` and `references/` require S.01 + S.06
 **Target:** macOS 26 (Tahoe)
 **Design Reference:** None
 
@@ -87,6 +87,7 @@ As a user, I want to browse and install skills created by others, so that I can 
 - Skills with scripts require explicit consent
 - Checksum verification before installation
 - Option to only allow verified publishers
+- Marketplace install flow must preserve S.06 behavior: skill install/update should only trigger `SkillStore.rebuildIndex()`. Do not bypass deferred-tool discovery or inject full tool schemas directly.
 - **Content sanitization (mandatory):** Marketplace-installed skill content loaded via `skills.load` must pass through `ContentSanitizer` (`Ora/Utilities/ContentSanitizer.swift`, shared with BG.05) before LLM injection. A third-party SKILL.md could contain prompt injection payloads. Sanitization strips control characters, normalizes whitespace, and enforces the 5000-char context injection limit. This is a hard requirement — marketplace skills must never be injected into the LLM context raw.
 
 ## 5. Implementation Plan (Draft)

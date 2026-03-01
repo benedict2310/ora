@@ -16,12 +16,13 @@ Skills follow the [Anthropic Skills Standard](https://docs.anthropic.com/en/docs
 
 | ID | Title | Status | Priority |
 |:---|:------|:-------|:---------|
-| S.00 | [Context Budget](S.00-CONTEXT-BUDGET.md) | 🚧 Not Started | P0 |
-| S.01 | [Skills Runtime](S.01-SKILLS-RUNTIME.md) | 🚧 Not Started | P1 |
+| S.00 | [Context Budget](S.00-CONTEXT-BUDGET.md) | ✅ Complete | P0 |
+| S.01 | [Skills Runtime](S.01-SKILLS-RUNTIME.md) | ✅ Complete | P1 |
 | S.02 | [Skills Evaluation](S.02-SKILLS-EVALUATION.md) | 🚧 Not Started | P2 |
-| S.03 | [Skill Scripts](S.03-SKILL-SCRIPTS.md) | 🚧 Not Started | P1 |
+| S.03 | [Skill Scripts](S.03-SKILL-SCRIPTS.md) | ✅ Implemented | P1 |
 | S.04 | [Skills Marketplace](S.04-SKILLS-MARKETPLACE.md) | 📋 Distant Future | P3 |
 | S.05 | [Agent Skill Authoring](S.05-AGENT-SKILL-AUTHORING.md) | 🚧 Not Started | P1 |
+| S.06 | [Dynamic Tool Discovery](S.06-TOOL-DISCOVERY.md) | ✅ Complete | P1 |
 
 > **Embedding-based skill retrieval (removed):** At current skill counts, BM25/keyword ranking via the existing `Memory/HybridScorer.swift` is sufficient. Revisit if retrieval quality becomes a measurable problem at scale.
 >
@@ -33,16 +34,19 @@ Skills follow the [Anthropic Skills Standard](https://docs.anthropic.com/en/docs
 O.02 Agent Loop (✅ Complete)
          │
          ▼
-    S.00 Context Budget (prerequisite)
+    S.00 Context Budget (✅ Complete)
          │
          ▼
-    S.01 Skills Runtime ──────────────┐
-         │                            │
-         ├── S.02 Skills Evaluation   ├── S.05 Agent Skill Authoring
-         │                            │
-         └── S.03 Skill Scripts ◄─────┘ (BG.02 alignment is future refactor, not a hard dep)
-              │
-              └── S.04 Marketplace (distant future)
+    S.01 Skills Runtime (✅ Complete)
+         │
+         ▼
+    S.06 Dynamic Tool Discovery (✅ Complete)
+         │
+         ├── S.02 Skills Evaluation
+         ├── S.03 Skill Scripts ◄─────┐ (BG.02 alignment is future refactor, not a hard dep)
+         ├── S.05 Agent Skill Authoring
+         │                             │
+         └────────────── S.04 Marketplace (distant future; also depends on S.03 if scripts are distributed)
 ```
 
 ## Storage Locations

@@ -12,6 +12,9 @@ Skills/
     SKILL.md
     references/   # optional
     assets/       # optional
+    scripts/      # optional
+      manifest.json   # optional
+      helper.py
 ```
 
 ## Required `SKILL.md` frontmatter
@@ -41,3 +44,32 @@ Ora scans these locations at startup and when you click **Rescan Skills**:
 - Skills are guidance only; they do not execute code.
 - Mutating tools still require explicit confirmation.
 - `skills.read` can only read from `references/` and `assets/` within a skill folder.
+- `skills.run_script` can execute files from `scripts/` only.
+- User-installed scripts are untrusted by default and require approval before execution.
+- Trust is stored per skill and revoked automatically if a script hash changes.
+- Script execution runs with a filtered environment and a 30s default timeout.
+
+## Optional `scripts/manifest.json`
+
+Scripts can declare metadata in `scripts/manifest.json`:
+
+```json
+{
+  "scripts": {
+    "helper.py": {
+      "description": "Example helper",
+      "arguments": [
+        {"name": "input", "type": "string", "required": true}
+      ],
+      "output": "json",
+      "timeout": 10,
+      "capabilities": ["network"]
+    }
+  }
+}
+```
+
+If no manifest is present, Ora uses defaults:
+- output type: `text`
+- timeout: `30` seconds
+- per-run authorization still applies for user-installed skills
