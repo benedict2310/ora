@@ -162,6 +162,12 @@ actor LLMService: LLMServicing {
     /// Clear the KV cache to start fresh for a new session
     /// Call this when ending a session or starting a new conversation
     func clearCache() async {
+        // Guard against calling GPU.clearCache() before any model is loaded.
+        // Calling GPU APIs on an uninitialized MLX Metal context causes an
+        // async GPU crash that manifests in whichever test is running at the
+        // time the Metal driver processes the bad command.
+        guard isReady else { return }
+
         // Wrap in MLXMetalGate to prevent race with runGeneration.
         // GPU.clearCache() MUST be inside the lock — if called outside, a new generation
         // could start between lock release and cache clear, causing Metal buffer corruption.
