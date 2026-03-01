@@ -127,7 +127,8 @@ final class MemoryDistillerTests: XCTestCase {
             transcriptLoader: { requestedSessionID in
                 return requestedSessionID == sessionID ? messages : nil
             },
-            promptLoader: { "Return JSON only." }
+            promptLoader: { "Return JSON only." },
+            gpuCacheClearer: { }
         )
 
         // When
@@ -166,7 +167,8 @@ final class MemoryDistillerTests: XCTestCase {
             transcriptLoader: { requestedSessionID in
                 return requestedSessionID == sessionID ? messages : nil
             },
-            promptLoader: { "Return JSON only." }
+            promptLoader: { "Return JSON only." },
+            gpuCacheClearer: { }
         )
 
         // When
@@ -201,7 +203,8 @@ final class MemoryDistillerTests: XCTestCase {
             transcriptLoader: { requestedSessionID in
                 return requestedSessionID == sessionID ? [] : nil
             },
-            promptLoader: { "Return JSON only." }
+            promptLoader: { "Return JSON only." },
+            gpuCacheClearer: { }
         )
 
         // When
@@ -258,7 +261,8 @@ final class MemoryDistillerTests: XCTestCase {
             transcriptLoader: { requestedSessionID in
                 return requestedSessionID == sessionID ? messages : nil
             },
-            promptLoader: { "Return JSON only." }
+            promptLoader: { "Return JSON only." },
+            gpuCacheClearer: { }
         )
 
         // When
@@ -305,7 +309,8 @@ final class MemoryDistillerTests: XCTestCase {
             transcriptLoader: { requestedSessionID in
                 return requestedSessionID == sessionID ? eligibleMessages : nil
             },
-            promptLoader: { "Return JSON only." }
+            promptLoader: { "Return JSON only." },
+            gpuCacheClearer: { }
         )
 
         // When
@@ -351,7 +356,8 @@ final class MemoryDistillerTests: XCTestCase {
             transcriptLoader: { requestedSessionID in
                 return requestedSessionID == sessionID ? eligibleMessages : nil
             },
-            promptLoader: { "Return JSON only." }
+            promptLoader: { "Return JSON only." },
+            gpuCacheClearer: { }
         )
 
         // When
@@ -383,7 +389,8 @@ final class MemoryDistillerTests: XCTestCase {
             transcriptLoader: { requestedSessionID in
                 return requestedSessionID == sessionID ? [] : nil
             },
-            promptLoader: { "Return JSON only." }
+            promptLoader: { "Return JSON only." },
+            gpuCacheClearer: { }
         )
 
         // When

@@ -20,6 +20,7 @@ actor MemoryDistiller: MemoryDistilling {
 
     typealias TranscriptLoader = @Sendable (UUID) async -> [Session.Message]?
     typealias PromptLoader = @Sendable () -> String
+    typealias GPUCacheClearer = @Sendable () -> Void
 
     // MARK: - Singleton
 
@@ -33,6 +34,7 @@ actor MemoryDistiller: MemoryDistilling {
     private let memoryIndex: any MemoryIndexing
     private let transcriptLoader: TranscriptLoader
     private let promptLoader: PromptLoader
+    private let gpuCacheClearer: GPUCacheClearer
     private let maxRetries: Int
     private let maxTokens: Int
     private let minimumUserMessageCount: Int
@@ -47,6 +49,7 @@ actor MemoryDistiller: MemoryDistilling {
         memoryIndex: any MemoryIndexing = MemoryIndex.shared,
         transcriptLoader: @escaping TranscriptLoader = MemoryDistiller.defaultTranscriptLoader,
         promptLoader: @escaping PromptLoader = MemoryDistiller.loadPrompt,
+        gpuCacheClearer: @escaping GPUCacheClearer = { GPU.clearCache() },
         maxRetries: Int = 3,
         maxTokens: Int = 1200,
         minimumUserMessageCount: Int = 3,
@@ -58,6 +61,7 @@ actor MemoryDistiller: MemoryDistilling {
         self.memoryIndex = memoryIndex
         self.transcriptLoader = transcriptLoader
         self.promptLoader = promptLoader
+        self.gpuCacheClearer = gpuCacheClearer
         self.maxRetries = maxRetries
         self.maxTokens = maxTokens
         self.minimumUserMessageCount = minimumUserMessageCount
@@ -68,10 +72,6 @@ actor MemoryDistiller: MemoryDistilling {
     // MARK: - Public API
 
     func distill(sessionId: UUID) async -> SessionSummary? {
-        defer {
-            GPU.clearCache()
-        }
-
         guard let messages = await self.transcriptLoader(sessionId) else {
             self.logger.warning("Memory distillation skipped: no persisted session found for \(sessionId.uuidString)")
             return nil
@@ -91,6 +91,12 @@ actor MemoryDistiller: MemoryDistilling {
 
         do {
             try await self.llm.prepare()
+            // Only clear GPU cache after the model has been prepared.
+            // Calling GPU.clearCache() on an uninitialized MLX Metal context
+            // causes an async GPU crash that can be attributed to any running test.
+            defer {
+                self.gpuCacheClearer()
+            }
 
             let prompt = self.promptLoader()
             let distillationTimestamp = Date()

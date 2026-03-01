@@ -178,7 +178,8 @@ final class AgentLoopTests: XCTestCase {
             structuredGenerator: structuredGenerator,
             toolHost: .shared,
             toolRegistry: toolRegistry,
-            conversationManager: conversationManager
+            conversationManager: conversationManager,
+            memoryDistiller: AgentLoopRecordingMemoryDistiller()
         )
     }
 
@@ -349,7 +350,8 @@ final class AgentLoopTests: XCTestCase {
             structuredGenerator: self.structuredGenerator,
             toolHost: .shared,
             toolRegistry: .shared,
-            conversationManager: localConversation
+            conversationManager: localConversation,
+            memoryDistiller: AgentLoopRecordingMemoryDistiller()
         )
 
         await ToolRegistry.shared.register(discoverTool)
@@ -401,7 +403,8 @@ final class AgentLoopTests: XCTestCase {
             structuredGenerator: self.structuredGenerator,
             toolHost: .shared,
             toolRegistry: .shared,
-            conversationManager: localConversation
+            conversationManager: localConversation,
+            memoryDistiller: AgentLoopRecordingMemoryDistiller()
         )
 
         await self.mockLLM.setResponses([
@@ -439,7 +442,8 @@ final class AgentLoopTests: XCTestCase {
             structuredGenerator: structuredGenerator,
             toolHost: .shared,
             toolRegistry: toolRegistry,
-            conversationManager: conversationManager
+            conversationManager: conversationManager,
+            memoryDistiller: AgentLoopRecordingMemoryDistiller()
         )
         
         await toolRegistry.register(AgentLoopMockReadTool(name: "test.query", result: "Result"))
@@ -515,7 +519,8 @@ final class AgentLoopTests: XCTestCase {
             structuredGenerator: failingGenerator,
             toolHost: .shared,
             toolRegistry: self.toolRegistry,
-            conversationManager: ConversationManager.makeTestInstance(maxContextTokens: 2000)
+            conversationManager: ConversationManager.makeTestInstance(maxContextTokens: 2000),
+            memoryDistiller: AgentLoopRecordingMemoryDistiller()
         )
 
         let result = try await loop.process(userText: "Test provider setup issue")
@@ -537,7 +542,8 @@ final class AgentLoopTests: XCTestCase {
             structuredGenerator: failingGenerator,
             toolHost: .shared,
             toolRegistry: self.toolRegistry,
-            conversationManager: ConversationManager.makeTestInstance(maxContextTokens: 2000)
+            conversationManager: ConversationManager.makeTestInstance(maxContextTokens: 2000),
+            memoryDistiller: AgentLoopRecordingMemoryDistiller()
         )
 
         let result = try await loop.process(userText: "Test unavailable model")
@@ -560,7 +566,8 @@ final class AgentLoopTests: XCTestCase {
             structuredGenerator: failingGenerator,
             toolHost: .shared,
             toolRegistry: self.toolRegistry,
-            conversationManager: ConversationManager.makeTestInstance(maxContextTokens: 2000)
+            conversationManager: ConversationManager.makeTestInstance(maxContextTokens: 2000),
+            memoryDistiller: AgentLoopRecordingMemoryDistiller()
         )
 
         let result = try await loop.process(userText: "Test request shape rejection")
