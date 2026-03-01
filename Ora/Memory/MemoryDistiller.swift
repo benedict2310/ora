@@ -68,10 +68,6 @@ actor MemoryDistiller: MemoryDistilling {
     // MARK: - Public API
 
     func distill(sessionId: UUID) async -> SessionSummary? {
-        defer {
-            GPU.clearCache()
-        }
-
         guard let messages = await self.transcriptLoader(sessionId) else {
             self.logger.warning("Memory distillation skipped: no persisted session found for \(sessionId.uuidString)")
             return nil
@@ -91,6 +87,12 @@ actor MemoryDistiller: MemoryDistilling {
 
         do {
             try await self.llm.prepare()
+            // Only clear GPU cache after the model has been prepared.
+            // Calling GPU.clearCache() on an uninitialized MLX Metal context
+            // causes an async GPU crash that can be attributed to any running test.
+            defer {
+                GPU.clearCache()
+            }
 
             let prompt = self.promptLoader()
             let distillationTimestamp = Date()
