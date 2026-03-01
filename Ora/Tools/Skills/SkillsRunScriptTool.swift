@@ -191,8 +191,9 @@ struct SkillsRunScriptTool: Tool {
 
             if config.output == .json, !result.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 do {
-                    let output = try JSONDecoder().decode(JSONValue.self, from: Data(result.stdout.utf8))
-                    payload["output"] = output
+                    let data = Data(result.stdout.utf8)
+                    let raw = try JSONSerialization.jsonObject(with: data, options: .allowFragments)
+                    payload["output"] = Self.jsonValueFrom(raw)
                 } catch {
                     throw ScriptToolFailure(
                         message: "Script declared JSON output but returned invalid JSON.",
@@ -226,6 +227,29 @@ struct SkillsRunScriptTool: Tool {
                     "script_hash": .string(scriptHash)
                 ]
             )
+        }
+    }
+
+    /// Converts a JSONSerialization-produced value to JSONValue.
+    /// JSONSerialization produces NSNumber for booleans and numbers; CFBooleanGetTypeID()
+    /// distinguishes booleans from numeric types (Bool is bridged as __NSCFBoolean).
+    private static func jsonValueFrom(_ any: Any) -> JSONValue {
+        switch any {
+        case let string as String:
+            return .string(string)
+        case let number as NSNumber:
+            if CFBooleanGetTypeID() == CFGetTypeID(number) {
+                return .bool(number.boolValue)
+            }
+            return .number(number.doubleValue)
+        case let array as [Any]:
+            return .array(array.map { jsonValueFrom($0) })
+        case let dict as [String: Any]:
+            return .object(dict.mapValues { jsonValueFrom($0) })
+        case is NSNull:
+            return .null
+        default:
+            return .string(String(describing: any))
         }
     }
 
