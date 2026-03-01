@@ -62,4 +62,22 @@ final class SkillScriptWorkerTests: XCTestCase {
             XCTFail("Unexpected error: \(error)")
         }
     }
+
+    func test_run_negativeTimeoutDoesNotCrash() async throws {
+        // A negative timeout from a malicious manifest.json must not trap (UInt64 underflow).
+        // It is clamped to 1 second internally, so a fast script should still succeed.
+        let scriptURL = self.skillRoot
+            .appendingPathComponent("scripts", isDirectory: true)
+            .appendingPathComponent("echo.sh", isDirectory: false)
+        try "#!/bin/bash\necho ok\n".write(to: scriptURL, atomically: true, encoding: .utf8)
+
+        let result = try await SkillScriptWorker.shared.run(
+            skillID: "skill",
+            skillRoot: self.skillRoot,
+            scriptPath: "echo.sh",
+            arguments: [],
+            timeout: -1
+        )
+        XCTAssertEqual(result.exitCode, 0)
+    }
 }

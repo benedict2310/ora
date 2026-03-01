@@ -58,4 +58,32 @@ final class ScriptSandboxTests: XCTestCase {
         let interpreter = try self.sandbox.parseInterpreter(at: scriptURL)
         XCTAssertEqual(interpreter, "/bin/bash")
     }
+
+    func test_resolve_rejectsScriptsRootSymlinkOutsideSkillRoot() throws {
+        // Replace the scripts/ directory with a symlink pointing outside the skill root.
+        try FileManager.default.removeItem(at: self.scriptsRoot)
+        let externalTarget = FileManager.default.temporaryDirectory
+            .appendingPathComponent("external-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: externalTarget, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: externalTarget) }
+
+        // Write a script into the external target so the file exists.
+        try "#!/bin/bash\necho hi\n".write(
+            to: externalTarget.appendingPathComponent("escape.sh"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        // Symlink skillRoot/scripts → external directory
+        try FileManager.default.createSymbolicLink(
+            at: self.scriptsRoot,
+            withDestinationURL: externalTarget
+        )
+
+        XCTAssertThrowsError(
+            try self.sandbox.resolve(skillRoot: self.rootDirectory, scriptPath: "escape.sh")
+        ) { error in
+            XCTAssertEqual(error as? ScriptSandboxError, .pathTraversal("scripts"))
+        }
+    }
 }

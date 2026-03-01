@@ -17,9 +17,17 @@ struct ScriptSandbox: Sendable {
         // standardizedFileURL does NOT follow symlinks. Without resolving symlinks a
         // scripts/evil.sh → /tmp/exploit.sh symlink would pass the prefix check below
         // and execute the target outside the skill root (P1-1 fix).
-        let scriptsRoot = skillRoot
+        let resolvedSkillRoot = skillRoot.resolvingSymlinksInPath()
+        let scriptsRoot = resolvedSkillRoot
             .appendingPathComponent("scripts", isDirectory: true)
             .resolvingSymlinksInPath()
+
+        // Guard that scripts/ itself was not symlinked outside the skill bundle.
+        // e.g. skillRoot/scripts → /tmp/attacker_scripts escapes the sandbox boundary.
+        guard scriptsRoot.path.hasPrefix(resolvedSkillRoot.path + "/") || scriptsRoot == resolvedSkillRoot else {
+            throw ScriptSandboxError.pathTraversal("scripts")
+        }
+
         let candidate = scriptsRoot
             .appendingPathComponent(scriptPath, isDirectory: false)
             .resolvingSymlinksInPath()

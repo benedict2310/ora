@@ -138,9 +138,12 @@ actor SkillScriptWorker {
             }
 
             group.addTask {
-                let duration = UInt64(timeout * 1_000_000_000.0)
+                // Clamp to a minimum of 1 second to prevent UInt64 underflow on
+                // negative values loaded from user-controlled manifest.json.
+                let safeTimeout = max(1, timeout)
+                let duration = UInt64(safeTimeout * 1_000_000_000.0)
                 try await Task.sleep(nanoseconds: duration)
-                try await self.terminate(process: process)
+                await self.terminate(process: process)
                 throw ScriptError.timeout(timeout)
             }
 
@@ -164,7 +167,10 @@ actor SkillScriptWorker {
             kill(process.processIdentifier, SIGKILL)
         }
 
-        _ = await Self.awaitTermination(process)
+        // Do NOT call awaitTermination here. waitForExit already has a task holding
+        // the process.terminationHandler via awaitTermination. Registering a second
+        // handler overwrites the first, orphaning that continuation and potentially
+        // hanging the task group indefinitely (P2 fix).
     }
 
     private static func awaitTermination(_ process: Process) async -> Int32 {
