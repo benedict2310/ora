@@ -19,17 +19,74 @@ enum ToolLoadPolicy: Sendable, Equatable {
     case deferred
 }
 
+enum ToolAuthorizationRequirement: Sendable, Equatable {
+    case none
+    case userConfirmation(prompt: ToolAuthorizationPrompt)
+}
+
+struct ToolAuthorizationPrompt: Sendable, Equatable {
+    let title: String
+    let summary: String
+    let details: String?
+    let confirmLabel: String
+    let cancelLabel: String
+    let trustLabel: String?
+
+    init(
+        title: String,
+        summary: String,
+        details: String? = nil,
+        confirmLabel: String = "Confirm",
+        cancelLabel: String = "Cancel",
+        trustLabel: String? = nil
+    ) {
+        self.title = title
+        self.summary = summary
+        self.details = details
+        self.confirmLabel = confirmLabel
+        self.cancelLabel = cancelLabel
+        self.trustLabel = trustLabel
+    }
+}
+
+struct ToolAuthorizationPlan: Sendable {
+    let requirement: ToolAuthorizationRequirement
+    let auditMetadata: [String: String]
+    let context: [String: JSONValue]
+
+    init(
+        requirement: ToolAuthorizationRequirement,
+        auditMetadata: [String: String] = [:],
+        context: [String: JSONValue] = [:]
+    ) {
+        self.requirement = requirement
+        self.auditMetadata = auditMetadata
+        self.context = context
+    }
+}
+
+enum ToolAuthorizationDecision: String, Sendable {
+    case approveOnce
+    case approveAndTrust
+    case deny
+}
+
 /// Result of tool execution
 struct ToolResult: Sendable {
     let json: JSONValue
     let humanSummary: String
-    
-    static func success(_ json: JSONValue, summary: String) -> ToolResult {
-        ToolResult(json: json, humanSummary: summary)
+    let auditPayload: [String: JSONValue]?
+
+    static func success(_ json: JSONValue, summary: String, auditPayload: [String: JSONValue]? = nil) -> ToolResult {
+        ToolResult(json: json, humanSummary: summary, auditPayload: auditPayload)
     }
-    
-    static func error(_ message: String) -> ToolResult {
-        ToolResult(json: .object(["error": .string(message)]), humanSummary: message)
+
+    static func error(_ message: String, auditPayload: [String: JSONValue]? = nil) -> ToolResult {
+        ToolResult(
+            json: .object(["error": .string(message)]),
+            humanSummary: message,
+            auditPayload: auditPayload
+        )
     }
 }
 
@@ -78,9 +135,24 @@ protocol Tool: Sendable {
     
     /// Validate arguments before execution
     func validate(args: [String: JSONValue]) throws
+
+    /// Determine whether execution can proceed immediately or requires user authorization.
+    func authorizationPlan(args: [String: JSONValue]) async throws -> ToolAuthorizationPlan
+
+    /// Allow tools to persist side effects tied to an authorization decision.
+    func handleAuthorizationDecision(
+        args: [String: JSONValue],
+        context: [String: JSONValue],
+        decision: ToolAuthorizationDecision
+    ) async throws
     
     /// Execute the tool
     func execute(args: [String: JSONValue]) async throws -> ToolResult
+}
+
+protocol ToolAuditableFailure: LocalizedError {
+    var auditPayload: [String: JSONValue]? { get }
+    var auditCategoryOverride: AuditCategory? { get }
 }
 
 extension Tool {
@@ -91,5 +163,29 @@ extension Tool {
 
     var loadPolicy: ToolLoadPolicy {
         .deferred
+    }
+
+    func authorizationPlan(args: [String: JSONValue]) async throws -> ToolAuthorizationPlan {
+        if self.requiresConfirmation {
+            return ToolAuthorizationPlan(
+                requirement: .userConfirmation(
+                    prompt: ToolAuthorizationPrompt(
+                        title: "Confirm Action",
+                        summary: "Allow \(self.name) to run?",
+                        details: self.schema.description
+                    )
+                )
+            )
+        }
+
+        return ToolAuthorizationPlan(requirement: .none)
+    }
+
+    func handleAuthorizationDecision(
+        args: [String: JSONValue],
+        context: [String: JSONValue],
+        decision: ToolAuthorizationDecision
+    ) async throws {
+        // Default tools do not persist additional authorization state.
     }
 }

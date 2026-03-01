@@ -347,6 +347,9 @@ struct AuditLogEntryRow: View {
         case .toolExecution:
             Image(systemName: "hammer.fill")
                 .foregroundColor(.blue)
+        case .scriptExecution:
+            Image(systemName: "terminal.fill")
+                .foregroundColor(.purple)
         case .skillList, .skillLoad, .skillRead:
             Image(systemName: "sparkles")
                 .foregroundColor(.mint)

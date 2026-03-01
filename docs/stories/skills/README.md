@@ -19,7 +19,7 @@ Skills follow the [Anthropic Skills Standard](https://docs.anthropic.com/en/docs
 | S.00 | [Context Budget](S.00-CONTEXT-BUDGET.md) | ✅ Complete | P0 |
 | S.01 | [Skills Runtime](S.01-SKILLS-RUNTIME.md) | ✅ Complete | P1 |
 | S.02 | [Skills Evaluation](S.02-SKILLS-EVALUATION.md) | 🚧 Not Started | P2 |
-| S.03 | [Skill Scripts](S.03-SKILL-SCRIPTS.md) | 🚧 Not Started | P1 |
+| S.03 | [Skill Scripts](S.03-SKILL-SCRIPTS.md) | ✅ Implemented | P1 |
 | S.04 | [Skills Marketplace](S.04-SKILLS-MARKETPLACE.md) | 📋 Distant Future | P3 |
 | S.05 | [Agent Skill Authoring](S.05-AGENT-SKILL-AUTHORING.md) | 🚧 Not Started | P1 |
 | S.06 | [Dynamic Tool Discovery](S.06-TOOL-DISCOVERY.md) | ✅ Complete | P1 |

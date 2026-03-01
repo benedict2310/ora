@@ -103,6 +103,9 @@ final class SimplePipelineController: ObservableObject {
         self.confirmationHandler.onConfirmProposal = { [weak self] in
             self?.handleProposalConfirmed()
         }
+        self.confirmationHandler.onConfirmAndTrustProposal = { [weak self] in
+            self?.handleProposalConfirmedAndTrust()
+        }
         self.confirmationHandler.onDenyProposal = { [weak self] in
             self?.handleProposalDenied()
         }
@@ -251,7 +254,7 @@ final class SimplePipelineController: ObservableObject {
             await AudioPlaybackService.shared.stop()
             await self.audioService.cancel()
             await self.agentLoop.endSession()
-            await self.agentLoop.clearPendingProposal()
+            await self.agentLoop.clearPendingAuthorization()
         }
 
         self.transition(to: .idle)

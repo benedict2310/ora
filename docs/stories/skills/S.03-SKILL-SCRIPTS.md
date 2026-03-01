@@ -1,7 +1,7 @@
 # S.03 - Skill Scripts
 
 **Epic:** Skills
-**Status:** Not Started
+**Status:** Implemented
 **Priority:** P1 (High)
 **Estimated Effort:** 7 days
 **Dependencies:** S.01 (Skills Runtime), S.06 (Dynamic Tool Discovery)
@@ -738,12 +738,39 @@ When confirmation is required, show:
 
 ## Implementation Summary
 
-(TBD after implementation.)
+**Date:** 2026-02-28
+**Implemented by:** Codex
+
+### Outcome
+
+- Added shared `ToolHost` authorization preflight with single-use tickets and receipts.
+- Added `skills.run_script` as a deferred tool with script sandboxing, manifest parsing, filtered environment setup, timeout handling, stdout/stderr capture, JSON output parsing, trust persistence, and audit logging.
+- Extended the overlay confirmation UI and Skills preferences so script runs can be approved once, approved and trusted, or revoked later.
+- Added SwiftData-backed `ScriptTrustRecordModel` storage and Skills docs updates for `scripts/` authoring.
+
+### Verification
+
+- `./build.sh` — passed
+- Targeted tests passed via `xcodebuild test` for:
+  - `AgentLoopTests`
+  - `ToolAuthorizationTests`
+  - `ScriptManifestTests`
+  - `ScriptEnvironmentTests`
+  - `ScriptSandboxTests`
+  - `ScriptTrustManagerTests`
+  - `SkillScriptWorkerTests`
+  - `SkillsRunScriptToolTests`
+  - `ToolDiscoveryTests`
+- `./build.sh test` compiled and ran, but the full suite still has unrelated pre-existing audio playback failures (`AudioPlaybackServiceTests`) in this environment.
 
 ## Code Review Findings
 
-(TBD by review agent.)
+- No separate review pass recorded in this branch.
 
 ## Completion Status
 
-(TBD after merge.)
+- [x] Implementation complete in working tree
+- [x] Build passes
+- [x] Targeted script/authorization tests pass
+- [ ] Full suite green (`AudioPlaybackServiceTests` remain failing in this environment)
+- [ ] PR / merge metadata pending

@@ -37,8 +37,8 @@ extension SimplePipelineController {
             case .response(let text):
                 self.handleAgentResponse(text)
                 
-            case .proposal(let summary, let tool, _):
-                self.handleAgentProposal(summary: summary, tool: tool)
+            case .authorizationRequest(let proposal):
+                self.handleAgentProposal(proposal)
                 
             case .error(let message):
                 self.handleAgentError(message)
@@ -73,11 +73,9 @@ extension SimplePipelineController {
         self.speakResponse(text)
     }
     
-    func handleAgentProposal(summary: String, tool: String) {
-        self.logger.info("Agent proposal: \(summary) (tool: \(tool))")
-        
-        // Show proposal in overlay for user confirmation (AC-4)
-        let proposal = ToolProposal(toolName: tool, summary: summary, details: nil)
+    func handleAgentProposal(_ proposal: ToolProposal) {
+        self.logger.info("Agent proposal: \(proposal.summary) (tool: \(proposal.toolName))")
+
         self.overlayPresenter.model.showProposal(proposal)
         
         // State is now proposing - wait for user confirmation/denial via notifications
@@ -132,7 +130,7 @@ extension SimplePipelineController {
 
         // Clear the pending proposal
         Task {
-            await self.agentLoop.clearPendingProposal()
+            await self.agentLoop.clearPendingAuthorization()
         }
 
         // Return to awaiting follow-up without executing (AC-6)
@@ -140,10 +138,24 @@ extension SimplePipelineController {
         self.overlayPresenter.mode = .awaitingFollowUp
         self.setOverlayActivity(.waiting)
     }
-    
+
+    func handleProposalConfirmedAndTrust() {
+        self.logger.info("Proposal confirmed by user with trust grant")
+
+        self.transition(to: .executing)
+        self.overlayPresenter.mode = .executing
+
+        self.confirmationTask = Task {
+            await self.executeAuthorizedProposal(decision: .approveAndTrust)
+        }
+    }
+
     func executeConfirmedProposal() async {
-        // Get pending proposal from agent loop
-        guard let proposal = await self.agentLoop.getPendingProposal() else {
+        await self.executeAuthorizedProposal(decision: .approveOnce)
+    }
+
+    func executeAuthorizedProposal(decision: ToolAuthorizationDecision) async {
+        guard await self.agentLoop.getPendingAuthorization() != nil else {
             self.logger.error("No pending proposal to execute")
             self.transition(to: .awaitingFollowUp)
             self.overlayPresenter.mode = .awaitingFollowUp
@@ -151,11 +163,7 @@ extension SimplePipelineController {
         }
         
         do {
-            // Execute the tool via ToolHost (AC-5)
-            _ = try await self.agentLoop.executeConfirmedTool(
-                tool: proposal.tool,
-                args: proposal.args
-            )
+            _ = try await self.agentLoop.executeAuthorizedPending(decision: decision)
             
             guard !Task.isCancelled else { return }
             

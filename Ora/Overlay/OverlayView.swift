@@ -107,6 +107,7 @@ struct OverlayView: View {
                             reduceTransparency: self.reduceTransparency,
                             reduceMotion: self.reduceMotion,
                             onConfirmProposal: { },
+                            onConfirmAndTrustProposal: { },
                             onDenyProposal: { }
                         )
                         .id("executing-bubble")
@@ -119,6 +120,9 @@ struct OverlayView: View {
                             reduceMotion: self.reduceMotion,
                             onConfirmProposal: {
                                 self.viewModel.actionHandler?.confirmToolProposal()
+                            },
+                            onConfirmAndTrustProposal: {
+                                self.viewModel.actionHandler?.confirmAndTrustToolProposal()
                             },
                             onDenyProposal: {
                                 self.viewModel.actionHandler?.denyToolProposal()

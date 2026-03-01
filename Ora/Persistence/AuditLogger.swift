@@ -57,12 +57,17 @@ actor AuditLogger {
     }
 
     @MainActor
-    func recordFailure(_ entryID: UUID, error: String) {
+    func recordFailure(
+        _ entryID: UUID,
+        error: String,
+        result: [String: Any] = [:],
+        categoryOverride: AuditCategory? = nil
+    ) {
         let entries = PersistenceManager.shared.recentAuditEntries(limit: 1000)
         if let entry = entries.first(where: { $0.id == entryID }) {
-            entry.category = AuditCategory.error.rawValue
+            entry.category = (categoryOverride ?? .error).rawValue
             entry.setError(error)
-            PersistenceManager.shared.updateAuditEntry(entry, result: [:], succeeded: false)
+            PersistenceManager.shared.updateAuditEntry(entry, result: result, succeeded: false)
             self.logger.error("Tool failed: \(entry.toolName).\(entry.action) - \(error)")
         }
     }

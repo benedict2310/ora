@@ -69,6 +69,8 @@ enum OverlayActivity: Equatable, Sendable {
                 return "Shortcuts"
             }
             return "System"
+        case "skills":
+            return "Skills"
         default:
             return "Tool"
         }
@@ -105,8 +107,30 @@ enum OverlayMode: Equatable, Sendable {
 /// Tool proposal requiring user confirmation
 struct ToolProposal: Equatable, Sendable {
     let toolName: String
+    let title: String?
     let summary: String
     let details: String?
+    let confirmLabel: String?
+    let cancelLabel: String?
+    let trustLabel: String?
+
+    init(
+        toolName: String,
+        title: String? = nil,
+        summary: String,
+        details: String?,
+        confirmLabel: String? = nil,
+        cancelLabel: String? = nil,
+        trustLabel: String? = nil
+    ) {
+        self.toolName = toolName
+        self.title = title
+        self.summary = summary
+        self.details = details
+        self.confirmLabel = confirmLabel
+        self.cancelLabel = cancelLabel
+        self.trustLabel = trustLabel
+    }
 }
 
 // MARK: - Overlay Message
@@ -138,6 +162,7 @@ struct OverlayMessage: Identifiable, Equatable, Sendable {
 @MainActor
 protocol OverlayActionHandling: AnyObject {
     func confirmToolProposal()
+    func confirmAndTrustToolProposal()
     func denyToolProposal()
     func stopSpeechPlayback()
 }

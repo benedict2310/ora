@@ -56,6 +56,16 @@ enum JSONValue: Sendable, Equatable, Codable {
         return nil
     }
 
+    var arrayValue: [JSONValue]? {
+        if case .array(let value) = self { return value }
+        return nil
+    }
+
+    var objectValue: [String: JSONValue]? {
+        if case .object(let value) = self { return value }
+        return nil
+    }
+
     /// Convert to compact JSON string (single line, no extra whitespace)
     var compactJSON: String {
         do {

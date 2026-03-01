@@ -31,6 +31,7 @@ actor SkillStore {
     private let logger = Logger.ora(category: "skills")
     private let roots: Roots
     private var index: [String: SkillMetadata] = [:]
+    private let scriptSandbox = ScriptSandbox()
 
     // MARK: - Initialization
 
@@ -83,6 +84,20 @@ actor SkillStore {
 
         try validateFileSize(at: fileURL)
         return (try Data(contentsOf: fileURL), metadata)
+    }
+
+    func metadata(id: String) throws -> SkillMetadata {
+        try resolveSkill(for: id)
+    }
+
+    func scriptManifest(id: String) throws -> ScriptManifest {
+        let metadata = try resolveSkill(for: id)
+        return try ScriptManifest.load(from: metadata.rootURL)
+    }
+
+    func scriptFiles(id: String) throws -> [URL] {
+        let metadata = try resolveSkill(for: id)
+        return try self.scriptSandbox.listScripts(skillRoot: metadata.rootURL)
     }
 
     func resolveMatch(for query: String, threshold: Double = SkillStore.fuzzyMatchThreshold) -> SkillMetadata? {
@@ -196,7 +211,8 @@ actor SkillStore {
                     description: frontmatter.description,
                     source: source,
                     rootURL: child,
-                    version: frontmatter.version
+                    version: frontmatter.version,
+                    hasScripts: self.skillHasScripts(at: child)
                 )
             } catch {
                 self.logger.warning("Skipping skill '\(skillID)' (\(error.localizedDescription))")
@@ -267,5 +283,23 @@ actor SkillStore {
             .filter { !ignored.contains($0) }
 
         return tokens.joined(separator: " ")
+    }
+
+    private func skillHasScripts(at skillRoot: URL) -> Bool {
+        let scriptsRoot = skillRoot.appendingPathComponent("scripts", isDirectory: true)
+        guard let contents = try? FileManager.default.contentsOfDirectory(
+            at: scriptsRoot,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return false
+        }
+
+        return contents.contains { url in
+            guard url.lastPathComponent != "manifest.json" else {
+                return false
+            }
+            return (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+        }
     }
 }

@@ -71,6 +71,7 @@ struct AuditLogEntry: Identifiable {
 
 enum AuditCategory: String, Sendable {
     case toolExecution
+    case scriptExecution
     case confirmation
     case error
     case stateChange

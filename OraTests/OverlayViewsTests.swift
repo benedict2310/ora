@@ -109,6 +109,7 @@ final class OverlayViewsTests: XCTestCase {
                 reduceTransparency: true,
                 reduceMotion: false,
                 onConfirmProposal: {},
+                onConfirmAndTrustProposal: {},
                 onDenyProposal: {}
             )
             _ = view.body
@@ -119,6 +120,7 @@ final class OverlayViewsTests: XCTestCase {
             reduceTransparency: false,
             reduceMotion: false,
             onConfirmProposal: {},
+            onConfirmAndTrustProposal: {},
             onDenyProposal: {}
         )
         _ = executingMotion.body
@@ -128,6 +130,7 @@ final class OverlayViewsTests: XCTestCase {
             reduceTransparency: true,
             reduceMotion: true,
             onConfirmProposal: {},
+            onConfirmAndTrustProposal: {},
             onDenyProposal: {}
         )
         _ = executingReduced.body

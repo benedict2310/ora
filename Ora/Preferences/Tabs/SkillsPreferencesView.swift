@@ -9,11 +9,17 @@ import AppKit
 import SwiftUI
 
 struct SkillsPreferencesView: View {
+    private struct ScriptTrustState: Sendable {
+        let level: String
+        let hashes: [String: String]
+    }
 
     // MARK: - State
 
     @State private var skillsEnabled = true
+    @State private var scriptsEnabled = true
     @State private var skills: [SkillMetadata] = []
+    @State private var scriptTrust: [String: ScriptTrustState] = [:]
     @State private var isRescanning = false
 
     // MARK: - Body
@@ -34,6 +40,22 @@ struct SkillsPreferencesView: View {
                 .onChange(of: self.skillsEnabled) { _, newValue in
                     PersistenceManager.shared.updateSettings { settings in
                         settings.skillsEnabled = newValue
+                    }
+                }
+
+                Toggle(isOn: self.$scriptsEnabled) {
+                    VStack(alignment: .leading) {
+                        Text("Enable Script Execution")
+                            .font(.headline)
+                        Text("Allow skill scripts to run as child processes with your user permissions")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .toggleStyle(.switch)
+                .onChange(of: self.scriptsEnabled) { _, newValue in
+                    PersistenceManager.shared.updateSettings { settings in
+                        settings.scriptsEnabled = newValue
                     }
                 }
             }
@@ -62,6 +84,13 @@ struct SkillsPreferencesView: View {
                             HStack {
                                 Text(skill.name)
                                     .fontWeight(.medium)
+                                if skill.hasScripts {
+                                    Text("Scripts")
+                                        .font(.caption2)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                                }
                                 Spacer()
                                 Text(skill.source.rawValue.capitalized)
                                     .font(.caption2)
@@ -74,6 +103,10 @@ struct SkillsPreferencesView: View {
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                                 .textSelection(.enabled)
+
+                            if skill.hasScripts {
+                                self.scriptTrustSection(for: skill)
+                            }
                         }
                         .padding(.vertical, 2)
                     }
@@ -111,7 +144,9 @@ struct SkillsPreferencesView: View {
 
     private func loadState() async {
         self.skillsEnabled = PersistenceManager.shared.settings.skillsEnabled
+        self.scriptsEnabled = PersistenceManager.shared.settings.scriptsEnabled
         self.skills = await SkillStore.shared.list()
+        await self.reloadTrustState()
     }
 
     private func rescanSkills() {
@@ -120,6 +155,7 @@ struct SkillsPreferencesView: View {
         Task {
             await SkillStore.shared.rebuildIndex()
             let updated = await SkillStore.shared.list()
+            await self.reloadTrustState(skills: updated)
 
             await MainActor.run {
                 self.skills = updated
@@ -135,6 +171,72 @@ struct SkillsPreferencesView: View {
             await MainActor.run {
                 _ = NSWorkspace.shared.open(folderURL)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func scriptTrustSection(for skill: SkillMetadata) -> some View {
+        let trust = self.scriptTrust[skill.id]
+
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Trust: \(trust?.level ?? "Untrusted")")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            if let hashes = trust?.hashes, !hashes.isEmpty {
+                ForEach(hashes.keys.sorted(), id: \.self) { name in
+                    Text("\(name): \(hashes[name]?.prefix(12) ?? "")")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .textSelection(.enabled)
+                }
+            }
+
+            if skill.source == .user {
+                HStack {
+                    Button("Trust") {
+                        Task {
+                            try? await ScriptTrustManager.shared.grantTrust(
+                                skillID: skill.id,
+                                skillRoot: skill.rootURL
+                            )
+                            await self.reloadTrustState()
+                        }
+                    }
+
+                    Button("Revoke") {
+                        Task {
+                            await ScriptTrustManager.shared.revokeTrust(skillID: skill.id)
+                            await self.reloadTrustState()
+                        }
+                    }
+                }
+                .font(.caption)
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    private func reloadTrustState(skills: [SkillMetadata]? = nil) async {
+        let currentSkills: [SkillMetadata]
+        if let skills {
+            currentSkills = skills
+        } else {
+            currentSkills = await SkillStore.shared.list()
+        }
+        var state: [String: ScriptTrustState] = [:]
+
+        for skill in currentSkills where skill.hasScripts {
+            if let status = try? await ScriptTrustManager.shared.status(for: skill) {
+                state[skill.id] = ScriptTrustState(
+                    level: status.level.rawValue.capitalized,
+                    hashes: status.currentHashes
+                )
+            }
+        }
+
+        await MainActor.run {
+            self.scriptTrust = state
         }
     }
 }

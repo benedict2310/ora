@@ -243,6 +243,8 @@ final class AgentLoopTests: XCTestCase {
     
     func test_process_proposal_returnsProposalResult() async throws {
         // Given: LLM returns a proposal
+        await ToolRegistry.shared.register(AgentLoopMockMutateTool(name: "calendar.create", result: "Created"))
+
         await mockLLM.setResponses([
             """
             {"type": "proposal", "summary": "Create event", "tool": "calendar.create", "args": {"title": "Meeting"}}
@@ -253,13 +255,31 @@ final class AgentLoopTests: XCTestCase {
         let result = try await agentLoop.process(userText: "Schedule a meeting")
         
         // Then: Should return proposal
-        if case .proposal(let summary, let tool, let args) = result {
-            XCTAssertEqual(summary, "Create event")
-            XCTAssertEqual(tool, "calendar.create")
-            XCTAssertEqual(args["title"]?.stringValue, "Meeting")
+        if case .authorizationRequest(let proposal) = result {
+            XCTAssertEqual(proposal.summary, "Create event")
+            XCTAssertEqual(proposal.toolName, "calendar.create")
         } else {
             XCTFail("Expected proposal result, got \(result)")
         }
+    }
+
+    func test_process_mutateToolCall_failsClosedIntoAuthorizationRequest() async throws {
+        await ToolRegistry.shared.register(AgentLoopMockMutateTool(name: "test.create", result: "Created"))
+
+        await mockLLM.setResponses([
+            """
+            {"type": "tool_call", "tool": "test.create", "args": {}}
+            """
+        ])
+
+        let result = try await agentLoop.process(userText: "Create something")
+
+        guard case .authorizationRequest(let proposal) = result else {
+            return XCTFail("Expected authorization request")
+        }
+
+        XCTAssertEqual(proposal.toolName, "test.create")
+        XCTAssertEqual(proposal.title, "Confirm Action")
     }
     
     // MARK: - Tool Call Tests
@@ -671,6 +691,8 @@ final class AgentLoopTests: XCTestCase {
     
     func test_proposal_storesPendingProposal() async throws {
         // Given: LLM returns a proposal
+        await ToolRegistry.shared.register(AgentLoopMockMutateTool(name: "calendar.create", result: "Created"))
+
         await mockLLM.setResponses([
             """
             {"type": "proposal", "summary": "Create event", "tool": "calendar.create", "args": {"title": "Test"}}
@@ -680,7 +702,7 @@ final class AgentLoopTests: XCTestCase {
         // When: Process returns proposal
         let result = try await agentLoop.process(userText: "Create event")
         
-        guard case .proposal = result else {
+        guard case .authorizationRequest = result else {
             XCTFail("Expected proposal result")
             return
         }
@@ -694,6 +716,8 @@ final class AgentLoopTests: XCTestCase {
     
     func test_clearPendingProposal_removesPending() async throws {
         // Given: A stored pending proposal
+        await ToolRegistry.shared.register(AgentLoopMockMutateTool(name: "calendar.create", result: "Created"))
+
         await mockLLM.setResponses([
             """
             {"type": "proposal", "summary": "Create event", "tool": "calendar.create", "args": {}}

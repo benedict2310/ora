@@ -213,7 +213,8 @@ final class SystemPromptBuilderTests: XCTestCase {
                 description: "Morning summary workflow",
                 source: .bundled,
                 rootURL: URL(fileURLWithPath: "/tmp/daily-briefing", isDirectory: true),
-                version: "1.0.0"
+                version: "1.0.0",
+                hasScripts: false
             )
         ]
 
@@ -336,7 +337,8 @@ final class SystemPromptBuilderTests: XCTestCase {
                 description: "Use \"safe\" checks & outputs",
                 source: .user,
                 rootURL: URL(fileURLWithPath: "/tmp/ops-qa", isDirectory: true),
-                version: nil
+                version: nil,
+                hasScripts: false
             )
         ]
 
@@ -376,10 +378,10 @@ final class SystemPromptBuilderTests: XCTestCase {
         let result = SystemPromptBuilder.encodeToolSchemas(tools)
         let lines = result.components(separatedBy: "\n")
 
-        XCTAssertEqual(tools.count, 41, "Expected current default registry to expose 41 tools")
+        XCTAssertEqual(tools.count, 42, "Expected current default registry to expose 42 tools")
         XCTAssertEqual(lines.count, tools.count, "Should emit one non-empty line per tool")
         XCTAssertTrue(lines.allSatisfy { !$0.trimmingCharacters(in: .whitespaces).isEmpty }, "No blank lines allowed")
-        XCTAssertLessThanOrEqual(result.count, 3_800, "Compact tool block should remain within budget")
+        XCTAssertLessThanOrEqual(result.count, 3_900, "Compact tool block should remain within budget")
 
         for tool in tools {
             XCTAssertNotNil(self.encodedLine(for: tool.name, in: result), "Missing tool line for \(tool.name)")

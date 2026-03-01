@@ -62,6 +62,22 @@ final class ToolDiscoveryTests: XCTestCase {
         XCTAssertTrue(names.contains("system.search_files"))
     }
 
+    func test_toolsDiscover_scriptQuery_includesSkillsRunScript() async throws {
+        let tool = ToolDiscoveryTool()
+        let sessionID = UUID()
+
+        let result = try await tool.execute(
+            args: [
+                "query": .string("run a helper script from a skill"),
+                "limit": .number(5),
+                ToolDiscoveryTool.sessionIDArgumentKey: .string(sessionID.uuidString)
+            ]
+        )
+
+        let names = self.extractMatchedToolNames(from: result)
+        XCTAssertTrue(names.contains("skills.run_script"))
+    }
+
     func test_toolsDiscover_blankQuery_failsValidation() {
         let tool = ToolDiscoveryTool()
 
