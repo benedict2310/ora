@@ -65,7 +65,8 @@ final class AgentLoopActivityTests: XCTestCase {
             structuredGenerator: structuredGenerator,
             toolHost: .shared,
             toolRegistry: toolRegistry,
-            conversationManager: conversationManager
+            conversationManager: conversationManager,
+            memoryDistiller: AgentLoopRecordingMemoryDistiller()
         )
 
         delegate = ActivityTrackingDelegate()
