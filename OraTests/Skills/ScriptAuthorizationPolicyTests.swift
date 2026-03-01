@@ -25,14 +25,18 @@ final class ScriptAuthorizationPolicyTests: XCTestCase {
 
         await MainActor.run {
             PersistenceManager.shared.clearScriptTrustRecords()
-            PersistenceManager.shared.settings.scriptsEnabled = true
+            PersistenceManager.shared.updateSettings { $0.scriptsEnabled = true }
         }
+        // Explicit revoke in case clearScriptTrustRecords() leaves an in-flight
+        // write from a prior test that SwiftData hasn't flushed yet.
+        await ScriptTrustManager.shared.revokeTrust(skillID: "test-skill")
     }
 
     override func tearDown() async throws {
+        await ScriptTrustManager.shared.revokeTrust(skillID: "test-skill")
         await MainActor.run {
             PersistenceManager.shared.clearScriptTrustRecords()
-            PersistenceManager.shared.settings.scriptsEnabled = true
+            PersistenceManager.shared.updateSettings { $0.scriptsEnabled = true }
         }
         try? FileManager.default.removeItem(at: self.rootDirectory)
     }

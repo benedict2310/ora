@@ -101,11 +101,12 @@ struct ScriptSandbox: Sendable {
             return nil
         }
 
-        guard let line = content.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first else {
-            return nil
-        }
-
-        return String(line).replacingOccurrences(of: "\r", with: "")
+        // Use components(separatedBy: .newlines) rather than split(separator: "\n")
+        // because Swift treats the CRLF sequence "\r\n" as a single extended grapheme
+        // cluster that does NOT match the LF Character "\n". Foundation's
+        // components(separatedBy:) handles CR, LF, and CRLF as distinct separators
+        // and strips them from the returned components.
+        return content.components(separatedBy: .newlines).first
     }
 
     private func resolveInterpreter(from shebang: String, scriptURL: URL) throws -> String {

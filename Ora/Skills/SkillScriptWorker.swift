@@ -132,18 +132,41 @@ actor SkillScriptWorker {
     }
 
     private func waitForExit(process: Process, timeout: TimeInterval) async throws -> Int32 {
-        try await withThrowingTaskGroup(of: Int32.self) { group in
+        // Heap-allocated flag shared between the two tasks. Written once by Task B
+        // BEFORE process.terminate(); read by Task A only AFTER awaitTermination()
+        // returns, which requires the process to have died (impossible before the
+        // write). @unchecked Sendable lets it cross concurrency-domain boundaries.
+        final class TimeoutFlag: @unchecked Sendable { var fired = false }
+        let flag = TimeoutFlag()
+        let gracePeriod = self.killGracePeriod  // capture value before spawning tasks
+
+        return try await withThrowingTaskGroup(of: Int32.self) { group in
+            // Task A: holds the one terminationHandler; reports the exit code.
             group.addTask {
-                await Self.awaitTermination(process)
+                let code = await Self.awaitTermination(process)
+                // If the timeout fired first, suppress this exit-code result so
+                // Task B's ScriptError.timeout wins group.next(). Block here until
+                // the group cancels this task after Task B throws.
+                if flag.fired {
+                    try await Task.sleep(nanoseconds: .max)
+                }
+                return code
             }
 
+            // Task B: timeout watchdog — terminates the process if it runs too long.
             group.addTask {
                 // Clamp to a minimum of 1 second to prevent UInt64 underflow on
                 // negative values loaded from user-controlled manifest.json.
-                let safeTimeout = max(1, timeout)
+                let safeTimeout = max(1.0, timeout)
                 let duration = UInt64(safeTimeout * 1_000_000_000.0)
                 try await Task.sleep(nanoseconds: duration)
-                await self.terminate(process: process)
+                // Mark BEFORE SIGTERM so Task A sees the flag even if the process
+                // dies during the kill sequence before Task A checks it.
+                flag.fired = true
+                if process.isRunning { process.terminate() }
+                let graceDuration = UInt64(gracePeriod * 1_000_000_000.0)
+                try? await Task.sleep(nanoseconds: graceDuration)
+                if process.isRunning { kill(process.processIdentifier, SIGKILL) }
                 throw ScriptError.timeout(timeout)
             }
 

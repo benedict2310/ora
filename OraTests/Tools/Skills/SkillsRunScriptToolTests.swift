@@ -30,12 +30,12 @@ final class SkillsRunScriptToolTests: XCTestCase {
         try self.writeSkill(
             root: self.userRoot,
             id: "user-script",
-            scriptName: "payload.py",
-            scriptContents: "#!/usr/bin/env python3\nimport json\nprint(json.dumps({\"ok\": True}))\n",
+            scriptName: "payload.sh",
+            scriptContents: "#!/bin/bash\nprintf '{\"ok\":true}'\n",
             manifest: """
             {
               "scripts": {
-                "payload.py": {
+                "payload.sh": {
                   "output": "json",
                   "timeout": 5
                 }
@@ -81,7 +81,7 @@ final class SkillsRunScriptToolTests: XCTestCase {
 
         let plan = try await tool.authorizationPlan(args: [
             "skill_id": .string("user-script"),
-            "script": .string("payload.py")
+            "script": .string("payload.sh")
         ])
 
         guard case .userConfirmation(let prompt) = plan.requirement else {
@@ -97,7 +97,7 @@ final class SkillsRunScriptToolTests: XCTestCase {
 
         let result = try await tool.execute(args: [
             "skill_id": .string("user-script"),
-            "script": .string("payload.py")
+            "script": .string("payload.sh")
         ])
 
         guard case .object(let payload) = result.json else {
