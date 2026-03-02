@@ -48,6 +48,19 @@ struct OverlayView: View {
         .frame(width: OverlayLayout.panelWidth, height: OverlayLayout.panelHeight)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Ora Assistant")
+        .sheet(isPresented: self.modalProposalBinding) {
+            if let proposal = self.modalProposal {
+                SkillAuthoringConfirmationSheet(
+                    proposal: proposal,
+                    onConfirm: {
+                        self.viewModel.actionHandler?.confirmToolProposal()
+                    },
+                    onCancel: {
+                        self.viewModel.actionHandler?.denyToolProposal()
+                    }
+                )
+            }
+        }
         .onAppear {
             self.refreshProviderType()
         }
@@ -113,7 +126,8 @@ struct OverlayView: View {
                         .id("executing-bubble")
                     }
 
-                    if case .proposing(let proposal) = self.viewModel.mode {
+                    if case .proposing(let proposal) = self.viewModel.mode,
+                       !proposal.presentation.usesModalSheet {
                         ToolStateView(
                             mode: .proposal(proposal),
                             reduceTransparency: self.reduceTransparency,
@@ -202,6 +216,21 @@ struct OverlayView: View {
             }
             return true
         }
+    }
+
+    private var modalProposal: ToolProposal? {
+        guard case .proposing(let proposal) = self.viewModel.mode,
+              proposal.presentation.usesModalSheet else {
+            return nil
+        }
+        return proposal
+    }
+
+    private var modalProposalBinding: Binding<Bool> {
+        Binding(
+            get: { self.modalProposal != nil },
+            set: { _ in }
+        )
     }
 
     private var voiceInputState: VoiceInputControlView.State {

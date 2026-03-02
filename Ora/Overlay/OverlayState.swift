@@ -113,6 +113,7 @@ struct ToolProposal: Equatable, Sendable {
     let confirmLabel: String?
     let cancelLabel: String?
     let trustLabel: String?
+    let presentation: ToolAuthorizationPresentation
 
     init(
         toolName: String,
@@ -121,7 +122,8 @@ struct ToolProposal: Equatable, Sendable {
         details: String?,
         confirmLabel: String? = nil,
         cancelLabel: String? = nil,
-        trustLabel: String? = nil
+        trustLabel: String? = nil,
+        presentation: ToolAuthorizationPresentation = .inline
     ) {
         self.toolName = toolName
         self.title = title
@@ -130,6 +132,7 @@ struct ToolProposal: Equatable, Sendable {
         self.confirmLabel = confirmLabel
         self.cancelLabel = cancelLabel
         self.trustLabel = trustLabel
+        self.presentation = presentation
     }
 }
 
@@ -279,7 +282,7 @@ final class OverlayViewModel: ObservableObject {
 
     /// Clear conversation for new session
     func reset() {
-        self.logger.info("Overlay model reset (messages: \(self.messages.count, privacy: .public))")
+        self.logger.info("Overlay model reset")
         self.toolActivityRevealTask?.cancel()
         self.toolActivityRevealTask = nil
         self.pendingToolActivity = nil

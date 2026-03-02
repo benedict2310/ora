@@ -125,10 +125,17 @@ final class AuditLogEntryModel {
     // MARK: - Conversion
 
     func toAuditLogEntry() -> AuditLogEntry {
-        AuditLogEntry(
+        let normalizedCategory = self.category.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedCategory = AuditCategory(rawValue: normalizedCategory)
+            ?? AuditCategory.allCases.first(where: {
+                $0.rawValue.caseInsensitiveCompare(normalizedCategory) == .orderedSame
+            })
+            ?? .stateChange
+
+        return AuditLogEntry(
             id: id,
             timestamp: timestamp,
-            category: AuditCategory(rawValue: category) ?? .stateChange,
+            category: resolvedCategory,
             summary: summary,
             toolName: toolName.isEmpty ? nil : toolName,
             parameters: parameters,

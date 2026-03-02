@@ -304,11 +304,81 @@ All authoring operations are logged with new `AuditCategory` cases:
 
 ## Implementation Summary
 
-(TBD after implementation.)
+**Date:** 2026-03-02
+**Branch:** `feat/S05-agent-skill-authoring`
+**Commits:** 4
+**Implemented by:** codex (complexity score: 10/10)
+**Reviewed by:** Claude Code orchestrator (1 iteration, 3 issues fixed)
+
+### Files Changed
+- `Ora/Tools/Skills/SkillsCreateTool.swift` — Created: `skills.create` tool
+- `Ora/Tools/Skills/SkillsUpdateTool.swift` — Created: `skills.update` tool
+- `Ora/Tools/Skills/SkillsDeleteTool.swift` — Created: `skills.delete` tool
+- `Ora/Tools/Skills/SkillAuthoringToolSupport.swift` — Created: shared support (sanitization, contentHash, validation)
+- `Ora/Skills/SkillSlugGenerator.swift` — Created: slug derivation, collision resolution
+- `Ora/Skills/SkillStore.swift` — Modified: added agent root, create/update/delete methods, size validation
+- `Ora/Skills/SkillMetadata.swift` — Modified: added `.agent` source case
+- `Ora/Skills/SkillError.swift` — Modified: added `immutableSource`, `slugExhausted`, `contentTooLarge`, etc.
+- `Ora/Models/ModelPaths.swift` — Modified: added `agentSkillsRoot`
+- `Ora/Overlay/SkillAuthoringConfirmationSheet.swift` — Created: dedicated modal confirmation UI
+- `Ora/Overlay/OverlayState.swift` — Modified: added modal proposal state
+- `Ora/Overlay/OverlayView.swift` — Modified: sheet presentation for skill authoring
+- `Ora/Persistence/AuditLogEntry.swift` — Modified: added `.skillCreate/.skillUpdate/.skillDelete` categories
+- `Ora/Persistence/Models/AuditLogEntryModel.swift` — Modified: updated audit storage
+- `Ora/Preferences/Tabs/SkillsPreferencesView.swift` — Modified: source badge display
+- `Ora/Tools/ToolRegistry.swift` — Modified: registered three new tools
+- `Ora/Tools/ToolProtocol.swift` — Modified: added `skillDocumentPreview`/`skillDeletion` presentation modes
+- `Ora/Tools/ToolHost.swift` — Modified: modal confirmation routing
+- `Ora/Orchestration/AgentLoop.swift` — Modified: modal confirmation handling
+- `OraTests/Skills/SkillSlugGeneratorTests.swift` — Created: 10 slug generation tests
+- `OraTests/Skills/SkillAuthoringToolsTests.swift` — Created: 18 authoring tool tests
+- `OraTests/Skills/SkillStoreTests.swift` — Modified: added 3 size validation tests
+- `OraTests/Tools/ToolDiscoveryTests.swift` — Modified: added 3 discovery tests
 
 ## Code Review Findings
 
-(TBD by review agent.)
+**Reviewed by:** Claude Code (orchestrator) — 2026-03-02
+**Build:** ✅ | **Tests:** ✅ | **ACs covered:** 22/22
+
+### Issues Found
+
+**[P1-1] Missing `contentHash` in `skills.delete` auditPayload**
+- Location: `Ora/Tools/Skills/SkillsDeleteTool.execute()` — the `auditPayload` dict does not include `contentHash`
+- Both `SkillsCreateTool` and `SkillsUpdateTool` compute and include `contentHash` in their `auditPayload`
+- Story AC-21 requires contentHash on all three audit events
+- Fix: read skill content before deleting, compute SHA-256 hash via `SkillAuthoringToolSupport.contentHash(for:)`, include `"contentHash": .string(contentHash)` in the success `auditPayload`
+
+**[P1-2] `SkillsDeleteTool` is missing `auditParameters()` override**
+- Location: `Ora/Tools/Skills/SkillsDeleteTool.swift` — no `auditParameters()` implementation
+- Both `SkillsCreateTool` and `SkillsUpdateTool` override `auditParameters()` to redact the `content` field
+- Delete doesn't have a content field, but it should still override to redact nothing explicitly and maintain consistency with the other two tools
+- Fix: add `func auditParameters(args: [String: JSONValue]) -> [String: JSONValue] { args }` or equivalent explicit override
+
+**[P2-4] No write-time file size validation for `skills.create` / `skills.update`**
+- Location: `Ora/Skills/SkillStore.swift` — `maxSkillFileBytes` (100KB) is only enforced in `readFile()`, not during `writeNewAgentSkill()` or the update write path
+- A very large `content` argument could be written to disk and then silently fail to load (truncated at 5000 chars or rejected by `readFile()`)
+- Fix: before writing in `writeNewAgentSkill()` and the update write path, check `sanitized.utf8.count <= maxSkillFileBytes`; throw `SkillError.contentTooLarge` (new error case) if exceeded
+
+- [x] P1-1 fixed — `contentHash` added to delete auditPayload (reads content before deletion)
+- [x] P1-2 fixed — explicit `auditParameters()` override added to `SkillsDeleteTool`
+- [x] P2-4 fixed — `validateWritableContentSize()` added to both create and update write paths
+- [x] Ready for merge (iteration 1)
+
+**Round 2 — Codex automated review (PR #167)**
+
+**[P1-A] Content trimming inconsistency in `skills.create`**
+- `SkillAuthoringToolSupport.validateMutationArguments` trims content before frontmatter validation, but `authorizationPlan` and `execute` pass the original untrimmed string to `SkillFrontmatterParser`
+- LLM-generated markdown commonly starts with a blank line, causing `SkillFrontmatterParser` to fail (requires `---` on the first line)
+- Fix: trim the `content` string in `authorizationPlan` and `execute` before passing to `SkillFrontmatterParser`, or strip leading whitespace once in the sanitization step
+
+**[P2-A] Orphaned skill directory on failed write**
+- `writeNewAgentSkill()` creates the directory before writing `SKILL.md`; if the write throws (disk full, I/O error), the empty `<slug>/` folder is left behind
+- Indexing skips it (no `SKILL.md`), but slug collision resolution will fail with "file exists" on the next create attempt with the same slug
+- Fix: in the catch block after write failure, attempt `FileManager.default.removeItem(at: skillRoot)` to clean up the orphaned directory
+
+- [x] P1-A fixed — trimming added in `sanitizedSkillContent()` in both `SkillStore` and `SkillAuthoringToolSupport`
+- [x] P2-A fixed — directory cleanup on write failure: `try? FileManager.default.removeItem(at: skillRoot)` before rethrow
+- [x] Ready for merge (iteration 2)
 
 ## Completion Status
 

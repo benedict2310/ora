@@ -65,7 +65,7 @@ struct SkillsPreferencesView: View {
                     VStack(alignment: .leading) {
                         Text("Installed Skills")
                             .font(.headline)
-                        Text("Bundled and user-installed skills discovered at runtime")
+                        Text("Bundled, user-installed, and Ora-created skills discovered at runtime")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -92,9 +92,15 @@ struct SkillsPreferencesView: View {
                                         .background(Capsule().fill(Color.secondary.opacity(0.15)))
                                 }
                                 Spacer()
-                                Text(skill.source.rawValue.capitalized)
+                                Text(self.sourceBadgeLabel(for: skill.source))
                                     .font(.caption2)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(self.sourceBadgeColor(for: skill.source))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(
+                                        Capsule(style: .continuous)
+                                            .fill(self.sourceBadgeColor(for: skill.source).opacity(0.12))
+                                    )
                             }
                             Text(skill.description)
                                 .font(.caption)
@@ -237,6 +243,28 @@ struct SkillsPreferencesView: View {
 
         await MainActor.run {
             self.scriptTrust = state
+        }
+    }
+
+    private func sourceBadgeLabel(for source: SkillMetadata.Source) -> String {
+        switch source {
+        case .bundled:
+            return "Bundled"
+        case .user:
+            return "User-installed"
+        case .agent:
+            return "Created by Ora"
+        }
+    }
+
+    private func sourceBadgeColor(for source: SkillMetadata.Source) -> Color {
+        switch source {
+        case .bundled:
+            return .secondary
+        case .user:
+            return .blue
+        case .agent:
+            return .green
         }
     }
 }

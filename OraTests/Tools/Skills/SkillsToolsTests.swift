@@ -11,6 +11,7 @@ final class SkillsToolsTests: XCTestCase {
     private var rootDirectory: URL!
     private var bundledRoot: URL!
     private var userRoot: URL!
+    private var agentRoot: URL!
     private var store: SkillStore!
 
     override func setUp() async throws {
@@ -18,9 +19,11 @@ final class SkillsToolsTests: XCTestCase {
             .appendingPathComponent("SkillsToolsTests-\(UUID().uuidString)", isDirectory: true)
         bundledRoot = rootDirectory.appendingPathComponent("bundled", isDirectory: true)
         userRoot = rootDirectory.appendingPathComponent("user", isDirectory: true)
+        agentRoot = rootDirectory.appendingPathComponent("agent", isDirectory: true)
 
         try FileManager.default.createDirectory(at: bundledRoot, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: userRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: agentRoot, withIntermediateDirectories: true)
 
         try self.writeSkill(root: bundledRoot, id: "daily-briefing", name: "Daily Briefing", description: "Morning summary")
 
@@ -29,7 +32,7 @@ final class SkillsToolsTests: XCTestCase {
         try FileManager.default.createDirectory(at: referencesRoot, withIntermediateDirectories: true)
         try "Reference text".write(to: referencesRoot.appendingPathComponent("guide.txt"), atomically: true, encoding: .utf8)
 
-        store = SkillStore.makeTestInstance(roots: .init(bundled: bundledRoot, user: userRoot))
+        store = SkillStore.makeTestInstance(roots: .init(bundled: bundledRoot, user: userRoot, agent: agentRoot))
         await store.rebuildIndex()
 
         await MainActor.run {

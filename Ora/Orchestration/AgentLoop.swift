@@ -614,6 +614,12 @@ actor AgentLoop {
             return
         }
 
+        if await SkillsFeatureGate.isEnabled() {
+            self.sessionSkills = await SkillStore.shared.list()
+        } else {
+            self.sessionSkills = []
+        }
+
         let prompt = await self.buildSystemPrompt()
         let promptHash = prompt.hashValue
 
@@ -731,7 +737,8 @@ actor AgentLoop {
             details: prompt.details,
             confirmLabel: prompt.confirmLabel,
             cancelLabel: prompt.cancelLabel,
-            trustLabel: prompt.trustLabel
+            trustLabel: prompt.trustLabel,
+            presentation: prompt.presentation
         )
     }
 
@@ -743,7 +750,8 @@ actor AgentLoop {
             details: prompt.details,
             confirmLabel: prompt.confirmLabel,
             cancelLabel: prompt.cancelLabel,
-            trustLabel: prompt.trustLabel
+            trustLabel: prompt.trustLabel,
+            presentation: prompt.presentation
         )
     }
     

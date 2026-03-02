@@ -11,15 +11,18 @@ final class SkillStoreTests: XCTestCase {
     private var rootDirectory: URL!
     private var bundledRoot: URL!
     private var userRoot: URL!
+    private var agentRoot: URL!
 
     override func setUpWithError() throws {
         rootDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SkillStoreTests-\(UUID().uuidString)", isDirectory: true)
         bundledRoot = rootDirectory.appendingPathComponent("bundled", isDirectory: true)
         userRoot = rootDirectory.appendingPathComponent("user", isDirectory: true)
+        agentRoot = rootDirectory.appendingPathComponent("agent", isDirectory: true)
 
         try FileManager.default.createDirectory(at: bundledRoot, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: userRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: agentRoot, withIntermediateDirectories: true)
     }
 
     override func tearDownWithError() throws {
@@ -28,22 +31,24 @@ final class SkillStoreTests: XCTestCase {
         }
     }
 
-    func test_rebuildIndex_discoversBundledAndUserSkills() async throws {
+    func test_rebuildIndex_discoversBundledUserAndAgentSkills() async throws {
         XCTAssertEqual(SkillStore.fuzzyMatchThreshold, 0.80, accuracy: 0.0001)
 
         try self.writeSkill(root: bundledRoot, id: "daily-briefing", name: "Daily Briefing", description: "Morning summary")
         try self.writeSkill(root: userRoot, id: "meeting-scheduler", name: "Meeting Scheduler", description: "Schedule meetings")
+        try self.writeSkill(root: agentRoot, id: "weekly-planning", name: "Weekly Planning", description: "Review the week")
 
         let store = SkillStore.makeTestInstance(
-            roots: .init(bundled: bundledRoot, user: userRoot)
+            roots: .init(bundled: bundledRoot, user: userRoot, agent: agentRoot)
         )
 
         await store.rebuildIndex()
         let skills = await store.list()
 
-        XCTAssertEqual(skills.count, 2)
+        XCTAssertEqual(skills.count, 3)
         XCTAssertTrue(skills.contains(where: { $0.id == "daily-briefing" && $0.source == .bundled }))
         XCTAssertTrue(skills.contains(where: { $0.id == "meeting-scheduler" && $0.source == .user }))
+        XCTAssertTrue(skills.contains(where: { $0.id == "weekly-planning" && $0.source == .agent }))
     }
 
     func test_rebuildIndex_ignoresInvalidSkills() async throws {
@@ -57,7 +62,7 @@ final class SkillStoreTests: XCTestCase {
         )
 
         let store = SkillStore.makeTestInstance(
-            roots: .init(bundled: bundledRoot, user: userRoot)
+            roots: .init(bundled: bundledRoot, user: userRoot, agent: agentRoot)
         )
 
         await store.rebuildIndex()
@@ -81,7 +86,7 @@ final class SkillStoreTests: XCTestCase {
         try self.writeSkill(root: userRoot, id: "user-skill", content: skillContent)
 
         let store = SkillStore.makeTestInstance(
-            roots: .init(bundled: bundledRoot, user: userRoot)
+            roots: .init(bundled: bundledRoot, user: userRoot, agent: agentRoot)
         )
 
         await store.rebuildIndex()
@@ -95,7 +100,7 @@ final class SkillStoreTests: XCTestCase {
         try self.writeSkill(root: bundledRoot, id: "daily-briefing", name: "Daily Briefing", description: "Morning summary")
 
         let store = SkillStore.makeTestInstance(
-            roots: .init(bundled: bundledRoot, user: userRoot)
+            roots: .init(bundled: bundledRoot, user: userRoot, agent: agentRoot)
         )
 
         await store.rebuildIndex()
@@ -121,7 +126,7 @@ final class SkillStoreTests: XCTestCase {
         try expected.write(to: referencesRoot.appendingPathComponent("guide.txt"), atomically: true, encoding: .utf8)
 
         let store = SkillStore.makeTestInstance(
-            roots: .init(bundled: bundledRoot, user: userRoot)
+            roots: .init(bundled: bundledRoot, user: userRoot, agent: agentRoot)
         )
 
         await store.rebuildIndex()
@@ -129,6 +134,82 @@ final class SkillStoreTests: XCTestCase {
 
         XCTAssertEqual(String(data: data, encoding: .utf8), expected)
         XCTAssertEqual(metadata.id, "daily-briefing")
+    }
+
+    func test_create_rejectsOversizedContentAtWriteTime() async throws {
+        let store = SkillStore.makeTestInstance(
+            roots: .init(bundled: bundledRoot, user: userRoot, agent: agentRoot)
+        )
+
+        await store.rebuildIndex()
+
+        do {
+            _ = try await store.create(
+                name: "Large Skill",
+                content: self.oversizedContent(name: "Large Skill", description: "Too large")
+            )
+            XCTFail("Expected oversized content error")
+        } catch let error as SkillError {
+            XCTAssertEqual(error, .contentTooLarge)
+        }
+
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: agentRoot.appendingPathComponent("large-skill", isDirectory: true).path
+            )
+        )
+    }
+
+    func test_update_rejectsOversizedContentAtWriteTime() async throws {
+        try self.writeSkill(root: agentRoot, id: "weekly-planning", name: "Weekly Planning", description: "Original")
+
+        let store = SkillStore.makeTestInstance(
+            roots: .init(bundled: bundledRoot, user: userRoot, agent: agentRoot)
+        )
+
+        await store.rebuildIndex()
+
+        let skillFile = agentRoot
+            .appendingPathComponent("weekly-planning", isDirectory: true)
+            .appendingPathComponent("SKILL.md", isDirectory: false)
+        let original = try String(contentsOf: skillFile, encoding: .utf8)
+
+        do {
+            _ = try await store.update(
+                id: "weekly-planning",
+                content: self.oversizedContent(name: "Weekly Planning", description: "Too large")
+            )
+            XCTFail("Expected oversized content error")
+        } catch let error as SkillError {
+            XCTAssertEqual(error, .contentTooLarge)
+        }
+
+        let written = try String(contentsOf: skillFile, encoding: .utf8)
+        XCTAssertEqual(written, original)
+    }
+
+    func test_create_cleansUpAgentDirectoryWhenSkillWriteFails() async throws {
+        let blockingRoot = agentRoot.appendingPathComponent("large-skill", isDirectory: true)
+        let blockingSkillFile = blockingRoot.appendingPathComponent("SKILL.md", isDirectory: true)
+        try FileManager.default.createDirectory(at: blockingSkillFile, withIntermediateDirectories: true)
+
+        let store = SkillStore.makeTestInstance(
+            roots: .init(bundled: bundledRoot, user: userRoot, agent: agentRoot)
+        )
+
+        await store.rebuildIndex()
+
+        do {
+            _ = try await store.create(
+                name: "Large Skill",
+                content: self.validContent(name: "Large Skill", description: "Will fail")
+            )
+            XCTFail("Expected write failure")
+        } catch {
+            XCTAssertFalse(
+                FileManager.default.fileExists(atPath: blockingRoot.path)
+            )
+        }
     }
 
     // MARK: - Helpers
@@ -154,5 +235,36 @@ final class SkillStoreTests: XCTestCase {
 
         let skillFile = skillRoot.appendingPathComponent("SKILL.md", isDirectory: false)
         try (content ?? defaultContent).write(to: skillFile, atomically: true, encoding: .utf8)
+    }
+
+    private func oversizedContent(name: String, description: String) -> String {
+        let header = """
+        ---
+        name: \(name)
+        description: \(description)
+        version: 1.0
+        ---
+
+        # \(name)
+
+        """
+
+        let requiredBytes = Int(SkillStore.maxSkillFileBytes) - header.utf8.count + 1
+        let filler = String(repeating: "A", count: max(requiredBytes, 1))
+        return header + filler
+    }
+
+    private func validContent(name: String, description: String) -> String {
+        """
+        ---
+        name: \(name)
+        description: \(description)
+        version: 1.0
+        ---
+
+        # \(name)
+
+        Use when the user asks for \(name.lowercased()).
+        """
     }
 }

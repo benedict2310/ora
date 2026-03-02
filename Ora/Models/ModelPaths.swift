@@ -28,6 +28,16 @@ enum ModelPaths {
         applicationSupport.appendingPathComponent("Ora", isDirectory: true)
     }
 
+    /// User-authored skills directory
+    static var skillsRoot: URL {
+        oraRoot.appendingPathComponent("Skills", isDirectory: true)
+    }
+
+    /// Agent-authored skills directory
+    static var agentSkillsRoot: URL {
+        oraRoot.appendingPathComponent("AgentSkills", isDirectory: true)
+    }
+
     /// Models directory
     static var modelsRoot: URL {
         oraRoot.appendingPathComponent("Models", isDirectory: true)

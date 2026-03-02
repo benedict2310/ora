@@ -15,6 +15,7 @@ actor SkillStore {
     struct Roots: Sendable {
         let bundled: URL
         let user: URL
+        let agent: URL
     }
 
     // MARK: - Singleton
@@ -46,11 +47,12 @@ actor SkillStore {
     // MARK: - Public API
 
     func rebuildIndex() async {
-        await ensureUserRootExists()
+        await self.ensureWritableRootsExist()
 
         var discovered: [String: SkillMetadata] = [:]
-        await scanRoot(url: roots.bundled, source: .bundled, into: &discovered)
-        await scanRoot(url: roots.user, source: .user, into: &discovered)
+        await self.scanRoot(url: self.roots.bundled, source: .bundled, into: &discovered)
+        await self.scanRoot(url: self.roots.user, source: .user, into: &discovered)
+        await self.scanRoot(url: self.roots.agent, source: .agent, into: &discovered)
 
         self.index = discovered
         self.logger.info("Indexed \(self.index.count) skills")
@@ -88,6 +90,33 @@ actor SkillStore {
 
     func metadata(id: String) throws -> SkillMetadata {
         try resolveSkill(for: id)
+    }
+
+    func metadataExact(id: String) throws -> SkillMetadata {
+        try self.resolveExactSkill(for: id)
+    }
+
+    func create(name: String, content: String) async throws -> SkillMetadata {
+        let skillID = try await self.writeNewAgentSkill(name: name, content: content)
+        return try self.resolveExactSkill(for: skillID)
+    }
+
+    func update(id: String, content: String) async throws -> SkillMetadata {
+        let metadata = try self.resolveExactAgentSkill(for: id)
+        let sanitized = try self.sanitizedSkillContent(content)
+        try self.validateWritableContentSize(sanitized)
+        let skillURL = metadata.rootURL.appendingPathComponent("SKILL.md", isDirectory: false)
+
+        try sanitized.write(to: skillURL, atomically: true, encoding: .utf8)
+        await self.rebuildIndex()
+        return try self.resolveExactSkill(for: id)
+    }
+
+    func delete(id: String) async throws -> SkillMetadata {
+        let metadata = try self.resolveExactAgentSkill(for: id)
+        try FileManager.default.removeItem(at: metadata.rootURL)
+        await self.rebuildIndex()
+        return metadata
     }
 
     func scriptManifest(id: String) throws -> ScriptManifest {
@@ -164,11 +193,11 @@ actor SkillStore {
             .standardizedFileURL
             ?? URL(fileURLWithPath: "/nonexistent", isDirectory: true)
 
-        let user = ModelPaths.oraRoot
-            .appendingPathComponent("Skills", isDirectory: true)
+        let user = ModelPaths.skillsRoot.standardizedFileURL
+        let agent = ModelPaths.agentSkillsRoot
             .standardizedFileURL
 
-        return Roots(bundled: bundled, user: user)
+        return Roots(bundled: bundled, user: user, agent: agent)
     }
 
     private func scanRoot(url: URL, source: SkillMetadata.Source, into discovered: inout [String: SkillMetadata]) async {
@@ -234,13 +263,65 @@ actor SkillStore {
         return try SkillFrontmatterParser.parse(from: preview)
     }
 
-    private func ensureUserRootExists() async {
+    private func ensureWritableRootsExist() async {
         let fileManager = FileManager.default
-        do {
-            try fileManager.createDirectory(at: self.roots.user, withIntermediateDirectories: true)
-        } catch {
-            self.logger.error("Failed to create user skills root: \(error.localizedDescription)")
+        let writableRoots = [
+            ("user", self.roots.user),
+            ("agent", self.roots.agent)
+        ]
+
+        for (label, root) in writableRoots {
+            do {
+                try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+            } catch {
+                self.logger.error("Failed to create \(label) skills root: \(error.localizedDescription)")
+            }
         }
+    }
+
+    private func writeNewAgentSkill(name: String, content: String) async throws -> String {
+        let skillID = try self.generatedID(for: name)
+        let skillRoot = self.roots.agent.appendingPathComponent(skillID, isDirectory: true)
+        let skillFile = skillRoot.appendingPathComponent("SKILL.md", isDirectory: false)
+        let sanitized = try self.sanitizedSkillContent(content)
+        try self.validateWritableContentSize(sanitized)
+
+        try FileManager.default.createDirectory(at: skillRoot, withIntermediateDirectories: true)
+        do {
+            try sanitized.write(to: skillFile, atomically: true, encoding: .utf8)
+        } catch {
+            try? FileManager.default.removeItem(at: skillRoot)
+            throw error
+        }
+        await self.rebuildIndex()
+        return skillID
+    }
+
+    private func generatedID(for name: String) throws -> String {
+        let blockedIDs = self.index.values.reduce(into: [String: SkillMetadata.Source]()) { partialResult, metadata in
+            guard metadata.source == .bundled || metadata.source == .user else {
+                return
+            }
+            partialResult[metadata.id] = metadata.source
+        }
+        let agentIDs = Set(
+            self.index.values
+                .filter { $0.source == .agent }
+                .map(\.id)
+        )
+
+        return try SkillSlugGenerator.resolveUniqueSlug(
+            from: name,
+            existingAgentIDs: agentIDs,
+            blockedIDs: blockedIDs
+        )
+    }
+
+    private func sanitizedSkillContent(_ content: String) throws -> String {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sanitized = ContentSanitizer.sanitize(trimmed)
+        _ = try SkillFrontmatterParser.parse(from: sanitized)
+        return sanitized
     }
 
     private func resolveSkill(for idOrName: String) throws -> SkillMetadata {
@@ -255,6 +336,21 @@ actor SkillStore {
         throw SkillError.notFound
     }
 
+    private func resolveExactSkill(for id: String) throws -> SkillMetadata {
+        guard let metadata = self.index[id] else {
+            throw SkillError.notFound
+        }
+        return metadata
+    }
+
+    private func resolveExactAgentSkill(for id: String) throws -> SkillMetadata {
+        let metadata = try self.resolveExactSkill(for: id)
+        guard metadata.source == .agent else {
+            throw SkillError.immutableSource(id, metadata.source)
+        }
+        return metadata
+    }
+
     private func validateFileSize(at url: URL) throws {
         guard let fileSize = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
             return
@@ -262,6 +358,12 @@ actor SkillStore {
 
         if Int64(fileSize) > Self.maxSkillFileBytes {
             throw SkillError.fileTooLarge
+        }
+    }
+
+    private func validateWritableContentSize(_ content: String) throws {
+        if Int64(content.utf8.count) > Self.maxSkillFileBytes {
+            throw SkillError.contentTooLarge
         }
     }
 
