@@ -12,6 +12,7 @@ enum SkillError: LocalizedError, Equatable {
     case invalidFrontmatter(String)
     case invalidPath(String)
     case fileTooLarge
+    case contentTooLarge
     case featureDisabled
     case invalidName
     case invalidDescription
@@ -30,6 +31,8 @@ enum SkillError: LocalizedError, Equatable {
             return "Invalid skill file path: \(path)"
         case .fileTooLarge:
             return "Skill file is too large."
+        case .contentTooLarge:
+            return "Skill content is too large."
         case .featureDisabled:
             return "Skills feature is disabled."
         case .invalidName:

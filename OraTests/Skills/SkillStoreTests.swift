@@ -136,6 +136,58 @@ final class SkillStoreTests: XCTestCase {
         XCTAssertEqual(metadata.id, "daily-briefing")
     }
 
+    func test_create_rejectsOversizedContentAtWriteTime() async throws {
+        let store = SkillStore.makeTestInstance(
+            roots: .init(bundled: bundledRoot, user: userRoot, agent: agentRoot)
+        )
+
+        await store.rebuildIndex()
+
+        do {
+            _ = try await store.create(
+                name: "Large Skill",
+                content: self.oversizedContent(name: "Large Skill", description: "Too large")
+            )
+            XCTFail("Expected oversized content error")
+        } catch let error as SkillError {
+            XCTAssertEqual(error, .contentTooLarge)
+        }
+
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: agentRoot.appendingPathComponent("large-skill", isDirectory: true).path
+            )
+        )
+    }
+
+    func test_update_rejectsOversizedContentAtWriteTime() async throws {
+        try self.writeSkill(root: agentRoot, id: "weekly-planning", name: "Weekly Planning", description: "Original")
+
+        let store = SkillStore.makeTestInstance(
+            roots: .init(bundled: bundledRoot, user: userRoot, agent: agentRoot)
+        )
+
+        await store.rebuildIndex()
+
+        let skillFile = agentRoot
+            .appendingPathComponent("weekly-planning", isDirectory: true)
+            .appendingPathComponent("SKILL.md", isDirectory: false)
+        let original = try String(contentsOf: skillFile, encoding: .utf8)
+
+        do {
+            _ = try await store.update(
+                id: "weekly-planning",
+                content: self.oversizedContent(name: "Weekly Planning", description: "Too large")
+            )
+            XCTFail("Expected oversized content error")
+        } catch let error as SkillError {
+            XCTAssertEqual(error, .contentTooLarge)
+        }
+
+        let written = try String(contentsOf: skillFile, encoding: .utf8)
+        XCTAssertEqual(written, original)
+    }
+
     // MARK: - Helpers
 
     private func writeSkill(
@@ -159,5 +211,22 @@ final class SkillStoreTests: XCTestCase {
 
         let skillFile = skillRoot.appendingPathComponent("SKILL.md", isDirectory: false)
         try (content ?? defaultContent).write(to: skillFile, atomically: true, encoding: .utf8)
+    }
+
+    private func oversizedContent(name: String, description: String) -> String {
+        let header = """
+        ---
+        name: \(name)
+        description: \(description)
+        version: 1.0
+        ---
+
+        # \(name)
+
+        """
+
+        let requiredBytes = Int(SkillStore.maxSkillFileBytes) - header.utf8.count + 1
+        let filler = String(repeating: "A", count: max(requiredBytes, 1))
+        return header + filler
     }
 }

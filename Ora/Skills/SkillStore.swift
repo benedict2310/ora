@@ -104,6 +104,7 @@ actor SkillStore {
     func update(id: String, content: String) async throws -> SkillMetadata {
         let metadata = try self.resolveExactAgentSkill(for: id)
         let sanitized = try self.sanitizedSkillContent(content)
+        try self.validateWritableContentSize(sanitized)
         let skillURL = metadata.rootURL.appendingPathComponent("SKILL.md", isDirectory: false)
 
         try sanitized.write(to: skillURL, atomically: true, encoding: .utf8)
@@ -283,6 +284,7 @@ actor SkillStore {
         let skillRoot = self.roots.agent.appendingPathComponent(skillID, isDirectory: true)
         let skillFile = skillRoot.appendingPathComponent("SKILL.md", isDirectory: false)
         let sanitized = try self.sanitizedSkillContent(content)
+        try self.validateWritableContentSize(sanitized)
 
         try FileManager.default.createDirectory(at: skillRoot, withIntermediateDirectories: true)
         try sanitized.write(to: skillFile, atomically: true, encoding: .utf8)
@@ -350,6 +352,12 @@ actor SkillStore {
 
         if Int64(fileSize) > Self.maxSkillFileBytes {
             throw SkillError.fileTooLarge
+        }
+    }
+
+    private func validateWritableContentSize(_ content: String) throws {
+        if Int64(content.utf8.count) > Self.maxSkillFileBytes {
+            throw SkillError.contentTooLarge
         }
     }
 
