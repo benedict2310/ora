@@ -313,7 +313,8 @@ actor SkillStore {
     }
 
     private func sanitizedSkillContent(_ content: String) throws -> String {
-        let sanitized = ContentSanitizer.sanitize(content)
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sanitized = ContentSanitizer.sanitize(trimmed)
         _ = try SkillFrontmatterParser.parse(from: sanitized)
         return sanitized
     }

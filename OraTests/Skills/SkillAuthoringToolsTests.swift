@@ -103,6 +103,30 @@ final class SkillAuthoringToolsTests: XCTestCase {
         XCTAssertEqual(payload["id"]?.stringValue, "monday-planning-routine-2")
     }
 
+    func test_create_trimsLeadingBlankLinesBeforePreviewAndWrite() async throws {
+        let content = "\n\n" + self.validContent(name: "Monday Planning Routine", description: "Reviews the week")
+        let tool = SkillsCreateTool(skillStore: self.store)
+
+        let plan = try await tool.authorizationPlan(args: self.createArguments(name: "Monday Planning Routine", content: content))
+        guard case .userConfirmation(let prompt) = plan.requirement else {
+            return XCTFail("Expected confirmation prompt")
+        }
+        guard case .skillDocumentPreview(let preview) = prompt.presentation else {
+            return XCTFail("Expected modal document preview")
+        }
+        XCTAssertTrue(preview.hasPrefix("---\n"))
+
+        _ = try await tool.execute(args: self.createArguments(name: "Monday Planning Routine", content: content))
+
+        let written = try String(
+            contentsOf: self.agentRoot
+                .appendingPathComponent("monday-planning-routine", isDirectory: true)
+                .appendingPathComponent("SKILL.md", isDirectory: false),
+            encoding: .utf8
+        )
+        XCTAssertTrue(written.hasPrefix("---\n"))
+    }
+
     func test_create_conflictingBundledSlug_returnsConflictError() async throws {
         try self.writeSkill(root: self.bundledRoot, id: "daily-briefing", name: "Daily Briefing", description: "Bundled")
         await self.store.rebuildIndex()
@@ -182,6 +206,40 @@ final class SkillAuthoringToolsTests: XCTestCase {
         } catch let error as SkillError {
             XCTAssertEqual(error, .immutableSource("daily-briefing", .bundled))
         }
+    }
+
+    func test_update_trimsLeadingBlankLinesBeforePreviewAndWrite() async throws {
+        try self.writeSkill(root: self.agentRoot, id: "weekly-planning", name: "Weekly Planning", description: "Original")
+        await self.store.rebuildIndex()
+
+        let tool = SkillsUpdateTool(skillStore: self.store)
+        let content = "\n\n" + self.validContent(name: "Weekly Planning", description: "Updated description")
+
+        let plan = try await tool.authorizationPlan(args: [
+            "id": .string("weekly-planning"),
+            "content": .string(content)
+        ])
+        guard case .userConfirmation(let prompt) = plan.requirement else {
+            return XCTFail("Expected confirmation prompt")
+        }
+        guard case .skillDocumentPreview(let preview) = prompt.presentation else {
+            return XCTFail("Expected document preview")
+        }
+        XCTAssertTrue(preview.hasPrefix("---\n"))
+
+        _ = try await tool.execute(args: [
+            "id": .string("weekly-planning"),
+            "content": .string(content)
+        ])
+
+        let written = try String(
+            contentsOf: self.agentRoot
+                .appendingPathComponent("weekly-planning", isDirectory: true)
+                .appendingPathComponent("SKILL.md", isDirectory: false),
+            encoding: .utf8
+        )
+        XCTAssertTrue(written.hasPrefix("---\n"))
+        XCTAssertTrue(written.contains("Updated description"))
     }
 
     func test_delete_removesAgentSkill_andRejectsNonExactIDs() async throws {
