@@ -287,7 +287,12 @@ actor SkillStore {
         try self.validateWritableContentSize(sanitized)
 
         try FileManager.default.createDirectory(at: skillRoot, withIntermediateDirectories: true)
-        try sanitized.write(to: skillFile, atomically: true, encoding: .utf8)
+        do {
+            try sanitized.write(to: skillFile, atomically: true, encoding: .utf8)
+        } catch {
+            try? FileManager.default.removeItem(at: skillRoot)
+            throw error
+        }
         await self.rebuildIndex()
         return skillID
     }

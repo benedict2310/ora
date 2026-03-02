@@ -188,6 +188,30 @@ final class SkillStoreTests: XCTestCase {
         XCTAssertEqual(written, original)
     }
 
+    func test_create_cleansUpAgentDirectoryWhenSkillWriteFails() async throws {
+        let blockingRoot = agentRoot.appendingPathComponent("large-skill", isDirectory: true)
+        let blockingSkillFile = blockingRoot.appendingPathComponent("SKILL.md", isDirectory: true)
+        try FileManager.default.createDirectory(at: blockingSkillFile, withIntermediateDirectories: true)
+
+        let store = SkillStore.makeTestInstance(
+            roots: .init(bundled: bundledRoot, user: userRoot, agent: agentRoot)
+        )
+
+        await store.rebuildIndex()
+
+        do {
+            _ = try await store.create(
+                name: "Large Skill",
+                content: self.validContent(name: "Large Skill", description: "Will fail")
+            )
+            XCTFail("Expected write failure")
+        } catch {
+            XCTAssertFalse(
+                FileManager.default.fileExists(atPath: blockingRoot.path)
+            )
+        }
+    }
+
     // MARK: - Helpers
 
     private func writeSkill(
@@ -228,5 +252,19 @@ final class SkillStoreTests: XCTestCase {
         let requiredBytes = Int(SkillStore.maxSkillFileBytes) - header.utf8.count + 1
         let filler = String(repeating: "A", count: max(requiredBytes, 1))
         return header + filler
+    }
+
+    private func validContent(name: String, description: String) -> String {
+        """
+        ---
+        name: \(name)
+        description: \(description)
+        version: 1.0
+        ---
+
+        # \(name)
+
+        Use when the user asks for \(name.lowercased()).
+        """
     }
 }
