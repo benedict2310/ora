@@ -78,6 +78,54 @@ final class ToolDiscoveryTests: XCTestCase {
         XCTAssertTrue(names.contains("skills.run_script"))
     }
 
+    func test_toolsDiscover_createSkillQuery_includesSkillsCreate() async throws {
+        let tool = ToolDiscoveryTool()
+        let sessionID = UUID()
+
+        let result = try await tool.execute(
+            args: [
+                "query": .string("create a new skill for my workflow"),
+                "limit": .number(5),
+                ToolDiscoveryTool.sessionIDArgumentKey: .string(sessionID.uuidString)
+            ]
+        )
+
+        let names = self.extractMatchedToolNames(from: result)
+        XCTAssertTrue(names.contains("skills.create"))
+    }
+
+    func test_toolsDiscover_updateSkillQuery_includesSkillsUpdate() async throws {
+        let tool = ToolDiscoveryTool()
+        let sessionID = UUID()
+
+        let result = try await tool.execute(
+            args: [
+                "query": .string("update a saved skill"),
+                "limit": .number(5),
+                ToolDiscoveryTool.sessionIDArgumentKey: .string(sessionID.uuidString)
+            ]
+        )
+
+        let names = self.extractMatchedToolNames(from: result)
+        XCTAssertTrue(names.contains("skills.update"))
+    }
+
+    func test_toolsDiscover_deleteSkillQuery_includesSkillsDelete() async throws {
+        let tool = ToolDiscoveryTool()
+        let sessionID = UUID()
+
+        let result = try await tool.execute(
+            args: [
+                "query": .string("delete a saved skill"),
+                "limit": .number(5),
+                ToolDiscoveryTool.sessionIDArgumentKey: .string(sessionID.uuidString)
+            ]
+        )
+
+        let names = self.extractMatchedToolNames(from: result)
+        XCTAssertTrue(names.contains("skills.delete"))
+    }
+
     func test_toolsDiscover_blankQuery_failsValidation() {
         let tool = ToolDiscoveryTool()
 

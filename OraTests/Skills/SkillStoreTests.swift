@@ -11,15 +11,18 @@ final class SkillStoreTests: XCTestCase {
     private var rootDirectory: URL!
     private var bundledRoot: URL!
     private var userRoot: URL!
+    private var agentRoot: URL!
 
     override func setUpWithError() throws {
         rootDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SkillStoreTests-\(UUID().uuidString)", isDirectory: true)
         bundledRoot = rootDirectory.appendingPathComponent("bundled", isDirectory: true)
         userRoot = rootDirectory.appendingPathComponent("user", isDirectory: true)
+        agentRoot = rootDirectory.appendingPathComponent("agent", isDirectory: true)
 
         try FileManager.default.createDirectory(at: bundledRoot, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: userRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: agentRoot, withIntermediateDirectories: true)
     }
 
     override func tearDownWithError() throws {
@@ -28,22 +31,24 @@ final class SkillStoreTests: XCTestCase {
         }
     }
 
-    func test_rebuildIndex_discoversBundledAndUserSkills() async throws {
+    func test_rebuildIndex_discoversBundledUserAndAgentSkills() async throws {
         XCTAssertEqual(SkillStore.fuzzyMatchThreshold, 0.80, accuracy: 0.0001)
 
         try self.writeSkill(root: bundledRoot, id: "daily-briefing", name: "Daily Briefing", description: "Morning summary")
         try self.writeSkill(root: userRoot, id: "meeting-scheduler", name: "Meeting Scheduler", description: "Schedule meetings")
+        try self.writeSkill(root: agentRoot, id: "weekly-planning", name: "Weekly Planning", description: "Review the week")
 
         let store = SkillStore.makeTestInstance(
-            roots: .init(bundled: bundledRoot, user: userRoot)
+            roots: .init(bundled: bundledRoot, user: userRoot, agent: agentRoot)
         )
 
         await store.rebuildIndex()
         let skills = await store.list()
 
-        XCTAssertEqual(skills.count, 2)
+        XCTAssertEqual(skills.count, 3)
         XCTAssertTrue(skills.contains(where: { $0.id == "daily-briefing" && $0.source == .bundled }))
         XCTAssertTrue(skills.contains(where: { $0.id == "meeting-scheduler" && $0.source == .user }))
+        XCTAssertTrue(skills.contains(where: { $0.id == "weekly-planning" && $0.source == .agent }))
     }
 
     func test_rebuildIndex_ignoresInvalidSkills() async throws {
@@ -57,7 +62,7 @@ final class SkillStoreTests: XCTestCase {
         )
 
         let store = SkillStore.makeTestInstance(
-            roots: .init(bundled: bundledRoot, user: userRoot)
+            roots: .init(bundled: bundledRoot, user: userRoot, agent: agentRoot)
         )
 
         await store.rebuildIndex()
@@ -81,7 +86,7 @@ final class SkillStoreTests: XCTestCase {
         try self.writeSkill(root: userRoot, id: "user-skill", content: skillContent)
 
         let store = SkillStore.makeTestInstance(
-            roots: .init(bundled: bundledRoot, user: userRoot)
+            roots: .init(bundled: bundledRoot, user: userRoot, agent: agentRoot)
         )
 
         await store.rebuildIndex()
@@ -95,7 +100,7 @@ final class SkillStoreTests: XCTestCase {
         try self.writeSkill(root: bundledRoot, id: "daily-briefing", name: "Daily Briefing", description: "Morning summary")
 
         let store = SkillStore.makeTestInstance(
-            roots: .init(bundled: bundledRoot, user: userRoot)
+            roots: .init(bundled: bundledRoot, user: userRoot, agent: agentRoot)
         )
 
         await store.rebuildIndex()
@@ -121,7 +126,7 @@ final class SkillStoreTests: XCTestCase {
         try expected.write(to: referencesRoot.appendingPathComponent("guide.txt"), atomically: true, encoding: .utf8)
 
         let store = SkillStore.makeTestInstance(
-            roots: .init(bundled: bundledRoot, user: userRoot)
+            roots: .init(bundled: bundledRoot, user: userRoot, agent: agentRoot)
         )
 
         await store.rebuildIndex()

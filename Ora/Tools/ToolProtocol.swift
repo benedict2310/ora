@@ -24,6 +24,21 @@ enum ToolAuthorizationRequirement: Sendable, Equatable {
     case userConfirmation(prompt: ToolAuthorizationPrompt)
 }
 
+enum ToolAuthorizationPresentation: Sendable, Equatable {
+    case inline
+    case skillDocumentPreview(content: String)
+    case skillDeletion(name: String, description: String)
+
+    var usesModalSheet: Bool {
+        switch self {
+        case .inline:
+            return false
+        case .skillDocumentPreview, .skillDeletion:
+            return true
+        }
+    }
+}
+
 struct ToolAuthorizationPrompt: Sendable, Equatable {
     let title: String
     let summary: String
@@ -31,6 +46,7 @@ struct ToolAuthorizationPrompt: Sendable, Equatable {
     let confirmLabel: String
     let cancelLabel: String
     let trustLabel: String?
+    let presentation: ToolAuthorizationPresentation
 
     init(
         title: String,
@@ -38,7 +54,8 @@ struct ToolAuthorizationPrompt: Sendable, Equatable {
         details: String? = nil,
         confirmLabel: String = "Confirm",
         cancelLabel: String = "Cancel",
-        trustLabel: String? = nil
+        trustLabel: String? = nil,
+        presentation: ToolAuthorizationPresentation = .inline
     ) {
         self.title = title
         self.summary = summary
@@ -46,6 +63,7 @@ struct ToolAuthorizationPrompt: Sendable, Equatable {
         self.confirmLabel = confirmLabel
         self.cancelLabel = cancelLabel
         self.trustLabel = trustLabel
+        self.presentation = presentation
     }
 }
 
@@ -139,6 +157,9 @@ protocol Tool: Sendable {
     /// Determine whether execution can proceed immediately or requires user authorization.
     func authorizationPlan(args: [String: JSONValue]) async throws -> ToolAuthorizationPlan
 
+    /// Return a redacted or transformed argument payload for audit logging.
+    func auditParameters(args: [String: JSONValue]) -> [String: JSONValue]
+
     /// Allow tools to persist side effects tied to an authorization decision.
     func handleAuthorizationDecision(
         args: [String: JSONValue],
@@ -179,6 +200,10 @@ extension Tool {
         }
 
         return ToolAuthorizationPlan(requirement: .none)
+    }
+
+    func auditParameters(args: [String: JSONValue]) -> [String: JSONValue] {
+        args
     }
 
     func handleAuthorizationDecision(

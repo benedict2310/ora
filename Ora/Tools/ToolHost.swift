@@ -53,6 +53,7 @@ actor ToolHost {
         let auditCategory: AuditCategory
         let action: String
         let auditMetadata: [String: String]
+        let auditArgs: [String: JSONValue]
         let context: [String: JSONValue]
         var receipt: ToolAuthorizationReceipt?
         var mode: Mode?
@@ -144,6 +145,7 @@ actor ToolHost {
             auditCategory: self.auditCategory(for: toolName),
             action: tool.kind.rawValue,
             auditMetadata: plan.auditMetadata,
+            auditArgs: tool.auditParameters(args: args),
             context: plan.context,
             receipt: nil,
             mode: nil
@@ -310,6 +312,12 @@ actor ToolHost {
             return .skillLoad
         case "skills.read":
             return .skillRead
+        case "skills.create":
+            return .skillCreate
+        case "skills.update":
+            return .skillUpdate
+        case "skills.delete":
+            return .skillDelete
         case "skills.run_script":
             return .scriptExecution
         default:
@@ -321,7 +329,7 @@ actor ToolHost {
         for pending: PendingAuthorization,
         receipt: ToolAuthorizationReceipt
     ) -> [String: Any] {
-        var parameters = self.jsonValueToAnyDict(pending.ticket.args)
+        var parameters = self.jsonValueToAnyDict(pending.auditArgs)
         for (key, value) in pending.auditMetadata {
             parameters[key] = value
         }

@@ -69,7 +69,7 @@ struct AuditLogEntry: Identifiable {
 
 // MARK: - Audit Category
 
-enum AuditCategory: String, Sendable {
+enum AuditCategory: String, Sendable, CaseIterable {
     case toolExecution
     case scriptExecution
     case confirmation
@@ -78,6 +78,9 @@ enum AuditCategory: String, Sendable {
     case skillList
     case skillLoad
     case skillRead
+    case skillCreate
+    case skillUpdate
+    case skillDelete
 }
 
 // MARK: - Sendable Conformance
