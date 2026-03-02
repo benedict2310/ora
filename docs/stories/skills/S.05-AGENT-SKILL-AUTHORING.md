@@ -362,7 +362,23 @@ All authoring operations are logged with new `AuditCategory` cases:
 - [x] P1-1 fixed — `contentHash` added to delete auditPayload (reads content before deletion)
 - [x] P1-2 fixed — explicit `auditParameters()` override added to `SkillsDeleteTool`
 - [x] P2-4 fixed — `validateWritableContentSize()` added to both create and update write paths
-- [x] Ready for merge
+- [x] Ready for merge (iteration 1)
+
+**Round 2 — Codex automated review (PR #167)**
+
+**[P1-A] Content trimming inconsistency in `skills.create`**
+- `SkillAuthoringToolSupport.validateMutationArguments` trims content before frontmatter validation, but `authorizationPlan` and `execute` pass the original untrimmed string to `SkillFrontmatterParser`
+- LLM-generated markdown commonly starts with a blank line, causing `SkillFrontmatterParser` to fail (requires `---` on the first line)
+- Fix: trim the `content` string in `authorizationPlan` and `execute` before passing to `SkillFrontmatterParser`, or strip leading whitespace once in the sanitization step
+
+**[P2-A] Orphaned skill directory on failed write**
+- `writeNewAgentSkill()` creates the directory before writing `SKILL.md`; if the write throws (disk full, I/O error), the empty `<slug>/` folder is left behind
+- Indexing skips it (no `SKILL.md`), but slug collision resolution will fail with "file exists" on the next create attempt with the same slug
+- Fix: in the catch block after write failure, attempt `FileManager.default.removeItem(at: skillRoot)` to clean up the orphaned directory
+
+- [ ] P1-A fixed
+- [ ] P2-A fixed
+- [ ] Ready for merge (iteration 2)
 
 ## Completion Status
 
