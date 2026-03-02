@@ -376,9 +376,9 @@ All authoring operations are logged with new `AuditCategory` cases:
 - Indexing skips it (no `SKILL.md`), but slug collision resolution will fail with "file exists" on the next create attempt with the same slug
 - Fix: in the catch block after write failure, attempt `FileManager.default.removeItem(at: skillRoot)` to clean up the orphaned directory
 
-- [ ] P1-A fixed
-- [ ] P2-A fixed
-- [ ] Ready for merge (iteration 2)
+- [x] P1-A fixed — trimming added in `sanitizedSkillContent()` in both `SkillStore` and `SkillAuthoringToolSupport`
+- [x] P2-A fixed — directory cleanup on write failure: `try? FileManager.default.removeItem(at: skillRoot)` before rethrow
+- [x] Ready for merge (iteration 2)
 
 ## Completion Status
 
