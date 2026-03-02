@@ -261,11 +261,13 @@ final class SkillAuthoringToolsTests: XCTestCase {
         let createEntry = try XCTUnwrap(entries.first(where: { $0.category == .skillCreate }))
         let updateEntry = try XCTUnwrap(entries.first(where: { $0.category == .skillUpdate }))
         let deleteEntry = try XCTUnwrap(entries.first(where: { $0.category == .skillDelete }))
+        let deletePayload = try self.resultPayload(deleteEntry)
 
         XCTAssertEqual((createEntry.parameters?["contentLength"] as? NSNumber)?.doubleValue, Double(createContent.count))
         XCTAssertTrue(createEntry.result?.contains("\"contentHash\"") == true)
         XCTAssertTrue(updateEntry.result?.contains("\"contentHash\"") == true)
         XCTAssertEqual(deleteEntry.parameters?["skillName"] as? String, "Weekly Planning")
+        XCTAssertEqual(deletePayload["contentHash"] as? String, SkillAuthoringToolSupport.contentHash(for: updatedContent))
     }
 
     // MARK: - Helpers
@@ -310,5 +312,14 @@ final class SkillAuthoringToolsTests: XCTestCase {
             atomically: true,
             encoding: .utf8
         )
+    }
+
+    private func resultPayload(_ entry: AuditLogEntry) throws -> [String: Any] {
+        let result = try XCTUnwrap(entry.result)
+        let data = try XCTUnwrap(result.data(using: .utf8))
+        let payload = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        return payload
     }
 }

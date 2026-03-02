@@ -37,6 +37,10 @@ struct SkillsDeleteTool: Tool {
         )
     }
 
+    func auditParameters(args: [String: JSONValue]) -> [String: JSONValue] {
+        args
+    }
+
     func authorizationPlan(args: [String: JSONValue]) async throws -> ToolAuthorizationPlan {
         try await SkillsFeatureGate.requireEnabled()
 
@@ -71,6 +75,14 @@ struct SkillsDeleteTool: Tool {
         let requestedID = args["id"]?.stringValue ?? ""
 
         do {
+            let existingMetadata = try await self.skillStore.metadataExact(id: requestedID)
+            guard existingMetadata.source == .agent else {
+                throw SkillError.immutableSource(requestedID, existingMetadata.source)
+            }
+
+            let skillURL = existingMetadata.rootURL.appendingPathComponent("SKILL.md", isDirectory: false)
+            let content = try String(contentsOf: skillURL, encoding: .utf8)
+            let contentHash = SkillAuthoringToolSupport.contentHash(for: content)
             let metadata = try await self.skillStore.delete(id: requestedID)
             return .success(
                 .object([
@@ -80,7 +92,8 @@ struct SkillsDeleteTool: Tool {
                 summary: "Deleted skill '\(metadata.name)'.",
                 auditPayload: [
                     "skillId": .string(metadata.id),
-                    "name": .string(metadata.name)
+                    "name": .string(metadata.name),
+                    "contentHash": .string(contentHash)
                 ]
             )
         } catch {
