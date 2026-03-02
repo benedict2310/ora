@@ -1,7 +1,7 @@
 # S.05 - Agent Skill Authoring
 
 **Epic:** Skills
-**Status:** Not Started
+**Status:** Complete
 **Priority:** P1 (High)
 **Estimated Effort:** 3 days
 **Dependencies:** S.01 (Skills Runtime), S.06 (Dynamic Tool Discovery)
@@ -382,4 +382,8 @@ All authoring operations are logged with new `AuditCategory` cases:
 
 ## Completion Status
 
-(TBD after merge.)
+- [x] Implementation complete
+- [x] Code review passed (2 iterations — 5 issues found and fixed total)
+- [x] PR merged: https://github.com/benedict2310/ora/pull/167
+- [x] Merged to main: `a3ff72a`
+- [x] Date: 2026-03-02
