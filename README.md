@@ -212,9 +212,11 @@ Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTIN
 
 ## 📄 License
 
-Ora is source available — you can read and audit the code, but redistribution and commercial use require explicit written permission. See [LICENSE](LICENSE) for full terms.
+Ora is source available — you can read and audit the code, but redistribution and commercial use require explicit written permission.
+See [LICENSE](LICENSE) for full terms.
 
-© 2026 Futurelab Studio. All rights reserved.
+© 2026 Benedict Evert / Futurelab Studio. All rights reserved.
+Contact: benedict.bleimschein@gmail.com
 
 ---
 
