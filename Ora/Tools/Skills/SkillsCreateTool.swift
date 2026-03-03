@@ -22,32 +22,34 @@ struct SkillsCreateTool: Tool {
             name: self.name,
             description: "Create and save a new skill for future conversations. Use only when the user explicitly asks Ora to create or save a skill.",
             parameters: [
-                "name": ParameterSchema(type: "string", description: "Skill name"),
-                "description": ParameterSchema(type: "string", description: "Short skill description"),
-                "content": ParameterSchema(type: "string", description: "Full SKILL.md markdown. MUST start with YAML frontmatter: ---\\nname: Skill Name\\ndescription: Short description\\n---")
+                "content": ParameterSchema(type: "string", description: "Full SKILL.md markdown. MUST begin with a YAML frontmatter block containing name and description, e.g.: ---\\nname: Skill Name\\ndescription: What this skill does.\\n---\\n\\n# Skill Name\\n## Procedure\\n1. Step one")
             ],
-            requiredParameters: ["name", "description", "content"],
+            requiredParameters: ["content"],
             requiresConfirmation: true
         )
     }
 
     func validate(args: [String: JSONValue]) throws {
-        try SkillAuthoringToolSupport.validateCreateArguments(toolName: self.name, args: args)
+        guard let content = args["content"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !content.isEmpty else {
+            throw ToolHostError.validationFailed(self.name, "Missing required parameter: content")
+        }
+        _ = try SkillAuthoringToolSupport.sanitizedSkillContent(content)
     }
 
     func auditParameters(args: [String: JSONValue]) -> [String: JSONValue] {
-        SkillAuthoringToolSupport.redactCreateAuditParameters(args: args)
+        ["contentLength": .number(Double(args["content"]?.stringValue?.count ?? 0))]
     }
 
     func authorizationPlan(args: [String: JSONValue]) async throws -> ToolAuthorizationPlan {
         try await SkillsFeatureGate.requireEnabled()
-        let proposedName = args["name"]?.stringValue ?? ""
         let sanitized = try SkillAuthoringToolSupport.sanitizedSkillContent(args["content"]?.stringValue ?? "")
+        let frontmatter = try SkillFrontmatterParser.parse(from: sanitized)
 
         return ToolAuthorizationPlan(
             requirement: .userConfirmation(
                 prompt: ToolAuthorizationPrompt(
-                    title: "Save Skill: \"\(proposedName)\"",
+                    title: "Save Skill: \"\(frontmatter.name)\"",
                     summary: "This skill will be saved and available in all future conversations.",
                     confirmLabel: "Save Skill",
                     cancelLabel: "Cancel",
@@ -60,11 +62,10 @@ struct SkillsCreateTool: Tool {
     func execute(args: [String: JSONValue]) async throws -> ToolResult {
         try await SkillsFeatureGate.requireEnabled()
 
-        let requestedName = args["name"]?.stringValue ?? ""
-
         do {
             let sanitized = try SkillAuthoringToolSupport.sanitizedSkillContent(args["content"]?.stringValue ?? "")
-            let metadata = try await self.skillStore.create(name: requestedName, content: sanitized)
+            let frontmatter = try SkillFrontmatterParser.parse(from: sanitized)
+            let metadata = try await self.skillStore.create(name: frontmatter.name, content: sanitized)
             let contentHash = SkillAuthoringToolSupport.contentHash(for: sanitized)
 
             return .success(
@@ -85,9 +86,7 @@ struct SkillsCreateTool: Tool {
             throw SkillAuthoringToolSupport.failure(
                 error,
                 category: .skillCreate,
-                payload: [
-                    "name": .string(requestedName)
-                ]
+                payload: nil
             )
         }
     }
