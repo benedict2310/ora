@@ -22,7 +22,8 @@ struct SkillsCreateTool: Tool {
             name: self.name,
             description: "Create and save a new skill for future conversations. Use only when the user explicitly asks Ora to create or save a skill.",
             parameters: [
-                "content": ParameterSchema(type: "string", description: "Full SKILL.md markdown. MUST begin with a YAML frontmatter block containing name and description, e.g.: ---\\nname: Skill Name\\ndescription: What this skill does.\\n---\\n\\n# Skill Name\\n## Procedure\\n1. Step one")
+                "content": ParameterSchema(type: "string", description: "Full SKILL.md markdown. MUST begin with a YAML frontmatter block containing name and description, e.g.: ---\\nname: Skill Name\\ndescription: What this skill does.\\n---\\n\\n# Skill Name\\n## Procedure\\n1. Step one"),
+                "scripts": ParameterSchema(type: "object", description: "Optional executable scripts to bundle with the skill. Keys are filenames (e.g. 'hello.py'), values are the full script source. Supported extensions: .py .sh .zsh .rb .js .applescript")
             ],
             requiredParameters: ["content"],
             requiresConfirmation: true
@@ -35,22 +36,40 @@ struct SkillsCreateTool: Tool {
             throw ToolHostError.validationFailed(self.name, "Missing required parameter: content")
         }
         _ = try SkillAuthoringToolSupport.sanitizedSkillContent(content)
+
+        if let scripts = args["scripts"]?.objectValue {
+            for filename in scripts.keys {
+                try Self.validateScriptFilename(filename, toolName: self.name)
+            }
+        }
     }
 
     func auditParameters(args: [String: JSONValue]) -> [String: JSONValue] {
-        ["contentLength": .number(Double(args["content"]?.stringValue?.count ?? 0))]
+        let scriptNames = (args["scripts"]?.objectValue ?? [:]).keys.sorted()
+        return [
+            "contentLength": .number(Double(args["content"]?.stringValue?.count ?? 0)),
+            "scripts": .array(scriptNames.map { .string($0) })
+        ]
     }
 
     func authorizationPlan(args: [String: JSONValue]) async throws -> ToolAuthorizationPlan {
         try await SkillsFeatureGate.requireEnabled()
         let sanitized = try SkillAuthoringToolSupport.sanitizedSkillContent(args["content"]?.stringValue ?? "")
         let frontmatter = try SkillFrontmatterParser.parse(from: sanitized)
+        let scriptNames = (args["scripts"]?.objectValue ?? [:]).keys.sorted()
+
+        let summary: String
+        if scriptNames.isEmpty {
+            summary = "This skill will be saved and available in all future conversations."
+        } else {
+            summary = "This skill (including scripts: \(scriptNames.joined(separator: ", "))) will be saved and available in all future conversations."
+        }
 
         return ToolAuthorizationPlan(
             requirement: .userConfirmation(
                 prompt: ToolAuthorizationPrompt(
                     title: "Save Skill: \"\(frontmatter.name)\"",
-                    summary: "This skill will be saved and available in all future conversations.",
+                    summary: summary,
                     confirmLabel: "Save Skill",
                     cancelLabel: "Cancel",
                     presentation: .skillDocumentPreview(content: sanitized)
@@ -65,21 +84,26 @@ struct SkillsCreateTool: Tool {
         do {
             let sanitized = try SkillAuthoringToolSupport.sanitizedSkillContent(args["content"]?.stringValue ?? "")
             let frontmatter = try SkillFrontmatterParser.parse(from: sanitized)
-            let metadata = try await self.skillStore.create(name: frontmatter.name, content: sanitized)
+            let scripts = (args["scripts"]?.objectValue ?? [:]).compactMapValues { $0.stringValue }
+            let metadata = try await self.skillStore.create(name: frontmatter.name, content: sanitized, scripts: scripts)
             let contentHash = SkillAuthoringToolSupport.contentHash(for: sanitized)
 
             return .success(
                 .object([
                     "id": .string(metadata.id),
                     "name": .string(metadata.name),
-                    "source": .string(metadata.source.rawValue)
+                    "source": .string(metadata.source.rawValue),
+                    "scripts": .array(scripts.keys.sorted().map { .string($0) })
                 ]),
-                summary: "Saved skill '\(metadata.name)'.",
+                summary: scripts.isEmpty
+                    ? "Saved skill '\(metadata.name)'."
+                    : "Saved skill '\(metadata.name)' with \(scripts.count) script(s).",
                 auditPayload: [
                     "skillId": .string(metadata.id),
                     "name": .string(metadata.name),
                     "source": .string(metadata.source.rawValue),
-                    "contentHash": .string(contentHash)
+                    "contentHash": .string(contentHash),
+                    "scriptCount": .number(Double(scripts.count))
                 ]
             )
         } catch {
@@ -88,6 +112,23 @@ struct SkillsCreateTool: Tool {
                 category: .skillCreate,
                 payload: nil
             )
+        }
+    }
+
+    private static func validateScriptFilename(_ filename: String, toolName: String) throws {
+        guard !filename.isEmpty else {
+            throw ToolHostError.validationFailed(toolName, "Script filename must not be empty")
+        }
+        guard !filename.contains("/") else {
+            throw ToolHostError.validationFailed(toolName, "Script filename must not contain path separators: \(filename)")
+        }
+        guard filename != "manifest.json" else {
+            throw ToolHostError.validationFailed(toolName, "Script filename 'manifest.json' is reserved")
+        }
+        let supported = ["py", "sh", "zsh", "rb", "js", "mjs", "applescript", "scpt"]
+        let ext = (filename as NSString).pathExtension.lowercased()
+        guard supported.contains(ext) else {
+            throw ToolHostError.validationFailed(toolName, "Unsupported script extension '.\(ext)'. Supported: \(supported.joined(separator: ", "))")
         }
     }
 }
