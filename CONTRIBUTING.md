@@ -1,3 +1,8 @@
+Note: By submitting a contribution to this repository, you agree that
+your contribution is licensed under the same source-available terms as this
+project, and that Benedict Evert / Futurelab Studio retains full rights to
+use, relicense, and commercialize your contribution.
+
 # Contributing to Ora
 
 > **Note:** By submitting a contribution to this repository, you agree that your contribution is made under the same source-available license as this project, and that Futurelab Studio retains full rights to use, license, and commercialize your contribution.
@@ -36,4 +41,4 @@ See [README.md](README.md#for-developers) for build instructions.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the same source-available license as this project, and that Futurelab Studio retains full rights to use, license, and commercialize your contribution.
+By contributing, you agree that your contribution is licensed under the same source-available terms as this project, and that Benedict Evert / Futurelab Studio retains full rights to use, relicense, and commercialize your contribution.

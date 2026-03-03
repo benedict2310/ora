@@ -7,7 +7,7 @@
 
   [![macOS](https://img.shields.io/badge/macOS-26.0+-blue.svg)](https://www.apple.com/macos)
   [![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
-  [![License: Source Available](https://img.shields.io/badge/License-Source%20Available-blue.svg)](LICENSE)
+  [![License: Source Available](https://img.shields.io/badge/License-Source%20Available-blue.svg)]
   [![Release](https://img.shields.io/github/v/release/benedict2310/ora)](https://github.com/benedict2310/ora/releases)
 
   [Download](https://github.com/benedict2310/ora/releases/latest) • [Documentation](docs/) • [Contributing](#contributing)
@@ -212,9 +212,11 @@ Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTIN
 
 ## 📄 License
 
-Ora is source available — you can read and audit the code, but redistribution and commercial use require explicit written permission. See [LICENSE](LICENSE) for full terms.
+Ora is source available — you can read and audit the code, but redistribution and commercial use require explicit written permission.
+See [LICENSE](LICENSE) for full terms.
 
-© 2026 Futurelab Studio. All rights reserved.
+© 2026 Benedict Evert / Futurelab Studio. All rights reserved.
+Contact: benedict.bleimschein@gmail.com
 
 ---
 
