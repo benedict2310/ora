@@ -19,7 +19,7 @@ struct SkillsListTool: Tool {
     var schema: ToolSchema {
         ToolSchema(
             name: self.name,
-            description: "List skills metadata.",
+            description: "List available skills with their name, description, and source. Use when the user asks what skills are available, installed, or saved.",
             parameters: [:],
             requiredParameters: [],
             requiresConfirmation: false
