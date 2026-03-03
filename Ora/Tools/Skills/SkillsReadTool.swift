@@ -19,7 +19,7 @@ struct SkillsReadTool: Tool {
     var schema: ToolSchema {
         ToolSchema(
             name: self.name,
-            description: "Read skill files from references/ or assets/.",
+            description: "Read a supporting file (references/ or assets/) belonging to a specific skill. Only for use during skill execution — not for general file reading.",
             parameters: [
                 "id": ParameterSchema(type: "string", description: "Skill id or spoken skill name"),
                 "path": ParameterSchema(type: "string", description: "Relative file path (references/... or assets/...)")
