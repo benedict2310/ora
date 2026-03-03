@@ -1,5 +1,7 @@
 # Contributing to Ora
 
+> **Note:** By submitting a contribution to this repository, you agree that your contribution is made under the same source-available license as this project, and that Futurelab Studio retains full rights to use, license, and commercialize your contribution.
+
 Thank you for your interest in contributing to Ora! This document provides guidelines for contributing to the project.
 
 ## Code of Conduct
@@ -34,4 +36,4 @@ See [README.md](README.md#for-developers) for build instructions.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
+By contributing, you agree that your contributions will be licensed under the same source-available license as this project, and that Futurelab Studio retains full rights to use, license, and commercialize your contribution.
