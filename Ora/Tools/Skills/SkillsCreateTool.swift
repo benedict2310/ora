@@ -38,8 +38,11 @@ struct SkillsCreateTool: Tool {
         _ = try SkillAuthoringToolSupport.sanitizedSkillContent(content)
 
         if let scripts = args["scripts"]?.objectValue {
-            for filename in scripts.keys {
+            for (filename, value) in scripts {
                 try Self.validateScriptFilename(filename, toolName: self.name)
+                guard let source = value.stringValue, !source.isEmpty else {
+                    throw ToolHostError.validationFailed(self.name, "Script '\(filename)' must have a non-empty string value")
+                }
             }
         }
     }
@@ -84,7 +87,7 @@ struct SkillsCreateTool: Tool {
         do {
             let sanitized = try SkillAuthoringToolSupport.sanitizedSkillContent(args["content"]?.stringValue ?? "")
             let frontmatter = try SkillFrontmatterParser.parse(from: sanitized)
-            let scripts = (args["scripts"]?.objectValue ?? [:]).compactMapValues { $0.stringValue }
+            let scripts = (args["scripts"]?.objectValue ?? [:]).mapValues { $0.stringValue ?? "" }
             let metadata = try await self.skillStore.create(name: frontmatter.name, content: sanitized, scripts: scripts)
             let contentHash = SkillAuthoringToolSupport.contentHash(for: sanitized)
 
