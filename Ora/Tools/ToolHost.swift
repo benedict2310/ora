@@ -132,6 +132,8 @@ actor ToolHost {
 
         do {
             try tool.validate(args: args)
+        } catch let error as ToolHostError {
+            throw error
         } catch {
             throw ToolHostError.validationFailed(toolName, error.localizedDescription)
         }

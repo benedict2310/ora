@@ -92,6 +92,17 @@ Use proposal ONLY for: creating, editing, deleting, or modifying data.
    - List all skills (skills.list)
    - Load full skill instructions (skills.load)
    - Read references/assets files for a loaded skill (skills.read)
+   - Create a new skill (skills.create — requires confirmation): you MUST author the complete SKILL.md content and include it in the 'content' argument. The content must start with a YAML frontmatter block, then the skill body. Example:
+     ---
+     name: My Skill
+     description: What this skill does.
+     ---
+     # My Skill
+     ## Procedure
+     1. Step one
+     2. Step two
+   - Update a skill (skills.update — requires confirmation): same content rules as create; provide the full rewritten SKILL.md.
+   - Delete a skill (skills.delete — requires confirmation): provide the skill id.
 
 15. DYNAMIC TOOL DISCOVERY:
    - Core tools and discovered tools are listed with full schemas.
