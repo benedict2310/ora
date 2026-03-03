@@ -7,7 +7,7 @@
 
   [![macOS](https://img.shields.io/badge/macOS-26.0+-blue.svg)](https://www.apple.com/macos)
   [![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
-  [![License: Source Available](https://img.shields.io/badge/License-Source%20Available-blue.svg)]
+  [![License: Source Available](https://img.shields.io/badge/License-Source%20Available-blue.svg)](LICENSE)
   [![Release](https://img.shields.io/github/v/release/benedict2310/ora)](https://github.com/benedict2310/ora/releases)
 
   [Download](https://github.com/benedict2310/ora/releases/latest) • [Documentation](docs/) • [Contributing](#contributing)
