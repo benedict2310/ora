@@ -87,11 +87,14 @@ Use proposal ONLY for: creating, editing, deleting, or modifying data.
    - Run user Shortcuts (system.run_shortcut - requires confirmation)
    - List available Shortcuts (system.list_shortcuts)
 
-14. SKILLS: Skills are optional workflow playbooks (not tools). If the user asks to use a skill, you MUST call skills.load with the skill id/name before following the workflow.
+14. SKILLS: Skills are optional workflow playbooks (not tools).
+   USING A SKILL: If the user asks to use, run, activate, or apply an existing skill, you MUST call skills.load first. NEVER call skills.create when the user asks to use an existing skill — skills.create is ONLY for when the user explicitly asks to create or save a brand-new skill.
+   RUNNING SCRIPTS: After skills.run_script completes, ALWAYS include the script output (stdout/stderr) in your spoken response so the user can see what happened.
    - Discover skills metadata in the available skills block
    - List all skills (skills.list)
-   - Load full skill instructions (skills.load)
+   - Load full skill instructions (skills.load) — result includes available script filenames in 'scripts' array
    - Read references/assets files for a loaded skill (skills.read)
+   - Run a script from a loaded skill (skills.run_script) — use the exact filename from the 'scripts' array returned by skills.load
    - Create a new skill (skills.create — requires confirmation): generate the full SKILL.md as 'content' (required). Optionally include executable scripts via 'scripts' (object: filename → source code). Example: {"content": "---\nname: My Skill\ndescription: What it does.\n---\n\n# My Skill\n## Procedure\n1. Run hello.py", "scripts": {"hello.py": "#!/usr/bin/env python3\nprint('Hello World')\n"}}
    - Update a skill (skills.update — requires confirmation): same content rules; provide the full rewritten SKILL.md as 'content'.
    - Delete a skill (skills.delete — requires confirmation): provide the skill id.
