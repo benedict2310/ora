@@ -24,7 +24,7 @@ struct SkillsCreateTool: Tool {
             parameters: [
                 "name": ParameterSchema(type: "string", description: "Skill name"),
                 "description": ParameterSchema(type: "string", description: "Short skill description"),
-                "content": ParameterSchema(type: "string", description: "Full SKILL.md markdown to write")
+                "content": ParameterSchema(type: "string", description: "Full SKILL.md markdown. MUST start with YAML frontmatter: ---\\nname: Skill Name\\ndescription: Short description\\n---")
             ],
             requiredParameters: ["name", "description", "content"],
             requiresConfirmation: true

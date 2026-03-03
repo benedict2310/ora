@@ -584,17 +584,17 @@ actor AgentLoop {
                 
             case .proposal(let summary, let tool, let args):
                 logger.info("Agent proposing: \(summary)")
-                let request = try? await self.authorizationRequest(
-                    tool: tool,
-                    args: args,
-                    preferredSummary: summary
-                )
-
-                if let request {
+                do {
+                    let request = try await self.authorizationRequest(
+                        tool: tool,
+                        args: args,
+                        preferredSummary: summary
+                    )
                     return .authorizationRequest(request)
+                } catch {
+                    logger.error("Failed to prepare authorization request for \(tool): \(error.localizedDescription)")
+                    return .error(error.localizedDescription)
                 }
-
-                return .error("I couldn't prepare that action for confirmation.")
                 
             case .error(let message):
                 logger.warning("LLM returned error: \(message)")
