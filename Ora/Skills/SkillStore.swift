@@ -96,8 +96,8 @@ actor SkillStore {
         try self.resolveExactSkill(for: id)
     }
 
-    func create(name: String, content: String) async throws -> SkillMetadata {
-        let skillID = try await self.writeNewAgentSkill(name: name, content: content)
+    func create(name: String, content: String, scripts: [String: String] = [:]) async throws -> SkillMetadata {
+        let skillID = try await self.writeNewAgentSkill(name: name, content: content, scripts: scripts)
         return try self.resolveExactSkill(for: skillID)
     }
 
@@ -279,7 +279,7 @@ actor SkillStore {
         }
     }
 
-    private func writeNewAgentSkill(name: String, content: String) async throws -> String {
+    private func writeNewAgentSkill(name: String, content: String, scripts: [String: String] = [:]) async throws -> String {
         let skillID = try self.generatedID(for: name)
         let skillRoot = self.roots.agent.appendingPathComponent(skillID, isDirectory: true)
         let skillFile = skillRoot.appendingPathComponent("SKILL.md", isDirectory: false)
@@ -289,6 +289,15 @@ actor SkillStore {
         try FileManager.default.createDirectory(at: skillRoot, withIntermediateDirectories: true)
         do {
             try sanitized.write(to: skillFile, atomically: true, encoding: .utf8)
+
+            if !scripts.isEmpty {
+                let scriptsRoot = skillRoot.appendingPathComponent("scripts", isDirectory: true)
+                try FileManager.default.createDirectory(at: scriptsRoot, withIntermediateDirectories: true)
+                for (filename, scriptContent) in scripts {
+                    let scriptFile = scriptsRoot.appendingPathComponent(filename, isDirectory: false)
+                    try scriptContent.write(to: scriptFile, atomically: true, encoding: .utf8)
+                }
+            }
         } catch {
             try? FileManager.default.removeItem(at: skillRoot)
             throw error

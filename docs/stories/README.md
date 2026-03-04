@@ -99,6 +99,16 @@ Local inference using MLX Swift.
 | L.05 | [Additional LLM Models](llm-integration/L.05-ADDITIONAL-LLM-MODELS.md) | 📋 Deferred |
 | L.06 | [Qwen 3 Upgrade](llm-integration/L.06-QWEN3-UPGRADE.md) | ✅ Complete |
 
+### 👁 Vision Integration (V)
+Local multimodal inference, image attachments, and screenshot understanding.
+
+| ID | Title | Status |
+|:---|:------|:-------|
+| V.01 | [Multimodal Message Model & Provider Capabilities](vision-integration/V.01-MULTIMODAL-MESSAGE-MODEL-AND-PROVIDER-CAPABILITIES.md) | 🚧 To Do |
+| V.02 | [Local VLM Runtime & Qwen 3.5 4B Vision Model](vision-integration/V.02-LOCAL-VLM-RUNTIME-AND-QWEN35-4B-VISION-MODEL.md) | 🚧 To Do |
+| V.03 | [Image Attachments & Screenshot Capture UX](vision-integration/V.03-IMAGE-ATTACHMENTS-AND-SCREENSHOT-CAPTURE-UX.md) | 🚧 To Do |
+| V.04 | [Multimodal Agent Loop & Session Integration](vision-integration/V.04-MULTIMODAL-AGENT-LOOP-AND-SESSION-INTEGRATION.md) | 🚧 To Do |
+
 ### 🗣 TTS Integration (T)
 Text-to-speech using Kokoro MLX.
 

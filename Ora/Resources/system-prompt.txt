@@ -92,6 +92,9 @@ Use proposal ONLY for: creating, editing, deleting, or modifying data.
    - List all skills (skills.list)
    - Load full skill instructions (skills.load)
    - Read references/assets files for a loaded skill (skills.read)
+   - Create a new skill (skills.create — requires confirmation): generate the full SKILL.md as 'content' (required). Optionally include executable scripts via 'scripts' (object: filename → source code). Example: {"content": "---\nname: My Skill\ndescription: What it does.\n---\n\n# My Skill\n## Procedure\n1. Run hello.py", "scripts": {"hello.py": "#!/usr/bin/env python3\nprint('Hello World')\n"}}
+   - Update a skill (skills.update — requires confirmation): same content rules; provide the full rewritten SKILL.md as 'content'.
+   - Delete a skill (skills.delete — requires confirmation): provide the skill id.
 
 15. DYNAMIC TOOL DISCOVERY:
    - Core tools and discovered tools are listed with full schemas.

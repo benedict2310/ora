@@ -48,6 +48,8 @@ struct SkillsLoadTool: Tool {
 
         let document = try await self.skillStore.load(id: requestedID)
         let (content, wasTruncated) = Self.truncate(document.markdown)
+        let scriptFiles = (try? await self.skillStore.scriptFiles(id: document.meta.id)) ?? []
+        let scriptNames = scriptFiles.map { $0.lastPathComponent }.sorted()
 
         var payload: [String: JSONValue] = [
             "id": .string(document.meta.id),
@@ -57,6 +59,10 @@ struct SkillsLoadTool: Tool {
             "content": .string(content)
         ]
 
+        if !scriptNames.isEmpty {
+            payload["scripts"] = .array(scriptNames.map { .string($0) })
+        }
+
         if wasTruncated {
             payload["truncated"] = .bool(true)
         }
@@ -64,6 +70,8 @@ struct SkillsLoadTool: Tool {
         let summary: String
         if wasTruncated {
             summary = "Loaded skill '\(document.meta.name)' (truncated to \(Self.maxContentCharacters) chars)."
+        } else if !scriptNames.isEmpty {
+            summary = "Loaded skill '\(document.meta.name)' with scripts: \(scriptNames.joined(separator: ", "))."
         } else {
             summary = "Loaded skill '\(document.meta.name)'."
         }
