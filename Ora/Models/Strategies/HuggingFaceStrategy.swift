@@ -113,6 +113,18 @@ struct HuggingFaceStrategy: ModelDownloadStrategy, Sendable {
                 "model.safetensors",
                 "chat_template.jinja",  // Qwen 3 uses separate jinja file
             ]
+
+        case .qwen35_4B_Vision:
+            return [
+                "config.json",
+                "tokenizer.json",
+                "tokenizer_config.json",
+                "special_tokens_map.json",
+                "model.safetensors",
+                "processor_config.json",
+                "preprocessor_config.json",
+                "video_preprocessor_config.json",
+            ]
             
         case .qwen7B, .qwen3B:
             // Legacy Qwen 2.5 models - MLX-community format

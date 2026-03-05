@@ -9,9 +9,24 @@ import Foundation
 import MLX
 import MLXLLM
 import MLXLMCommon
+import MLXVLM
 import MLXRandom
 import Tokenizers
 import os
+
+enum LocalRuntimeBackend: Sendable, Equatable {
+    case mlxLLM
+    case mlxVLM
+
+    var supportsImageInput: Bool {
+        switch self {
+        case .mlxLLM:
+            return false
+        case .mlxVLM:
+            return true
+        }
+    }
+}
 
 /// MLX-based LLM service
 actor LLMService: LLMServicing {
@@ -27,6 +42,7 @@ actor LLMService: LLMServicing {
     private var modelContainer: ModelContainer?
     private var isReady = false
     private var isWarmedUp = false
+    private var runtimeBackend: LocalRuntimeBackend = .mlxLLM
     
     /// Persistent KV cache for multi-turn conversations
     /// Created on first generation, reused across turns, cleared on session end
@@ -57,7 +73,7 @@ actor LLMService: LLMServicing {
         let modelState = await modelManager.state
         let primaryLLM = modelState.primaryLLM
         
-        guard await checkMemoryAvailable(for: primaryLLM) else {
+        guard self.checkMemoryAvailable(for: primaryLLM) else {
             throw LLMServiceError.insufficientMemory
         }
         
@@ -69,12 +85,18 @@ actor LLMService: LLMServicing {
         
         // Attempt to create configuration pointing to local directory
         let configuration = ModelConfiguration(directory: modelPath)
-        
-        let container = try await LLMModelFactory.shared.loadContainer(
-            configuration: configuration
-        )
+
+        let backend = Self.runtimeBackend(for: primaryLLM)
+        let container: ModelContainer
+        switch backend {
+        case .mlxLLM:
+            container = try await LLMModelFactory.shared.loadContainer(configuration: configuration)
+        case .mlxVLM:
+            container = try await VLMModelFactory.shared.loadContainer(configuration: configuration)
+        }
         
         self.modelContainer = container
+        self.runtimeBackend = backend
         self.isReady = true
         
         // Limit GPU cache to prevent unbounded memory growth (BUG-005)
@@ -139,7 +161,9 @@ actor LLMService: LLMServicing {
     }
 
     func capabilities() async -> ProviderCapabilities {
-        return .textOnly
+        let primaryLLM = await ModelManager.shared.state.primaryLLM
+        let backend = Self.runtimeBackend(for: primaryLLM)
+        return backend.supportsImageInput ? .multimodal : .textOnly
     }
     
     /// Unload the model to free memory
@@ -157,6 +181,7 @@ actor LLMService: LLMServicing {
         modelContainer = nil
         isReady = false
         isWarmedUp = false
+        runtimeBackend = .mlxLLM
 
         logger.info("LLM model unloaded")
 
@@ -195,14 +220,12 @@ actor LLMService: LLMServicing {
             throw LLMServiceError.notReady
         }
 
-        if messages.contains(where: \.containsImageAttachments) {
+        if messages.contains(where: \.containsImageAttachments) && !self.runtimeBackend.supportsImageInput {
             throw LLMServiceError.unsupportedInput(
                 "The local model currently supports text-only input. Remove image attachments and try again."
             )
         }
         
-        // Convert LLMMessage to the format expected by applyChatTemplate
-        // The tokenizer expects [[String: any Sendable]] with "role" and "content" keys
         let chatMessages: [[String: any Sendable]] = messages.map { msg in
             ["role": msg.role.rawValue, "content": msg.textContent]
         }
@@ -217,6 +240,7 @@ actor LLMService: LLMServicing {
             temperature: temperature,
             topP: topP
         )
+        let runtimeBackend = self.runtimeBackend
         
         // Track timing for TTFT measurement
         let generationStart = CFAbsoluteTimeGetCurrent()
@@ -225,20 +249,28 @@ actor LLMService: LLMServicing {
         // Wrap in MLXMetalGate to serialize GPU access with TTS
         let (tokenCount, isNewCache, promptTokenCount) = try await MLXMetalGate.shared.withExclusiveAccess {
             try await container.perform { context -> (Int, Bool, Int) in
-                // Use applyChatTemplate to properly encode special tokens
-                // This ensures <|im_start|> becomes token 151644 (not multiple text tokens)
-                let inputTokens: [Int]
-                do {
-                    inputTokens = try context.tokenizer.applyChatTemplate(messages: chatMessages)
-                } catch {
-                    // Fallback to manual encoding if chat template fails
-                    // This shouldn't happen with Qwen models but provides safety
-                    // Note: fallbackPrompt is pre-computed above to avoid actor isolation issues
-                    inputTokens = context.tokenizer.encode(text: fallbackPrompt)
+                let input: LMInput
+                let promptTokenCount: Int
+                switch runtimeBackend {
+                case .mlxLLM:
+                    // Use applyChatTemplate to properly encode special tokens
+                    // This ensures <|im_start|> becomes token 151644 (not multiple text tokens)
+                    let inputTokens: [Int]
+                    do {
+                        inputTokens = try context.tokenizer.applyChatTemplate(messages: chatMessages)
+                    } catch {
+                        // Fallback to manual encoding if chat template fails
+                        // This shouldn't happen with Qwen models but provides safety
+                        // Note: fallbackPrompt is pre-computed above to avoid actor isolation issues
+                        inputTokens = context.tokenizer.encode(text: fallbackPrompt)
+                    }
+                    input = LMInput(tokens: MLXArray(inputTokens))
+                    promptTokenCount = inputTokens.count
+                case .mlxVLM:
+                    let vlmUserInput = try Self.makeVLMUserInput(from: messages)
+                    input = try await context.processor.prepare(input: vlmUserInput)
+                    promptTokenCount = input.text.tokens.size
                 }
-                
-                let input = LMInput(tokens: MLXArray(inputTokens))
-                let promptTokenCount = inputTokens.count
                 
                 // Initialize cache on first generation, reuse on subsequent
                 let isNewCache: Bool
@@ -336,27 +368,64 @@ actor LLMService: LLMServicing {
     internal func formatMessages(_ messages: [LLMMessage]) -> String {
         return formatMessagesLegacy(messages)
     }
+
+    nonisolated private static func makeVLMUserInput(from messages: [LLMMessage]) throws -> UserInput {
+        let chat = try messages.map { message in
+            let images = try message.imageAttachments.map { imageAttachment in
+                let imageURL = URL(fileURLWithPath: imageAttachment.stagedFilePath)
+                guard FileManager.default.fileExists(atPath: imageURL.path) else {
+                    throw LLMServiceError.unsupportedInput(
+                        "The attached image could not be found on disk. Please attach the image again and retry."
+                    )
+                }
+                return UserInput.Image.url(imageURL)
+            }
+            return Chat.Message(
+                role: Self.chatRole(for: message.role),
+                content: message.textContent,
+                images: images
+            )
+        }
+        return UserInput(chat: chat)
+    }
+
+    nonisolated private static func chatRole(for role: LLMMessage.Role) -> Chat.Message.Role {
+        switch role {
+        case .system:
+            return .system
+        case .user:
+            return .user
+        case .assistant:
+            return .assistant
+        case .tool:
+            return .tool
+        }
+    }
     
     // MARK: - Memory Management
     
-    private func checkMemoryAvailable(for model: ModelIdentifier) async -> Bool {
+    private func checkMemoryAvailable(for model: ModelIdentifier) -> Bool {
         let totalRAM = ProcessInfo.processInfo.physicalMemory
-        
-        // Qwen 3 4B requires ~3GB. macOS ~3GB.
-        // We recommend 8GB+ for comfortable usage.
-        // Note: Qwen 3 4B is smaller than the old Qwen 2.5 7B
+
+        if !Self.hasSufficientMemory(for: model, totalRAMBytes: totalRAM) {
+            let minimumRAMGB = Int(Double(model.minimumSupportedRAMBytes ?? 0) / 1_000_000_000)
+            logger.error("Insufficient RAM for \(model.displayName). Required: \(minimumRAMGB)GB+, Available Total: \(totalRAM / 1_000_000_000)GB")
+            return false
+        }
+
         if model == .qwen3_4B && totalRAM < 8_000_000_000 {
             logger.warning("Low RAM for Qwen 3 4B. Available Total: \(totalRAM / 1_000_000_000)GB - proceeding anyway")
-            // We still allow it since 4B is more memory efficient
-        }
-        
-        // Legacy models kept for reference
-        if model == .qwen7B && totalRAM < 16_000_000_000 {
-            logger.error("Insufficient RAM for Qwen 7B. Required: 16GB+, Available Total: \(totalRAM / 1_000_000_000)GB")
-            return false
         }
         
         return true
+    }
+
+    nonisolated static func runtimeBackend(for model: ModelIdentifier) -> LocalRuntimeBackend {
+        return model.supportsImageInput ? .mlxVLM : .mlxLLM
+    }
+
+    nonisolated static func hasSufficientMemory(for model: ModelIdentifier, totalRAMBytes: UInt64) -> Bool {
+        return model.isSupported(on: totalRAMBytes)
     }
     
     static func recommendedModel() -> ModelIdentifier {

@@ -140,8 +140,15 @@ actor ModelManager {
     }
 
     /// Select which LLM to use as primary
-    func setPrimaryLLM(_ model: ModelIdentifier) async {
+    func setPrimaryLLM(
+        _ model: ModelIdentifier,
+        totalRAMBytes: UInt64 = ProcessInfo.processInfo.physicalMemory
+    ) async {
         guard model.category == .llm else { return }
+        guard model.isSupported(on: totalRAMBytes) else {
+            self.logger.warning("Cannot set \(model.displayName, privacy: .public) as primary on this hardware")
+            return
+        }
         _state.primaryLLM = model
 
         // Update metadata for all LLM models
@@ -487,6 +494,17 @@ actor ModelManager {
                 _state.metadata[meta.identifier] = meta
                 if meta.isPrimary && meta.identifier.category == .llm {
                     _state.primaryLLM = meta.identifier
+                }
+            }
+            let totalRAMBytes = ProcessInfo.processInfo.physicalMemory
+            if !_state.primaryLLM.isSupported(on: totalRAMBytes) {
+                self.logger.warning("Persisted primary LLM is unsupported on this hardware; falling back to Qwen 3 4B")
+                _state.primaryLLM = .qwen3_4B
+                for llm in ModelIdentifier.allCases where llm.category == .llm {
+                    if var meta = _state.metadata[llm] {
+                        meta.isPrimary = (llm == .qwen3_4B)
+                        _state.metadata[llm] = meta
+                    }
                 }
             }
             self.logger.debug("Loaded metadata for \(metadata.count) models")
