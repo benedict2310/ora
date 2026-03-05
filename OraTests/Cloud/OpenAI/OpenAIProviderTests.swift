@@ -143,6 +143,45 @@ final class OpenAIProviderTests: XCTestCase {
         XCTAssertEqual(messages[0]["role"] as? String, "user")
     }
 
+    func test_generate_withImageAttachment_throwsUnsupportedInputBeforeNetworkCall() async throws {
+        // Given
+        OpenAIMockURLProtocol.setHandler { _, _ in
+            .sse(events: ["[DONE]"])
+        }
+        let provider = self.makeProvider()
+        let image = LLMImageAttachmentReference(
+            stagedFilePath: "/tmp/ora/staged/image.png",
+            mimeType: "image/png"
+        )
+        let message = LLMMessage(
+            role: .user,
+            contentParts: [
+                .text("What is in this screenshot?"),
+                .image(image),
+            ]
+        )
+
+        // When / Then
+        do {
+            _ = try await self.collectDeltas(
+                from: await provider.generate(
+                    messages: [message],
+                    maxTokens: 32
+                )
+            )
+            XCTFail("Expected unsupported input error")
+        } catch let error as CloudProviderError {
+            guard case .unsupportedInput(let message) = error else {
+                return XCTFail("Unexpected CloudProviderError: \(error)")
+            }
+            XCTAssertTrue(message.contains("text-only"))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        XCTAssertEqual(OpenAIMockURLProtocol.requestCount, 0)
+    }
+
     func test_done_sentinel_completesStream() async throws {
         // Given
         OpenAIMockURLProtocol.setHandler { _, _ in

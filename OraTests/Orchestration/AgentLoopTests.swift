@@ -44,6 +44,10 @@ actor AgentLoopMockLLMService: LLMServicing {
     func unload() async {
         // No-op
     }
+
+    func capabilities() async -> ProviderCapabilities {
+        return .textOnly
+    }
     
     func clearCache() async {
         // No-op for testing
@@ -58,6 +62,7 @@ actor AgentLoopMockFailingLLMService: LLMServicing {
     func warmup() async throws {}
     func prepare() async throws {}
     func unload() async {}
+    func capabilities() async -> ProviderCapabilities { .textOnly }
     func clearCache() async {}
 
     func generate(messages: [LLMMessage], maxTokens: Int) async -> AsyncThrowingStream<LLMDelta, Error> {
@@ -71,6 +76,7 @@ actor AgentLoopMockModelUnavailableLLMService: LLMServicing {
     func warmup() async throws {}
     func prepare() async throws {}
     func unload() async {}
+    func capabilities() async -> ProviderCapabilities { .textOnly }
     func clearCache() async {}
 
     func generate(messages: [LLMMessage], maxTokens: Int) async -> AsyncThrowingStream<LLMDelta, Error> {
@@ -89,6 +95,7 @@ actor AgentLoopMockRequestShapeRejectedLLMService: LLMServicing {
     func warmup() async throws {}
     func prepare() async throws {}
     func unload() async {}
+    func capabilities() async -> ProviderCapabilities { .textOnly }
     func clearCache() async {}
 
     func generate(messages: [LLMMessage], maxTokens: Int) async -> AsyncThrowingStream<LLMDelta, Error> {

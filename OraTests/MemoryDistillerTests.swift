@@ -21,6 +21,7 @@ actor MemoryDistillerMockLLMService: LLMServicing {
     func prepare() async throws {}
     func warmup() async throws {}
     func unload() async {}
+    func capabilities() async -> ProviderCapabilities { .textOnly }
     func clearCache() async {}
 
     func generate(messages: [LLMMessage], maxTokens: Int) async -> AsyncThrowingStream<LLMDelta, Error> {

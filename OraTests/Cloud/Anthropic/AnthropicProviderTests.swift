@@ -54,7 +54,44 @@ final class AnthropicProviderTests: XCTestCase {
         XCTAssertEqual(AnthropicModel.opus.maxOutputTokens, 8192)
     }
 
+    func test_generate_withImageAttachment_throwsUnsupportedInput() async throws {
+        let provider = self.makeProvider()
+        let image = LLMImageAttachmentReference(
+            stagedFilePath: "/tmp/ora/staged/image.png",
+            mimeType: "image/png"
+        )
+        let message = LLMMessage(
+            role: .user,
+            contentParts: [
+                .text("Describe this image"),
+                .image(image),
+            ]
+        )
+
+        do {
+            _ = try await self.collectDeltas(
+                from: await provider.generate(messages: [message], maxTokens: 32)
+            )
+            XCTFail("Expected unsupported input error")
+        } catch let error as CloudProviderError {
+            guard case .unsupportedInput(let guidance) = error else {
+                return XCTFail("Unexpected CloudProviderError: \(error)")
+            }
+            XCTAssertTrue(guidance.contains("text-only"))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     // NOTE: Real API integration tests would require mocking URLSession
     // or using a test HTTP server. For now, we verify basic initialization.
     // Full SSE parsing and retry logic would be tested with mocked responses.
+
+    private func collectDeltas(from stream: AsyncThrowingStream<LLMDelta, Error>) async throws -> [LLMDelta] {
+        var deltas: [LLMDelta] = []
+        for try await delta in stream {
+            deltas.append(delta)
+        }
+        return deltas
+    }
 }

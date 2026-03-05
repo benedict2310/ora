@@ -146,6 +146,7 @@ private actor StubLLMService: LLMServicing {
     func warmup() async throws {}
     func prepare() async throws {}
     func unload() async {}
+    func capabilities() async -> ProviderCapabilities { .textOnly }
     func clearCache() async {}
 }
 
@@ -197,5 +198,6 @@ private actor ScriptedStubLLMService: LLMServicing {
     func warmup() async throws {}
     func prepare() async throws {}
     func unload() async {}
+    func capabilities() async -> ProviderCapabilities { .textOnly }
     func clearCache() async {}
 }
