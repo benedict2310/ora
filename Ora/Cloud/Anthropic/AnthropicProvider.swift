@@ -49,8 +49,10 @@ public final class AnthropicProvider: CloudLLMBase, @unchecked Sendable {
         maxTokens: Int,
         continuation: AsyncThrowingStream<LLMDelta, Error>.Continuation
     ) async throws {
+        try self.assertTextOnlyInput(messages: messages, providerName: "Anthropic")
+
         // Separate system message from conversation messages
-        let systemText = messages.first { $0.role == .system }?.content
+        let systemText = messages.first { $0.role == .system }?.textContent
         let conversationMessages = messages.filter { $0.role != .system }
 
         // Build request body
@@ -61,7 +63,7 @@ public final class AnthropicProvider: CloudLLMBase, @unchecked Sendable {
             "messages": conversationMessages.map { msg in
                 [
                     "role": msg.role == .tool ? "user" : msg.role.rawValue,
-                    "content": msg.content,
+                    "content": msg.textContent,
                 ] as [String: Any]
             },
         ]

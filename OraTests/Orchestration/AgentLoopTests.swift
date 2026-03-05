@@ -44,6 +44,10 @@ actor AgentLoopMockLLMService: LLMServicing {
     func unload() async {
         // No-op
     }
+
+    func capabilities() async -> ProviderCapabilities {
+        return .textOnly
+    }
     
     func clearCache() async {
         // No-op for testing
@@ -58,6 +62,7 @@ actor AgentLoopMockFailingLLMService: LLMServicing {
     func warmup() async throws {}
     func prepare() async throws {}
     func unload() async {}
+    func capabilities() async -> ProviderCapabilities { .textOnly }
     func clearCache() async {}
 
     func generate(messages: [LLMMessage], maxTokens: Int) async -> AsyncThrowingStream<LLMDelta, Error> {
@@ -71,6 +76,7 @@ actor AgentLoopMockModelUnavailableLLMService: LLMServicing {
     func warmup() async throws {}
     func prepare() async throws {}
     func unload() async {}
+    func capabilities() async -> ProviderCapabilities { .textOnly }
     func clearCache() async {}
 
     func generate(messages: [LLMMessage], maxTokens: Int) async -> AsyncThrowingStream<LLMDelta, Error> {
@@ -89,6 +95,7 @@ actor AgentLoopMockRequestShapeRejectedLLMService: LLMServicing {
     func warmup() async throws {}
     func prepare() async throws {}
     func unload() async {}
+    func capabilities() async -> ProviderCapabilities { .textOnly }
     func clearCache() async {}
 
     func generate(messages: [LLMMessage], maxTokens: Int) async -> AsyncThrowingStream<LLMDelta, Error> {
@@ -97,6 +104,24 @@ actor AgentLoopMockRequestShapeRejectedLLMService: LLMServicing {
                 throwing: CloudProviderError.requestFailed(
                     statusCode: 400,
                     body: "invalid_request_error: Invalid role value in input payload."
+                )
+            )
+        }
+    }
+}
+
+actor AgentLoopMockUnsupportedInputLLMService: LLMServicing {
+    func warmup() async throws {}
+    func prepare() async throws {}
+    func unload() async {}
+    func capabilities() async -> ProviderCapabilities { .textOnly }
+    func clearCache() async {}
+
+    func generate(messages: [LLMMessage], maxTokens: Int) async -> AsyncThrowingStream<LLMDelta, Error> {
+        return AsyncThrowingStream { continuation in
+            continuation.finish(
+                throwing: LLMServiceError.unsupportedInput(
+                    "The local model currently supports text-only input. Remove image attachments and try again."
                 )
             )
         }
@@ -577,6 +602,32 @@ final class AgentLoopTests: XCTestCase {
             XCTAssertTrue(message.contains("Preferences > Providers"))
         } else {
             XCTFail("Expected error result with request-shape guidance")
+        }
+    }
+
+    func test_conversationStart_withLocalUnsupportedInput_returnsActionableGuidance() async throws {
+        let failingLLM = AgentLoopMockUnsupportedInputLLMService()
+        let failingGenerator = StructuredGenerator(llm: failingLLM)
+        let loop = AgentLoop(
+            maxStepsPerTurn: 2,
+            maxToolCallsPerTurn: 1,
+            maxTokensPerTurn: 256,
+            structuredGenerator: failingGenerator,
+            toolHost: .shared,
+            toolRegistry: self.toolRegistry,
+            conversationManager: ConversationManager.makeTestInstance(maxContextTokens: 2000),
+            memoryDistiller: AgentLoopRecordingMemoryDistiller()
+        )
+
+        let result = try await loop.process(userText: "Test local unsupported input")
+
+        if case .error(let message) = result {
+            XCTAssertEqual(
+                message,
+                "The local model currently supports text-only input. Remove image attachments and try again."
+            )
+        } else {
+            XCTFail("Expected error result with unsupported-input guidance")
         }
     }
     

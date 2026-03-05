@@ -226,6 +226,8 @@ actor StructuredGenerator {
             self.logger.error("STRUCTURED_ATTEMPT_STREAM_FAILED_CLOUD_AUTHENTICATION")
         case .billingError:
             self.logger.error("STRUCTURED_ATTEMPT_STREAM_FAILED_CLOUD_BILLING")
+        case .unsupportedInput:
+            self.logger.error("STRUCTURED_ATTEMPT_STREAM_FAILED_CLOUD_UNSUPPORTED_INPUT")
         case .rateLimited:
             self.logger.error("STRUCTURED_ATTEMPT_STREAM_FAILED_CLOUD_RATE_LIMITED")
         case .serverError:

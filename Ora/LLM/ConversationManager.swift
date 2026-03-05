@@ -68,25 +68,27 @@ actor ConversationManager {
     /// Add a user message to the conversation
     /// - Parameter content: The user's message content
     func addUserMessage(_ content: String) {
-        messages.append(LLMMessage(role: .user, content: content))
-        trimContextIfNeeded()
-        logger.debug("Added user message (\(content.count) chars), total messages: \(self.messages.count)")
+        self.addMessage(LLMMessage(role: .user, content: content))
     }
     
     /// Add an assistant message to the conversation
     /// - Parameter content: The assistant's response content
     func addAssistantMessage(_ content: String) {
-        messages.append(LLMMessage(role: .assistant, content: content))
-        trimContextIfNeeded()
-        logger.debug("Added assistant message (\(content.count) chars), total messages: \(self.messages.count)")
+        self.addMessage(LLMMessage(role: .assistant, content: content))
     }
     
     /// Add a tool result to the conversation
     /// - Parameter content: The tool execution result
     func addToolResult(_ content: String) {
-        messages.append(LLMMessage(role: .tool, content: content))
+        self.addMessage(LLMMessage(role: .tool, content: content))
+    }
+
+    /// Add a message with arbitrary structured content parts.
+    /// - Parameter message: The message to append.
+    func addMessage(_ message: LLMMessage) {
+        self.messages.append(message)
         trimContextIfNeeded()
-        logger.debug("Added tool result (\(content.count) chars), total messages: \(self.messages.count)")
+        self.logger.debug("Added \(message.role.rawValue) message (\(message.textContent.count) chars), total messages: \(self.messages.count)")
     }
 
     /// Update the system prompt in-place without clearing conversation history.
@@ -147,7 +149,7 @@ actor ConversationManager {
             total += estimateTokens(memoryContext)
         }
         for message in messages {
-            total += estimateTokens(message.content)
+            total += estimateTokens(message.textContent)
         }
         return total
     }
@@ -191,7 +193,7 @@ actor ConversationManager {
         }
 
         for message in messages {
-            totalTokens += estimateTokens(message.content)
+            totalTokens += estimateTokens(message.textContent)
         }
         
         // Keep at least 1 message for minimal context
@@ -200,7 +202,7 @@ actor ConversationManager {
         
         while totalTokens > maxContextTokens && messages.count > minMessages {
             let removed = messages.removeFirst()
-            totalTokens -= estimateTokens(removed.content)
+            totalTokens -= estimateTokens(removed.textContent)
             trimCount += 1
         }
         

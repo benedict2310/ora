@@ -14,6 +14,7 @@ public enum CloudProviderError: LocalizedError {
     case rateLimited(retryAfter: TimeInterval?)
     case serverError(statusCode: Int, body: String)
     case requestFailed(statusCode: Int, body: String)
+    case unsupportedInput(String)
     case connectionFailed(Error)
     case invalidResponse(String)
 
@@ -24,6 +25,7 @@ public enum CloudProviderError: LocalizedError {
         case .rateLimited(let retryAfter): return "Rate limited (retry after \(retryAfter ?? 0)s)"
         case .serverError(let statusCode, let body): return "Server error \(statusCode): \(body)"
         case .requestFailed(let statusCode, let body): return "Request failed \(statusCode): \(body)"
+        case .unsupportedInput(let reason): return reason
         case .connectionFailed(let error): return "Connection failed: \(error.localizedDescription)"
         case .invalidResponse(let reason): return "Invalid response: \(reason)"
         }
@@ -35,7 +37,7 @@ public enum CloudProviderError: LocalizedError {
         case .authenticationFailed, .billingError: return true
         case .rateLimited: return false  // Retry instead
         case .serverError, .connectionFailed: return true
-        case .requestFailed, .invalidResponse: return false
+        case .requestFailed, .unsupportedInput, .invalidResponse: return false
         }
     }
 }

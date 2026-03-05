@@ -141,6 +141,25 @@ final class LLMProviderManagerTests: XCTestCase {
         let provider = await self.manager.currentProvider()
         XCTAssertTrue(provider is CodexProvider)
     }
+
+    func test_capabilities_defaultLocalProvider_reportsTextOnly() async {
+        let capabilities = await self.manager.capabilities()
+
+        XCTAssertTrue(capabilities.supportsTextInput)
+        XCTAssertFalse(capabilities.supportsImageInput)
+    }
+
+    func test_capabilities_passThroughFromActiveProvider() async throws {
+        let factory = MockProviderFactory(capabilities: .multimodal)
+        await self.manager.register(factory: factory, for: .anthropic)
+        try await self.mockCredentialStore.save(provider: .anthropic, apiKey: "sk-ant-test")
+
+        try await self.manager.switchProvider(to: .anthropic)
+        let capabilities = await self.manager.capabilities()
+
+        XCTAssertTrue(capabilities.supportsTextInput)
+        XCTAssertTrue(capabilities.supportsImageInput)
+    }
 }
 
 // MARK: - Mocks
@@ -195,13 +214,22 @@ actor MockCodexOAuthManager: CodexOAuthManaging {
 }
 
 private struct MockProviderFactory: LLMProviderFactory {
+    private let capabilities: ProviderCapabilities
+
+    init(capabilities: ProviderCapabilities = .textOnly) {
+        self.capabilities = capabilities
+    }
+
     func create(apiKey: String) throws -> LLMServicing {
-        return MockCloudProvider(apiKey: apiKey)
+        return MockCloudProvider(apiKey: apiKey, capabilities: self.capabilities)
     }
 }
 
 private final class MockCloudProvider: CloudLLMBase, @unchecked Sendable {
-    init(apiKey: String) {
+    private let providerCapabilities: ProviderCapabilities
+
+    init(apiKey: String, capabilities: ProviderCapabilities = .textOnly) {
+        self.providerCapabilities = capabilities
         super.init(apiKey: apiKey, category: "mock")
     }
 
@@ -210,6 +238,10 @@ private final class MockCloudProvider: CloudLLMBase, @unchecked Sendable {
             continuation.yield(.token("Mock"))
             continuation.finish()
         }
+    }
+
+    override func capabilities() async -> ProviderCapabilities {
+        return self.providerCapabilities
     }
 
     override func prepare() async throws {

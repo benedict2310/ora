@@ -233,6 +233,29 @@ final class ConversationManagerTests: XCTestCase {
         XCTAssertEqual(conversation[0].role, .user)
         XCTAssertEqual(conversation[1].role, .assistant)
     }
+
+    func test_addMessage_preservesStructuredContentParts() async {
+        let manager = ConversationManager.makeTestInstance(maxContextTokens: 6000)
+        let image = LLMImageAttachmentReference(
+            stagedFilePath: "/tmp/ora/staged/screen.png",
+            mimeType: "image/png"
+        )
+        let message = LLMMessage(
+            role: .user,
+            contentParts: [
+                .text("Please inspect this."),
+                .image(image),
+            ]
+        )
+
+        await manager.startConversation(systemPrompt: "System")
+        await manager.addMessage(message)
+
+        let conversation = await manager.getConversation()
+        XCTAssertEqual(conversation.count, 1)
+        XCTAssertEqual(conversation[0], message)
+        XCTAssertTrue(conversation[0].containsImageAttachments)
+    }
     
     func test_startConversationClearsPreviousMessages() async {
         let manager = ConversationManager.makeTestInstance(maxContextTokens: 6000)

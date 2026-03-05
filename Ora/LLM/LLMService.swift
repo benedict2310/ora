@@ -137,6 +137,10 @@ actor LLMService: LLMServicing {
             }
         }
     }
+
+    func capabilities() async -> ProviderCapabilities {
+        return .textOnly
+    }
     
     /// Unload the model to free memory
     func unload() async {
@@ -191,11 +195,16 @@ actor LLMService: LLMServicing {
             throw LLMServiceError.notReady
         }
 
+        if messages.contains(where: \.containsImageAttachments) {
+            throw LLMServiceError.unsupportedInput(
+                "The local model currently supports text-only input. Remove image attachments and try again."
+            )
+        }
         
         // Convert LLMMessage to the format expected by applyChatTemplate
         // The tokenizer expects [[String: any Sendable]] with "role" and "content" keys
         let chatMessages: [[String: any Sendable]] = messages.map { msg in
-            ["role": msg.role.rawValue, "content": msg.content]
+            ["role": msg.role.rawValue, "content": msg.textContent]
         }
         
         // Pre-compute fallback prompt outside the closure to avoid actor isolation issues
@@ -313,10 +322,10 @@ actor LLMService: LLMServicing {
         var formatted = ""
         for message in messages {
             switch message.role {
-            case .system: formatted += "<|im_start|>system\n\(message.content)<|im_end|>\n"
-            case .user: formatted += "<|im_start|>user\n\(message.content)<|im_end|>\n"
-            case .assistant: formatted += "<|im_start|>assistant\n\(message.content)<|im_end|>\n"
-            case .tool: formatted += "<|im_start|>tool\n\(message.content)<|im_end|>\n"
+            case .system: formatted += "<|im_start|>system\n\(message.textContent)<|im_end|>\n"
+            case .user: formatted += "<|im_start|>user\n\(message.textContent)<|im_end|>\n"
+            case .assistant: formatted += "<|im_start|>assistant\n\(message.textContent)<|im_end|>\n"
+            case .tool: formatted += "<|im_start|>tool\n\(message.textContent)<|im_end|>\n"
             }
         }
         formatted += "<|im_start|>assistant\n"

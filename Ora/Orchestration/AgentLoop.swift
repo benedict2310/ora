@@ -830,6 +830,15 @@ actor AgentLoop {
             }
         }
 
+        if let serviceError = error as? LLMServiceError {
+            switch serviceError {
+            case .unsupportedInput(let guidance):
+                return guidance
+            default:
+                break
+            }
+        }
+
         if let cloudError = error as? CloudProviderError {
             switch cloudError {
             case .authenticationFailed:
@@ -840,6 +849,8 @@ actor AgentLoop {
                 return "I could not reach the cloud provider. Check your connection or switch to Local (Qwen 3 4B)."
             case .requestFailed(let statusCode, let body):
                 return self.requestFailureGuidance(statusCode: statusCode, body: body)
+            case .unsupportedInput(let guidance):
+                return guidance
             case .invalidResponse(let reason):
                 let normalized = reason.lowercased()
                 if normalized.contains("model") && normalized.contains("unsupported") {

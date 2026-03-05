@@ -64,10 +64,12 @@ public final class OpenAIProvider: CloudLLMBase, @unchecked Sendable {
         maxTokens: Int,
         continuation: AsyncThrowingStream<LLMDelta, Error>.Continuation
     ) async throws {
+        try self.assertTextOnlyInput(messages: messages, providerName: "OpenAI")
+
         let mappedMessages = messages.map { message in
             [
                 "role": message.role == .tool ? "user" : message.role.rawValue,
-                "content": message.content,
+                "content": message.textContent,
             ] as [String: Any]
         }
 
