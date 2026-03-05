@@ -123,6 +123,32 @@ final class HuggingFaceDownloaderTests: XCTestCase {
         XCTAssertFalse(mock.downloadedFiles.isEmpty)
     }
 
+    func test_huggingFaceStrategy_downloadsVisionLLMModel() async throws {
+        let mock = MockFileDownloader()
+        mock.downloadDelay = 0.01
+        mock.fileSizeOverrides = [
+            "model.safetensors": 10_000_000_000,
+            "config.json": 10_000,
+            "tokenizer.json": 50_000_000,
+            "processor_config.json": 10_000,
+            "preprocessor_config.json": 10_000,
+            "video_preprocessor_config.json": 10_000,
+        ]
+
+        let strategy = HuggingFaceStrategy(downloader: mock)
+
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let progressCollector = DoubleCollector()
+        try await strategy.download(model: .qwen35_4B_Vision, to: tempDir) { progress in
+            progressCollector.append(progress.progress)
+        }
+
+        XCTAssertFalse(progressCollector.values.isEmpty)
+        XCTAssertFalse(mock.downloadedFiles.isEmpty)
+    }
+
     func test_huggingFaceStrategy_downloadsTTSModel() async throws {
         let mock = MockFileDownloader()
         mock.downloadDelay = 0.01
@@ -261,6 +287,31 @@ final class HuggingFaceDownloaderTests: XCTestCase {
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
         let verified = await downloader.verify(model: .qwen3_4B, at: tempDir)
+        XCTAssertFalse(verified)
+    }
+
+    func test_defaultModelDownloader_verify_visionFailsWhenProcessorConfigMissing() async throws {
+        let asrMock = MockModelDownloadStrategy()
+        let hfMock = MockModelDownloadStrategy()
+        let downloader = DefaultModelDownloader(asrStrategy: asrMock, huggingFaceStrategy: hfMock)
+
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        let requiredFiles = ModelIdentifier.qwen35_4B_Vision.requiredFiles.filter { $0 != "processor_config.json" }
+        for file in requiredFiles {
+            let dataSize: Int
+            if file.hasSuffix(".safetensors") {
+                dataSize = 12_000_000
+            } else {
+                dataSize = 512
+            }
+            let data = Data(repeating: 0x20, count: dataSize)
+            try data.write(to: tempDir.appendingPathComponent(file))
+        }
+
+        let verified = await downloader.verify(model: .qwen35_4B_Vision, at: tempDir)
         XCTAssertFalse(verified)
     }
 
@@ -524,6 +575,10 @@ final class HuggingFaceDownloaderTests: XCTestCase {
         // Verify that required files for LLM/TTS models include weight files
         // to prevent treating partial downloads as complete
         XCTAssertTrue(ModelIdentifier.qwen3_4B.requiredFiles.contains("model.safetensors"))
+        XCTAssertTrue(ModelIdentifier.qwen35_4B_Vision.requiredFiles.contains("model.safetensors"))
+        XCTAssertTrue(ModelIdentifier.qwen35_4B_Vision.requiredFiles.contains("processor_config.json"))
+        XCTAssertTrue(ModelIdentifier.qwen35_4B_Vision.requiredFiles.contains("preprocessor_config.json"))
+        XCTAssertTrue(ModelIdentifier.qwen35_4B_Vision.requiredFiles.contains("video_preprocessor_config.json"))
         XCTAssertTrue(ModelIdentifier.kokoro.requiredFiles.contains("kokoro-v1_0.safetensors"))
     }
 

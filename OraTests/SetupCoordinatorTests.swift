@@ -212,6 +212,13 @@ final class SetupStateTests: XCTestCase {
     func test_totalModelSizeDisplay_returnsExpectedValue() {
         XCTAssertEqual(SetupState.totalModelSizeDisplay, "~3.6 GB")
     }
+
+    func test_totalModelSizeDisplay_forVisionModel_returnsExpectedValue() {
+        XCTAssertEqual(
+            SetupState.totalModelSizeDisplay(for: .qwen35_4B_Vision),
+            "~4.6 GB"
+        )
+    }
 }
 
 // MARK: - ModelsState Download Tracking Tests
@@ -332,6 +339,33 @@ final class SetupCoordinatorTests: XCTestCase {
 
         // Primary LLM is now always Qwen 3 4B regardless of RAM
         XCTAssertEqual(coordinator.state.primaryLLM, .qwen3_4B)
+    }
+
+    func test_resolvePrimaryLLM_firstRunIgnoresPersistedVisionModel() {
+        let resolved = SetupCoordinator.resolvePrimaryLLM(
+            persistedLLM: .qwen35_4B_Vision,
+            isRepairFlow: false,
+            totalRAMBytes: 32_000_000_000
+        )
+        XCTAssertEqual(resolved, .qwen3_4B)
+    }
+
+    func test_resolvePrimaryLLM_repairFlowHonorsPersistedVisionModel() {
+        let resolved = SetupCoordinator.resolvePrimaryLLM(
+            persistedLLM: .qwen35_4B_Vision,
+            isRepairFlow: true,
+            totalRAMBytes: 32_000_000_000
+        )
+        XCTAssertEqual(resolved, .qwen35_4B_Vision)
+    }
+
+    func test_resolvePrimaryLLM_repairFlowFallsBackWhenInsufficientMemory() {
+        let resolved = SetupCoordinator.resolvePrimaryLLM(
+            persistedLLM: .qwen35_4B_Vision,
+            isRepairFlow: true,
+            totalRAMBytes: 8_000_000_000
+        )
+        XCTAssertEqual(resolved, .qwen3_4B)
     }
 
     // MARK: - Models State (Unified Tracking)
