@@ -1,7 +1,7 @@
 # V.01 - Multimodal Message Model & Provider Capabilities
 
 **Epic:** Vision Integration
-**Status:** Not Started
+**Status:** Complete
 **Priority:** P1 (High)
 **Estimated Effort:** 2-3 days
 **Dependencies:** L.01, L.03, O.06, F.08
@@ -129,12 +129,63 @@ As a user, I want Ora's model layer to understand image-bearing turns as a first
 
 ## Implementation Summary
 
-(TBD after implementation.)
+**Date:** 2026-03-05
+**Branch:** `feat/V01-multimodal-message-model`
+**Commits:** 4
+**Implemented by:** codex (complexity score: 9/10)
+**Reviewed by:** codex (3 iterations)
+
+### Files Changed
+- `Ora/LLM/ProviderCapabilities.swift` - Created: shared provider capability definitions
+- `Ora/LLM/Types.swift` - Modified: multimodal content parts + image attachment references
+- `Ora/Cloud/LLMProviderManager.swift` - Modified: expose active provider capabilities
+- `Ora/LLM/StructuredGenerator.swift` - Modified: updated for new message model
+- `Ora/LLM/ConversationManager.swift` - Modified: generic message append + text helpers
+- `Ora/Cloud/CloudLLMBase.swift` - Modified: shared unsupported-input behavior
+- `Ora/Cloud/OpenAI/OpenAIProvider.swift` - Modified: text-only mapping + image rejection
+- `Ora/Cloud/Anthropic/AnthropicProvider.swift` - Modified: text-only mapping + image rejection
+- `Ora/Cloud/OpenAI/CodexProvider.swift` - Modified: capability propagation
+- `Ora/Orchestration/AgentLoop.swift` - Modified: map unsupported-input error to actionable guidance
+- `OraTests/LLM/LLMTypesTests.swift` - Created: content-part serialization tests
+- `OraTests/Cloud/LLMProviderManagerTests.swift` - Modified: capability reporting tests
+- `OraTests/Cloud/OpenAI/OpenAIProviderTests.swift` - Created: image rejection tests
+- `OraTests/Cloud/Anthropic/AnthropicProviderTests.swift` - Created: image rejection tests
+- `OraTests/LLM/ConversationManagerTests.swift` - Modified: multimodal append tests
 
 ## Code Review Findings
 
-(TBD by review agent.)
+**Reviewer:** Codex Subagent
+**Date:** 2026-03-05T06:40:21Z
+**Commit reviewed:** 3ecc1dd
+**Iteration:** 3
+
+### Summary
+- Files reviewed: 22
+- Build status: Pass
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [x] None
+
+#### P1 - Major (Should fix)
+- [x] None
+
+#### P2 - Minor (Can defer)
+- [x] None
+
+### Future Considerations (Out of Scope)
+- None.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
 
 ## Completion Status
 
-(TBD after merge.)
+- [x] Implementation complete
+- [x] Code review passed (3 iterations)
+- [ ] PR merged: TBD
+- [ ] Merged to main: TBD
+- [ ] Date: TBD
