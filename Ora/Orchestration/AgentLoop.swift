@@ -830,6 +830,15 @@ actor AgentLoop {
             }
         }
 
+        if let serviceError = error as? LLMServiceError {
+            switch serviceError {
+            case .unsupportedInput(let guidance):
+                return guidance
+            default:
+                break
+            }
+        }
+
         if let cloudError = error as? CloudProviderError {
             switch cloudError {
             case .authenticationFailed:
