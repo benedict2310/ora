@@ -38,6 +38,31 @@ final class LLMServiceTests: XCTestCase {
         // Qwen 3 4B is now the only recommended model
         XCTAssertEqual(recommended, .qwen3_4B)
     }
+
+    func testRuntimeBackendSelection_textModelUsesMLXLLM() {
+        let backend = LLMService.runtimeBackend(for: .qwen3_4B)
+        XCTAssertEqual(backend, .mlxLLM)
+    }
+
+    func testRuntimeBackendSelection_visionModelUsesMLXVLM() {
+        let backend = LLMService.runtimeBackend(for: .qwen35_4B_Vision)
+        XCTAssertEqual(backend, .mlxVLM)
+    }
+
+    func testMemoryGating_visionModelRequires16GB() {
+        XCTAssertFalse(
+            LLMService.hasSufficientMemory(
+                for: .qwen35_4B_Vision,
+                totalRAMBytes: 15_000_000_000
+            )
+        )
+        XCTAssertTrue(
+            LLMService.hasSufficientMemory(
+                for: .qwen35_4B_Vision,
+                totalRAMBytes: 16_000_000_000
+            )
+        )
+    }
     
     // MARK: - KV Cache Tests
     

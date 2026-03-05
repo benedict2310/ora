@@ -25,6 +25,7 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
 
     // LLM - Qwen 3 models
     case qwen3_4B = "qwen3-4b-instruct-4bit"
+    case qwen35_4B_Vision = "qwen3.5-4b-vision-4bit"
 
     // Legacy Qwen 2.5 identifiers (for migration detection)
     // These are kept for backward compatibility with existing metadata
@@ -50,7 +51,7 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
     var category: ModelCategory {
         switch self {
         case .parakeetTDT: return .asr
-        case .qwen3_4B, .qwen7B, .qwen3B: return .llm
+        case .qwen3_4B, .qwen35_4B_Vision, .qwen7B, .qwen3B: return .llm
         case .kokoro: return .tts
         }
     }
@@ -59,6 +60,7 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
         switch self {
         case .parakeetTDT: return "Parakeet TDT 0.6B"
         case .qwen3_4B: return "Qwen 3 4B"
+        case .qwen35_4B_Vision: return "Qwen 3.5 4B Vision"
         case .qwen7B: return "Qwen 2.5 7B (Legacy)"
         case .qwen3B: return "Qwen 2.5 3B (Legacy)"
         case .kokoro: return "Kokoro TTS"
@@ -69,6 +71,7 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
         switch self {
         case .parakeetTDT: return "FluidInference/parakeet-tdt-0.6b-v3-coreml"
         case .qwen3_4B: return "mlx-community/Qwen3-4B-Instruct-2507-4bit"
+        case .qwen35_4B_Vision: return "mlx-community/Qwen3.5-4B-MLX-4bit"
         case .qwen7B: return "mlx-community/Qwen2.5-7B-Instruct-4bit"  // Legacy
         case .qwen3B: return "mlx-community/Qwen2.5-3B-Instruct-4bit"  // Legacy
         case .kokoro: return "mlx-community/Kokoro-82M-bf16"
@@ -79,6 +82,7 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
         switch self {
         case .parakeetTDT: return 600_000_000      // ~600 MB
         case .qwen3_4B: return 2_500_000_000       // ~2.5 GB (actual: 2.26 GB model + tokenizer)
+        case .qwen35_4B_Vision: return 3_500_000_000  // ~3.5 GB
         case .qwen7B: return 5_000_000_000         // ~5 GB (legacy)
         case .qwen3B: return 2_000_000_000         // ~2 GB (legacy)
         case .kokoro: return 500_000_000           // ~500 MB
@@ -88,7 +92,7 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
     var isRequired: Bool {
         switch self {
         case .parakeetTDT, .kokoro: return true
-        case .qwen3_4B: return false  // Required as the only active LLM, but handled specially
+        case .qwen3_4B, .qwen35_4B_Vision: return false  // LLM requirement is handled via primaryLLM
         case .qwen7B, .qwen3B: return false  // Legacy models
         }
     }
@@ -100,6 +104,7 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
         // so this must match what FluidAudio actually creates
         case .parakeetTDT: return "asr/parakeet-tdt-0.6b-v3-coreml"
         case .qwen3_4B: return "llm/qwen3-4b-instruct-4bit"
+        case .qwen35_4B_Vision: return "llm/qwen3.5-4b-vision-4bit"
         case .qwen7B: return "llm/qwen2.5-7b-instruct-4bit"  // Legacy
         case .qwen3B: return "llm/qwen2.5-3b-instruct-4bit"  // Legacy
         case .kokoro: return "tts/kokoro"
@@ -115,6 +120,18 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
         case .qwen3_4B:
             // Qwen 3 uses sharded weights with index file
             return ["config.json", "tokenizer.json", "model.safetensors"]
+        case .qwen35_4B_Vision:
+            // Qwen 3.5 VLM requires multimodal processor manifests in addition to weights/tokenizer.
+            // chat_template.jinja is required because tokenizer_config.json lacks an embedded chat_template.
+            return [
+                "config.json",
+                "tokenizer.json",
+                "model.safetensors",
+                "chat_template.jinja",
+                "processor_config.json",
+                "preprocessor_config.json",
+                "video_preprocessor_config.json",
+            ]
         case .qwen7B, .qwen3B:
             // Legacy Qwen 2.5 models
             return ["config.json", "tokenizer.json", "model.safetensors"]
@@ -138,6 +155,10 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
                 "tokenizer.json": 11_422_654,        // ~11 MB
                 "config.json": 938,
             ]
+        case .qwen35_4B_Vision:
+            // Runtime fetches exact sizes from the HuggingFace API when available.
+            // Keep this empty to avoid brittle hardcoded values for frequently-updated multimodal repos.
+            return [:]
         case .qwen7B:
             return [
                 "model.safetensors": 4_284_346_255,  // ~4.0 GB (legacy)
@@ -163,6 +184,57 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
     /// Files smaller than this percentage are considered corrupted
     /// 99% threshold catches truncated downloads while allowing minor variations
     static let minimumFileSizeThreshold: Double = 0.99
+
+    var supportsImageInput: Bool {
+        switch self {
+        case .qwen35_4B_Vision:
+            return true
+        default:
+            return false
+        }
+    }
+
+    var isAdvancedLocalModel: Bool {
+        switch self {
+        case .qwen35_4B_Vision:
+            return true
+        default:
+            return false
+        }
+    }
+
+    var minimumSupportedRAMBytes: UInt64? {
+        switch self {
+        case .qwen35_4B_Vision, .qwen7B:
+            return 16_000_000_000
+        default:
+            return nil
+        }
+    }
+
+    func isSupported(on totalRAMBytes: UInt64) -> Bool {
+        guard let minimumSupportedRAMBytes else {
+            return true
+        }
+        return totalRAMBytes >= minimumSupportedRAMBytes
+    }
+
+    var sizeDisplay: String {
+        switch self {
+        case .parakeetTDT:
+            return "~600 MB"
+        case .qwen3_4B:
+            return "~2.5 GB"
+        case .qwen35_4B_Vision:
+            return "~3.5 GB"
+        case .qwen7B:
+            return "~5 GB"
+        case .qwen3B:
+            return "~2 GB"
+        case .kokoro:
+            return "~500 MB"
+        }
+    }
 }
 
 // MARK: - Model Status

@@ -71,6 +71,8 @@ targets:
       - package: mlx-swift-lm
         product: MLXLMCommon
       - package: mlx-swift-lm
+        product: MLXVLM
+      - package: mlx-swift-lm
         product: MLXEmbedders
       - package: kokoro-ios
         product: KokoroSwift

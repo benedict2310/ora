@@ -134,11 +134,56 @@ As a user with a capable Mac, I want Ora to load an optional local Qwen 3.5 4B v
 
 ## Implementation Summary
 
-(TBD after implementation.)
+**Date:** 2026-03-05
+**Branch:** `feat/V.02-local-vlm-runtime`
+**Commits:** 5
+**Implemented by:** codex (complexity score: 10/10)
+**Reviewed by:** codex + orchestrator (1 iteration)
+
+### Files Changed
+- `project.yml` — Added `MLXVLM` package product to Ora target
+- `Ora/Models/ModelTypes.swift` — Added `qwen35_4B_Vision` with capability flags, RAM gating, and multimodal required files (including `chat_template.jinja`)
+- `Ora/Models/Strategies/HuggingFaceStrategy.swift` — Added vision model download manifest with all multimodal assets
+- `Ora/Models/ModelManager.swift` — RAM gating on `setPrimaryLLM`; fallback to Qwen 3 4B if persisted vision model unsupported
+- `Ora/LLM/LLMService.swift` — `LocalRuntimeBackend` enum; branches `LLMModelFactory` vs `VLMModelFactory` on load; `makeVLMUserInput` for image turns; updated `capabilities()` and memory gating
+- `Ora/Preferences/Tabs/ModelsPreferencesView.swift` — Vision model shown as "Advanced" with RAM guidance; primary selection blocked on unsupported hardware
+- `Ora/Setup/SetupCoordinator.swift` — `resolvePrimaryLLM` keeps Qwen 3 4B as first-run default; repair flow honors persisted vision selection when RAM allows
+- `Ora/Setup/SetupState.swift`, `ModelExplanationStepView.swift`, `DownloadStepView.swift` — Size display updated
+- `OraTests/` — Tests for multimodal file manifests, runtime backend selection, RAM gating, and setup resolution
+
+---
 
 ## Code Review Findings
 
-(TBD by review agent.)
+**Reviewer:** codex + orchestrator
+**Date:** 2026-03-05
+**Commit reviewed:** ddf7276
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 14
+- Build status: Pass
+- Tests: 1533/1533 passed
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [x] None.
+
+#### P1 - Major (Should fix)
+- [x] `HuggingFaceStrategy.swift` — Vision model download manifest missing `chat_template.jinja`. Fixed: added to download manifest.
+- [x] `ModelTypes.swift` — `requiredFiles` for vision model missing `chat_template.jinja`, allowing incomplete downloads to pass verification. Fixed: added to required files list.
+
+#### P2 - Minor (Can defer)
+- [x] None.
+
+### Future Considerations (Out of Scope)
+- None.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
 
 ## Completion Status
 

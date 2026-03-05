@@ -17,6 +17,7 @@ struct ModelsPreferencesView: View {
     @State private var showDeleteConfirmation = false
     @State private var modelToDelete: ModelIdentifier?
     @State private var downloadErrorMessage: String?
+    @State private var totalRAMBytes: UInt64 = ProcessInfo.processInfo.physicalMemory
 
     // MARK: - Body
 
@@ -29,6 +30,8 @@ struct ModelsPreferencesView: View {
                         model: model,
                         status: modelsState.statuses[model] ?? .notDownloaded,
                         isPrimary: false,
+                        isPrimarySelectionSupported: true,
+                        primarySelectionGuidance: nil,
                         onDownload: { await self.downloadModel(model) },
                         onDelete: { self.confirmDelete(model) },
                         onSetPrimary: { }
@@ -40,10 +43,14 @@ struct ModelsPreferencesView: View {
 
             Section {
                 ForEach(ModelIdentifier.activeModels.filter { $0.category == .llm }, id: \.self) { model in
+                    let isPrimarySelectionSupported = model.isSupported(on: self.totalRAMBytes)
+                    let primarySelectionGuidance = self.primarySelectionGuidance(for: model, isPrimarySelectionSupported: isPrimarySelectionSupported)
                     ModelRowView(
                         model: model,
                         status: modelsState.statuses[model] ?? .notDownloaded,
                         isPrimary: model == modelsState.primaryLLM,
+                        isPrimarySelectionSupported: isPrimarySelectionSupported,
+                        primarySelectionGuidance: primarySelectionGuidance,
                         onDownload: { await self.downloadModel(model) },
                         onDelete: { self.confirmDelete(model) },
                         onSetPrimary: { await self.setPrimary(model) }
@@ -51,6 +58,10 @@ struct ModelsPreferencesView: View {
                 }
             } header: {
                 Text("Language Model")
+            } footer: {
+                if self.totalRAMBytes < 16_000_000_000 {
+                    Text("Qwen 3.5 4B Vision is available as an advanced local model but needs at least 16 GB RAM to be selected as Primary on this Mac.")
+                }
             }
 
             Section {
@@ -59,6 +70,8 @@ struct ModelsPreferencesView: View {
                         model: model,
                         status: modelsState.statuses[model] ?? .notDownloaded,
                         isPrimary: false,
+                        isPrimarySelectionSupported: true,
+                        primarySelectionGuidance: nil,
                         onDownload: { await self.downloadModel(model) },
                         onDelete: { self.confirmDelete(model) },
                         onSetPrimary: { }
@@ -172,6 +185,18 @@ struct ModelsPreferencesView: View {
     private func setPrimary(_ model: ModelIdentifier) async {
         await ModelManager.shared.setPrimaryLLM(model)
     }
+
+    private func primarySelectionGuidance(
+        for model: ModelIdentifier,
+        isPrimarySelectionSupported: Bool
+    ) -> String? {
+        guard model.category == .llm else { return nil }
+        guard !isPrimarySelectionSupported else { return nil }
+        guard let minimumRAMBytes = model.minimumSupportedRAMBytes else { return nil }
+
+        let minimumRAMGB = Int(Double(minimumRAMBytes) / 1_000_000_000)
+        return "Requires \(minimumRAMGB) GB RAM to set as Primary."
+    }
 }
 
 // MARK: - Model Row View
@@ -181,6 +206,8 @@ struct ModelRowView: View {
     let model: ModelIdentifier
     let status: ModelStatus
     let isPrimary: Bool
+    let isPrimarySelectionSupported: Bool
+    let primarySelectionGuidance: String?
     let onDownload: () async -> Void
     let onDelete: () -> Void
     let onSetPrimary: () async -> Void
@@ -202,11 +229,27 @@ struct ModelRowView: View {
                             .foregroundColor(.accentColor)
                             .cornerRadius(4)
                     }
+
+                    if model.isAdvancedLocalModel {
+                        Text("Advanced")
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.orange.opacity(0.18))
+                            .foregroundColor(.orange)
+                            .cornerRadius(4)
+                    }
                 }
 
                 Text(self.formatBytes(model.estimatedSizeBytes))
                     .font(.caption)
                     .foregroundColor(.secondary)
+
+                if let primarySelectionGuidance {
+                    Text(primarySelectionGuidance)
+                        .font(.caption2)
+                        .foregroundColor(.orange)
+                }
             }
 
             Spacer()
@@ -225,10 +268,16 @@ struct ModelRowView: View {
                     .foregroundColor(.green)
 
                 if model.category == .llm && !isPrimary {
-                    Button("Set Primary") {
-                        Task { await onSetPrimary() }
+                    if isPrimarySelectionSupported {
+                        Button("Set Primary") {
+                            Task { await onSetPrimary() }
+                        }
+                        .controlSize(.small)
+                    } else {
+                        Text("Unavailable")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
-                    .controlSize(.small)
                 }
 
                 if !model.isRequired || model.category == .llm {

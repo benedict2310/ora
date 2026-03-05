@@ -31,19 +31,6 @@ struct ModelExplanationStepView: View {
         .frame(maxWidth: .infinity, alignment: .top)
     }
 
-    private var llmSizeDisplay: String {
-        switch self.state.primaryLLM {
-        case .qwen7B:
-            return "~5 GB"
-        case .qwen3_4B:
-            return "~2.5 GB"
-        case .qwen3B:
-            return "~2 GB"
-        default:
-            return "~2.5 GB"
-        }
-    }
-
     private var modelListCard: some View {
         VStack(spacing: 0) {
             ModelInfoRow(
@@ -62,7 +49,7 @@ struct ModelExplanationStepView: View {
                 iconColor: .purple,
                 name: self.state.primaryLLM.displayName,
                 description: "Understands requests and plans responses",
-                size: self.llmSizeDisplay
+                size: self.state.primaryLLM.sizeDisplay
             )
 
             Divider()
@@ -82,7 +69,7 @@ struct ModelExplanationStepView: View {
                 Spacer()
                 Text("Total download:")
                     .foregroundColor(.secondary)
-                Text(SetupState.totalModelSizeDisplay)
+                Text(SetupState.totalModelSizeDisplay(for: self.state.primaryLLM))
                     .fontWeight(.semibold)
                     .foregroundColor(.accentColor)
             }

@@ -15,6 +15,7 @@ final class ModelManagerTests: XCTestCase {
     func test_modelIdentifier_categoryMapping() {
         XCTAssertEqual(ModelIdentifier.parakeetTDT.category, .asr)
         XCTAssertEqual(ModelIdentifier.qwen3_4B.category, .llm)
+        XCTAssertEqual(ModelIdentifier.qwen35_4B_Vision.category, .llm)
         XCTAssertEqual(ModelIdentifier.qwen7B.category, .llm)  // Legacy
         XCTAssertEqual(ModelIdentifier.qwen3B.category, .llm)  // Legacy
         XCTAssertEqual(ModelIdentifier.kokoro.category, .tts)
@@ -23,6 +24,7 @@ final class ModelManagerTests: XCTestCase {
     func test_modelIdentifier_displayName() {
         XCTAssertEqual(ModelIdentifier.parakeetTDT.displayName, "Parakeet TDT 0.6B")
         XCTAssertEqual(ModelIdentifier.qwen3_4B.displayName, "Qwen 3 4B")
+        XCTAssertEqual(ModelIdentifier.qwen35_4B_Vision.displayName, "Qwen 3.5 4B Vision")
         XCTAssertEqual(ModelIdentifier.qwen7B.displayName, "Qwen 2.5 7B (Legacy)")
         XCTAssertEqual(ModelIdentifier.qwen3B.displayName, "Qwen 2.5 3B (Legacy)")
         XCTAssertEqual(ModelIdentifier.kokoro.displayName, "Kokoro TTS")
@@ -31,6 +33,7 @@ final class ModelManagerTests: XCTestCase {
     func test_modelIdentifier_storagePath() {
         XCTAssertEqual(ModelIdentifier.parakeetTDT.storagePath, "asr/parakeet-tdt-0.6b-v3-coreml")
         XCTAssertEqual(ModelIdentifier.qwen3_4B.storagePath, "llm/qwen3-4b-instruct-4bit")
+        XCTAssertEqual(ModelIdentifier.qwen35_4B_Vision.storagePath, "llm/qwen3.5-4b-vision-4bit")
         XCTAssertEqual(ModelIdentifier.qwen7B.storagePath, "llm/qwen2.5-7b-instruct-4bit")  // Legacy
         XCTAssertEqual(ModelIdentifier.qwen3B.storagePath, "llm/qwen2.5-3b-instruct-4bit")  // Legacy
         XCTAssertEqual(ModelIdentifier.kokoro.storagePath, "tts/kokoro")
@@ -48,6 +51,7 @@ final class ModelManagerTests: XCTestCase {
         let activeModels = ModelIdentifier.activeModels
         XCTAssertTrue(activeModels.contains(.parakeetTDT))
         XCTAssertTrue(activeModels.contains(.qwen3_4B))
+        XCTAssertTrue(activeModels.contains(.qwen35_4B_Vision))
         XCTAssertTrue(activeModels.contains(.kokoro))
         XCTAssertFalse(activeModels.contains(.qwen7B))  // Legacy
         XCTAssertFalse(activeModels.contains(.qwen3B))  // Legacy
@@ -62,10 +66,21 @@ final class ModelManagerTests: XCTestCase {
         XCTAssertTrue(ModelIdentifier.qwen3_4B.requiredFiles.contains("config.json"))
         XCTAssertTrue(ModelIdentifier.qwen3_4B.requiredFiles.contains("tokenizer.json"))
         XCTAssertTrue(ModelIdentifier.qwen3_4B.requiredFiles.contains("model.safetensors"))
+        XCTAssertTrue(ModelIdentifier.qwen35_4B_Vision.requiredFiles.contains("chat_template.jinja"))
+        XCTAssertTrue(ModelIdentifier.qwen35_4B_Vision.requiredFiles.contains("processor_config.json"))
+        XCTAssertTrue(ModelIdentifier.qwen35_4B_Vision.requiredFiles.contains("preprocessor_config.json"))
+        XCTAssertTrue(ModelIdentifier.qwen35_4B_Vision.requiredFiles.contains("video_preprocessor_config.json"))
 
         // TTS requires config and weights
         XCTAssertTrue(ModelIdentifier.kokoro.requiredFiles.contains("config.json"))
         XCTAssertTrue(ModelIdentifier.kokoro.requiredFiles.contains("kokoro-v1_0.safetensors"))
+    }
+
+    func test_modelIdentifier_multimodalCapabilities() {
+        XCTAssertFalse(ModelIdentifier.qwen3_4B.supportsImageInput)
+        XCTAssertTrue(ModelIdentifier.qwen35_4B_Vision.supportsImageInput)
+        XCTAssertTrue(ModelIdentifier.qwen35_4B_Vision.isAdvancedLocalModel)
+        XCTAssertEqual(ModelIdentifier.qwen35_4B_Vision.minimumSupportedRAMBytes, 16_000_000_000)
     }
 
     // MARK: - Model Paths Tests
@@ -305,6 +320,24 @@ final class ModelManagerTests: XCTestCase {
 
         let state = await manager.state
         XCTAssertEqual(state.primaryLLM, .qwen3_4B) // Should remain default
+    }
+
+    func test_modelManager_setPrimaryLLM_visionBlockedOnUnsupportedHardware() async {
+        let manager = ModelManager(downloader: MockModelDownloader())
+
+        await manager.setPrimaryLLM(.qwen35_4B_Vision, totalRAMBytes: 8_000_000_000)
+
+        let state = await manager.state
+        XCTAssertEqual(state.primaryLLM, .qwen3_4B)
+    }
+
+    func test_modelManager_setPrimaryLLM_visionAllowedOnSupportedHardware() async {
+        let manager = ModelManager(downloader: MockModelDownloader())
+
+        await manager.setPrimaryLLM(.qwen35_4B_Vision, totalRAMBytes: 16_000_000_000)
+
+        let state = await manager.state
+        XCTAssertEqual(state.primaryLLM, .qwen35_4B_Vision)
     }
 
     func test_modelManager_requiredModelsAvailable_false() async {

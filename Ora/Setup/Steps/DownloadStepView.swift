@@ -83,19 +83,6 @@ struct DownloadStepView: View {
         }
     }
 
-    private var llmSizeDisplay: String {
-        switch self.modelsState.primaryLLM {
-        case .qwen7B:
-            return "~5 GB"
-        case .qwen3_4B:
-            return "~2.5 GB"
-        case .qwen3B:
-            return "~2 GB"
-        default:
-            return "~2.5 GB"
-        }
-    }
-
     private var overallProgressCard: some View {
         VStack(spacing: 12) {
             ProgressView(value: self.modelsState.overallProgress)
@@ -151,7 +138,7 @@ struct DownloadStepView: View {
 
             ModelProgressRow(
                 name: self.modelsState.primaryLLM.displayName,
-                totalSize: self.llmSizeDisplay,
+                totalSize: self.modelsState.primaryLLM.sizeDisplay,
                 displayState: self.displayState(for: self.modelsState.primaryLLM)
             )
 

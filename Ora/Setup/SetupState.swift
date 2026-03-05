@@ -70,8 +70,16 @@ struct SetupState: Sendable {
 
     /// Total size of all models to download (for display)
     static var totalModelSizeDisplay: String {
-        // Parakeet (~600 MB) + Qwen 3 4B (~2.5 GB) + Kokoro (~500 MB) ≈ 3.6 GB
-        return "~3.6 GB"
+        return totalModelSizeDisplay(for: .qwen3_4B)
+    }
+
+    static func totalModelSizeDisplay(for primaryLLM: ModelIdentifier) -> String {
+        let totalBytes =
+            ModelIdentifier.parakeetTDT.estimatedSizeBytes
+            + primaryLLM.estimatedSizeBytes
+            + ModelIdentifier.kokoro.estimatedSizeBytes
+        let totalGB = Double(totalBytes) / 1_000_000_000
+        return String(format: "~%.1f GB", totalGB)
     }
 }
 
