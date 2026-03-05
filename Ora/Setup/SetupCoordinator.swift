@@ -324,26 +324,17 @@ final class SetupCoordinator: NSObject, ObservableObject {
     private func ensurePrimaryLLMSelected() async {
         // Wait for ModelManager to finish loading metadata before modifying state
         await ModelManager.shared.ensureInitialized()
-        
-        // Check if there's already a persisted primary LLM
-        if let persistedLLM = await self.getPersistedPrimaryLLM() {
-            // If persisted LLM is a legacy model, force migration to Qwen 3
-            if persistedLLM.isLegacy {
-                self.logger.info("Legacy model \(persistedLLM.displayName) detected, migrating to Qwen 3 4B")
-                self.state.primaryLLM = .qwen3_4B
-                await ModelManager.shared.setPrimaryLLM(.qwen3_4B)
-                return
-            }
-            self.state.primaryLLM = persistedLLM
-            // Sync to ModelManager to ensure downloads use the correct LLM
-            await ModelManager.shared.setPrimaryLLM(persistedLLM)
-            return
-        }
 
-        // No persisted primary - use Qwen 3 4B
-        let recommendedLLM: ModelIdentifier = .qwen3_4B
-        self.state.primaryLLM = recommendedLLM
-        await ModelManager.shared.setPrimaryLLM(recommendedLLM)
+        let persistedLLM = await self.getPersistedPrimaryLLM()
+        let totalRAMBytes = ProcessInfo.processInfo.physicalMemory
+        let isRepairFlow = UserDefaults.standard.oraSetupComplete
+        let resolvedLLM = Self.resolvePrimaryLLM(
+            persistedLLM: persistedLLM,
+            isRepairFlow: isRepairFlow,
+            totalRAMBytes: totalRAMBytes
+        )
+        self.state.primaryLLM = resolvedLLM
+        await ModelManager.shared.setPrimaryLLM(resolvedLLM, totalRAMBytes: totalRAMBytes)
     }
 
     private func getPersistedPrimaryLLM() async -> ModelIdentifier? {
@@ -366,6 +357,32 @@ final class SetupCoordinator: NSObject, ObservableObject {
 
         // Notify app that setup is done
         NotificationCenter.default.post(name: .setupDidComplete, object: nil)
+    }
+}
+
+extension SetupCoordinator {
+    static func resolvePrimaryLLM(
+        persistedLLM: ModelIdentifier?,
+        isRepairFlow: Bool,
+        totalRAMBytes: UInt64
+    ) -> ModelIdentifier {
+        guard let persistedLLM else {
+            return .qwen3_4B
+        }
+
+        if persistedLLM.isLegacy {
+            return .qwen3_4B
+        }
+
+        if persistedLLM == .qwen35_4B_Vision && !isRepairFlow {
+            return .qwen3_4B
+        }
+
+        if !persistedLLM.isSupported(on: totalRAMBytes) {
+            return .qwen3_4B
+        }
+
+        return persistedLLM
     }
 }
 
