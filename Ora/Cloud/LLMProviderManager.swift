@@ -84,6 +84,10 @@ actor LLMProviderManager: LLMServicing {
         await activeProvider.clearCache()
     }
 
+    func capabilities() async -> ProviderCapabilities {
+        return await self.activeProvider.capabilities()
+    }
+
     // MARK: - Provider Management
 
     /// Get the currently active LLM provider

@@ -52,8 +52,22 @@ open class CloudLLMBase: LLMServicing, @unchecked Sendable {
         // No-op: nothing to unload
     }
 
+    open func capabilities() async -> ProviderCapabilities {
+        return .textOnly
+    }
+
     open func clearCache() async {
         // No-op: no local KV cache
+    }
+
+    public func assertTextOnlyInput(messages: [LLMMessage], providerName: String) throws {
+        guard messages.contains(where: \.containsImageAttachments) else {
+            return
+        }
+
+        throw CloudProviderError.unsupportedInput(
+            "\(providerName) currently supports text-only input in Ora. Remove image attachments and try again."
+        )
     }
 
     // MARK: - SSE Parsing

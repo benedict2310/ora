@@ -57,6 +57,8 @@ final class CodexProvider: CloudLLMBase, @unchecked Sendable {
         maxTokens: Int,
         continuation: AsyncThrowingStream<LLMDelta, Error>.Continuation
     ) async throws {
+        try self.assertTextOnlyInput(messages: messages, providerName: "OpenAI")
+
         _ = maxTokens
         let instructions = self.buildInstructions(from: messages)
         let mappedInput = self.buildCodexInput(from: messages)
@@ -90,7 +92,7 @@ final class CodexProvider: CloudLLMBase, @unchecked Sendable {
     private func buildInstructions(from messages: [LLMMessage]) -> String {
         let systemMessages = messages
             .filter { $0.role == .system }
-            .map(\.content)
+            .map(\.textContent)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
 
@@ -141,16 +143,16 @@ final class CodexProvider: CloudLLMBase, @unchecked Sendable {
     private func normalizedCodexInputText(for message: LLMMessage) -> String {
         switch message.role {
         case .user:
-            return message.content
+            return message.textContent
         case .assistant:
             return """
                 Previous assistant response:
-                \(message.content)
+                \(message.textContent)
                 """
         case .tool:
             return """
                 Tool result context:
-                \(message.content)
+                \(message.textContent)
                 """
         case .system:
             return ""
