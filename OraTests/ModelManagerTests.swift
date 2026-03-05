@@ -66,6 +66,7 @@ final class ModelManagerTests: XCTestCase {
         XCTAssertTrue(ModelIdentifier.qwen3_4B.requiredFiles.contains("config.json"))
         XCTAssertTrue(ModelIdentifier.qwen3_4B.requiredFiles.contains("tokenizer.json"))
         XCTAssertTrue(ModelIdentifier.qwen3_4B.requiredFiles.contains("model.safetensors"))
+        XCTAssertTrue(ModelIdentifier.qwen35_4B_Vision.requiredFiles.contains("chat_template.jinja"))
         XCTAssertTrue(ModelIdentifier.qwen35_4B_Vision.requiredFiles.contains("processor_config.json"))
         XCTAssertTrue(ModelIdentifier.qwen35_4B_Vision.requiredFiles.contains("preprocessor_config.json"))
         XCTAssertTrue(ModelIdentifier.qwen35_4B_Vision.requiredFiles.contains("video_preprocessor_config.json"))

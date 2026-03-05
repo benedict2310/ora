@@ -121,6 +121,7 @@ struct HuggingFaceStrategy: ModelDownloadStrategy, Sendable {
                 "tokenizer_config.json",
                 "special_tokens_map.json",
                 "model.safetensors",
+                "chat_template.jinja",  // Required: tokenizer_config.json lacks chat_template for this repo
                 "processor_config.json",
                 "preprocessor_config.json",
                 "video_preprocessor_config.json",

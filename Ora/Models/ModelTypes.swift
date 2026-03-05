@@ -122,10 +122,12 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
             return ["config.json", "tokenizer.json", "model.safetensors"]
         case .qwen35_4B_Vision:
             // Qwen 3.5 VLM requires multimodal processor manifests in addition to weights/tokenizer.
+            // chat_template.jinja is required because tokenizer_config.json lacks an embedded chat_template.
             return [
                 "config.json",
                 "tokenizer.json",
                 "model.safetensors",
+                "chat_template.jinja",
                 "processor_config.json",
                 "preprocessor_config.json",
                 "video_preprocessor_config.json",
