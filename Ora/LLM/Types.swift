@@ -121,14 +121,16 @@ public struct LLMMessage: Sendable, Codable, Equatable {
             return
         }
 
-        if let text = try container.decodeIfPresent(String.self, forKey: .content) {
-            self.contentParts = [.text(text)]
-            return
-        }
+        if container.contains(.content) {
+            if let text = try? container.decode(String.self, forKey: .content) {
+                self.contentParts = [.text(text)]
+                return
+            }
 
-        if let parts = try? container.decode([LLMMessageContentPart].self, forKey: .content) {
-            self.contentParts = parts
-            return
+            if let parts = try? container.decode([LLMMessageContentPart].self, forKey: .content) {
+                self.contentParts = parts
+                return
+            }
         }
 
         self.contentParts = []
