@@ -185,6 +185,19 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
     /// 99% threshold catches truncated downloads while allowing minor variations
     static let minimumFileSizeThreshold: Double = 0.99
 
+    /// Whether the current mlx-swift-lm runtime can load and run this model.
+    /// qwen3_5 uses a hybrid linear/Mamba attention architecture (model_type "qwen3_5")
+    /// that is not yet registered in VLMTypeRegistry. Set to false until mlx-swift-lm
+    /// adds a Qwen3_5VL implementation.
+    var isRuntimeSupported: Bool {
+        switch self {
+        case .qwen35_4B_Vision:
+            return false
+        default:
+            return true
+        }
+    }
+
     var supportsImageInput: Bool {
         switch self {
         case .qwen35_4B_Vision:
