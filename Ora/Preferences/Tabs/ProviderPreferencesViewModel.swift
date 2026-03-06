@@ -54,6 +54,7 @@ final class ProviderPreferencesViewModel: ObservableObject {
     @Published var codexAuthStatus: CodexAuthStatus = .disconnected
     @Published var openAIAvailability: OpenAIAvailability = .loading
     @Published var openAIUnavailableNote: String?
+    @Published var localModelsState: ModelsState = ModelsState()
 
     // MARK: - Dependencies
 
@@ -104,15 +105,27 @@ final class ProviderPreferencesViewModel: ObservableObject {
     }
 
     var modelSelectionMenuState: ModelSelectionMenuState {
-        let localOption = ProviderModelOption(
+        let primaryLLM = self.localModelsState.primaryLLM
+        let localOptions = ModelIdentifier.allCases
+            .filter { $0.category == .llm && !$0.isLegacy && self.localModelsState.statuses[$0]?.isReady == true }
+            .map { model in
+                ProviderModelOption(
+                    provider: .local,
+                    identifier: model.rawValue,
+                    displayName: model.displayName,
+                    isSelected: self.selectedProvider == .local && model == primaryLLM
+                )
+            }
+        let fallbackOption = ProviderModelOption(
             provider: .local,
             identifier: ModelIdentifier.qwen3_4B.rawValue,
             displayName: ModelIdentifier.qwen3_4B.displayName,
             isSelected: self.selectedProvider == .local
         )
+        let resolvedLocalOptions = localOptions.isEmpty ? [fallbackOption] : localOptions
 
         var sections: [ProviderModelSection] = [
-            ProviderModelSection(provider: .local, title: "Local", options: [localOption]),
+            ProviderModelSection(provider: .local, title: "Local", options: resolvedLocalOptions),
         ]
 
         // Only show Anthropic section if credentials are configured
@@ -155,7 +168,7 @@ final class ProviderPreferencesViewModel: ObservableObject {
         let activeModelName: String
         switch self.selectedProvider {
         case .local:
-            activeModelName = ModelIdentifier.qwen3_4B.displayName
+            activeModelName = primaryLLM.displayName
         case .anthropic:
             activeModelName = self.anthropicModel.displayName
         case .openai:
@@ -178,6 +191,7 @@ final class ProviderPreferencesViewModel: ObservableObject {
         self.selectedProvider = await self.providerManager.getSelectedProviderType()
         self.anthropicModel = UserDefaults.standard.selectedAnthropicModel
         self.openAISelectedModelIdentifier = UserDefaults.standard.selectedOpenAIModelIdentifier
+        await self.refreshLocalModelsState()
 
         await self.codexOAuthManager.importCLIAuthIfNeeded()
         await self.registerAnthropicFactory()
@@ -189,6 +203,7 @@ final class ProviderPreferencesViewModel: ObservableObject {
     }
 
     func refreshModelAvailability(forceRefresh: Bool = false) async {
+        await self.refreshLocalModelsState()
         await self.refreshKeyStatus(for: .openai)
         await self.refreshCodexStatus()
         await self.refreshOpenAIAvailability(forceRefresh: forceRefresh)
@@ -313,6 +328,12 @@ final class ProviderPreferencesViewModel: ObservableObject {
     func selectModel(provider: LLMProviderType, identifier: String) async {
         switch provider {
         case .local:
+            if let modelId = ModelIdentifier(rawValue: identifier) {
+                await ModelManager.shared.setPrimaryLLM(modelId)
+                self.localModelsState = await ModelManager.shared.state
+                // Unload the running LLM so the next prepare() picks up the new model
+                await LLMProviderManager.shared.unload()
+            }
             await self.switchProvider(.local)
         case .anthropic:
             guard let model = AnthropicModel(rawValue: identifier) else {
@@ -370,6 +391,10 @@ final class ProviderPreferencesViewModel: ObservableObject {
     }
 
     // MARK: - Private
+
+    private func refreshLocalModelsState() async {
+        self.localModelsState = await ModelManager.shared.state
+    }
 
     private func hasOpenAICredential() async throws -> Bool {
         if let _ = try await self.codexOAuthManager.validCredentialIfAvailable() {

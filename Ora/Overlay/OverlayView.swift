@@ -119,7 +119,8 @@ struct OverlayView: View {
                             state: nil,
                             isPartial: message.isPartial,
                             reduceTransparency: self.reduceTransparency,
-                            reduceMotion: self.reduceMotion
+                            reduceMotion: self.reduceMotion,
+                            thumbnailURLs: message.thumbnailURLs
                         )
                         .id(message.id)
                     }

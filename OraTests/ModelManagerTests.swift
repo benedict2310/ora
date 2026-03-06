@@ -519,6 +519,46 @@ final class ModelManagerTests: XCTestCase {
 
     // MARK: - State Regression Guard Tests
 
+    /// Regression test for the race condition where refreshStatuses() overwrote
+    /// a .downloading status with .notDownloaded (file not yet on disk),
+    /// causing the UI progress bar to disappear immediately after clicking Download.
+    func test_modelManager_refreshStatuses_doesNotOverwriteDownloadingStatus() async throws {
+        let mock = MockModelDownloader()
+        mock.shouldSucceed = true
+        mock.downloadDelay = 1.0 // Long enough to call refreshStatuses mid-download
+
+        let manager = ModelManager(downloader: mock)
+
+        // Start download in background
+        let downloadTask = Task {
+            try await manager.downloadModel(.kokoro)
+        }
+
+        // Wait briefly for the download to begin and set .downloading status
+        try await Task.sleep(for: .milliseconds(50))
+
+        // Verify downloading state is set before we refresh
+        let stateBefore = await manager.state
+        XCTAssertTrue(
+            stateBefore.statuses[.kokoro]?.isDownloading == true,
+            "Expected .downloading status before refreshStatuses"
+        )
+
+        // This is the race: refreshStatuses sees the file is not on disk yet
+        // and used to overwrite .downloading with .notDownloaded
+        await manager.refreshStatuses()
+
+        let stateAfter = await manager.state
+        XCTAssertTrue(
+            stateAfter.statuses[.kokoro]?.isDownloading == true,
+            "refreshStatuses() must not overwrite .downloading status — race condition regression"
+        )
+
+        // Clean up
+        downloadTask.cancel()
+        try? await downloadTask.value
+    }
+
     func test_modelManager_progressUpdateAfterReady_doesNotRegress() async throws {
         let mock = MockModelDownloader()
         mock.shouldSucceed = true

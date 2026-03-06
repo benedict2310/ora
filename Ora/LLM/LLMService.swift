@@ -86,13 +86,24 @@ actor LLMService: LLMServicing {
         // Attempt to create configuration pointing to local directory
         let configuration = ModelConfiguration(directory: modelPath)
 
+        guard primaryLLM.isRuntimeSupported else {
+            throw LLMServiceError.generationFailed(
+                "\(primaryLLM.displayName) is not yet supported by the local inference engine. " +
+                "Please select a different model in the menu bar."
+            )
+        }
+
         let backend = Self.runtimeBackend(for: primaryLLM)
         let container: ModelContainer
-        switch backend {
-        case .mlxLLM:
-            container = try await LLMModelFactory.shared.loadContainer(configuration: configuration)
-        case .mlxVLM:
-            container = try await VLMModelFactory.shared.loadContainer(configuration: configuration)
+        do {
+            switch backend {
+            case .mlxLLM:
+                container = try await LLMModelFactory.shared.loadContainer(configuration: configuration)
+            case .mlxVLM:
+                container = try await VLMModelFactory.shared.loadContainer(configuration: configuration)
+            }
+        } catch let error as ModelFactoryError {
+            throw LLMServiceError.generationFailed(error.localizedDescription ?? error.errorDescription ?? "Unsupported model architecture.")
         }
         
         self.modelContainer = container

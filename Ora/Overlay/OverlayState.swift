@@ -144,6 +144,7 @@ struct OverlayMessage: Identifiable, Equatable, Sendable {
     let role: MessageRole
     var content: String
     var isPartial: Bool
+    var thumbnailURLs: [URL]
     let timestamp: Date
 
     enum MessageRole: Sendable {
@@ -151,11 +152,12 @@ struct OverlayMessage: Identifiable, Equatable, Sendable {
         case assistant
     }
 
-    init(role: MessageRole, content: String, isPartial: Bool = false) {
+    init(role: MessageRole, content: String, isPartial: Bool = false, thumbnailURLs: [URL] = []) {
         self.id = UUID()
         self.role = role
         self.content = content
         self.isPartial = isPartial
+        self.thumbnailURLs = thumbnailURLs
         self.timestamp = Date()
     }
 }
@@ -215,14 +217,17 @@ final class OverlayViewModel: ObservableObject {
     // MARK: - User Messages
 
     /// Add a user message (from ASR)
-    func addUserMessage(_ text: String, isPartial: Bool) {
+    func addUserMessage(_ text: String, isPartial: Bool, thumbnailURLs: [URL] = []) {
         if let lastIndex = self.messages.lastIndex(where: { $0.role == .user && $0.isPartial }) {
             // Update existing partial
             self.messages[lastIndex].content = text
             self.messages[lastIndex].isPartial = isPartial
+            if !thumbnailURLs.isEmpty {
+                self.messages[lastIndex].thumbnailURLs = thumbnailURLs
+            }
         } else {
             // Add new message
-            self.messages.append(OverlayMessage(role: .user, content: text, isPartial: isPartial))
+            self.messages.append(OverlayMessage(role: .user, content: text, isPartial: isPartial, thumbnailURLs: thumbnailURLs))
         }
     }
 
