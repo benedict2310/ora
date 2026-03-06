@@ -293,12 +293,7 @@ final class SimplePipelineController: ObservableObject {
         self.transition(to: .idle)
         self.setOverlayActivity(.none)
         self.overlayPresenter.hide(animated: true)
-
-        let attachmentIDs = Array(self.sessionImageAttachmentIDs)
-        self.sessionImageAttachmentIDs.removeAll()
-        Task {
-            await self.attachmentStore.removeAttachments(ids: attachmentIDs)
-        }
+        self.clearSessionImageAttachments()
     }
 
     private func refreshSkillsHint() {
@@ -450,6 +445,15 @@ final class SimplePipelineController: ObservableObject {
         self.pendingImageAttachments.removeAll()
         self.syncPendingAttachmentsToOverlay()
         self.overlayPresenter.model.clearAttachmentNotice()
+    }
+
+    func clearSessionImageAttachments() {
+        let attachmentIDs = Array(self.sessionImageAttachmentIDs)
+        self.sessionImageAttachmentIDs.removeAll()
+
+        Task {
+            await self.attachmentStore.removeAttachments(ids: attachmentIDs)
+        }
     }
 
     func consumePendingImageAttachmentsForTurn() -> [StagedImageAttachment] {

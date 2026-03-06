@@ -34,6 +34,7 @@ extension SimplePipelineController {
             self.transition(to: .idle)
             self.setOverlayActivity(.none)
             self.overlayPresenter.hide(animated: true)
+            self.clearSessionImageAttachments()
         }
     }
 

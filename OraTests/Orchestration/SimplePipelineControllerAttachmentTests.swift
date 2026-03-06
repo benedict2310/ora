@@ -75,6 +75,33 @@ final class SimplePipelineControllerAttachmentTests: XCTestCase {
         XCTAssertEqual(Set(removedIDs), Set([pending.id, sessionID]))
     }
 
+    func test_handleError_autoDismiss_clearsSessionAttachmentState() async {
+        enum SyntheticPipelineError: Error {
+            case failure
+        }
+
+        let overlay = MockOverlayPresenter()
+        let store = MockAttachmentStore()
+        let screenshotService = MockScreenshotCaptureService()
+        let controller = SimplePipelineController.makeTestInstance(
+            overlayPresenter: overlay,
+            attachmentStore: store,
+            screenshotCaptureService: screenshotService
+        )
+
+        let sessionID = UUID(uuidString: "ABCDEFAB-CDEF-ABCD-EFAB-CDEFABCDEFAB")!
+        controller.sessionImageAttachmentIDs = [sessionID]
+
+        controller.handleError(SyntheticPipelineError.failure)
+        try? await Task.sleep(for: .milliseconds(3_500))
+
+        XCTAssertEqual(controller.state, .idle)
+        XCTAssertTrue(controller.sessionImageAttachmentIDs.isEmpty)
+
+        let removedIDs = await store.removedAttachmentIDs
+        XCTAssertEqual(Set(removedIDs), Set([sessionID]))
+    }
+
     func test_openScreenRecordingSettings_delegatesToScreenshotService() async {
         let overlay = MockOverlayPresenter()
         let store = MockAttachmentStore()
