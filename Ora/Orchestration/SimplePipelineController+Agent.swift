@@ -48,6 +48,8 @@ extension SimplePipelineController {
                 self.handleAgentProposal(proposal)
                 
             case .error(let message):
+                self.sessionImageAttachmentIDs.subtract(turnAttachmentIDs)
+                await self.attachmentStore.removeAttachments(ids: turnAttachmentIDs)
                 self.handleAgentError(message)
             }
             
