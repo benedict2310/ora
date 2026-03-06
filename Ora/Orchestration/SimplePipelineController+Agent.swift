@@ -7,7 +7,8 @@ extension SimplePipelineController {
     func processTranscript() async {
         self.logger.info("Processing transcript: \(self.currentTranscript.prefix(50))...")
         self.logger.notice("PIPELINE_TURN_PROCESSING_STARTED")
-        
+
+        let turnAttachments = self.consumePendingImageAttachmentsForTurn()
         self.currentResponse = ""
         self.resetStreamingResponse()
         self.overlayPresenter.model.discardTrailingPartialAssistantMessage()
@@ -18,15 +19,20 @@ extension SimplePipelineController {
             // Preflight provider/model readiness to avoid generic startup failures.
             let preflight = await LLMProviderManager.shared.preflightForConversationStart()
             if case .guidance(let guidance) = preflight {
+                await self.attachmentStore.removeAttachments(ids: turnAttachments.map(\.id))
                 self.handleAgentError(guidance)
                 return
             }
 
             // Ensure LLM is ready
             try await LLMProviderManager.shared.prepare()
+            self.sessionImageAttachmentIDs.formUnion(turnAttachments.map(\.id))
             
             // Process through agent loop (session preserves conversation context)
-            let result = try await self.agentLoop.process(userText: self.currentTranscript)
+            let result = try await self.agentLoop.process(
+                userText: self.currentTranscript,
+                imageAttachments: turnAttachments.map(\.llmReference)
+            )
             
             guard !Task.isCancelled else {
                 self.logger.debug("Session cancelled after agent processing")
@@ -46,6 +52,8 @@ extension SimplePipelineController {
             
         } catch {
             guard !Task.isCancelled else { return }
+            let preflightedAttachmentIDs = turnAttachments.map(\.id).filter { !self.sessionImageAttachmentIDs.contains($0) }
+            await self.attachmentStore.removeAttachments(ids: preflightedAttachmentIDs)
             self.handleError(error)
         }
     }
