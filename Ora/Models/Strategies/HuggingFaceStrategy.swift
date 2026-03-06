@@ -115,11 +115,13 @@ struct HuggingFaceStrategy: ModelDownloadStrategy, Sendable {
             ]
 
         case .qwen35_4B_Vision:
+            // Note: special_tokens_map.json is absent from mlx-community/Qwen3.5-4B-MLX-4bit;
+            // vocab.json (6.7 MB) is present and required by the tokenizer.
             return [
                 "config.json",
                 "tokenizer.json",
                 "tokenizer_config.json",
-                "special_tokens_map.json",
+                "vocab.json",
                 "model.safetensors",
                 "chat_template.jinja",  // Required: tokenizer_config.json lacks chat_template for this repo
                 "processor_config.json",
