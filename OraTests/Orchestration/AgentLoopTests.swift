@@ -248,6 +248,32 @@ final class AgentLoopTests: XCTestCase {
         let messages = await conversationManager.getConversation()
         XCTAssertTrue(messages.contains { $0.role == .user && $0.content == "Test message" })
     }
+
+    func test_process_withImageAttachments_addsStructuredUserMessage() async throws {
+        await mockLLM.setResponses([
+            """
+            {"type": "response", "text": "Got it"}
+            """
+        ])
+
+        let attachment = LLMImageAttachmentReference(
+            stagedFilePath: "/tmp/ora/staged/screenshot.png",
+            mimeType: "image/png",
+            byteCount: 2048,
+            pixelWidth: 800,
+            pixelHeight: 600
+        )
+
+        _ = try await agentLoop.process(
+            userText: "What is in this image?",
+            imageAttachments: [attachment]
+        )
+
+        let messages = await conversationManager.getConversation()
+        let userMessage = try XCTUnwrap(messages.first(where: { $0.role == .user }))
+        XCTAssertTrue(userMessage.containsImageAttachments)
+        XCTAssertEqual(userMessage.imageAttachments, [attachment])
+    }
     
     func test_process_addsAssistantResponseToConversation() async throws {
         // Given: LLM returns a simple response

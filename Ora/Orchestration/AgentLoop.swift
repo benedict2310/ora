@@ -271,9 +271,14 @@ actor AgentLoop {
     ///
     /// - Parameters:
     ///   - userText: The user's input text
+    ///   - imageAttachments: Optional staged image references for this turn
     ///   - sessionID: Optional session ID for audit logging (only used if starting new session)
     /// - Returns: The agent result (response, proposal, or error)
-    func process(userText: String, sessionID: UUID? = nil) async throws -> AgentResult {
+    func process(
+        userText: String,
+        imageAttachments: [LLMImageAttachmentReference] = [],
+        sessionID: UUID? = nil
+    ) async throws -> AgentResult {
         // If no session is active, start one
         if !sessionActive {
             await startSession(sessionID: sessionID)
@@ -293,7 +298,15 @@ actor AgentLoop {
         // Clear stale memory context before adding the user message so that
         // trimContextIfNeeded() doesn't budget against the previous turn's payload.
         await self.conversationManager.clearMemoryContext()
-        await conversationManager.addUserMessage(userText)
+        if imageAttachments.isEmpty {
+            await conversationManager.addUserMessage(userText)
+        } else {
+            var contentParts: [LLMMessageContentPart] = [.text(userText)]
+            contentParts.append(contentsOf: imageAttachments.map { .image($0) })
+            await conversationManager.addMessage(
+                LLMMessage(role: .user, contentParts: contentParts)
+            )
+        }
 
         let memoryTriggerResult = self.memoryTriggerDetector.detect(userText: userText)
         if memoryTriggerResult.shouldTrigger {

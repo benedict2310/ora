@@ -7,7 +7,9 @@ extension SimplePipelineController {
     func processTranscript() async {
         self.logger.info("Processing transcript: \(self.currentTranscript.prefix(50))...")
         self.logger.notice("PIPELINE_TURN_PROCESSING_STARTED")
-        
+
+        let turnAttachments = self.consumePendingImageAttachmentsForTurn()
+        let turnAttachmentIDs = turnAttachments.map(\.id)
         self.currentResponse = ""
         self.resetStreamingResponse()
         self.overlayPresenter.model.discardTrailingPartialAssistantMessage()
@@ -18,15 +20,20 @@ extension SimplePipelineController {
             // Preflight provider/model readiness to avoid generic startup failures.
             let preflight = await LLMProviderManager.shared.preflightForConversationStart()
             if case .guidance(let guidance) = preflight {
+                await self.attachmentStore.removeAttachments(ids: turnAttachmentIDs)
                 self.handleAgentError(guidance)
                 return
             }
 
             // Ensure LLM is ready
             try await LLMProviderManager.shared.prepare()
+            self.sessionImageAttachmentIDs.formUnion(turnAttachmentIDs)
             
             // Process through agent loop (session preserves conversation context)
-            let result = try await self.agentLoop.process(userText: self.currentTranscript)
+            let result = try await self.agentLoop.process(
+                userText: self.currentTranscript,
+                imageAttachments: turnAttachments.map(\.llmReference)
+            )
             
             guard !Task.isCancelled else {
                 self.logger.debug("Session cancelled after agent processing")
@@ -41,10 +48,14 @@ extension SimplePipelineController {
                 self.handleAgentProposal(proposal)
                 
             case .error(let message):
+                self.sessionImageAttachmentIDs.subtract(turnAttachmentIDs)
+                await self.attachmentStore.removeAttachments(ids: turnAttachmentIDs)
                 self.handleAgentError(message)
             }
             
         } catch {
+            self.sessionImageAttachmentIDs.subtract(turnAttachmentIDs)
+            await self.attachmentStore.removeAttachments(ids: turnAttachmentIDs)
             guard !Task.isCancelled else { return }
             self.handleError(error)
         }

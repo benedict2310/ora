@@ -64,3 +64,50 @@ final class MockPersistenceService: PersistenceServicing {
         self.settings = settings
     }
 }
+
+actor MockAttachmentStore: AttachmentStoring {
+    private(set) var removedAttachmentIDs: [UUID] = []
+    private(set) var stagedDataRequests = 0
+    private(set) var stagedFileRequests = 0
+
+    var stageDataResult: Result<StagedImageAttachment, Error> = .failure(AttachmentStoreError.invalidImageData)
+    var stageFileResult: Result<StagedImageAttachment, Error> = .failure(AttachmentStoreError.invalidImageData)
+
+    func stageImageData(
+        _ data: Data,
+        source: ImageAttachmentSource,
+        originalFilename: String?
+    ) async throws -> StagedImageAttachment {
+        self.stagedDataRequests += 1
+        return try self.stageDataResult.get()
+    }
+
+    func stageImageFile(at sourceURL: URL) async throws -> StagedImageAttachment {
+        self.stagedFileRequests += 1
+        return try self.stageFileResult.get()
+    }
+
+    func removeAttachment(id: UUID) async {
+        self.removedAttachmentIDs.append(id)
+    }
+
+    func removeAttachments(ids: [UUID]) async {
+        self.removedAttachmentIDs.append(contentsOf: ids)
+    }
+
+    func removeAllTrackedAttachments() async {}
+}
+
+final class MockScreenshotCaptureService: ScreenshotCapturing, @unchecked Sendable {
+    var screenshotResult: Result<Data, Error> = .failure(ScreenshotCaptureError.captureFailed)
+    private(set) var openSettingsCallCount = 0
+
+    func captureScreenshotPNG() async throws -> Data {
+        try self.screenshotResult.get()
+    }
+
+    @MainActor
+    func openScreenRecordingSettings() {
+        self.openSettingsCallCount += 1
+    }
+}

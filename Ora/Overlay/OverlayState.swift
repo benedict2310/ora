@@ -160,6 +160,18 @@ struct OverlayMessage: Identifiable, Equatable, Sendable {
     }
 }
 
+// MARK: - Attachment Notice
+
+struct OverlayAttachmentNotice: Equatable, Sendable {
+    let message: String
+    let offersOpenSettings: Bool
+
+    init(message: String, offersOpenSettings: Bool = false) {
+        self.message = message
+        self.offersOpenSettings = offersOpenSettings
+    }
+}
+
 // MARK: - Overlay Actions
 
 @MainActor
@@ -168,6 +180,12 @@ protocol OverlayActionHandling: AnyObject {
     func confirmAndTrustToolProposal()
     func denyToolProposal()
     func stopSpeechPlayback()
+    func pasteImageAttachment()
+    func chooseImageAttachmentFile()
+    func captureScreenshotAttachment()
+    func removePendingImageAttachment(_ id: UUID)
+    func clearPendingImageAttachments()
+    func openScreenRecordingSettings()
 }
 
 // MARK: - Overlay View Model
@@ -181,6 +199,8 @@ final class OverlayViewModel: ObservableObject {
     @Published var currentProposal: ToolProposal?
     @Published var activity: OverlayActivity = .none
     @Published var skillsHintText: String?
+    @Published var pendingImageAttachments: [StagedImageAttachment] = []
+    @Published var attachmentNotice: OverlayAttachmentNotice?
     weak var actionHandler: (any OverlayActionHandling)?
 
     /// Delay before showing tool activity to avoid flicker (seconds)
@@ -288,7 +308,23 @@ final class OverlayViewModel: ObservableObject {
         self.pendingToolActivity = nil
         self.messages.removeAll()
         self.currentProposal = nil
+        self.pendingImageAttachments.removeAll()
+        self.attachmentNotice = nil
         self.mode = .hidden
         self.activity = .none
+    }
+
+    // MARK: - Attachments
+
+    func setPendingImageAttachments(_ attachments: [StagedImageAttachment]) {
+        self.pendingImageAttachments = attachments
+    }
+
+    func showAttachmentNotice(_ notice: OverlayAttachmentNotice) {
+        self.attachmentNotice = notice
+    }
+
+    func clearAttachmentNotice() {
+        self.attachmentNotice = nil
     }
 }

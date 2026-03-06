@@ -27,10 +27,45 @@ struct OverlayView: View {
                     state: self.voiceInputState,
                     reduceMotion: self.reduceMotion,
                     reduceTransparency: self.reduceTransparency,
-                    namespace: self.inputGlassNamespace
+                    namespace: self.inputGlassNamespace,
+                    onPasteImage: {
+                        self.viewModel.actionHandler?.pasteImageAttachment()
+                    },
+                    onChooseImageFile: {
+                        self.viewModel.actionHandler?.chooseImageAttachmentFile()
+                    },
+                    onCaptureScreenshot: {
+                        self.viewModel.actionHandler?.captureScreenshotAttachment()
+                    }
                 )
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(self.voiceInputAccessibilityLabel)
+
+                if !self.viewModel.pendingImageAttachments.isEmpty {
+                    AttachmentTrayView(
+                        attachments: self.viewModel.pendingImageAttachments,
+                        reduceTransparency: self.reduceTransparency,
+                        onRemove: { attachmentID in
+                            self.viewModel.actionHandler?.removePendingImageAttachment(attachmentID)
+                        },
+                        onClearAll: {
+                            self.viewModel.actionHandler?.clearPendingImageAttachments()
+                        }
+                    )
+                    .padding(.horizontal, 4)
+                }
+
+                if let notice = self.viewModel.attachmentNotice {
+                    OverlayPromptView(
+                        text: notice.message,
+                        iconName: "exclamationmark.triangle.fill",
+                        accessibilityLabel: notice.message,
+                        reduceTransparency: self.reduceTransparency,
+                        action: notice.offersOpenSettings ? {
+                            self.viewModel.actionHandler?.openScreenRecordingSettings()
+                        } : nil
+                    )
+                }
 
                 if self.currentProviderType.isCloud {
                     HStack {
@@ -202,6 +237,12 @@ struct OverlayView: View {
             }
             .onChange(of: self.viewModel.activity) { _, _ in
                 self.scrollToBottom(proxy)
+                self.invalidateWindowShadow()
+            }
+            .onChange(of: self.viewModel.pendingImageAttachments.count) { _, _ in
+                self.invalidateWindowShadow()
+            }
+            .onChange(of: self.viewModel.attachmentNotice) { _, _ in
                 self.invalidateWindowShadow()
             }
         }

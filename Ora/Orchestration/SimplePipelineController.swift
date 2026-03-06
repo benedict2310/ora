@@ -7,6 +7,7 @@
 
 import Foundation
 import AppKit
+import UniformTypeIdentifiers
 import os
 import Combine
 
@@ -60,11 +61,15 @@ final class SimplePipelineController: ObservableObject {
     let audioService: any AudioServicing
     let ttsService: any TTSServicing
     let persistenceService: any PersistenceServicing
+    let attachmentStore: any AttachmentStoring
+    let screenshotCaptureService: any ScreenshotCapturing
     let stateMachine = PipelineStateMachine()
     let confirmationHandler: ConfirmationHandler
 
     /// Silence detector for auto-submit in conversation mode
     var silenceDetector: SilenceDetector?
+    var pendingImageAttachments: [StagedImageAttachment] = []
+    var sessionImageAttachmentIDs: Set<UUID> = []
     
     /// Delay before auto-recovering from error (seconds)
     let errorRecoveryDelay: TimeInterval = OraConstants.Timing.pipelineErrorRecoveryDelay
@@ -92,13 +97,17 @@ final class SimplePipelineController: ObservableObject {
         overlayPresenter: any OverlayPresenting = OverlayWindowController.shared,
         audioService: any AudioServicing = AudioService.shared,
         ttsService: any TTSServicing = TTSService.shared,
-        persistenceService: any PersistenceServicing = PersistenceManager.shared
+        persistenceService: any PersistenceServicing = PersistenceManager.shared,
+        attachmentStore: any AttachmentStoring = AttachmentStore.shared,
+        screenshotCaptureService: any ScreenshotCapturing = ScreenshotCaptureService.shared
     ) {
         self.agentLoop = agentLoop
         self.overlayPresenter = overlayPresenter
         self.audioService = audioService
         self.ttsService = ttsService
         self.persistenceService = persistenceService
+        self.attachmentStore = attachmentStore
+        self.screenshotCaptureService = screenshotCaptureService
         self.confirmationHandler = ConfirmationHandler()
         self.confirmationHandler.onConfirmProposal = { [weak self] in
             self?.handleProposalConfirmed()
@@ -111,6 +120,24 @@ final class SimplePipelineController: ObservableObject {
         }
         self.confirmationHandler.onStopSpeaking = { [weak self] in
             self?.interruptSpeech()
+        }
+        self.confirmationHandler.onPasteImageAttachment = { [weak self] in
+            self?.pasteImageAttachment()
+        }
+        self.confirmationHandler.onChooseImageAttachmentFile = { [weak self] in
+            self?.chooseImageAttachmentFile()
+        }
+        self.confirmationHandler.onCaptureScreenshotAttachment = { [weak self] in
+            self?.captureScreenshotAttachment()
+        }
+        self.confirmationHandler.onRemovePendingImageAttachment = { [weak self] id in
+            self?.removePendingImageAttachment(id)
+        }
+        self.confirmationHandler.onClearPendingImageAttachments = { [weak self] in
+            self?.clearPendingImageAttachments()
+        }
+        self.confirmationHandler.onOpenScreenRecordingSettings = { [weak self] in
+            self?.openScreenRecordingSettings()
         }
         self.overlayPresenter.model.actionHandler = self.confirmationHandler
         Task { @MainActor in
@@ -128,14 +155,18 @@ final class SimplePipelineController: ObservableObject {
         overlayPresenter: (any OverlayPresenting)? = nil,
         audioService: (any AudioServicing)? = nil,
         ttsService: (any TTSServicing)? = nil,
-        persistenceService: (any PersistenceServicing)? = nil
+        persistenceService: (any PersistenceServicing)? = nil,
+        attachmentStore: (any AttachmentStoring)? = nil,
+        screenshotCaptureService: (any ScreenshotCapturing)? = nil
     ) -> SimplePipelineController {
         return SimplePipelineController(
             agentLoop: agentLoop ?? AgentLoop(),
             overlayPresenter: overlayPresenter ?? OverlayWindowController.shared,
             audioService: audioService ?? AudioService.shared,
             ttsService: ttsService ?? TTSService.shared,
-            persistenceService: persistenceService ?? PersistenceManager.shared
+            persistenceService: persistenceService ?? PersistenceManager.shared,
+            attachmentStore: attachmentStore ?? AttachmentStore.shared,
+            screenshotCaptureService: screenshotCaptureService ?? ScreenshotCaptureService.shared
         )
     }
     
@@ -164,6 +195,7 @@ final class SimplePipelineController: ObservableObject {
         
         // Reset overlay for new session
         self.logger.info("Resetting overlay for new session")
+        self.clearPendingImageAttachmentsState()
         self.overlayPresenter.model.reset()
         self.refreshSkillsHint()
         
@@ -232,6 +264,7 @@ final class SimplePipelineController: ObservableObject {
     /// Cancel current operation and return to idle (AC-10)
     func cancel() {
         self.logger.info("Cancelling current operation from state: \(self.state.description)")
+        self.clearPendingImageAttachments()
 
         // Cancel silence detector
         self.silenceDetector?.cancel()
@@ -260,6 +293,7 @@ final class SimplePipelineController: ObservableObject {
         self.transition(to: .idle)
         self.setOverlayActivity(.none)
         self.overlayPresenter.hide(animated: true)
+        self.clearSessionImageAttachments()
     }
 
     private func refreshSkillsHint() {
@@ -294,6 +328,186 @@ final class SimplePipelineController: ObservableObject {
         }
 
         self.transitionToAwaitingFollowUp(autoListen: self.isConversationModeEnabled)
+    }
+
+    // MARK: - Attachment Actions
+
+    func pasteImageAttachment() {
+        guard let payload = self.clipboardImagePayload() else {
+            self.overlayPresenter.model.showAttachmentNotice(
+                OverlayAttachmentNotice(message: "No image found in the clipboard.")
+            )
+            return
+        }
+
+        Task { @MainActor in
+            do {
+                let attachment = try await self.attachmentStore.stageImageData(
+                    payload,
+                    source: .clipboard,
+                    originalFilename: nil
+                )
+                self.pendingImageAttachments.append(attachment)
+                self.syncPendingAttachmentsToOverlay()
+                self.overlayPresenter.model.clearAttachmentNotice()
+            } catch {
+                self.logger.error("Failed to stage clipboard image: \(error.localizedDescription)")
+                self.overlayPresenter.model.showAttachmentNotice(
+                    OverlayAttachmentNotice(message: "Ora could not attach that clipboard image.")
+                )
+            }
+        }
+    }
+
+    func chooseImageAttachmentFile() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.image]
+        panel.prompt = "Attach"
+
+        guard panel.runModal() == .OK, let selectedURL = panel.url else {
+            return
+        }
+
+        Task { @MainActor in
+            do {
+                let attachment = try await self.attachmentStore.stageImageFile(at: selectedURL)
+                self.pendingImageAttachments.append(attachment)
+                self.syncPendingAttachmentsToOverlay()
+                self.overlayPresenter.model.clearAttachmentNotice()
+            } catch {
+                self.logger.error("Failed to stage imported image: \(error.localizedDescription)")
+                self.overlayPresenter.model.showAttachmentNotice(
+                    OverlayAttachmentNotice(message: "Ora could not attach that image file.")
+                )
+            }
+        }
+    }
+
+    func captureScreenshotAttachment() {
+        Task { @MainActor in
+            ExternalFocusTracker.shared.beginExternalOperation()
+            defer {
+                ExternalFocusTracker.shared.endExternalOperation()
+            }
+
+            do {
+                let screenshotData = try await self.screenshotCaptureService.captureScreenshotPNG()
+                let attachment = try await self.attachmentStore.stageImageData(
+                    screenshotData,
+                    source: .screenshot,
+                    originalFilename: nil
+                )
+                self.pendingImageAttachments.append(attachment)
+                self.syncPendingAttachmentsToOverlay()
+                self.overlayPresenter.model.clearAttachmentNotice()
+            } catch let screenshotError as ScreenshotCaptureError {
+                self.handleScreenshotCaptureError(screenshotError)
+            } catch {
+                self.logger.error("Screenshot attachment failed: \(error.localizedDescription)")
+                self.overlayPresenter.model.showAttachmentNotice(
+                    OverlayAttachmentNotice(message: "Ora could not capture a screenshot right now.")
+                )
+            }
+        }
+    }
+
+    func removePendingImageAttachment(_ id: UUID) {
+        self.pendingImageAttachments.removeAll { $0.id == id }
+        self.syncPendingAttachmentsToOverlay()
+
+        Task {
+            await self.attachmentStore.removeAttachment(id: id)
+        }
+    }
+
+    func clearPendingImageAttachments() {
+        let ids = self.pendingImageAttachments.map(\.id)
+        self.clearPendingImageAttachmentsState()
+
+        Task {
+            await self.attachmentStore.removeAttachments(ids: ids)
+        }
+    }
+
+    func openScreenRecordingSettings() {
+        Task { @MainActor in
+            ExternalFocusTracker.shared.beginExternalOperation()
+            self.screenshotCaptureService.openScreenRecordingSettings()
+            try? await Task.sleep(for: .milliseconds(500))
+            ExternalFocusTracker.shared.endExternalOperation()
+        }
+    }
+
+    func clearPendingImageAttachmentsState() {
+        self.pendingImageAttachments.removeAll()
+        self.syncPendingAttachmentsToOverlay()
+        self.overlayPresenter.model.clearAttachmentNotice()
+    }
+
+    func clearSessionImageAttachments() {
+        let attachmentIDs = Array(self.sessionImageAttachmentIDs)
+        self.sessionImageAttachmentIDs.removeAll()
+
+        Task {
+            await self.attachmentStore.removeAttachments(ids: attachmentIDs)
+        }
+    }
+
+    func consumePendingImageAttachmentsForTurn() -> [StagedImageAttachment] {
+        let attachments = self.pendingImageAttachments
+        self.clearPendingImageAttachmentsState()
+        return attachments
+    }
+
+    func syncPendingAttachmentsToOverlay() {
+        self.overlayPresenter.model.setPendingImageAttachments(self.pendingImageAttachments)
+    }
+
+    func setPendingImageAttachmentsForTesting(_ attachments: [StagedImageAttachment]) {
+        self.pendingImageAttachments = attachments
+        self.syncPendingAttachmentsToOverlay()
+    }
+
+    // MARK: - Private
+
+    private func clipboardImagePayload() -> Data? {
+        let pasteboard = NSPasteboard.general
+
+        if let pngData = pasteboard.data(forType: .png) {
+            return pngData
+        }
+
+        if let image = pasteboard.readObjects(forClasses: [NSImage.self], options: nil)?.first as? NSImage,
+           let tiffData = image.tiffRepresentation,
+           let bitmap = NSBitmapImageRep(data: tiffData),
+           let pngData = bitmap.representation(using: .png, properties: [:]) {
+            return pngData
+        }
+
+        return nil
+    }
+
+    private func handleScreenshotCaptureError(_ error: ScreenshotCaptureError) {
+        switch error {
+        case .permissionDenied:
+            self.overlayPresenter.model.showAttachmentNotice(
+                OverlayAttachmentNotice(
+                    message: "Screenshot access is denied. You can still paste or choose an image file.",
+                    offersOpenSettings: true
+                )
+            )
+        case .noDisplayAvailable:
+            self.overlayPresenter.model.showAttachmentNotice(
+                OverlayAttachmentNotice(message: "Ora could not find a display to capture.")
+            )
+        case .captureFailed, .encodingFailed:
+            self.overlayPresenter.model.showAttachmentNotice(
+                OverlayAttachmentNotice(message: "Ora could not capture a screenshot right now.")
+            )
+        }
     }
 
 }

@@ -17,6 +17,9 @@ struct VoiceInputControlView: View {
     let reduceMotion: Bool
     let reduceTransparency: Bool
     let namespace: Namespace.ID
+    let onPasteImage: () -> Void
+    let onChooseImageFile: () -> Void
+    let onCaptureScreenshot: () -> Void
 
     var body: some View {
         let isIdle = self.isIdle
@@ -49,6 +52,7 @@ struct VoiceInputControlView: View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         let base = HStack(spacing: 8) {
             content()
+            self.attachmentActions
         }
         .foregroundStyle(Color.white.opacity(0.95))
         .padding(.horizontal, isIdle ? 12 : 14)
@@ -103,6 +107,42 @@ struct VoiceInputControlView: View {
     private func activeText(transcript: String?) -> String {
         let trimmed = transcript?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? "Listening…" : trimmed
+    }
+
+    private var attachmentActions: some View {
+        HStack(spacing: 6) {
+            self.attachmentActionButton(
+                icon: "doc.on.clipboard",
+                accessibilityLabel: "Paste image from clipboard",
+                action: self.onPasteImage
+            )
+            self.attachmentActionButton(
+                icon: "photo",
+                accessibilityLabel: "Choose image file",
+                action: self.onChooseImageFile
+            )
+            self.attachmentActionButton(
+                icon: "camera.viewfinder",
+                accessibilityLabel: "Capture screenshot",
+                action: self.onCaptureScreenshot
+            )
+        }
+    }
+
+    private func attachmentActionButton(
+        icon: String,
+        accessibilityLabel: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.caption.weight(.semibold))
+                .frame(width: 20, height: 20)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Color.white.opacity(0.82))
+        .accessibilityLabel(accessibilityLabel)
     }
 
     @ViewBuilder

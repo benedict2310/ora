@@ -42,6 +42,25 @@ struct PermissionsPreferencesView: View {
             }
 
             Section {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Screen Recording")
+                        .fontWeight(.medium)
+                    Text("Needed only when you use screenshot attachments in the overlay.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Button("Open Screen Recording Settings") {
+                    Task { @MainActor in
+                        ScreenshotCaptureService.shared.openScreenRecordingSettings()
+                    }
+                }
+                .controlSize(.small)
+            } header: {
+                Text("Screenshot Attachments")
+            }
+
+            Section {
                 Button("Refresh Status") {
                     self.refreshPermissions()
                 }
