@@ -275,6 +275,116 @@ final class AgentLoopTests: XCTestCase {
         XCTAssertEqual(userMessage.imageAttachments, [attachment])
     }
     
+    func test_process_withImageAttachments_readToolExecutionPreserved() async throws {
+        // Given: an image-bearing turn where the LLM first calls a read tool then responds
+        await ToolRegistry.shared.register(AgentLoopMockReadTool(name: "test.lookup", result: "tool result"))
+        await mockLLM.setResponses([
+            """
+            {"type": "tool_call", "tool": "test.lookup", "args": {}}
+            """,
+            """
+            {"type": "response", "text": "Based on the image and tool result: all good."}
+            """
+        ])
+
+        let attachment = LLMImageAttachmentReference(
+            stagedFilePath: "/tmp/ora/staged/screenshot.png",
+            mimeType: "image/png",
+            byteCount: 2048,
+            pixelWidth: 800,
+            pixelHeight: 600
+        )
+
+        // When
+        let result = try await agentLoop.process(
+            userText: "Analyze this image",
+            imageAttachments: [attachment]
+        )
+
+        // Then: tool ran and the final response is returned
+        if case .response(let text) = result {
+            XCTAssertTrue(text.contains("all good"))
+        } else {
+            XCTFail("Expected response, got \(result)")
+        }
+
+        // Conversation should contain the tool result
+        let messages = await conversationManager.getConversation()
+        XCTAssertTrue(messages.contains { $0.role == .tool })
+    }
+
+    func test_process_withImageAttachments_proposalFlowPreserved() async throws {
+        // Given: an image-bearing turn where the LLM proposes a mutate tool
+        await ToolRegistry.shared.register(AgentLoopMockMutateTool(name: "calendar.create", result: "Created"))
+        await mockLLM.setResponses([
+            """
+            {"type": "proposal", "summary": "Create event from screenshot", "tool": "calendar.create", "args": {"title": "Meeting"}}
+            """
+        ])
+
+        let attachment = LLMImageAttachmentReference(
+            stagedFilePath: "/tmp/ora/staged/screenshot.png",
+            mimeType: "image/png",
+            byteCount: 2048,
+            pixelWidth: 800,
+            pixelHeight: 600
+        )
+
+        // When
+        let result = try await agentLoop.process(
+            userText: "Schedule the meeting from this screenshot",
+            imageAttachments: [attachment]
+        )
+
+        // Then: confirmation flow still surfaces the proposal
+        if case .authorizationRequest(let proposal) = result {
+            XCTAssertEqual(proposal.toolName, "calendar.create")
+            XCTAssertTrue(proposal.summary.contains("Create event from screenshot"))
+        } else {
+            XCTFail("Expected authorizationRequest, got \(result)")
+        }
+    }
+
+    func test_process_withImageAttachments_followUpTurnReusesSession() async throws {
+        // Given: first turn with image, second turn with text only
+        await mockLLM.setResponses([
+            """
+            {"type": "response", "text": "I see a chart in the image."}
+            """,
+            """
+            {"type": "response", "text": "Yes, the y-axis goes to 100."}
+            """
+        ])
+
+        let attachment = LLMImageAttachmentReference(
+            stagedFilePath: "/tmp/ora/staged/chart.png",
+            mimeType: "image/png",
+            byteCount: 4096,
+            pixelWidth: 1200,
+            pixelHeight: 900
+        )
+
+        // When: image turn followed by text-only follow-up in same session
+        _ = try await agentLoop.process(userText: "What do you see?", imageAttachments: [attachment])
+        let followUp = try await agentLoop.process(userText: "What is the max value on the y-axis?")
+
+        // Then: session is still active and produces a valid response
+        let sessionActive = await agentLoop.isSessionActive()
+        XCTAssertTrue(sessionActive)
+        if case .response(let text) = followUp {
+            XCTAssertFalse(text.isEmpty)
+        } else {
+            XCTFail("Expected response, got \(followUp)")
+        }
+
+        // Both user messages should be in conversation history
+        let messages = await conversationManager.getConversation()
+        let userMessages = messages.filter { $0.role == .user }
+        XCTAssertEqual(userMessages.count, 2)
+        XCTAssertTrue(userMessages[0].containsImageAttachments)
+        XCTAssertFalse(userMessages[1].containsImageAttachments)
+    }
+
     func test_process_addsAssistantResponseToConversation() async throws {
         // Given: LLM returns a simple response
         await mockLLM.setResponses([

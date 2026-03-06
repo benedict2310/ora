@@ -24,7 +24,7 @@ final class ModelManagerTests: XCTestCase {
     func test_modelIdentifier_displayName() {
         XCTAssertEqual(ModelIdentifier.parakeetTDT.displayName, "Parakeet TDT 0.6B")
         XCTAssertEqual(ModelIdentifier.qwen3_4B.displayName, "Qwen 3 4B")
-        XCTAssertEqual(ModelIdentifier.qwen35_4B_Vision.displayName, "Qwen 3.5 4B Vision")
+        XCTAssertEqual(ModelIdentifier.qwen35_4B_Vision.displayName, "Qwen3 VL 4B")
         XCTAssertEqual(ModelIdentifier.qwen7B.displayName, "Qwen 2.5 7B (Legacy)")
         XCTAssertEqual(ModelIdentifier.qwen3B.displayName, "Qwen 2.5 3B (Legacy)")
         XCTAssertEqual(ModelIdentifier.kokoro.displayName, "Kokoro TTS")
@@ -33,7 +33,7 @@ final class ModelManagerTests: XCTestCase {
     func test_modelIdentifier_storagePath() {
         XCTAssertEqual(ModelIdentifier.parakeetTDT.storagePath, "asr/parakeet-tdt-0.6b-v3-coreml")
         XCTAssertEqual(ModelIdentifier.qwen3_4B.storagePath, "llm/qwen3-4b-instruct-4bit")
-        XCTAssertEqual(ModelIdentifier.qwen35_4B_Vision.storagePath, "llm/qwen3.5-4b-vision-4bit")
+        XCTAssertEqual(ModelIdentifier.qwen35_4B_Vision.storagePath, "llm/qwen3-vl-4b-instruct-4bit")
         XCTAssertEqual(ModelIdentifier.qwen7B.storagePath, "llm/qwen2.5-7b-instruct-4bit")  // Legacy
         XCTAssertEqual(ModelIdentifier.qwen3B.storagePath, "llm/qwen2.5-3b-instruct-4bit")  // Legacy
         XCTAssertEqual(ModelIdentifier.kokoro.storagePath, "tts/kokoro")
@@ -67,7 +67,8 @@ final class ModelManagerTests: XCTestCase {
         XCTAssertTrue(ModelIdentifier.qwen3_4B.requiredFiles.contains("tokenizer.json"))
         XCTAssertTrue(ModelIdentifier.qwen3_4B.requiredFiles.contains("model.safetensors"))
         XCTAssertTrue(ModelIdentifier.qwen35_4B_Vision.requiredFiles.contains("chat_template.jinja"))
-        XCTAssertTrue(ModelIdentifier.qwen35_4B_Vision.requiredFiles.contains("processor_config.json"))
+        XCTAssertFalse(ModelIdentifier.qwen35_4B_Vision.requiredFiles.contains("processor_config.json"),
+                       "processor_config.json is absent from the Qwen3-VL repo")
         XCTAssertTrue(ModelIdentifier.qwen35_4B_Vision.requiredFiles.contains("preprocessor_config.json"))
         XCTAssertTrue(ModelIdentifier.qwen35_4B_Vision.requiredFiles.contains("video_preprocessor_config.json"))
 

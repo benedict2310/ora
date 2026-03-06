@@ -60,7 +60,7 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
         switch self {
         case .parakeetTDT: return "Parakeet TDT 0.6B"
         case .qwen3_4B: return "Qwen 3 4B"
-        case .qwen35_4B_Vision: return "Qwen 3.5 4B Vision"
+        case .qwen35_4B_Vision: return "Qwen3 VL 4B"
         case .qwen7B: return "Qwen 2.5 7B (Legacy)"
         case .qwen3B: return "Qwen 2.5 3B (Legacy)"
         case .kokoro: return "Kokoro TTS"
@@ -71,7 +71,7 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
         switch self {
         case .parakeetTDT: return "FluidInference/parakeet-tdt-0.6b-v3-coreml"
         case .qwen3_4B: return "mlx-community/Qwen3-4B-Instruct-2507-4bit"
-        case .qwen35_4B_Vision: return "mlx-community/Qwen3.5-4B-MLX-4bit"
+        case .qwen35_4B_Vision: return "lmstudio-community/Qwen3-VL-4B-Instruct-MLX-4bit"
         case .qwen7B: return "mlx-community/Qwen2.5-7B-Instruct-4bit"  // Legacy
         case .qwen3B: return "mlx-community/Qwen2.5-3B-Instruct-4bit"  // Legacy
         case .kokoro: return "mlx-community/Kokoro-82M-bf16"
@@ -104,7 +104,7 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
         // so this must match what FluidAudio actually creates
         case .parakeetTDT: return "asr/parakeet-tdt-0.6b-v3-coreml"
         case .qwen3_4B: return "llm/qwen3-4b-instruct-4bit"
-        case .qwen35_4B_Vision: return "llm/qwen3.5-4b-vision-4bit"
+        case .qwen35_4B_Vision: return "llm/qwen3-vl-4b-instruct-4bit"
         case .qwen7B: return "llm/qwen2.5-7b-instruct-4bit"  // Legacy
         case .qwen3B: return "llm/qwen2.5-3b-instruct-4bit"  // Legacy
         case .kokoro: return "tts/kokoro"
@@ -121,14 +121,14 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
             // Qwen 3 uses sharded weights with index file
             return ["config.json", "tokenizer.json", "model.safetensors"]
         case .qwen35_4B_Vision:
-            // Qwen 3.5 VLM requires multimodal processor manifests in addition to weights/tokenizer.
-            // chat_template.jinja is required because tokenizer_config.json lacks an embedded chat_template.
+            // Qwen3-VL requires multimodal preprocessor configs in addition to weights/tokenizer.
+            // chat_template.jinja is required (tokenizer_config.json lacks an embedded chat_template).
+            // Note: processor_config.json is absent from this repo (verified 2026-03-06).
             return [
                 "config.json",
                 "tokenizer.json",
                 "model.safetensors",
                 "chat_template.jinja",
-                "processor_config.json",
                 "preprocessor_config.json",
                 "video_preprocessor_config.json",
             ]
@@ -186,16 +186,8 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
     static let minimumFileSizeThreshold: Double = 0.99
 
     /// Whether the current mlx-swift-lm runtime can load and run this model.
-    /// qwen3_5 uses a hybrid linear/Mamba attention architecture (model_type "qwen3_5")
-    /// that is not yet registered in VLMTypeRegistry. Set to false until mlx-swift-lm
-    /// adds a Qwen3_5VL implementation.
     var isRuntimeSupported: Bool {
-        switch self {
-        case .qwen35_4B_Vision:
-            return false
-        default:
-            return true
-        }
+        return true
     }
 
     var supportsImageInput: Bool {

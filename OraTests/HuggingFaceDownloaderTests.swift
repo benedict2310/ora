@@ -133,7 +133,6 @@ final class HuggingFaceDownloaderTests: XCTestCase {
             "tokenizer_config.json": 10_000,
             "special_tokens_map.json": 10_000,
             "chat_template.jinja": 10_000,
-            "processor_config.json": 10_000,
             "preprocessor_config.json": 10_000,
             "video_preprocessor_config.json": 10_000,
         ]
@@ -293,7 +292,7 @@ final class HuggingFaceDownloaderTests: XCTestCase {
         XCTAssertFalse(verified)
     }
 
-    func test_defaultModelDownloader_verify_visionFailsWhenProcessorConfigMissing() async throws {
+    func test_defaultModelDownloader_verify_visionFailsWhenPreprocessorConfigMissing() async throws {
         let asrMock = MockModelDownloadStrategy()
         let hfMock = MockModelDownloadStrategy()
         let downloader = DefaultModelDownloader(asrStrategy: asrMock, huggingFaceStrategy: hfMock)
@@ -302,7 +301,8 @@ final class HuggingFaceDownloaderTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        let requiredFiles = ModelIdentifier.qwen35_4B_Vision.requiredFiles.filter { $0 != "processor_config.json" }
+        // Write all required files except preprocessor_config.json to confirm verification fails
+        let requiredFiles = ModelIdentifier.qwen35_4B_Vision.requiredFiles.filter { $0 != "preprocessor_config.json" }
         for file in requiredFiles {
             let dataSize: Int
             if file.hasSuffix(".safetensors") {
@@ -580,7 +580,8 @@ final class HuggingFaceDownloaderTests: XCTestCase {
         XCTAssertTrue(ModelIdentifier.qwen3_4B.requiredFiles.contains("model.safetensors"))
         XCTAssertTrue(ModelIdentifier.qwen35_4B_Vision.requiredFiles.contains("model.safetensors"))
         XCTAssertTrue(ModelIdentifier.qwen35_4B_Vision.requiredFiles.contains("chat_template.jinja"))
-        XCTAssertTrue(ModelIdentifier.qwen35_4B_Vision.requiredFiles.contains("processor_config.json"))
+        XCTAssertFalse(ModelIdentifier.qwen35_4B_Vision.requiredFiles.contains("processor_config.json"),
+                       "processor_config.json is absent from the Qwen3-VL repo (verified 2026-03-06)")
         XCTAssertTrue(ModelIdentifier.qwen35_4B_Vision.requiredFiles.contains("preprocessor_config.json"))
         XCTAssertTrue(ModelIdentifier.qwen35_4B_Vision.requiredFiles.contains("video_preprocessor_config.json"))
         XCTAssertTrue(ModelIdentifier.kokoro.requiredFiles.contains("kokoro-v1_0.safetensors"))
