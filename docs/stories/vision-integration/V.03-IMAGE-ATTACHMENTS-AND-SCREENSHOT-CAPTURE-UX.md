@@ -1,7 +1,7 @@
 # V.03 - Image Attachments & Screenshot Capture UX
 
 **Epic:** Vision Integration
-**Status:** Not Started
+**Status:** Complete
 **Priority:** P1 (High)
 **Estimated Effort:** 3-4 days
 **Dependencies:** V.01, F.06, F.07
@@ -130,11 +130,62 @@ As a user, I want to paste an image, choose a file, or capture a screenshot befo
 
 ## Implementation Summary
 
-(TBD after implementation.)
+**Date:** 2026-03-06
+**Branch:** `feat/V.03-image-attachments`
+**Commits:** 4
+**Implemented by:** codex (complexity score: 10/10)
+**Reviewed by:** codex (3 iterations)
+
+### Files Changed
+- `Ora/LLM/AttachmentStore.swift` - Created: actor-backed attachment staging store with cleanup
+- `Ora/Overlay/AttachmentTrayView.swift` - Created: pending attachment chips/previews with remove actions
+- `Ora/Utilities/ScreenshotCaptureService.swift` - Created: ScreenCaptureKit screenshot helper with permission mapping
+- `Ora/Overlay/OverlayState.swift` - Modified: added pending attachment tracking
+- `Ora/Overlay/OverlayView.swift` - Modified: renders attachment tray above voice controls
+- `Ora/Overlay/VoiceInputControlView.swift` - Modified: added attachment action affordances
+- `Ora/Orchestration/SimplePipelineController.swift` - Modified: holds/clears pending attachments through turn lifecycle
+- `Ora/Orchestration/SimplePipelineController+Agent.swift` - Modified: cleanup on failed/cancelled turns
+- `Ora/Orchestration/AgentLoop.swift` - Modified: passes attachments into LLM turn
+- `Ora/Orchestration/ConfirmationHandler.swift` - Modified: attachment context awareness
+- `Ora/Preferences/Tabs/PermissionsPreferencesView.swift` - Modified: screenshot permission guidance
+- `OraTests/LLM/AttachmentStoreTests.swift` - Created: staging and cleanup tests
+- `OraTests/Orchestration/SimplePipelineControllerAttachmentTests.swift` - Created: lifecycle tests
+- `OraTests/Overlay/OverlayViewTests.swift` - Created: tray rendering tests
+- `OraTests/ScreenshotCaptureServiceTests.swift` - Created: permission error mapping tests
+- `OraTests/Orchestration/AgentLoopTests.swift` - Modified: attachment pass-through tests
+- `OraTests/Orchestration/MockPipelineDependencies.swift` - Created: mock helpers
+
+---
 
 ## Code Review Findings
 
-(TBD by review agent.)
+**Reviewer:** Codex Subagent
+**Date:** 2026-03-06T06:54:55Z
+**Commit reviewed:** e67cacf
+**Iteration:** 3
+
+### Summary
+- Files reviewed: 18
+- Build status: Pass
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [x] None.
+
+#### P1 - Major (Should fix)
+- [x] None.
+
+#### P2 - Minor (Can defer)
+- [x] None.
+
+### Future Considerations (Out of Scope)
+- None.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
 
 ## Completion Status
 
