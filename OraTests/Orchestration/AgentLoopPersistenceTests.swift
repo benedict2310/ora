@@ -315,6 +315,38 @@ final class AgentLoopPersistenceTests: XCTestCase {
         XCTAssertEqual(distilledSessionIDs, [expectedSessionID])
     }
 
+    func test_process_withImageAttachments_persistsTextOnlyUserMessage() async throws {
+        // V.04 AC-4: session persistence must store only text markers, never raw image bytes.
+        // The user text is persisted; image paths / byte counts must not appear in persisted content.
+        let userText = "What does this screenshot show?"
+        let imageRef = LLMImageAttachmentReference(
+            stagedFilePath: "/tmp/ora/staged/screenshot.png",
+            mimeType: "image/png",
+            byteCount: 12_345,
+            pixelWidth: 800,
+            pixelHeight: 600
+        )
+        let persistenceSink = AgentLoopRecordingPersistenceSink()
+        let llmService = AgentLoopPersistenceMockLLMService(
+            responsePayload: #"{"type":"response","text":"It shows a chart."}"#
+        )
+        let loop = self.makeLoop(llmService: llmService, persistenceSink: persistenceSink)
+
+        _ = try await loop.process(userText: userText, imageAttachments: [imageRef])
+
+        let persistedMessages = await persistenceSink.persistedMessages()
+        let userMessage = try XCTUnwrap(persistedMessages.first(where: { $0.role == .user }),
+                                        "User message must be persisted")
+
+        // Text content is stored
+        XCTAssertEqual(userMessage.content, userText)
+        // Raw image data is NOT in the persisted message
+        XCTAssertFalse(userMessage.content.contains("/tmp"),
+                       "Staged file path must not appear in persisted message")
+        XCTAssertFalse(userMessage.content.contains("12345") || userMessage.content.contains("screenshot.png"),
+                       "Image metadata must not appear in persisted message")
+    }
+
     private func makeLoop(
         llmService: LLMServicing,
         persistenceSink: AgentLoopPersistenceSink,

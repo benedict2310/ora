@@ -111,6 +111,41 @@ final class StructuredGeneratorTests: XCTestCase {
         XCTAssertEqual(received[2].first?.content, "Hello")
     }
 
+    func test_generate_retriesAfterInvalidJSON_withMultimodalMessages() async throws {
+        // Verify retry behavior is preserved when messages include image content parts.
+        // The retry appends a correction prompt without disturbing the existing image parts.
+        let imageRef = LLMImageAttachmentReference(
+            stagedFilePath: "/tmp/ora/staged/screenshot.png",
+            mimeType: "image/png",
+            byteCount: 2048,
+            pixelWidth: 800,
+            pixelHeight: 600
+        )
+        let multimodalMessage = LLMMessage(
+            role: .user,
+            contentParts: [.text("What is in this image?"), .image(imageRef)]
+        )
+
+        let stub = StubLLMService(responses: ["not-json", "{\"type\":\"response\",\"text\":\"A screenshot\"}"])
+        let generator = StructuredGenerator(llm: stub)
+
+        let output = try await generator.generate(messages: [multimodalMessage])
+
+        XCTAssertEqual(output, .response(text: "A screenshot"))
+        let callCount = await stub.generateCallCount
+        XCTAssertEqual(callCount, 2, "Should retry once after invalid JSON")
+        let received = await stub.receivedMessages
+        // First attempt: original multimodal message
+        XCTAssertEqual(received[0].count, 1)
+        XCTAssertTrue(received[0][0].containsImageAttachments)
+        // Second attempt: original message + retry correction
+        XCTAssertEqual(received[1].count, 2)
+        XCTAssertTrue(received[1][0].containsImageAttachments, "Original multimodal message preserved in retry")
+        XCTAssertEqual(received[1].last?.role, .user)
+        let retryPrompt = received[1].last?.content ?? ""
+        XCTAssertTrue(retryPrompt.contains("not valid JSON"))
+    }
+
     func test_structuredGeneratorError_description() {
         let error = StructuredGeneratorError.validationFailed(attempts: 2, lastError: "Missing field")
         XCTAssertEqual(
