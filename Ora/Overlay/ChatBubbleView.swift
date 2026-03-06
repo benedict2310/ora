@@ -45,6 +45,7 @@ struct ChatBubbleView: View {
     let isPartial: Bool
     let reduceTransparency: Bool
     let reduceMotion: Bool
+    var thumbnailURLs: [URL] = []
     var pasteboard: PasteboardWriting = SystemPasteboard()
 
     @State private var isHovered: Bool = false
@@ -121,6 +122,34 @@ struct ChatBubbleView: View {
     }
 
     @ViewBuilder
+    private var thumbnailStrip: some View {
+        HStack(spacing: 6) {
+            ForEach(self.thumbnailURLs, id: \.absoluteString) { url in
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 72, height: 72)
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    case .failure:
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.secondary.opacity(0.2))
+                            .frame(width: 72, height: 72)
+                            .overlay(Image(systemName: "photo").foregroundStyle(.secondary))
+                    default:
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.secondary.opacity(0.15))
+                            .frame(width: 72, height: 72)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: self.role == .user ? .leading : .trailing)
+    }
+
+    @ViewBuilder
     private var copyButton: some View {
         Button {
             self.copyToClipboard()
@@ -153,6 +182,10 @@ struct ChatBubbleView: View {
         let base = VStack(alignment: self.role == .user ? .leading : .trailing, spacing: OverlayLayout.bubbleContentSpacing) {
             if let state = self.state {
                 self.stateRow(state, alignRight: self.role != .user)
+            }
+
+            if !self.thumbnailURLs.isEmpty {
+                self.thumbnailStrip
             }
 
             if let text = self.text {

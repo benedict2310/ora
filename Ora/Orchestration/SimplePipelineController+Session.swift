@@ -97,7 +97,8 @@ extension SimplePipelineController {
 
                 case .final(let text):
                     self.currentTranscript = text
-                    self.overlayPresenter.model.addUserMessage(text, isPartial: false)
+                    let thumbnails = self.pendingImageAttachments.compactMap(\.thumbnailFileURL)
+                    self.overlayPresenter.model.addUserMessage(text, isPartial: false, thumbnailURLs: thumbnails)
                 }
             }
             

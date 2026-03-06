@@ -107,7 +107,7 @@ final class ProviderPreferencesViewModel: ObservableObject {
     var modelSelectionMenuState: ModelSelectionMenuState {
         let primaryLLM = self.localModelsState.primaryLLM
         let localOptions = ModelIdentifier.allCases
-            .filter { $0.category == .llm && !$0.isLegacy && $0.isRuntimeSupported && self.localModelsState.statuses[$0]?.isReady == true }
+            .filter { $0.category == .llm && !$0.isLegacy && self.localModelsState.statuses[$0]?.isReady == true }
             .map { model in
                 ProviderModelOption(
                     provider: .local,
@@ -331,6 +331,8 @@ final class ProviderPreferencesViewModel: ObservableObject {
             if let modelId = ModelIdentifier(rawValue: identifier) {
                 await ModelManager.shared.setPrimaryLLM(modelId)
                 self.localModelsState = await ModelManager.shared.state
+                // Unload the running LLM so the next prepare() picks up the new model
+                await LLMProviderManager.shared.unload()
             }
             await self.switchProvider(.local)
         case .anthropic:
