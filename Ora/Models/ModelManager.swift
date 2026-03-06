@@ -89,7 +89,23 @@ actor ModelManager {
                 _state.statuses[model] = .ready
                 readyCount += 1
             } else {
-                _state.statuses[model] = .notDownloaded
+                // Don't overwrite an in-progress download or verification — doing so
+                // would cause the UI to revert to "Download" and drop all subsequent
+                // progress callbacks (they are guarded by isDownloading in
+                // updateDownloadProgressIfDownloading).
+                let current = _state.statuses[model]
+                let isActive: Bool
+                if let s = current {
+                    switch s {
+                    case .downloading, .verifying: isActive = true
+                    default: isActive = false
+                    }
+                } else {
+                    isActive = false
+                }
+                if !isActive {
+                    _state.statuses[model] = .notDownloaded
+                }
                 missingCount += 1
                 missingModels.append(model.displayName)
             }
