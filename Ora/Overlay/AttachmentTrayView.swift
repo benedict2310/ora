@@ -5,6 +5,7 @@
 //  Pending attachment tray for the overlay composer.
 //
 
+import AppKit
 import SwiftUI
 
 struct AttachmentTrayView: View {
@@ -140,21 +141,28 @@ private struct AttachmentChipView: View {
 private struct AttachmentThumbnailView: View {
     let attachment: StagedImageAttachment
 
+    @State private var image: NSImage?
+
     var body: some View {
-        let url = self.attachment.thumbnailFileURL ?? self.attachment.stagedFileURL
-        AsyncImage(url: url) { phase in
-            switch phase {
-            case .success(let image):
-                image
+        Group {
+            if let image = self.image {
+                Image(nsImage: image)
                     .resizable()
                     .scaledToFill()
-            default:
+            } else {
                 Image(systemName: "photo")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Color.black.opacity(0.15))
             }
+        }
+        .task(id: self.attachment.id) {
+            let url = self.attachment.thumbnailFileURL ?? self.attachment.stagedFileURL
+            let loaded = await Task.detached(priority: .userInitiated) {
+                (try? Data(contentsOf: url)).flatMap { NSImage(data: $0) }
+            }.value
+            self.image = loaded
         }
     }
 }
