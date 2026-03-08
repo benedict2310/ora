@@ -41,13 +41,20 @@ public enum OpenAIModel: String, Sendable, CaseIterable {
         }
         return OpenAIModelOption.defaultDisplayName(for: identifier)
     }
+
+    static func codexCuratedImageFallbackSupportsInput(for identifier: String) -> Bool {
+        return [
+            "gpt-5.2-codex",
+            Self.gpt52.rawValue,
+        ].contains(identifier.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
 }
 
 // MARK: - Model Option
 
-struct OpenAIModelOption: Sendable, Equatable, Hashable {
+struct OpenAIModelOption: Sendable, Equatable, Hashable, Codable {
 
-    enum Source: Sendable, Equatable, Hashable {
+    enum Source: String, Sendable, Equatable, Hashable, Codable {
         case curated
         case discovered
     }
@@ -55,17 +62,34 @@ struct OpenAIModelOption: Sendable, Equatable, Hashable {
     let identifier: String
     let displayName: String
     let source: Source
+    let supportsImageInput: Bool?
+    let supportsImageDetailOriginal: Bool?
 
-    init(identifier: String, displayName: String, source: Source) {
+    init(
+        identifier: String,
+        displayName: String,
+        source: Source,
+        supportsImageInput: Bool? = nil,
+        supportsImageDetailOriginal: Bool? = nil
+    ) {
         self.identifier = identifier
         self.displayName = displayName
         self.source = source
+        self.supportsImageInput = supportsImageInput
+        self.supportsImageDetailOriginal = supportsImageDetailOriginal
     }
 
-    init(identifier: String, source: Source) {
+    init(
+        identifier: String,
+        source: Source,
+        supportsImageInput: Bool? = nil,
+        supportsImageDetailOriginal: Bool? = nil
+    ) {
         self.identifier = identifier
         self.displayName = OpenAIModel.displayName(for: identifier)
         self.source = source
+        self.supportsImageInput = supportsImageInput
+        self.supportsImageDetailOriginal = supportsImageDetailOriginal
     }
 
     static func defaultDisplayName(for identifier: String) -> String {
@@ -84,5 +108,12 @@ struct OpenAIModelOption: Sendable, Equatable, Hashable {
         }
 
         return trimmed
+    }
+
+    var resolvedSupportsImageInput: Bool {
+        if let supportsImageInput = self.supportsImageInput {
+            return supportsImageInput
+        }
+        return OpenAIModel.codexCuratedImageFallbackSupportsInput(for: self.identifier)
     }
 }

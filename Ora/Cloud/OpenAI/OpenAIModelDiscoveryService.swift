@@ -54,9 +54,7 @@ actor OpenAIModelDiscoveryService: OpenAIModelDiscovering {
         self.session = session
         self.cacheTTL = cacheTTL
         self.now = now
-        self.cachedModels = UserDefaults.standard.openAIDiscoveredModelIdentifiers.map {
-            OpenAIModelOption(identifier: $0, source: .discovered)
-        }
+        self.cachedModels = UserDefaults.standard.openAIDiscoveredModels
         self.cachedAt = self.cachedModels.isEmpty ? nil : self.now()
     }
 
@@ -93,11 +91,11 @@ actor OpenAIModelDiscoveryService: OpenAIModelDiscovering {
 
             switch httpResponse.statusCode {
             case 200:
-                let identifiers = try self.extractModelIdentifiers(from: data)
-                let filtered = self.filterAndSort(identifiers: identifiers)
+                let discoveredModels = try self.extractModelOptions(from: data, usesCodexOAuth: requestAuthorization.usesCodexOAuth)
+                let filtered = self.filterAndSort(models: discoveredModels)
                 self.cachedModels = filtered
                 self.cachedAt = self.now()
-                UserDefaults.standard.openAIDiscoveredModelIdentifiers = filtered.map(\.identifier)
+                UserDefaults.standard.openAIDiscoveredModels = filtered
                 return .available(models: filtered, isStale: false)
             case 401:
                 self.logDiscoveryFailure(statusCode: 401, body: String(data: data, encoding: .utf8) ?? "", usesCodexOAuth: requestAuthorization.usesCodexOAuth)
@@ -158,6 +156,16 @@ actor OpenAIModelDiscoveryService: OpenAIModelDiscovering {
             let slug: String?
             let id: String?
             let model: String?
+            let inputModalities: [String]?
+            let supportsImageDetailOriginal: Bool?
+
+            private enum CodingKeys: String, CodingKey {
+                case slug
+                case id
+                case model
+                case inputModalities = "input_modalities"
+                case supportsImageDetailOriginal = "supports_image_detail_original"
+            }
         }
         let models: [Entry]
     }
@@ -188,46 +196,63 @@ actor OpenAIModelDiscoveryService: OpenAIModelDiscovering {
         )
     }
 
-    private func extractModelIdentifiers(from data: Data) throws -> [String] {
+    private func extractModelOptions(from data: Data, usesCodexOAuth: Bool) throws -> [OpenAIModelOption] {
         if let openAIResponse = try? JSONDecoder().decode(OpenAIModelsListResponse.self, from: data) {
-            return openAIResponse.data.map(\.id)
+            return openAIResponse.data.map {
+                OpenAIModelOption(identifier: $0.id, source: .discovered)
+            }
         }
 
         let codexResponse = try JSONDecoder().decode(CodexModelsListResponse.self, from: data)
         return codexResponse.models.compactMap { entry in
+            let identifier: String
             if let slug = entry.slug, !slug.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return slug
+                identifier = slug
+            } else if let id = entry.id, !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                identifier = id
+            } else if let model = entry.model, !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                identifier = model
+            } else {
+                return nil
             }
-            if let id = entry.id, !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return id
+
+            let supportsImageInput: Bool
+            if usesCodexOAuth {
+                supportsImageInput = entry.inputModalities?.contains(where: { $0.caseInsensitiveCompare("image") == .orderedSame })
+                    ?? true
+            } else {
+                supportsImageInput = false
             }
-            if let model = entry.model, !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return model
-            }
-            return nil
+
+            return OpenAIModelOption(
+                identifier: identifier,
+                source: .discovered,
+                supportsImageInput: supportsImageInput,
+                supportsImageDetailOriginal: entry.supportsImageDetailOriginal ?? false
+            )
         }
     }
 
-    private func filterAndSort(identifiers: [String]) -> [OpenAIModelOption] {
+    private func filterAndSort(models: [OpenAIModelOption]) -> [OpenAIModelOption] {
         var seen: Set<String> = []
-        var models: [OpenAIModelOption] = []
+        var filteredModels: [OpenAIModelOption] = []
 
-        for rawIdentifier in identifiers {
-            let identifier = rawIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        for model in models {
+            let identifier = model.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !identifier.isEmpty else { continue }
             guard self.isUserFacingModel(identifier) else { continue }
             guard !seen.contains(identifier) else { continue }
             seen.insert(identifier)
-            models.append(OpenAIModelOption(identifier: identifier, source: .discovered))
+            filteredModels.append(model)
         }
 
-        models.sort { lhs, rhs in
+        filteredModels.sort { lhs, rhs in
             if lhs.identifier == OpenAIModel.preferredDefault.rawValue { return true }
             if rhs.identifier == OpenAIModel.preferredDefault.rawValue { return false }
             return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
         }
 
-        return models
+        return filteredModels
     }
 
     private func isUserFacingModel(_ identifier: String) -> Bool {

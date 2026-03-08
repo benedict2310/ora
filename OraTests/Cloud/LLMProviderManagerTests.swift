@@ -20,6 +20,7 @@ final class LLMProviderManagerTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "com.ora.selectedOpenAIModel")
         UserDefaults.standard.removeObject(forKey: "com.ora.selectedOpenAIModelIdentifier")
         UserDefaults.standard.removeObject(forKey: "com.ora.openAI.discoveredModelIdentifiers")
+        UserDefaults.standard.removeObject(forKey: "com.ora.openAI.discoveredModels")
 
         self.mockCredentialStore = MockCredentialStore()
         self.mockCodexOAuthManager = MockCodexOAuthManager()
@@ -30,6 +31,8 @@ final class LLMProviderManagerTests: XCTestCase {
     }
 
     override func tearDown() async throws {
+        UserDefaults.standard.removeObject(forKey: "com.ora.openAI.discoveredModelIdentifiers")
+        UserDefaults.standard.removeObject(forKey: "com.ora.openAI.discoveredModels")
         self.manager = nil
         self.mockCodexOAuthManager = nil
         self.mockCredentialStore = nil
@@ -158,6 +161,33 @@ final class LLMProviderManagerTests: XCTestCase {
         let capabilities = await self.manager.capabilities()
 
         XCTAssertTrue(capabilities.supportsTextInput)
+        XCTAssertTrue(capabilities.supportsImageInput)
+    }
+
+    func test_capabilities_openAIWithCodexCredential_usesDiscoveredModelMetadata() async throws {
+        UserDefaults.standard.selectedOpenAIModelIdentifier = "gpt-5.2-codex"
+        UserDefaults.standard.openAIDiscoveredModels = [
+            OpenAIModelOption(
+                identifier: "gpt-5.2-codex",
+                source: .discovered,
+                supportsImageInput: true
+            ),
+        ]
+        await self.manager.register(factory: MockProviderFactory(), for: .openai)
+        await self.mockCodexOAuthManager.setCredential(
+            CodexOAuthCredential(
+                accessToken: "access",
+                refreshToken: "refresh",
+                accountID: "acct_123",
+                accountEmail: "user@example.com",
+                expiresAt: Date().addingTimeInterval(3600),
+                updatedAt: Date()
+            )
+        )
+
+        try await self.manager.switchProvider(to: .openai)
+        let capabilities = await self.manager.capabilities()
+
         XCTAssertTrue(capabilities.supportsImageInput)
     }
 }
