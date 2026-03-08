@@ -65,7 +65,7 @@ struct ToolStateView: View {
             // Use .regular variant for full background adaptivity (light/dark)
             // Tint opacity lowered to reduce black outline artifacts
             base
-                .glassEffect(.regular.tint(.white.opacity(0.04)), in: shape)
+                .glassEffect(.regular.tint(.white.opacity(0.04)).interactive(true), in: shape)
         }
     }
 
@@ -92,6 +92,7 @@ struct ToolStateView: View {
                 Button(proposal.cancelLabel ?? "Cancel") {
                     self.onDenyProposal()
                 }
+                .buttonStyle(.glass)
                 .keyboardShortcut(.escape, modifiers: [])
                 .focused(self.$cancelButtonFocused)
                 .accessibilityLabel("Cancel action")
@@ -103,7 +104,7 @@ struct ToolStateView: View {
                     Button(trustLabel) {
                         self.onConfirmAndTrustProposal()
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
                     .accessibilityLabel(trustLabel)
                     .accessibilityHint("Approves the action and stores trust for future runs")
                 }
@@ -112,7 +113,7 @@ struct ToolStateView: View {
                     self.onConfirmProposal()
                 }
                 .keyboardShortcut(.return, modifiers: [])
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .focused(self.$confirmButtonFocused)
                 .accessibilityLabel(proposal.confirmLabel ?? "Confirm action")
                 .accessibilityHint("Confirms and executes the proposed action")

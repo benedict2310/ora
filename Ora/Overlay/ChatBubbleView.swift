@@ -49,8 +49,8 @@ struct ChatBubbleView: View {
     var pasteboard: PasteboardWriting = SystemPasteboard()
 
     @State private var isHovered: Bool = false
+    @State private var isHovering: Bool = false
     @State private var isCopied: Bool = false
-    @State private var hoverHideTask: Task<Void, Never>?
 
     /// Maximum bubble width based on role and state
     private var maxBubbleWidth: CGFloat {
@@ -79,31 +79,21 @@ struct ChatBubbleView: View {
                 }
         }
         .onHover { hovering in
-            // Cancel any pending hide task
-            self.hoverHideTask?.cancel()
-            self.hoverHideTask = nil
-
-            if hovering {
-                // Show immediately on enter
+            self.isHovering = hovering
+        }
+        .task(id: self.isHovering) {
+            if self.isHovering {
                 if self.reduceMotion {
                     self.isHovered = true
                 } else {
-                    withAnimation(.bouncy(duration: 0.3)) {
-                        self.isHovered = true
-                    }
+                    withAnimation(.bouncy(duration: 0.3)) { self.isHovered = true }
                 }
             } else {
-                // Delay hiding to prevent flickering at edges
-                self.hoverHideTask = Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(150))
-                    guard !Task.isCancelled else { return }
-                    if self.reduceMotion {
-                        self.isHovered = false
-                    } else {
-                        withAnimation(.bouncy(duration: 0.3)) {
-                            self.isHovered = false
-                        }
-                    }
+                try? await Task.sleep(for: .milliseconds(150))
+                if self.reduceMotion {
+                    self.isHovered = false
+                } else {
+                    withAnimation(.bouncy(duration: 0.3)) { self.isHovered = false }
                 }
             }
         }
@@ -217,7 +207,7 @@ struct ChatBubbleView: View {
                     enabled: self.role != .user,
                     shape: shape
                 )
-                .glassEffect(self.glassStyle(for: self.role), in: shape)
+                .glassEffect(self.glassStyle(for: self.role).interactive(true), in: shape)
                 // Force compositing to ensure glass samples background correctly on initial render
                 .compositingGroup()
         }

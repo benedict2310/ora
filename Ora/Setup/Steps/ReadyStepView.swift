@@ -17,7 +17,7 @@ struct ReadyStepView: View {
             // Success icon
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 80))
-                .foregroundColor(.green)
+                .foregroundStyle(.green)
 
             Text("You're All Set!")
                 .font(.largeTitle)
@@ -37,7 +37,7 @@ struct ReadyStepView: View {
         VStack(spacing: 16) {
             Text("Press")
                 .font(.title3)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             Text(self.hotkeyDisplayString)
                 .font(.system(size: 32, weight: .semibold, design: .rounded))
@@ -48,7 +48,7 @@ struct ReadyStepView: View {
 
             Text("and start talking")
                 .font(.title3)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
         .padding(16)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.6))
@@ -59,12 +59,12 @@ struct ReadyStepView: View {
         VStack(spacing: 8) {
             Text("Ora will listen, respond, and can continue in conversation mode.")
                 .font(.body)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
 
             Text("You can change permissions, providers, and models anytime from the menu bar icon.")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
         .padding(12)
         .frame(maxWidth: .infinity)

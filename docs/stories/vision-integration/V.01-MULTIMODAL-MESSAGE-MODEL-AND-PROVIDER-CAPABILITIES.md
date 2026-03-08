@@ -186,6 +186,6 @@ As a user, I want Ora's model layer to understand image-bearing turns as a first
 
 - [x] Implementation complete
 - [x] Code review passed (3 iterations)
-- [ ] PR merged: TBD
-- [ ] Merged to main: TBD
-- [ ] Date: TBD
+- [x] PR merged: https://github.com/benedict2310/ora/pull/173
+- [x] Merged to main: b601995
+- [x] Date: 2026-03-05

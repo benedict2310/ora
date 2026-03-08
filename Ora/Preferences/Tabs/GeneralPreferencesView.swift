@@ -31,7 +31,7 @@ struct GeneralPreferencesView: View {
                             .font(.headline)
                         Text("Press and hold to speak, release to send")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
 
                     Spacer()
@@ -48,7 +48,7 @@ struct GeneralPreferencesView: View {
                             .font(.headline)
                         Text("Enable text-to-speech responses")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .toggleStyle(.switch)
@@ -65,7 +65,7 @@ struct GeneralPreferencesView: View {
                             .font(.headline)
                         Text("Auto-submit after silence, continue listening after response")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .toggleStyle(.switch)
@@ -84,17 +84,17 @@ struct GeneralPreferencesView: View {
                             Spacer()
                             Text(self.formatTimeout(silenceTimeout))
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                                 .monospacedDigit()
                         }
                         Text("Time to wait after speech stops before auto-submitting")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
 
                         HStack {
                             Text("0.5s")
                                 .font(.caption2)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                             Slider(value: $silenceTimeout, in: 0.5...2.0, step: 0.1)
                                 .onChange(of: silenceTimeout) { _, newValue in
                                     PersistenceManager.shared.updateSettings { settings in
@@ -103,7 +103,7 @@ struct GeneralPreferencesView: View {
                                 }
                             Text("2.0s")
                                 .font(.caption2)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                     }
                     .padding(.top, 8)
@@ -120,15 +120,15 @@ struct GeneralPreferencesView: View {
                         .font(.headline)
                     Text("Calendar used for new events")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
 
                     if calendars.isEmpty {
                         HStack {
                             Image(systemName: "exclamationmark.triangle")
-                                .foregroundColor(.orange)
+                                .foregroundStyle(.orange)
                             Text("No calendars available. Grant calendar access in Permissions.")
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                     } else {
                         Picker("", selection: $selectedCalendarID) {

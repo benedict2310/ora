@@ -40,7 +40,7 @@ struct DownloadStepView: View {
                 .fontWeight(.bold)
 
             Text("Already-downloaded models are verified and skipped. New downloads may take a few minutes.")
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
 
             GlassEffectContainer(spacing: 16) {
@@ -93,9 +93,9 @@ struct DownloadStepView: View {
                     Text(self.modelsState.formattedBytesDownloaded)
                         .fontWeight(.medium)
                     Text("of")
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     Text(self.modelsState.formattedTotalBytes)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 .font(.caption)
 
@@ -107,9 +107,9 @@ struct DownloadStepView: View {
 
                     if let timeRemaining = self.modelsState.formattedTimeRemaining {
                         Text("•")
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text(timeRemaining)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .font(.caption)
@@ -158,7 +158,7 @@ struct DownloadStepView: View {
     @ViewBuilder
     private func errorCard(for error: String) -> some View {
         Label(error, systemImage: "exclamationmark.triangle")
-            .foregroundColor(.red)
+            .foregroundStyle(.red)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)
             .background(Color.red.opacity(0.08))
@@ -187,7 +187,7 @@ private struct ModelProgressRow: View {
                 // Progress text
                 Text(self.progressText)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
 
                 // Mini progress bar for downloading state
                 if case .downloading(let progress, _, _) = self.displayState {
@@ -211,7 +211,7 @@ private struct ModelProgressRow: View {
             // Size
             Text(self.totalSize)
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
         .padding(.vertical, 12)
     }
@@ -221,7 +221,7 @@ private struct ModelProgressRow: View {
         switch self.displayState {
         case .pending:
             Image(systemName: "circle")
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
         case .downloading:
             ProgressView()
@@ -233,11 +233,11 @@ private struct ModelProgressRow: View {
 
         case .complete:
             Image(systemName: "checkmark.circle.fill")
-                .foregroundColor(.green)
+                .foregroundStyle(.green)
 
         case .error:
             Image(systemName: "xmark.circle.fill")
-                .foregroundColor(.red)
+                .foregroundStyle(.red)
         }
     }
 

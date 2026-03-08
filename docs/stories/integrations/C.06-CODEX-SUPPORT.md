@@ -263,6 +263,100 @@ When Codex is authorized, the user can select OpenAI as active provider and it w
 
 ---
 
+## 12. Image Support Research (2026-03-06)
+
+**Date:** 2026-03-06
+**Sources:** `codex-rs/protocol/src/models.rs`, `codex-rs/protocol/src/user_input.rs`, `codex-rs/utils/image/src/lib.rs`, `codex-rs/protocol/src/openai_models.rs`
+
+### Finding: The Codex Responses API fully supports image inputs
+
+The `/backend-api/codex/responses` endpoint accepts image content items in user message turns. No new endpoint, no new headers — just an expanded `content` array on the user message.
+
+### Wire Format
+
+`ContentItem` is a tagged union (`#[serde(tag = "type", rename_all = "snake_case")]`). An image item on the wire:
+
+```json
+{
+  "type": "input_image",
+  "image_url": "data:image/png;base64,iVBORw0KGgo..."
+}
+```
+
+A user turn with mixed text + image:
+
+```json
+{
+  "type": "message",
+  "role": "user",
+  "content": [
+    { "type": "input_text",  "text": "What does this screenshot show?" },
+    { "type": "input_image", "image_url": "data:image/png;base64,..." }
+  ]
+}
+```
+
+### Image Encoding
+
+- **Format:** base64 data URL — `data:<mime_type>;base64,<encoded>`
+- **Supported MIME types passed through byte-for-byte:** `image/png`, `image/jpeg`, `image/webp`
+- **GIF:** decoded but re-encoded; `image/gif` is accepted
+- **Unsupported formats** (TIFF, BMP, etc.) are converted to PNG
+- **Size cap:** Codex CLI resizes images that exceed **2048 × 768 px** before encoding (using bilinear `FilterType::Triangle`)
+
+### Model Capability Gate
+
+Model metadata carries:
+
+```json
+{
+  "input_modalities": ["text", "image"],
+  "supports_image_detail_original": false
+}
+```
+
+The Responses API default (when `input_modalities` is absent) is `["text", "image"]` — i.e. images are assumed supported unless a model explicitly narrows it to `["text"]`. `gpt-5.2-codex` and `gpt-5.2` both accept images.
+
+`supports_image_detail_original` controls whether the model accepts full-resolution images or only resized ones. Most models are `false` (resize required). Ora should always downscale before attaching to stay compatible.
+
+### What Needs to Change in Ora
+
+**One method: `buildCodexInput(from:)` in `CodexProvider.swift`**
+
+Currently it emits only `input_text` items. For each user `LLMMessage` that contains `.image` content parts, it must additionally emit an `input_image` item:
+
+```swift
+// For each LLMMessageContentPart in a user message:
+case .text(let str):
+    ["type": "input_text", "text": str]
+case .image(let ref):
+    // Load file at ref.stagedFilePath, base64-encode, prefix with "data:<mime>;base64,"
+    ["type": "input_image", "image_url": "data:\(ref.mimeType);base64,\(encoded)"]
+```
+
+The outer message shape stays identical (`type: "message"`, `role: "user"`, `content: [...]`). No new headers, no endpoint change.
+
+**Image loading:**
+`LLMImageAttachmentReference.stagedFilePath` is a local file path. The provider must read the file from disk and base64-encode it inline. File I/O should happen off the main actor (already the case — `generate()` runs on a background actor).
+
+**Size constraint:**
+Apply the same 2048 × 768 cap that Codex CLI uses, or rely on the model to reject oversized inputs and surface the error. Resizing in-app is the safer choice.
+
+**History turns with images:**
+The current `buildCodexInput` already normalises assistant/tool history into `user`-role messages. Image-bearing turns in history should include the image items too — the model needs the visual context from previous turns to answer follow-ups.
+
+**No capability check needed in `CodexProvider`:**
+`LLMService` already gates image turns on `ProviderCapabilities.supportsVision`. The Codex provider should declare `.supportsVision = true` in its `capabilities()` implementation (currently it is `.textOnly`).
+
+### Summary: Required Changes
+
+| File | Change |
+|:-----|:-------|
+| `Ora/Cloud/OpenAI/CodexProvider.swift` | (1) `buildCodexInput`: emit `input_image` items alongside `input_text` for user messages with image parts; (2) `capabilities()`: return `.supportsVision` |
+| `Ora/Cloud/OpenAI/CodexProviderTests.swift` | Add tests: image item serializes as `input_image` with data URL; history turn with image preserves image content |
+
+---
+
 ## Implementation Summary
 
 (TBD after implementation.)
