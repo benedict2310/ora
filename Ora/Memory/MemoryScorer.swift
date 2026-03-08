@@ -80,69 +80,71 @@ struct KeywordMemoryRetrievalCoordinator: MemoryRetrievalCoordinating {
         triggerResult: MemoryTriggerResult,
         conversationManager: ConversationManager
     ) async {
-        guard triggerResult.shouldTrigger else {
-            await conversationManager.clearMemoryContext()
-            return
-        }
-
-        self.logger.debug(
-            "Memory retrieval trigger detected (\(triggerResult.triggerType.rawValue), confidence: \(triggerResult.confidence))"
-        )
-
         // Always inject the full MEMORY.md — it's the user's curated fact store
-        // and small enough to include in its entirety. Selective search-based
-        // retrieval caused incomplete recall when chunks lacked keyword overlap.
+        // and small enough (~1200 tokens) to include on every turn. This ensures
+        // the LLM always knows the user's name, preferences, and key facts even
+        // when the query has no keyword overlap with memory entities.
         let memoryFileContent = self.loadMemoryFileContent()
-        // Only filter out .memory search hits when the full file was loaded
-        // and fits under the cap (i.e. it's injected verbatim). When the file
-        // failed to load or was truncated, keep .memory hits so they remain
-        // reachable via search.
-        let memoryFullyInjected = memoryFileContent != nil
-            && memoryFileContent!.count <= KeywordMemoryRetrievalCoordinator.maxMemoryFileCharacters
 
-        // Fetch extra candidates so that filtering out .memory rows (when the
-        // full file fits) doesn't starve non-memory supplementary results.
-        let searchLimit = self.configuration.maxChunkCount * 2
-        let retrievedChunks = await self.memoryIndex.search(
-            query: userText,
-            limit: searchLimit
-        )
-        // Only filter out .memory rows when the full file is injected verbatim.
-        // When the file is missing, unreadable, or truncated, keep .memory hits.
-        let supplementaryChunks: [MemoryChunk]
-        if memoryFullyInjected {
-            supplementaryChunks = retrievedChunks.filter { $0.documentType != .memory }
-        } else {
-            supplementaryChunks = retrievedChunks
-        }
-
-        // Use the filtered set's top score for chunk selection so that a
-        // high-scoring .memory row (already covered by the verbatim MEMORY.md
-        // injection) doesn't pull in low-quality supplementary chunks.
-        let topSupplementaryScore = supplementaryChunks.first?.score
-        // Use the unfiltered top score for the transcript fallback decision —
-        // a high-scoring memory hit still indicates sufficient primary recall.
-        let topPrimaryScore = retrievedChunks.first?.score
+        // Supplementary retrieval (search index + transcripts) is gated on the
+        // trigger to avoid unnecessary index queries on simple greetings etc.
         var selectedSupplementaryChunks: [MemoryChunk] = []
 
-        if let topSupplementaryScore, topSupplementaryScore >= self.configuration.minTopScore {
-            selectedSupplementaryChunks = self.selectChunks(from: supplementaryChunks)
-        }
-
-        if self.shouldUseTranscriptFallback(topPrimaryScore: topPrimaryScore) {
-            self.logger.debug("Preparing memory retrieval context with transcript fallback if primary memory confidence is low")
-            let transcriptChunks = await self.memoryIndex.searchTranscriptFallback(
-                query: userText,
-                summarySessionIDs: self.extractSummarySessionIDs(from: retrievedChunks),
-                recentSessionLimit: self.configuration.recentTranscriptSessionLimit,
-                limit: self.configuration.transcriptResultLimit
+        if triggerResult.shouldTrigger {
+            self.logger.debug(
+                "Memory retrieval trigger detected (\(triggerResult.triggerType.rawValue), confidence: \(triggerResult.confidence))"
             )
 
-            if let topTranscriptChunk = transcriptChunks.first,
-                topTranscriptChunk.score >= self.configuration.transcriptMinTopScore {
-                let selectedTranscriptChunks = self.selectTranscriptChunks(from: transcriptChunks)
-                if !selectedTranscriptChunks.isEmpty {
-                    selectedSupplementaryChunks = selectedTranscriptChunks
+            // Only filter out .memory search hits when the full file was loaded
+            // and fits under the cap (i.e. it's injected verbatim). When the file
+            // failed to load or was truncated, keep .memory hits so they remain
+            // reachable via search.
+            let memoryFullyInjected = memoryFileContent != nil
+                && memoryFileContent!.count <= KeywordMemoryRetrievalCoordinator.maxMemoryFileCharacters
+
+            // Fetch extra candidates so that filtering out .memory rows (when the
+            // full file fits) doesn't starve non-memory supplementary results.
+            let searchLimit = self.configuration.maxChunkCount * 2
+            let retrievedChunks = await self.memoryIndex.search(
+                query: userText,
+                limit: searchLimit
+            )
+            // Only filter out .memory rows when the full file is injected verbatim.
+            // When the file is missing, unreadable, or truncated, keep .memory hits.
+            let supplementaryChunks: [MemoryChunk]
+            if memoryFullyInjected {
+                supplementaryChunks = retrievedChunks.filter { $0.documentType != .memory }
+            } else {
+                supplementaryChunks = retrievedChunks
+            }
+
+            // Use the filtered set's top score for chunk selection so that a
+            // high-scoring .memory row (already covered by the verbatim MEMORY.md
+            // injection) doesn't pull in low-quality supplementary chunks.
+            let topSupplementaryScore = supplementaryChunks.first?.score
+            // Use the unfiltered top score for the transcript fallback decision —
+            // a high-scoring memory hit still indicates sufficient primary recall.
+            let topPrimaryScore = retrievedChunks.first?.score
+
+            if let topSupplementaryScore, topSupplementaryScore >= self.configuration.minTopScore {
+                selectedSupplementaryChunks = self.selectChunks(from: supplementaryChunks)
+            }
+
+            if self.shouldUseTranscriptFallback(topPrimaryScore: topPrimaryScore) {
+                self.logger.debug("Preparing memory retrieval context with transcript fallback if primary memory confidence is low")
+                let transcriptChunks = await self.memoryIndex.searchTranscriptFallback(
+                    query: userText,
+                    summarySessionIDs: self.extractSummarySessionIDs(from: retrievedChunks),
+                    recentSessionLimit: self.configuration.recentTranscriptSessionLimit,
+                    limit: self.configuration.transcriptResultLimit
+                )
+
+                if let topTranscriptChunk = transcriptChunks.first,
+                    topTranscriptChunk.score >= self.configuration.transcriptMinTopScore {
+                    let selectedTranscriptChunks = self.selectTranscriptChunks(from: transcriptChunks)
+                    if !selectedTranscriptChunks.isEmpty {
+                        selectedSupplementaryChunks = selectedTranscriptChunks
+                    }
                 }
             }
         }
@@ -154,7 +156,7 @@ struct KeywordMemoryRetrievalCoordinator: MemoryRetrievalCoordinating {
 
         guard !context.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             await conversationManager.clearMemoryContext()
-            self.logger.debug("Memory retrieval produced no context")
+            self.logger.debug("Memory retrieval produced no context (MEMORY.md empty or missing)")
             return
         }
 

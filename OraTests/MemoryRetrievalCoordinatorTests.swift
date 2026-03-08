@@ -268,8 +268,9 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
         XCTAssertFalse(context.contains(oversizedContent))
     }
 
-    func test_prepareRetrieval_notTriggered_doesNotInjectContext() async {
-        // Given
+    func test_prepareRetrieval_notTriggered_stillInjectsMemoryFile() async {
+        // Given — trigger doesn't fire, but MEMORY.md should still be injected
+        // so the LLM always knows the user's name, preferences, etc.
         let conversationManager = ConversationManager.makeTestInstance(maxContextTokens: 6000)
         await conversationManager.startConversation(systemPrompt: "System prompt")
 
@@ -292,7 +293,40 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
         )
         let messages = await conversationManager.getMessagesForLLM()
 
-        // Then — no trigger means no context injected
+        // Then — MEMORY.md is injected even without trigger, but no supplementary chunks
+        XCTAssertEqual(messages.count, 2)
+        XCTAssertEqual(messages[1].role, .system)
+        XCTAssertTrue(messages[1].content.contains("MEMORY.md"))
+        XCTAssertTrue(messages[1].content.contains("TestUser"))
+        XCTAssertFalse(messages[1].content.contains("Additional context"))
+    }
+
+    func test_prepareRetrieval_notTriggered_missingMemoryFile_doesNotInjectContext() async {
+        // Given — trigger doesn't fire AND memory file doesn't exist
+        let conversationManager = ConversationManager.makeTestInstance(maxContextTokens: 6000)
+        await conversationManager.startConversation(systemPrompt: "System prompt")
+
+        let missingURL = self.temporaryDirectoryURL.appendingPathComponent("nonexistent-MEMORY.md")
+        let coordinator = KeywordMemoryRetrievalCoordinator(
+            memoryIndex: StubMemoryIndex(chunks: []),
+            memoryFileURL: missingURL
+        )
+        let triggerResult = MemoryTriggerResult(
+            shouldTrigger: false,
+            confidence: 0.0,
+            triggerType: .none,
+            matchedSignals: []
+        )
+
+        // When
+        await coordinator.prepareRetrievalIfNeeded(
+            userText: "hello",
+            triggerResult: triggerResult,
+            conversationManager: conversationManager
+        )
+        let messages = await conversationManager.getMessagesForLLM()
+
+        // Then — no memory file means no context
         XCTAssertEqual(messages.count, 1)
         XCTAssertEqual(messages[0].role, .system)
         XCTAssertEqual(messages[0].content, "System prompt")
