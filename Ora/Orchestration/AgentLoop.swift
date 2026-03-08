@@ -830,16 +830,17 @@ actor AgentLoop {
     }
 
     private func userFacingConfigurationMessage(for error: Error) -> String? {
+        let localModelName = ModelIdentifier.recommendedLocalLLM().displayName
         if let providerError = error as? ProviderError {
             switch providerError {
             case .providerNotRegistered(let type):
-                return "\(type.displayName) is not ready. Open Preferences > Providers, or switch to Local (Qwen3 VL 4B)."
+                return "\(type.displayName) is not ready. Open Preferences > Providers, or switch to Local (\(localModelName))."
             case .noCredential(let type):
                 return "\(type.displayName) is not configured. Open Preferences > Providers to set up a connection."
             case .invalidModel(let type, _):
                 return "The selected \(type.displayName) model is unavailable. Choose another model in Preferences > Providers."
             case .switchFailed(let type, _):
-                return "I could not connect to \(type.displayName). Open Preferences > Providers, or switch to Local (Qwen3 VL 4B)."
+                return "I could not connect to \(type.displayName). Open Preferences > Providers, or switch to Local (\(localModelName))."
             }
         }
 
@@ -857,9 +858,9 @@ actor AgentLoop {
             case .authenticationFailed:
                 return "Your cloud provider credential appears invalid. Open Preferences > Providers to reconnect."
             case .billingError:
-                return "Your cloud provider account needs billing attention. Open Preferences > Providers or switch to Local (Qwen3 VL 4B)."
+                return "Your cloud provider account needs billing attention. Open Preferences > Providers or switch to Local (\(localModelName))."
             case .connectionFailed:
-                return "I could not reach the cloud provider. Check your connection or switch to Local (Qwen3 VL 4B)."
+                return "I could not reach the cloud provider. Check your connection or switch to Local (\(localModelName))."
             case .requestFailed(let statusCode, let body):
                 return self.requestFailureGuidance(statusCode: statusCode, body: body)
             case .unsupportedInput(let guidance):

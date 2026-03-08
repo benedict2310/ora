@@ -116,10 +116,11 @@ final class ProviderPreferencesViewModel: ObservableObject {
                     isSelected: self.selectedProvider == .local && model == primaryLLM
                 )
             }
+        let fallbackLocalModel = ModelIdentifier.recommendedLocalLLM()
         let fallbackOption = ProviderModelOption(
             provider: .local,
-            identifier: ModelIdentifier.qwen35_4B_Vision.rawValue,
-            displayName: ModelIdentifier.qwen35_4B_Vision.displayName,
+            identifier: fallbackLocalModel.rawValue,
+            displayName: fallbackLocalModel.displayName,
             isSelected: self.selectedProvider == .local
         )
         let resolvedLocalOptions = localOptions.isEmpty ? [fallbackOption] : localOptions

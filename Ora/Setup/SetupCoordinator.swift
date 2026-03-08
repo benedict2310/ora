@@ -370,7 +370,7 @@ extension SetupCoordinator {
             return defaultModel
         }
 
-        if persistedLLM.isLegacy {
+        if persistedLLM.isLegacy(on: totalRAMBytes) {
             return defaultModel
         }
 

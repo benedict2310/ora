@@ -47,7 +47,8 @@ final class ModelManagerTests: XCTestCase {
     
     func test_modelIdentifier_isLegacy() {
         XCTAssertFalse(ModelIdentifier.parakeetTDT.isLegacy)
-        XCTAssertTrue(ModelIdentifier.qwen3_4B.isLegacy)
+        XCTAssertTrue(ModelIdentifier.qwen3_4B.isLegacy(on: 32_000_000_000))
+        XCTAssertFalse(ModelIdentifier.qwen3_4B.isLegacy(on: 8_000_000_000))
         XCTAssertFalse(ModelIdentifier.qwen35_4B_Vision.isLegacy)
         XCTAssertFalse(ModelIdentifier.qwen35_8B_Vision.isLegacy)
         XCTAssertFalse(ModelIdentifier.qwen35_32B_Vision.isLegacy)
@@ -57,7 +58,7 @@ final class ModelManagerTests: XCTestCase {
     }
     
     func test_modelIdentifier_activeModels() {
-        let activeModels = ModelIdentifier.activeModels
+        let activeModels = ModelIdentifier.activeModels(for: 32_000_000_000)
         XCTAssertTrue(activeModels.contains(.parakeetTDT))
         XCTAssertTrue(activeModels.contains(.qwen35_4B_Vision))
         XCTAssertTrue(activeModels.contains(.qwen35_8B_Vision))
@@ -66,6 +67,11 @@ final class ModelManagerTests: XCTestCase {
         XCTAssertFalse(activeModels.contains(.qwen3_4B))
         XCTAssertFalse(activeModels.contains(.qwen7B))  // Legacy
         XCTAssertFalse(activeModels.contains(.qwen3B))  // Legacy
+    }
+
+    func test_modelIdentifier_activeModels_includeQwen3FallbackOnLowMemoryHardware() {
+        let activeModels = ModelIdentifier.activeModels(for: 8_000_000_000)
+        XCTAssertTrue(activeModels.contains(.qwen3_4B))
     }
 
     func test_modelIdentifier_requiredFiles() {

@@ -222,7 +222,7 @@ final class PersistenceTests: XCTestCase {
         // Then
         XCTAssertEqual(settings.id, "settings")
         XCTAssertTrue(settings.voiceOutputEnabled)
-        XCTAssertEqual(settings.primaryLLMModel, "qwen3.5-4b-vision-4bit")
+        XCTAssertEqual(settings.primaryLLMModel, ModelIdentifier.recommendedLocalLLM().rawValue)
     }
 
     func test_appSettings_hotkeyConfig_default() {
