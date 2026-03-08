@@ -29,7 +29,7 @@ Add or remove details that you want Ora to remember long-term.
 """
 
     private static let writeLock = NSLock()
-    private static let fuzzyDedupThreshold = 0.75
+    private static let fuzzyDedupThreshold = 0.95
     private static let containmentDedupMinLength = 20
 
     // MARK: - Properties
@@ -264,13 +264,17 @@ Add or remove details that you want Ora to remember long-term.
     }
 
     private static func hasFuzzyDuplicate(_ normalizedContent: String, against candidates: [String]) -> Bool {
+        let strippedContent = Self.stripPunctuation(normalizedContent)
+
         for candidate in candidates {
-            // Containment check: if one entry is a substring of the other,
-            // it's a duplicate (e.g., "user sent a message to alex" vs
+            // Containment check: if one entry's core text is a substring of the
+            // other, it's a duplicate (e.g., "user sent a message to alex" vs
             // "user sent a message to alex, which was successfully delivered").
-            if normalizedContent.count >= Self.containmentDedupMinLength
-                || candidate.count >= Self.containmentDedupMinLength {
-                if candidate.contains(normalizedContent) || normalizedContent.contains(candidate) {
+            // Punctuation is stripped so that "alex." matches "alex," etc.
+            let strippedCandidate = Self.stripPunctuation(candidate)
+            if strippedContent.count >= Self.containmentDedupMinLength
+                || strippedCandidate.count >= Self.containmentDedupMinLength {
+                if strippedCandidate.contains(strippedContent) || strippedContent.contains(strippedCandidate) {
                     return true
                 }
             }
@@ -281,6 +285,12 @@ Add or remove details that you want Ora to remember long-term.
             }
         }
         return false
+    }
+
+    private static func stripPunctuation(_ text: String) -> String {
+        text.unicodeScalars.filter { !CharacterSet.punctuationCharacters.contains($0) }
+            .map { String($0) }
+            .joined()
     }
 
     private static func existingEntryFingerprints(in lines: [String]) -> Set<String> {

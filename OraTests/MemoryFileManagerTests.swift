@@ -318,4 +318,42 @@ Favorite coffee: black
         XCTAssertTrue(content.contains("Maddie and Sophia"))
         XCTAssertTrue(content.contains("skiing"))
     }
+
+    func test_appendEntries_highSimilarityButDifferentContent_areNotFalsePositiveDeduped() throws {
+        // Regression: Jaro-Winkler scores 0.94 for "meeting with Alex on Monday"
+        // vs "meeting with Sarah on Tuesday". These are genuinely different entries
+        // and must NOT be deduped by the fuzzy threshold.
+        let memoryDirectory = self.temporaryDirectoryURL.appendingPathComponent("memory", isDirectory: true)
+        let manager = MemoryFileManager(memoryDirectory: memoryDirectory)
+        try manager.ensureMemoryStructureExists()
+
+        let timestamp = Date(timeIntervalSince1970: 1_700_000_000)
+        let sessionA = UUID()
+        let sessionB = UUID()
+
+        try manager.appendEntries(entries: [
+            MemoryEntry(
+                section: .people,
+                tag: .fact,
+                content: "User scheduled a meeting with Alex on Monday.",
+                sourceSessionID: sessionA,
+                timestamp: timestamp
+            )
+        ])
+
+        try manager.appendEntries(entries: [
+            MemoryEntry(
+                section: .people,
+                tag: .fact,
+                content: "User scheduled a meeting with Sarah on Tuesday.",
+                sourceSessionID: sessionB,
+                timestamp: timestamp
+            )
+        ])
+
+        // Then — both entries should be preserved (they are genuinely different)
+        let content = try String(contentsOf: manager.memoryFileURL, encoding: .utf8)
+        XCTAssertTrue(content.contains("meeting with Alex on Monday"))
+        XCTAssertTrue(content.contains("meeting with Sarah on Tuesday"))
+    }
 }
