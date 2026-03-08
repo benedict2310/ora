@@ -400,8 +400,94 @@ final class CodexProviderTests: XCTestCase {
         let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
         let width = try XCTUnwrap(properties[kCGImagePropertyPixelWidth] as? Int)
         let height = try XCTUnwrap(properties[kCGImagePropertyPixelHeight] as? Int)
-        XCTAssertLessThanOrEqual(width, CodexImageEncoder.maxWidth)
-        XCTAssertLessThanOrEqual(height, CodexImageEncoder.maxHeight)
+        XCTAssertLessThanOrEqual(width, CodexImageEncoder.maxLandscapeWidth)
+        XCTAssertLessThanOrEqual(height, CodexImageEncoder.maxLandscapeHeight)
+    }
+
+    func test_codexProvider_resizesPortraitImageUsingPortraitBounds() async throws {
+        let imageURL = try self.writePNGFixture(width: 2048, height: 4096)
+        defer { try? FileManager.default.removeItem(at: imageURL) }
+
+        UserDefaults.standard.openAIDiscoveredModels = [
+            OpenAIModelOption(
+                identifier: "gpt-5.2-codex",
+                source: .discovered,
+                supportsImageInput: true,
+                supportsImageDetailOriginal: false
+            ),
+        ]
+
+        var capturedBody: [String: Any]?
+        CodexProviderMockURLProtocol.setHandler { request, _ in
+            if let body = self.requestBodyData(from: request) {
+                capturedBody = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+            }
+            return .sse(events: ["[DONE]"])
+        }
+        let provider = self.makeProvider(model: "gpt-5.2-codex")
+        let image = LLMImageAttachmentReference(stagedFilePath: imageURL.path, mimeType: "image/png")
+
+        _ = try await self.collectDeltas(
+            from: await provider.generate(
+                messages: [LLMMessage(role: .user, contentParts: [.image(image)])],
+                maxTokens: 32
+            )
+        )
+
+        let input = try XCTUnwrap(capturedBody?["input"] as? [[String: Any]])
+        let content = try XCTUnwrap(input.first?["content"] as? [[String: Any]])
+        let dataURL = try XCTUnwrap(content.first?["image_url"] as? String)
+        let encodedData = try XCTUnwrap(Data(base64Encoded: String(dataURL.split(separator: ",").last ?? "")))
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(encodedData as CFData, nil))
+        let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+        let width = try XCTUnwrap(properties[kCGImagePropertyPixelWidth] as? Int)
+        let height = try XCTUnwrap(properties[kCGImagePropertyPixelHeight] as? Int)
+        XCTAssertEqual(width, CodexImageEncoder.maxPortraitWidth)
+        XCTAssertEqual(height, 1536)
+    }
+
+    func test_codexProvider_normalizesImageOrientationWhenReencoding() async throws {
+        let imageURL = try self.writeImageFixture(
+            width: 1200,
+            height: 600,
+            type: .tiff,
+            properties: [kCGImagePropertyOrientation: CGImagePropertyOrientation.right.rawValue]
+        )
+        defer { try? FileManager.default.removeItem(at: imageURL) }
+
+        UserDefaults.standard.openAIDiscoveredModels = [
+            OpenAIModelOption(identifier: "gpt-5.2-codex", source: .discovered, supportsImageInput: true),
+        ]
+
+        var capturedBody: [String: Any]?
+        CodexProviderMockURLProtocol.setHandler { request, _ in
+            if let body = self.requestBodyData(from: request) {
+                capturedBody = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+            }
+            return .sse(events: ["[DONE]"])
+        }
+        let provider = self.makeProvider(model: "gpt-5.2-codex")
+        let image = LLMImageAttachmentReference(stagedFilePath: imageURL.path, mimeType: "image/tiff")
+
+        _ = try await self.collectDeltas(
+            from: await provider.generate(
+                messages: [LLMMessage(role: .user, contentParts: [.image(image)])],
+                maxTokens: 32
+            )
+        )
+
+        let input = try XCTUnwrap(capturedBody?["input"] as? [[String: Any]])
+        let content = try XCTUnwrap(input.first?["content"] as? [[String: Any]])
+        let dataURL = try XCTUnwrap(content.first?["image_url"] as? String)
+        XCTAssertTrue(dataURL.hasPrefix("data:image/png;base64,"))
+
+        let encodedData = try XCTUnwrap(Data(base64Encoded: String(dataURL.split(separator: ",").last ?? "")))
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(encodedData as CFData, nil))
+        let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+        let width = try XCTUnwrap(properties[kCGImagePropertyPixelWidth] as? Int)
+        let height = try XCTUnwrap(properties[kCGImagePropertyPixelHeight] as? Int)
+        XCTAssertEqual(width, 600)
+        XCTAssertEqual(height, 1200)
     }
 
     private func makeProvider(model: String = OpenAIModel.gpt4o.rawValue) -> CodexProvider {
@@ -470,6 +556,15 @@ final class CodexProviderTests: XCTestCase {
     }
 
     private func writePNGFixture(width: Int, height: Int) throws -> URL {
+        return try self.writeImageFixture(width: width, height: height, type: .png)
+    }
+
+    private func writeImageFixture(
+        width: Int,
+        height: Int,
+        type: UTType,
+        properties: [CFString: Any] = [:]
+    ) throws -> URL {
         let colorSpace = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
         let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
         let context = try XCTUnwrap(
@@ -489,12 +584,15 @@ final class CodexProviderTests: XCTestCase {
         let image = try XCTUnwrap(context.makeImage())
         let data = NSMutableData()
         let destination = try XCTUnwrap(
-            CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil)
+            CGImageDestinationCreateWithData(data, type.identifier as CFString, 1, nil)
         )
-        CGImageDestinationAddImage(destination, image, nil)
+        CGImageDestinationAddImage(destination, image, properties as CFDictionary)
         XCTAssertTrue(CGImageDestinationFinalize(destination))
 
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
+        let fileExtension = try XCTUnwrap(type.preferredFilenameExtension)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(
+            UUID().uuidString + "." + fileExtension
+        )
         try (data as Data).write(to: url, options: [.atomic])
         return url
     }

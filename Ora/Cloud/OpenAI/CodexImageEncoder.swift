@@ -39,8 +39,11 @@ enum CodexImageResizeMode {
 }
 
 enum CodexImageEncoder {
-    static let maxWidth = 2048
-    static let maxHeight = 768
+    static let maxLandscapeWidth = 2048
+    static let maxLandscapeHeight = 768
+    static let maxPortraitWidth = 768
+    static let maxPortraitHeight = 2048
+    static let maxSquareDimension = 2048
 
     static func dataURL(
         for attachment: LLMImageAttachmentReference,
@@ -68,30 +71,67 @@ enum CodexImageEncoder {
         guard pixelWidth > 0, pixelHeight > 0 else {
             throw CodexImageEncodingError.invalidImage
         }
+        let imageOrientation = Self.imageOrientation(from: properties)
+        let displaySize = Self.displaySize(
+            pixelWidth: pixelWidth,
+            pixelHeight: pixelHeight,
+            orientation: imageOrientation
+        )
 
         let sourceTypeIdentifier = CGImageSourceGetType(imageSource) as String?
         let sourceType = sourceTypeIdentifier.flatMap(UTType.init)
         let sourceMIMEType = sourceType?.preferredMIMEType ?? attachment.mimeType
 
-        if resizeMode == .original || Self.isWithinBounds(width: pixelWidth, height: pixelHeight) {
+        if resizeMode == .original || Self.isWithinBounds(displaySize) {
             if Self.canPreserveOriginalBytes(mimeType: sourceMIMEType) {
                 return Self.makeDataURL(mimeType: sourceMIMEType, data: imageData)
             }
         }
 
-        guard let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
-            throw CodexImageEncodingError.invalidImage
-        }
-
-        let targetSize = Self.targetSize(forWidth: pixelWidth, height: pixelHeight, resizeMode: resizeMode)
-        let renderedImage = try Self.render(image: cgImage, targetSize: targetSize)
+        let targetSize = Self.targetSize(for: displaySize, resizeMode: resizeMode)
+        let normalizedImage = try Self.normalizedImage(from: imageSource, targetSize: targetSize)
+        let renderedImage = try Self.render(image: normalizedImage, targetSize: targetSize)
         let targetType = Self.outputType(forSourceMIMEType: sourceMIMEType)
         let encoded = try Self.encode(image: renderedImage, targetType: targetType)
         return Self.makeDataURL(mimeType: encoded.mimeType, data: encoded.data)
     }
 
-    private static func isWithinBounds(width: Int, height: Int) -> Bool {
-        return width <= Self.maxWidth && height <= Self.maxHeight
+    private static func imageOrientation(from properties: [CFString: Any]) -> CGImagePropertyOrientation {
+        if let rawValue = properties[kCGImagePropertyOrientation] as? UInt32,
+           let orientation = CGImagePropertyOrientation(rawValue: rawValue) {
+            return orientation
+        }
+        if let rawValue = properties[kCGImagePropertyOrientation] as? Int,
+           let orientation = CGImagePropertyOrientation(rawValue: UInt32(rawValue)) {
+            return orientation
+        }
+        return .up
+    }
+
+    private static func displaySize(
+        pixelWidth: Int,
+        pixelHeight: Int,
+        orientation: CGImagePropertyOrientation
+    ) -> CGSize {
+        if orientation.swapsDimensions {
+            return CGSize(width: pixelHeight, height: pixelWidth)
+        }
+        return CGSize(width: pixelWidth, height: pixelHeight)
+    }
+
+    private static func maxSize(for displaySize: CGSize) -> CGSize {
+        if displaySize.width == displaySize.height {
+            return CGSize(width: Self.maxSquareDimension, height: Self.maxSquareDimension)
+        }
+        if displaySize.width > displaySize.height {
+            return CGSize(width: Self.maxLandscapeWidth, height: Self.maxLandscapeHeight)
+        }
+        return CGSize(width: Self.maxPortraitWidth, height: Self.maxPortraitHeight)
+    }
+
+    private static func isWithinBounds(_ displaySize: CGSize) -> Bool {
+        let maxSize = Self.maxSize(for: displaySize)
+        return displaySize.width <= maxSize.width && displaySize.height <= maxSize.height
     }
 
     private static func canPreserveOriginalBytes(mimeType: String) -> Bool {
@@ -103,19 +143,34 @@ enum CodexImageEncoder {
         }
     }
 
-    private static func targetSize(forWidth width: Int, height: Int, resizeMode: CodexImageResizeMode) -> CGSize {
-        if resizeMode == .original || Self.isWithinBounds(width: width, height: height) {
-            return CGSize(width: width, height: height)
+    private static func targetSize(for displaySize: CGSize, resizeMode: CodexImageResizeMode) -> CGSize {
+        if resizeMode == .original || Self.isWithinBounds(displaySize) {
+            return displaySize
         }
 
-        let widthScale = CGFloat(Self.maxWidth) / CGFloat(width)
-        let heightScale = CGFloat(Self.maxHeight) / CGFloat(height)
+        let maxSize = Self.maxSize(for: displaySize)
+        let widthScale = maxSize.width / displaySize.width
+        let heightScale = maxSize.height / displaySize.height
         let scale = min(widthScale, heightScale)
 
         return CGSize(
-            width: max(Int((CGFloat(width) * scale).rounded(.toNearestOrAwayFromZero)), 1),
-            height: max(Int((CGFloat(height) * scale).rounded(.toNearestOrAwayFromZero)), 1)
+            width: max(Int((displaySize.width * scale).rounded(.toNearestOrAwayFromZero)), 1),
+            height: max(Int((displaySize.height * scale).rounded(.toNearestOrAwayFromZero)), 1)
         )
+    }
+
+    private static func normalizedImage(from imageSource: CGImageSource, targetSize: CGSize) throws -> CGImage {
+        let maxPixelSize = max(Int(max(targetSize.width, targetSize.height).rounded(.up)), 1)
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+        ]
+        guard let image = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
+            throw CodexImageEncodingError.invalidImage
+        }
+        return image
     }
 
     private static func render(image: CGImage, targetSize: CGSize) throws -> CGImage {
@@ -184,5 +239,16 @@ enum CodexImageEncoder {
 
     private static func makeDataURL(mimeType: String, data: Data) -> String {
         return "data:\(mimeType);base64,\(data.base64EncodedString())"
+    }
+}
+
+private extension CGImagePropertyOrientation {
+    var swapsDimensions: Bool {
+        switch self {
+        case .left, .leftMirrored, .right, .rightMirrored:
+            return true
+        default:
+            return false
+        }
     }
 }
