@@ -10,15 +10,26 @@ import XCTest
 
 actor StubMemoryIndex: MemoryIndexing {
     private let chunks: [MemoryChunk]
+    private let transcriptChunks: [MemoryChunk]
 
-    init(chunks: [MemoryChunk]) {
+    init(chunks: [MemoryChunk], transcriptChunks: [MemoryChunk] = []) {
         self.chunks = chunks
+        self.transcriptChunks = transcriptChunks
     }
 
     func rebuild() async {}
 
     func search(query: String, limit: Int) async -> [MemoryChunk] {
         return Array(self.chunks.prefix(limit))
+    }
+
+    func searchTranscriptFallback(
+        query: String,
+        summarySessionIDs: [UUID],
+        recentSessionLimit: Int,
+        limit: Int
+    ) async -> [MemoryChunk] {
+        return Array(self.transcriptChunks.prefix(limit))
     }
 }
 
@@ -299,6 +310,111 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
         XCTAssertTrue(messages[1].content.contains("MEMORY.md"))
         XCTAssertTrue(messages[1].content.contains("TestUser"))
         XCTAssertFalse(messages[1].content.contains("Additional context"))
+    }
+
+    func test_prepareRetrieval_multiTurn_memoryPersistsWhenTriggerStops() async {
+        // Regression test: the user's name should remain available even when
+        // a follow-up turn has no keyword overlap with memory entities.
+        // This was the root cause of "Ora doesn't remember my name anymore".
+        let now = Date(timeIntervalSince1970: 1_739_599_200)
+        let chunks: [MemoryChunk] = [
+            MemoryChunk(
+                content: "User prefers dark mode.",
+                documentType: .summary,
+                sessionID: UUID(),
+                sectionName: "Preferences",
+                lastModified: now,
+                score: 4.50
+            )
+        ]
+
+        let conversationManager = ConversationManager.makeTestInstance(maxContextTokens: 6000)
+        await conversationManager.startConversation(systemPrompt: "System prompt")
+
+        let coordinator = KeywordMemoryRetrievalCoordinator(
+            memoryIndex: StubMemoryIndex(chunks: chunks),
+            memoryFileURL: self.temporaryMemoryFileURL,
+            configuration: .default
+        )
+
+        // Turn 1: trigger fires (e.g., "do you remember my name?")
+        let triggeredResult = MemoryTriggerResult(
+            shouldTrigger: true,
+            confidence: 0.92,
+            triggerType: .linguistic,
+            matchedSignals: ["remember"]
+        )
+        await coordinator.prepareRetrievalIfNeeded(
+            userText: "do you remember my name?",
+            triggerResult: triggeredResult,
+            conversationManager: conversationManager
+        )
+        let turn1Messages = await conversationManager.getMessagesForLLM()
+        XCTAssertTrue(turn1Messages.contains { $0.content.contains("TestUser") },
+                       "Turn 1: MEMORY.md with user name should be injected")
+
+        // Turn 2: trigger does NOT fire (e.g., "tell me a joke")
+        let notTriggeredResult = MemoryTriggerResult(
+            shouldTrigger: false,
+            confidence: 0.0,
+            triggerType: .none,
+            matchedSignals: []
+        )
+        await coordinator.prepareRetrievalIfNeeded(
+            userText: "tell me a joke",
+            triggerResult: notTriggeredResult,
+            conversationManager: conversationManager
+        )
+        let turn2Messages = await conversationManager.getMessagesForLLM()
+        XCTAssertTrue(turn2Messages.contains { $0.content.contains("TestUser") },
+                       "Turn 2: MEMORY.md should still be injected even without trigger")
+        XCTAssertFalse(turn2Messages.contains { $0.content.contains("Additional context") },
+                        "Turn 2: no supplementary chunks without trigger")
+    }
+
+    func test_prepareRetrieval_notTriggered_doesNotQueryIndex() async {
+        // Given — trigger doesn't fire; supplementary chunks exist in the index
+        // but should NOT be retrieved (avoids unnecessary index queries).
+        let now = Date(timeIntervalSince1970: 1_739_599_200)
+        let chunks: [MemoryChunk] = [
+            MemoryChunk(
+                content: "Sensitive project detail from prior session.",
+                documentType: .summary,
+                sessionID: UUID(),
+                sectionName: "Projects",
+                lastModified: now,
+                score: 5.0
+            )
+        ]
+
+        let conversationManager = ConversationManager.makeTestInstance(maxContextTokens: 6000)
+        await conversationManager.startConversation(systemPrompt: "System prompt")
+
+        let coordinator = KeywordMemoryRetrievalCoordinator(
+            memoryIndex: StubMemoryIndex(chunks: chunks),
+            memoryFileURL: self.temporaryMemoryFileURL,
+            configuration: .default
+        )
+        let triggerResult = MemoryTriggerResult(
+            shouldTrigger: false,
+            confidence: 0.0,
+            triggerType: .none,
+            matchedSignals: []
+        )
+
+        // When
+        await coordinator.prepareRetrievalIfNeeded(
+            userText: "good morning",
+            triggerResult: triggerResult,
+            conversationManager: conversationManager
+        )
+        let messages = await conversationManager.getMessagesForLLM()
+
+        // Then — MEMORY.md injected, but supplementary chunks are NOT included
+        XCTAssertEqual(messages.count, 2)
+        XCTAssertTrue(messages[1].content.contains("TestUser"))
+        XCTAssertFalse(messages[1].content.contains("Sensitive project detail"),
+                        "Supplementary chunks should not be included when trigger doesn't fire")
     }
 
     func test_prepareRetrieval_notTriggered_missingMemoryFile_doesNotInjectContext() async {
