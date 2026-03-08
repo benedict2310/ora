@@ -189,4 +189,8 @@ As a user, I want to paste an image, choose a file, or capture a screenshot befo
 
 ## Completion Status
 
-(TBD after merge.)
+- [x] Implementation complete
+- [x] Code review passed (3 iterations + 1 PR review fix)
+- [x] PR merged: https://github.com/benedict2310/ora/pull/175
+- [x] Merged to main: a9c90f902f9ee7833cc70fac4beed226bbeca3cc
+- [x] Date: 2026-03-06

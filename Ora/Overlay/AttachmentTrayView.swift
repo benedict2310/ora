@@ -146,23 +146,42 @@ private struct AttachmentChipView: View {
 private struct AttachmentThumbnailView: View {
     let attachment: StagedImageAttachment
 
+    /// Decoded once at init time — thumbnailData is immutable so no need to re-decode on re-renders.
+    private let thumbnailImage: NSImage?
+
+    init(attachment: StagedImageAttachment) {
+        self.attachment = attachment
+        if let data = attachment.thumbnailData {
+            self.thumbnailImage = NSImage(data: data)
+        } else {
+            self.thumbnailImage = nil
+        }
+    }
+
     var body: some View {
         if let image = self.thumbnailImage {
             Image(nsImage: image)
                 .resizable()
                 .scaledToFill()
+                .accessibilityLabel(self.accessibilityLabel)
         } else {
             Image(systemName: "photo")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.black.opacity(0.15))
+                .background(Color.secondary.opacity(0.15))
+                .accessibilityLabel(self.accessibilityLabel)
         }
     }
 
-    /// Builds an NSImage from in-memory thumbnail data (no file I/O, no lazy loading).
-    private var thumbnailImage: NSImage? {
-        guard let data = self.attachment.thumbnailData else { return nil }
-        return NSImage(data: data)
+    private var accessibilityLabel: String {
+        switch self.attachment.source {
+        case .clipboard:
+            return "Clipboard image thumbnail"
+        case .fileImport:
+            return "\(self.attachment.originalFilename ?? "Image") thumbnail"
+        case .screenshot:
+            return "Screenshot thumbnail"
+        }
     }
 }
