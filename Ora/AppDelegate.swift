@@ -120,6 +120,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.logger.info("Default tools registered")
         }
 
+        Task {
+            await ModelMigrationCoordinator.shared.runIfNeeded()
+        }
+
         // Start preloading models in the background
         Task {
             do {

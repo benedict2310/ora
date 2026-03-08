@@ -47,6 +47,7 @@ struct HuggingFaceStrategy: ModelDownloadStrategy, Sendable {
         // Calculate total size for weighted progress
         let totalEstimatedBytes = model.estimatedSizeBytes
         var downloadedBytes: Int64 = 0
+        let weightFileCount = max(1, filesToDownload.filter { $0.hasSuffix(".safetensors") || $0.hasSuffix(".bin") }.count)
 
         // Download each file sequentially to avoid overwhelming the connection
         for (index, file) in filesToDownload.enumerated() {
@@ -57,7 +58,12 @@ struct HuggingFaceStrategy: ModelDownloadStrategy, Sendable {
             }
 
             let destination = directory.appendingPathComponent(file)
-            let fileEstimatedSize = self.estimateFileSize(file: file, model: model, totalFiles: filesToDownload.count)
+            let fileEstimatedSize = self.estimateFileSize(
+                file: file,
+                model: model,
+                totalFiles: filesToDownload.count,
+                weightFileCount: weightFileCount
+            )
 
             self.logger.debug("Downloading [\(index + 1)/\(filesToDownload.count)]: \(file)")
 
@@ -127,6 +133,38 @@ struct HuggingFaceStrategy: ModelDownloadStrategy, Sendable {
                 "preprocessor_config.json",
                 "video_preprocessor_config.json",
             ]
+
+        case .qwen35_8B_Vision:
+            // lmstudio-community/Qwen3-VL-8B-Instruct-MLX-4bit uses sharded safetensors.
+            return [
+                "config.json",
+                "tokenizer.json",
+                "tokenizer_config.json",
+                "special_tokens_map.json",
+                "model.safetensors.index.json",
+                "model-00001-of-00002.safetensors",
+                "model-00002-of-00002.safetensors",
+                "chat_template.jinja",
+                "preprocessor_config.json",
+                "video_preprocessor_config.json",
+            ]
+
+        case .qwen35_32B_Vision:
+            // lmstudio-community/Qwen3-VL-32B-Instruct-MLX-4bit uses four safetensor shards.
+            return [
+                "config.json",
+                "tokenizer.json",
+                "tokenizer_config.json",
+                "special_tokens_map.json",
+                "model.safetensors.index.json",
+                "model-00001-of-00004.safetensors",
+                "model-00002-of-00004.safetensors",
+                "model-00003-of-00004.safetensors",
+                "model-00004-of-00004.safetensors",
+                "chat_template.jinja",
+                "preprocessor_config.json",
+                "video_preprocessor_config.json",
+            ]
             
         case .qwen7B, .qwen3B:
             // Legacy Qwen 2.5 models - MLX-community format
@@ -153,14 +191,19 @@ struct HuggingFaceStrategy: ModelDownloadStrategy, Sendable {
     }
 
     /// Estimate file size based on model and file type
-    private func estimateFileSize(file: String, model: ModelIdentifier, totalFiles: Int) -> Int64 {
+    private func estimateFileSize(
+        file: String,
+        model: ModelIdentifier,
+        totalFiles: Int,
+        weightFileCount: Int
+    ) -> Int64 {
         // Large files get proportionally more weight
         if file.hasSuffix(".safetensors") || file.hasSuffix(".bin") {
-            // Model weights are ~95% of total size
-            return Int64(Double(model.estimatedSizeBytes) * 0.95)
+            // Model weights are ~95% of total size, divided across shards.
+            return Int64(Double(model.estimatedSizeBytes) * 0.95 / Double(weightFileCount))
         } else {
             // Config/tokenizer files share remaining 5%
-            let configCount = max(1, totalFiles - 1)
+            let configCount = max(1, totalFiles - weightFileCount)
             return Int64(Double(model.estimatedSizeBytes) * 0.05 / Double(configCount))
         }
     }

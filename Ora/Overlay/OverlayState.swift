@@ -174,6 +174,26 @@ struct OverlayAttachmentNotice: Equatable, Sendable {
     }
 }
 
+enum OverlayMigrationNoticeAction: Equatable, Sendable {
+    case openModelsPreferences
+}
+
+struct OverlayMigrationNotice: Equatable, Sendable {
+    let message: String
+    let iconName: String
+    let action: OverlayMigrationNoticeAction?
+
+    init(
+        message: String,
+        iconName: String = "arrow.triangle.2.circlepath.circle.fill",
+        action: OverlayMigrationNoticeAction? = nil
+    ) {
+        self.message = message
+        self.iconName = iconName
+        self.action = action
+    }
+}
+
 // MARK: - Overlay Actions
 
 @MainActor
@@ -188,6 +208,7 @@ protocol OverlayActionHandling: AnyObject {
     func removePendingImageAttachment(_ id: UUID)
     func clearPendingImageAttachments()
     func openScreenRecordingSettings()
+    func openModelsPreferences()
 }
 
 // MARK: - Overlay View Model
@@ -203,6 +224,7 @@ final class OverlayViewModel: ObservableObject {
     @Published var skillsHintText: String?
     @Published var pendingImageAttachments: [StagedImageAttachment] = []
     @Published var attachmentNotice: OverlayAttachmentNotice?
+    @Published var migrationNotice: OverlayMigrationNotice?
     weak var actionHandler: (any OverlayActionHandling)?
 
     /// Delay before showing tool activity to avoid flicker (seconds)
@@ -331,5 +353,13 @@ final class OverlayViewModel: ObservableObject {
 
     func clearAttachmentNotice() {
         self.attachmentNotice = nil
+    }
+
+    func showMigrationNotice(_ notice: OverlayMigrationNotice) {
+        self.migrationNotice = notice
+    }
+
+    func clearMigrationNotice() {
+        self.migrationNotice = nil
     }
 }

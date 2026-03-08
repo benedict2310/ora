@@ -182,8 +182,7 @@ actor ModelManager {
 
     /// Get recommended LLM based on system RAM
     func recommendedLLM() -> ModelIdentifier {
-        // Qwen 3 4B is now the only recommended model
-        return .qwen3_4B
+        return .qwen35_4B_Vision
     }
 
     /// Download all required models in parallel
@@ -514,11 +513,11 @@ actor ModelManager {
             }
             let totalRAMBytes = ProcessInfo.processInfo.physicalMemory
             if !_state.primaryLLM.isSupported(on: totalRAMBytes) {
-                self.logger.warning("Persisted primary LLM is unsupported on this hardware; falling back to Qwen 3 4B")
-                _state.primaryLLM = .qwen3_4B
+                self.logger.warning("Persisted primary LLM is unsupported on this hardware; falling back to Qwen3 VL 4B")
+                _state.primaryLLM = .qwen35_4B_Vision
                 for llm in ModelIdentifier.allCases where llm.category == .llm {
                     if var meta = _state.metadata[llm] {
-                        meta.isPrimary = (llm == .qwen3_4B)
+                        meta.isPrimary = (llm == .qwen35_4B_Vision)
                         _state.metadata[llm] = meta
                     }
                 }

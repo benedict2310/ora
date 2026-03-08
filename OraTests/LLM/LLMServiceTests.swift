@@ -35,8 +35,7 @@ final class LLMServiceTests: XCTestCase {
     func testMemoryCheckLogic() {
         // Since we cannot easily mock ProcessInfo, we just verify the helper method exists and returns a valid identifier
         let recommended = LLMService.recommendedModel()
-        // Qwen 3 4B is now the only recommended model
-        XCTAssertEqual(recommended, .qwen3_4B)
+        XCTAssertEqual(recommended, .qwen35_4B_Vision)
     }
 
     func testRuntimeBackendSelection_textModelUsesMLXLLM() {
@@ -91,12 +90,12 @@ final class LLMServiceTests: XCTestCase {
         let service = LLMService.shared
         
         // 1. Check for model availability
-        // Check if Qwen 3 or legacy models are available on disk
+        // Check if the current default or legacy models are available on disk
         let modelManager = ModelManager.shared
         await modelManager.refreshStatuses()
         let state = await modelManager.state
         
-        let availableModel = [ModelIdentifier.qwen3_4B, .qwen7B, .qwen3B].first { modelID in
+        let availableModel = [ModelIdentifier.qwen35_4B_Vision, .qwen3_4B, .qwen7B, .qwen3B].first { modelID in
             state.statuses[modelID]?.isReady == true
         }
         
@@ -156,7 +155,7 @@ final class LLMServiceTests: XCTestCase {
         await modelManager.refreshStatuses()
         let state = await modelManager.state
         
-        let availableModel = [ModelIdentifier.qwen3_4B, .qwen7B, .qwen3B].first { modelID in
+        let availableModel = [ModelIdentifier.qwen35_4B_Vision, .qwen3_4B, .qwen7B, .qwen3B].first { modelID in
             state.statuses[modelID]?.isReady == true
         }
         
@@ -202,8 +201,8 @@ final class LLMServiceTests: XCTestCase {
         await modelManager.refreshStatuses()
         let state = await modelManager.state
         
-        guard state.statuses[.qwen3_4B]?.isReady == true else {
-            throw XCTSkip("Qwen 3 4B not downloaded")
+        guard state.statuses[.qwen35_4B_Vision]?.isReady == true else {
+            throw XCTSkip("Qwen3 VL 4B not downloaded")
         }
         
         try await service.prepare()
@@ -245,8 +244,8 @@ final class LLMServiceTests: XCTestCase {
         await modelManager.refreshStatuses()
         let state = await modelManager.state
         
-        guard state.statuses[.qwen3_4B]?.isReady == true else {
-            throw XCTSkip("Qwen 3 4B not downloaded")
+        guard state.statuses[.qwen35_4B_Vision]?.isReady == true else {
+            throw XCTSkip("Qwen3 VL 4B not downloaded")
         }
         
         try await service.prepare()

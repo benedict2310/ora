@@ -104,7 +104,7 @@ actor LLMProviderManager: LLMServicing {
     func getSelectedModelIdentifier(for provider: LLMProviderType) -> String {
         switch provider {
         case .local:
-            return ModelIdentifier.qwen3_4B.rawValue
+            return ModelIdentifier.qwen35_4B_Vision.rawValue
         case .anthropic:
             return UserDefaults.standard.selectedAnthropicModel.rawValue
         case .openai:
@@ -116,7 +116,7 @@ actor LLMProviderManager: LLMServicing {
     func getSelectedModelDisplayName(for provider: LLMProviderType) -> String {
         switch provider {
         case .local:
-            return ModelIdentifier.qwen3_4B.displayName
+            return ModelIdentifier.qwen35_4B_Vision.displayName
         case .anthropic:
             return UserDefaults.standard.selectedAnthropicModel.displayName
         case .openai:
@@ -168,7 +168,7 @@ actor LLMProviderManager: LLMServicing {
         } catch {
             return await self.fallbackToLocal(
                 reason: "Missing credential for \(selectedType.rawValue): \(error.localizedDescription)",
-                guidance: "\(selectedType.displayName) is not configured. I switched to Local (Qwen 3 4B). Open Preferences > Providers to reconnect."
+                guidance: "\(selectedType.displayName) is not configured. I switched to Local (Qwen3 VL 4B). Open Preferences > Providers to reconnect."
             )
         }
 
@@ -182,7 +182,7 @@ actor LLMProviderManager: LLMServicing {
         } catch {
             return await self.fallbackToLocal(
                 reason: "Provider preflight failed for \(selectedType.rawValue): \(error.localizedDescription)",
-                guidance: "I could not connect to \(selectedType.displayName), so I switched to Local (Qwen 3 4B). Open Preferences > Providers to fix the connection."
+                guidance: "I could not connect to \(selectedType.displayName), so I switched to Local (Qwen3 VL 4B). Open Preferences > Providers to fix the connection."
             )
         }
     }

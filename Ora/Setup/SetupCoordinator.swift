@@ -272,8 +272,7 @@ final class SetupCoordinator: NSObject, ObservableObject {
         let ramBytes = ProcessInfo.processInfo.physicalMemory
         self.state.systemRAMGB = Int(ramBytes / (1024 * 1024 * 1024))
 
-        // Qwen 3 4B is the only active LLM now
-        let recommendedLLM: ModelIdentifier = .qwen3_4B
+        let recommendedLLM: ModelIdentifier = .qwen35_4B_Vision
         self.state.recommendedModel = recommendedLLM.displayName
         self.state.primaryLLM = recommendedLLM  // Initial default, may be updated by ensurePrimaryLLMSelected
     }
@@ -366,20 +365,17 @@ extension SetupCoordinator {
         isRepairFlow: Bool,
         totalRAMBytes: UInt64
     ) -> ModelIdentifier {
+        let defaultModel: ModelIdentifier = .qwen35_4B_Vision
         guard let persistedLLM else {
-            return .qwen3_4B
+            return defaultModel
         }
 
         if persistedLLM.isLegacy {
-            return .qwen3_4B
-        }
-
-        if persistedLLM == .qwen35_4B_Vision && !isRepairFlow {
-            return .qwen3_4B
+            return defaultModel
         }
 
         if !persistedLLM.isSupported(on: totalRAMBytes) {
-            return .qwen3_4B
+            return defaultModel
         }
 
         return persistedLLM

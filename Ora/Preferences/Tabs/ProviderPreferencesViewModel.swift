@@ -118,8 +118,8 @@ final class ProviderPreferencesViewModel: ObservableObject {
             }
         let fallbackOption = ProviderModelOption(
             provider: .local,
-            identifier: ModelIdentifier.qwen3_4B.rawValue,
-            displayName: ModelIdentifier.qwen3_4B.displayName,
+            identifier: ModelIdentifier.qwen35_4B_Vision.rawValue,
+            displayName: ModelIdentifier.qwen35_4B_Vision.displayName,
             isSelected: self.selectedProvider == .local
         )
         let resolvedLocalOptions = localOptions.isEmpty ? [fallbackOption] : localOptions

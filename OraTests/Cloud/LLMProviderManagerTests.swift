@@ -145,11 +145,11 @@ final class LLMProviderManagerTests: XCTestCase {
         XCTAssertTrue(provider is CodexProvider)
     }
 
-    func test_capabilities_defaultLocalProvider_reportsTextOnly() async {
+    func test_capabilities_defaultLocalProvider_reportsVisionSupport() async {
         let capabilities = await self.manager.capabilities()
 
         XCTAssertTrue(capabilities.supportsTextInput)
-        XCTAssertFalse(capabilities.supportsImageInput)
+        XCTAssertTrue(capabilities.supportsImageInput)
     }
 
     func test_capabilities_passThroughFromActiveProvider() async throws {

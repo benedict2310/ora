@@ -265,7 +265,7 @@ private struct ModelProgressRow: View {
     var modelsState = ModelsState()
     modelsState.statuses = [
         .parakeetTDT: .ready,
-        .qwen3_4B: .downloading(progress: 0.45),
+        .qwen35_4B_Vision: .downloading(progress: 0.45),
         .kokoro: .notDownloaded
     ]
     modelsState.downloadProgress = [
@@ -274,10 +274,10 @@ private struct ModelProgressRow: View {
             bytesDownloaded: 600_000_000,
             totalBytes: 600_000_000
         ),
-        .qwen3_4B: ModelDownloadProgress(
-            identifier: .qwen3_4B,
+        .qwen35_4B_Vision: ModelDownloadProgress(
+            identifier: .qwen35_4B_Vision,
             bytesDownloaded: 1_100_000_000,
-            totalBytes: 2_500_000_000
+            totalBytes: 3_500_000_000
         ),
         .kokoro: ModelDownloadProgress(
             identifier: .kokoro,

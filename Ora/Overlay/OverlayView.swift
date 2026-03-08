@@ -71,6 +71,16 @@ struct OverlayView: View {
                     )
                 }
 
+                if let notice = self.viewModel.migrationNotice {
+                    OverlayPromptView(
+                        text: notice.message,
+                        iconName: notice.iconName,
+                        accessibilityLabel: notice.message,
+                        reduceTransparency: self.reduceTransparency,
+                        action: self.action(for: notice.action)
+                    )
+                }
+
                 if self.currentProviderType.isCloud {
                     HStack {
                         Spacer()
@@ -262,6 +272,9 @@ struct OverlayView: View {
                 self.invalidateWindowShadow()
             }
             .onChange(of: self.viewModel.attachmentNotice) { _, _ in
+                self.invalidateWindowShadow()
+            }
+            .onChange(of: self.viewModel.migrationNotice) { _, _ in
                 self.invalidateWindowShadow()
             }
             .onPreferenceChange(OverlayTailHeightPreferenceKey.self) { newHeight in
@@ -463,6 +476,16 @@ struct OverlayView: View {
     private func refreshProviderType() {
         Task { @MainActor in
             self.currentProviderType = await LLMProviderManager.shared.getSelectedProviderType()
+        }
+    }
+
+    private func action(for action: OverlayMigrationNoticeAction?) -> (() -> Void)? {
+        guard let action else { return nil }
+        return {
+            switch action {
+            case .openModelsPreferences:
+                self.viewModel.actionHandler?.openModelsPreferences()
+            }
         }
     }
 }
