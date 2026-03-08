@@ -24,6 +24,9 @@ struct StagedImageAttachment: Identifiable, Equatable, Sendable {
     let originalFilename: String?
     let stagedFilePath: String
     let thumbnailFilePath: String?
+    /// In-memory PNG thumbnail data for immediate display in the tray chip.
+    /// Avoids file I/O in the view and bypasses NSImage lazy-loading.
+    var thumbnailData: Data? = nil
     let mimeType: String
     let byteCount: Int
     let pixelWidth: Int?
@@ -148,7 +151,7 @@ actor AttachmentStore: AttachmentStoring {
         let pixelWidth = imageProperties[kCGImagePropertyPixelWidth] as? Int
         let pixelHeight = imageProperties[kCGImagePropertyPixelHeight] as? Int
 
-        let thumbnailURL = self.makeThumbnail(
+        let (thumbnailURL, thumbnailData) = self.makeThumbnail(
             for: imageSource,
             attachmentID: id
         )
@@ -160,6 +163,7 @@ actor AttachmentStore: AttachmentStoring {
             originalFilename: originalFilename,
             stagedFilePath: stagedURL.path,
             thumbnailFilePath: thumbnailURL?.path,
+            thumbnailData: thumbnailData,
             mimeType: mimeType,
             byteCount: data.count,
             pixelWidth: pixelWidth,
@@ -221,7 +225,7 @@ actor AttachmentStore: AttachmentStoring {
         }
     }
 
-    private func makeThumbnail(for imageSource: CGImageSource, attachmentID: UUID) -> URL? {
+    private func makeThumbnail(for imageSource: CGImageSource, attachmentID: UUID) -> (URL?, Data?) {
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceThumbnailMaxPixelSize: Self.thumbnailMaxDimensionPixels,
@@ -229,25 +233,32 @@ actor AttachmentStore: AttachmentStoring {
         ]
 
         guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
-            return nil
+            return (nil, nil)
         }
 
-        let thumbnailURL = self.thumbnailsDirectoryURL.appendingPathComponent("\(attachmentID.uuidString).png")
-        guard let destination = CGImageDestinationCreateWithURL(
-            thumbnailURL as CFURL,
+        // Encode to PNG in memory first (used for immediate tray display and written to disk).
+        let pngData = NSMutableData()
+        guard let dataDestination = CGImageDestinationCreateWithData(
+            pngData as CFMutableData,
             UTType.png.identifier as CFString,
             1,
             nil
         ) else {
-            return nil
+            return (nil, nil)
         }
 
-        CGImageDestinationAddImage(destination, thumbnail, nil)
-        guard CGImageDestinationFinalize(destination) else {
-            return nil
+        CGImageDestinationAddImage(dataDestination, thumbnail, nil)
+        guard CGImageDestinationFinalize(dataDestination) else {
+            return (nil, nil)
         }
 
-        return thumbnailURL
+        let data = pngData as Data
+
+        // Write thumbnail to disk for the chat bubble (AsyncImage file URL path).
+        let thumbnailURL = self.thumbnailsDirectoryURL.appendingPathComponent("\(attachmentID.uuidString).png")
+        try? data.write(to: thumbnailURL, options: [.atomic])
+
+        return (thumbnailURL, data)
     }
 
     private func cleanupStaleFiles() throws {

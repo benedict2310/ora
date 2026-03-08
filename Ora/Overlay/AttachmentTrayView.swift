@@ -63,11 +63,12 @@ private struct AttachmentChipView: View {
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+        let thumbnailSize: CGFloat = 36
+        let chipLeadingPadding: CGFloat = 10
 
         HStack(spacing: 8) {
-            AttachmentThumbnailView(attachment: self.attachment)
-                .frame(width: 36, height: 36)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            // Reserve space — thumbnail is rendered as overlay above the glass layer.
+            Color.clear.frame(width: thumbnailSize, height: thumbnailSize)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(self.title)
@@ -90,9 +91,16 @@ private struct AttachmentChipView: View {
             .foregroundStyle(.secondary)
             .accessibilityLabel("Remove image attachment")
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, chipLeadingPadding)
         .padding(.vertical, 8)
         .background(self.background(shape: shape))
+        // Thumbnail rendered as overlay so it sits above the glass layer.
+        .overlay(alignment: .leading) {
+            AttachmentThumbnailView(attachment: self.attachment)
+                .frame(width: thumbnailSize, height: thumbnailSize)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .padding(.leading, chipLeadingPadding)
+        }
     }
 
     private var title: String {
@@ -141,28 +149,23 @@ private struct AttachmentChipView: View {
 private struct AttachmentThumbnailView: View {
     let attachment: StagedImageAttachment
 
-    @State private var image: NSImage?
-
     var body: some View {
-        Group {
-            if let image = self.image {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                Image(systemName: "photo")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.black.opacity(0.15))
-            }
+        if let image = self.thumbnailImage {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFill()
+        } else {
+            Image(systemName: "photo")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.black.opacity(0.15))
         }
-        .task(id: self.attachment.id) {
-            let url = self.attachment.thumbnailFileURL ?? self.attachment.stagedFileURL
-            let loaded = await Task.detached(priority: .userInitiated) {
-                (try? Data(contentsOf: url)).flatMap { NSImage(data: $0) }
-            }.value
-            self.image = loaded
-        }
+    }
+
+    /// Builds an NSImage from in-memory thumbnail data (no file I/O, no lazy loading).
+    private var thumbnailImage: NSImage? {
+        guard let data = self.attachment.thumbnailData else { return nil }
+        return NSImage(data: data)
     }
 }
