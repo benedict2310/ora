@@ -18,7 +18,7 @@ struct PermissionsStepView: View {
                 .fontWeight(.bold)
 
             Text("Ora needs microphone access to listen. Calendar, Reminders, and Contacts are optional for actions.")
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             GlassEffectContainer(spacing: 16) {
                 VStack(spacing: 16) {
@@ -66,7 +66,7 @@ struct PermissionsStepView: View {
             if !self.permissionsState.requiredPermissionsGranted {
                 Label("Microphone access is required to continue setup.", systemImage: "exclamationmark.triangle")
                     .font(.caption)
-                    .foregroundColor(.orange)
+                    .foregroundStyle(.orange)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(10)
                     .background(Color.orange.opacity(0.12))
@@ -127,14 +127,14 @@ struct PermissionRow: View {
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(Color.orange.opacity(0.2))
-                            .foregroundColor(.orange)
+                            .foregroundStyle(.orange)
                             .cornerRadius(4)
                     }
                 }
 
                 Text(self.type.explanation)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
 
             Spacer()
@@ -142,7 +142,7 @@ struct PermissionRow: View {
             // Status indicator or button
             if self.status.isGranted {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(.green)
+                    .foregroundStyle(.green)
                     .font(.title2)
             } else if self.status == .denied {
                 Button("Open Settings") {
