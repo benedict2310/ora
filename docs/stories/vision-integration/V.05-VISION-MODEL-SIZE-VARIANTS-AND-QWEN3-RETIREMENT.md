@@ -50,14 +50,14 @@ As a user, I want to choose from multiple sizes of the Qwen 3.5 Vision model (4B
 - Keep `HuggingFaceStrategy` as the download manifests owner. New variants add new `case` branches to `knownFiles(for:)`.
 - Keep `ModelManager` as the single source of truth for `primaryLLM`. The migration trigger and download live here.
 - The migration download is a silent background download that reuses `ModelManager.downloadModel(_:progress:)`. It is not part of `downloadRequiredModels` (which is setup-flow only).
-- Migration notification: use `UNUserNotificationCenter` for a macOS notification that shows progress. The existing `ModelManager` download infrastructure already tracks `ModelDownloadProgress`; the migration coordinator observes these updates via `NotificationCenter` and posts `UNUserNotification` updates. Do not block app launch or overlay activation.
+- Migration notification: use an **in-app banner/toast** in the overlay to show live download progress (the overlay is the natural place — it's always available via hotkey). On completion or failure, post a **single** `UNUserNotification` system notification so the user is informed even if the overlay is closed. Do not use repeated system notifications for progress updates — macOS `UNUserNotificationCenter` does not support live-updating progress bars and replacing notifications repeatedly is UX-hostile. The existing `ModelManager` download infrastructure already tracks `ModelDownloadProgress`; the migration coordinator observes these updates via `NotificationCenter` and drives the in-app banner.
 - Migration coordinator: implement as a lightweight `@MainActor` class `ModelMigrationCoordinator` (new file). It checks the persisted primary LLM once on startup, starts the download if needed, and marks migration complete in `UserDefaults`.
-- On download failure: keep `.qwen3_4B` as primary, post a notification with a "Retry in Preferences" action, and let the user manually trigger the migration from Preferences > Models.
-- Threading: migration coordinator runs on `@MainActor`; download itself runs on `ModelManager`'s actor. Progress updates flow via `NotificationCenter` then `@MainActor` then `UNUserNotificationCenter`.
+- On download failure: keep `.qwen3_4B` as primary, show an in-app error banner with a "Retry in Preferences" action, and post a system notification. Let the user manually trigger the migration from Preferences > Models.
+- Threading: migration coordinator runs on `@MainActor`; download itself runs on `ModelManager`'s actor. Progress updates flow via `NotificationCenter` then `@MainActor` then the in-app banner UI.
 - RAM thresholds for new variants:
   - 4B Vision: 16 GB (existing)
   - 9B Vision: 24 GB minimum
-  - 27B Vision: 48 GB minimum
+  - 27B Vision: 32 GB minimum (a 27B 4-bit model is ~15-16 GB; 32 GB unified memory is sufficient on Apple Silicon)
 
 ## 5. Implementation Plan (Draft)
 
@@ -76,6 +76,7 @@ As a user, I want to choose from multiple sizes of the Qwen 3.5 Vision model (4B
   - Extend `isLegacy` to return `true` for `.qwen3_4B` (in addition to existing `.qwen7B`, `.qwen3B`).
   - Add `displayName`, `huggingFaceRepo`, `storagePath`, `estimatedSizeBytes`, `sizeDisplay`, `requiredFiles`, `expectedFileSizes` (empty dict), `supportsImageInput = true`, `isAdvancedLocalModel = true`, and `minimumSupportedRAMBytes` (24 GB for 9B, 48 GB for 27B) for both new cases.
   - Update `ModelsState.primaryLLM` default: `.qwen3_4B` → `.qwen35_4B_Vision`.
+  - Update `ModelsState.hasLegacyModels` (line 325): add `.qwen3_4B` to the legacy check alongside `.qwen7B` and `.qwen3B`.
   - Update `isRequired` for `.qwen3_4B` to `false` (it was `false` via the LLM handling comment; now it is explicitly legacy).
 
 - `Ora/Models/Strategies/HuggingFaceStrategy.swift`
@@ -101,7 +102,9 @@ As a user, I want to choose from multiple sizes of the Qwen 3.5 Vision model (4B
   - Any hardcoded `.qwen3_4B` references → `.qwen35_4B_Vision`.
 
 - `Ora/Setup/SetupState.swift`
-  - Default model reference if hardcoded as `.qwen3_4B` → `.qwen35_4B_Vision`.
+  - `primaryLLM` default (line 52): `.qwen3_4B` → `.qwen35_4B_Vision`.
+  - `recommendedModel` string (line 57): `"Qwen 3 4B"` → `"Qwen3 VL 4B"`.
+  - `totalModelSizeDisplay` static computed property (line 73): `.qwen3_4B` → `.qwen35_4B_Vision`.
 
 - `Ora/Setup/Steps/ModelExplanationStepView.swift` and `Ora/Setup/Steps/DownloadStepView.swift`
   - Update model name/size strings if they reference Qwen 3 4B by name.
@@ -110,7 +113,7 @@ As a user, I want to choose from multiple sizes of the Qwen 3.5 Vision model (4B
   - Surface `qwen35_9B_Vision` and `qwen35_27B_Vision` alongside `qwen35_4B_Vision` with RAM guidance badges.
   - Mark `.qwen3_4B` rows as "Retired" or hide them from new selection (still show as downloaded if present on disk so users can see and delete the files).
 
-- `Ora/Preferences/ViewModels/ProviderPreferencesViewModel.swift`
+- `Ora/Preferences/Tabs/ProviderPreferencesViewModel.swift`
   - Update any hardcoded `.qwen3_4B` default references to `.qwen35_4B_Vision`.
 
 **App startup:**
@@ -130,7 +133,7 @@ As a user, I want to choose from multiple sizes of the Qwen 3.5 Vision model (4B
 - `OraTests/Models/ModelTypesTests.swift` (extend existing)
   - New variants (`qwen35_9B_Vision`, `qwen35_27B_Vision`) have `supportsImageInput == true`.
   - `qwen3_4B.isLegacy == true`.
-  - RAM thresholds: 9B requires 24 GB minimum, 27B requires 48 GB minimum.
+  - RAM thresholds: 9B requires 24 GB minimum, 27B requires 32 GB minimum.
   - `activeModels` does not include `.qwen3_4B`.
 
 - `OraTests/Models/HuggingFaceDownloaderTests.swift` (extend existing)
@@ -146,13 +149,13 @@ As a user, I want to choose from multiple sizes of the Qwen 3.5 Vision model (4B
 - `OraTests/Models/ModelManagerTests.swift` (extend existing)
   - `recommendedLLM()` returns `.qwen35_4B_Vision`.
   - `setPrimaryLLM(.qwen35_9B_Vision, ...)` on a machine with under 24 GB RAM is rejected.
-  - `setPrimaryLLM(.qwen35_27B_Vision, ...)` on a machine with under 48 GB RAM is rejected.
+  - `setPrimaryLLM(.qwen35_27B_Vision, ...)` on a machine with under 32 GB RAM is rejected.
 
 ### 5.4 Dependencies/Config
 
 - No new Swift packages required (MLXVLM is already added in V.02).
 - `project.yml` — no changes required.
-- Notification permission: `UNUserNotificationCenter` requires user permission. Request it when the migration coordinator first needs to post a notification (do not request at app launch unconditionally). If permission is denied, fall back to logging the migration status to the Ora overlay on next open.
+- Notification permission: `UNUserNotificationCenter` (used only for the single completion/failure notification) requires user permission. Request it when the migration coordinator first needs to post. If permission is denied, the in-app banner already covers the user — no silent failure.
 
 ## 6. Acceptance Criteria
 
@@ -160,11 +163,11 @@ As a user, I want to choose from multiple sizes of the Qwen 3.5 Vision model (4B
 - [ ] AC-2: The default primary model for new installs and first-run setup is `qwen35_4B_Vision`, not `qwen3_4B`.
 - [ ] AC-3: `qwen3_4B.isLegacy == true`. It does not appear as a selectable model in Preferences > Models for new model selection (but remains available in-code for migration detection).
 - [ ] AC-4: On first launch after this update, if the persisted primary LLM is `qwen3-4b-instruct-4bit`, the migration coordinator automatically starts downloading `qwen3.5-4b-vision-4bit`.
-- [ ] AC-5: During migration download, a macOS notification (or in-app banner if notification permission is denied) informs the user of the upgrade with visible progress.
+- [ ] AC-5: During migration download, an in-app banner in the overlay informs the user of the upgrade with live progress. On completion/failure, a single system notification is posted (if permission granted).
 - [ ] AC-6: On migration download completion, the primary LLM switches to `.qwen35_4B_Vision` and a completion notification is shown.
-- [ ] AC-7: If the migration download fails, the primary LLM stays as `.qwen3_4B`, an error notification with a "Retry in Preferences" action is shown, and the app continues to function normally.
+- [ ] AC-7: If the migration download fails, the primary LLM stays as `.qwen3_4B`, an in-app error banner with a "Retry in Preferences" action is shown (plus a system notification if permitted), and the app continues to function normally.
 - [ ] AC-8: Migration is not triggered a second time if already completed (idempotent via `UserDefaults` flag).
-- [ ] AC-9: On a machine with under 24 GB RAM, `qwen35_9B_Vision` is visible but not selectable as primary. On a machine with under 48 GB RAM, `qwen35_27B_Vision` is visible but not selectable.
+- [ ] AC-9: On a machine with under 24 GB RAM, `qwen35_9B_Vision` is visible but not selectable as primary. On a machine with under 32 GB RAM, `qwen35_27B_Vision` is visible but not selectable.
 - [ ] AC-10: All existing text-only and vision flows continue to work after migration; no regressions in `./build.sh test`.
 
 ## 7. Verification Plan
@@ -204,7 +207,7 @@ As a user, I want to choose from multiple sizes of the Qwen 3.5 Vision model (4B
   - Mitigation: check actual file layout during verification. If sharded, update `knownFiles` to enumerate all shards and update `requiredFiles` accordingly. Use the HuggingFace API tree call to enumerate shards automatically if the count varies by conversion.
 
 - **Migration notification permission denied on some systems**
-  - Mitigation: fall back to posting a single in-app overlay message on the next user interaction (hotkey press). Do not silently discard the migration status.
+  - Mitigation: the primary progress display is the in-app banner (always works, no permission needed). The system notification is only used for completion/failure and is a nice-to-have. If permission is denied, the user still sees everything in the overlay.
 
 - **`qwen3_4B` marked legacy but still used as fallback in many code paths**
   - Mitigation: the implementation plan above lists all affected files explicitly. Change all fallback constants to `.qwen35_4B_Vision`. Keeping the enum case avoids a wide refactor — only the `isLegacy` flag and default constants need updating.
@@ -217,7 +220,7 @@ As a user, I want to choose from multiple sizes of the Qwen 3.5 Vision model (4B
 - Do the 9B and 27B HF repos exist as of implementation time? (Must verify before coding — see Section 5 pre-implementation note.)
 - Does the 27B model use sharded safetensors? If so, how many shards? (Check HF repo tree.)
 - Should the Qwen3 VL 9B also be offered in the setup wizard as an alternative model for users who want higher quality? Currently the plan is 4B as default in setup; 9B/27B only in Preferences > Models.
-- What should the notification style be — `UNUserNotificationCenter` (system banner) or an in-overlay progress row? System banner requires permission; in-overlay is always visible but only when Ora is open. Recommendation: prefer system banner with in-overlay fallback.
+- ~~What should the notification style be?~~ **Decided:** in-app overlay banner for live progress (always works), single system notification for completion/failure (requires permission, graceful degradation).
 
 ---
 
