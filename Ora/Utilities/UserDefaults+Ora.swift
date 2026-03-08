@@ -7,6 +7,7 @@ extension UserDefaults {
         static let selectedOpenAIModel = "com.ora.selectedOpenAIModel"
         static let selectedOpenAIModelIdentifier = "com.ora.selectedOpenAIModelIdentifier"
         static let openAIDiscoveredModelIdentifiers = "com.ora.openAI.discoveredModelIdentifiers"
+        static let openAIDiscoveredModels = "com.ora.openAI.discoveredModels"
 
         static let voiceOutputEnabled = "com.ora.voiceOutputEnabled"
         static let defaultCalendarID = "com.ora.defaultCalendarID"

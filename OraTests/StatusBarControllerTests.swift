@@ -106,6 +106,7 @@ final class StatusBarControllerTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "com.ora.selectedOpenAIModel")
         UserDefaults.standard.removeObject(forKey: "com.ora.selectedOpenAIModelIdentifier")
         UserDefaults.standard.removeObject(forKey: "com.ora.openAI.discoveredModelIdentifiers")
+        UserDefaults.standard.removeObject(forKey: "com.ora.openAI.discoveredModels")
     }
 
     override func tearDown() async throws {
@@ -113,6 +114,7 @@ final class StatusBarControllerTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "com.ora.selectedOpenAIModel")
         UserDefaults.standard.removeObject(forKey: "com.ora.selectedOpenAIModelIdentifier")
         UserDefaults.standard.removeObject(forKey: "com.ora.openAI.discoveredModelIdentifiers")
+        UserDefaults.standard.removeObject(forKey: "com.ora.openAI.discoveredModels")
         try await super.tearDown()
     }
 
@@ -265,6 +267,7 @@ final class StatusBarControllerTests: XCTestCase {
         UserDefaults.standard.selectedAnthropicModel = .sonnet
         UserDefaults.standard.selectedOpenAIModelIdentifier = OpenAIModel.preferredDefault.rawValue
         UserDefaults.standard.removeObject(forKey: "com.ora.openAI.discoveredModelIdentifiers")
+        UserDefaults.standard.removeObject(forKey: "com.ora.openAI.discoveredModels")
 
         let controller = self.makeController()
         try? await Task.sleep(for: .milliseconds(80))
@@ -280,6 +283,7 @@ final class StatusBarControllerTests: XCTestCase {
 
     func test_statusBarMenu_openAIWithoutCredential_showsSetUpConnection() async {
         UserDefaults.standard.removeObject(forKey: "com.ora.openAI.discoveredModelIdentifiers")
+        UserDefaults.standard.removeObject(forKey: "com.ora.openAI.discoveredModels")
 
         let controller = self.makeController()
         try? await Task.sleep(for: .milliseconds(80))

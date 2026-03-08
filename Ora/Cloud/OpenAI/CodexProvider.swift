@@ -52,16 +52,24 @@ final class CodexProvider: CloudLLMBase, @unchecked Sendable {
         }
     }
 
+    override func capabilities() async -> ProviderCapabilities {
+        return self.selectedModelSupportsImageInput ? .multimodal : .textOnly
+    }
+
     private func streamCompletion(
         messages: [LLMMessage],
         maxTokens: Int,
         continuation: AsyncThrowingStream<LLMDelta, Error>.Continuation
     ) async throws {
-        try self.assertTextOnlyInput(messages: messages, providerName: "OpenAI")
+        if messages.contains(where: \.containsImageAttachments), !self.selectedModelSupportsImageInput {
+            throw CloudProviderError.unsupportedInput(
+                "The selected OpenAI model currently supports text-only input in Ora. Choose another OpenAI model or remove image attachments and try again."
+            )
+        }
 
         _ = maxTokens
         let instructions = self.buildInstructions(from: messages)
-        let mappedInput = self.buildCodexInput(from: messages)
+        let mappedInput = try self.buildCodexInput(from: messages)
 
         let body: [String: Any] = [
             "model": self.model,
@@ -102,31 +110,25 @@ final class CodexProvider: CloudLLMBase, @unchecked Sendable {
         return "You are Ora, a helpful assistant."
     }
 
-    private func buildCodexInput(from messages: [LLMMessage]) -> [[String: Any]] {
+    private func buildCodexInput(from messages: [LLMMessage]) throws -> [[String: Any]] {
         var mappedInput: [[String: Any]] = []
         var mappedAssistant = false
         var mappedTool = false
 
         for message in messages where message.role != .system {
-            let text = self.normalizedCodexInputText(for: message)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { continue }
-
             if message.role == .assistant {
                 mappedAssistant = true
             } else if message.role == .tool {
                 mappedTool = true
             }
 
+            let content = try self.buildCodexContent(for: message)
+            guard !content.isEmpty else { continue }
+
             mappedInput.append([
                 "type": "message",
                 "role": "user",
-                "content": [
-                    [
-                        "type": "input_text",
-                        "text": text,
-                    ],
-                ],
+                "content": content,
             ])
         }
 
@@ -138,6 +140,48 @@ final class CodexProvider: CloudLLMBase, @unchecked Sendable {
         }
 
         return mappedInput
+    }
+
+    private func buildCodexContent(for message: LLMMessage) throws -> [[String: Any]] {
+        var content: [[String: Any]] = []
+
+        switch message.role {
+        case .user:
+            for part in message.contentParts {
+                switch part {
+                case .text(let text):
+                    guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+                    content.append([
+                        "type": "input_text",
+                        "text": text,
+                    ])
+                case .image(let attachment):
+                    content.append([
+                        "type": "input_image",
+                        "image_url": try self.imageDataURL(for: attachment),
+                    ])
+                }
+            }
+        case .assistant, .tool:
+            let text = self.normalizedCodexInputText(for: message)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty {
+                content.append([
+                    "type": "input_text",
+                    "text": text,
+                ])
+            }
+            for attachment in message.imageAttachments {
+                content.append([
+                    "type": "input_image",
+                    "image_url": try self.imageDataURL(for: attachment),
+                ])
+            }
+        case .system:
+            break
+        }
+
+        return content
     }
 
     private func normalizedCodexInputText(for message: LLMMessage) -> String {
@@ -157,6 +201,30 @@ final class CodexProvider: CloudLLMBase, @unchecked Sendable {
         case .system:
             return ""
         }
+    }
+
+    private func imageDataURL(for attachment: LLMImageAttachmentReference) throws -> String {
+        let resizeMode: CodexImageResizeMode = self.selectedModelSupportsOriginalImageDetail ? .original : .resizeToFit
+        do {
+            return try CodexImageEncoder.dataURL(for: attachment, resizeMode: resizeMode)
+        } catch let error as CodexImageEncodingError {
+            throw CloudProviderError.unsupportedInput(error.localizedDescription)
+        } catch {
+            throw CloudProviderError.unsupportedInput("Ora could not prepare that image for upload. Please attach the image again and retry.")
+        }
+    }
+
+    private var selectedModelSupportsImageInput: Bool {
+        if let discoveredModel = UserDefaults.standard.openAIDiscoveredModels.first(where: { $0.identifier == self.model }) {
+            if let supportsImageInput = discoveredModel.supportsImageInput {
+                return supportsImageInput
+            }
+        }
+        return OpenAIModel.codexCuratedImageFallbackSupportsInput(for: self.model)
+    }
+
+    private var selectedModelSupportsOriginalImageDetail: Bool {
+        return UserDefaults.standard.openAIDiscoveredModels.first(where: { $0.identifier == self.model })?.supportsImageDetailOriginal ?? false
     }
 
     private func streamWithRetry(

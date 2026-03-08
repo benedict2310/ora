@@ -23,6 +23,7 @@ final class ProviderPreferencesViewModelTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "com.ora.selectedOpenAIModel")
         UserDefaults.standard.removeObject(forKey: "com.ora.selectedOpenAIModelIdentifier")
         UserDefaults.standard.removeObject(forKey: "com.ora.openAI.discoveredModelIdentifiers")
+        UserDefaults.standard.removeObject(forKey: "com.ora.openAI.discoveredModels")
 
         self.credentialStore = ProviderPreferencesCredentialStoreMock()
         self.codexOAuthManager = ProviderPreferencesCodexOAuthManagerMock()
@@ -45,6 +46,7 @@ final class ProviderPreferencesViewModelTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "com.ora.selectedOpenAIModel")
         UserDefaults.standard.removeObject(forKey: "com.ora.selectedOpenAIModelIdentifier")
         UserDefaults.standard.removeObject(forKey: "com.ora.openAI.discoveredModelIdentifiers")
+        UserDefaults.standard.removeObject(forKey: "com.ora.openAI.discoveredModels")
 
         self.viewModel = nil
         self.discoveryService = nil
@@ -272,11 +274,16 @@ final class ProviderPreferencesViewModelTests: XCTestCase {
 
     func test_updateOpenAIModel_addsManualSelectionToDiscoveredIdentifiers() async {
         UserDefaults.standard.openAIDiscoveredModelIdentifiers = [OpenAIModel.gpt4o.rawValue]
+        UserDefaults.standard.openAIDiscoveredModels = [
+            OpenAIModelOption(identifier: OpenAIModel.gpt4o.rawValue, source: .discovered),
+        ]
 
         await self.viewModel.updateOpenAIModel(OpenAIModel.preferredDefault.rawValue)
 
         let discovered = UserDefaults.standard.openAIDiscoveredModelIdentifiers
+        let discoveredModels = UserDefaults.standard.openAIDiscoveredModels
         XCTAssertTrue(discovered.contains(OpenAIModel.preferredDefault.rawValue))
+        XCTAssertTrue(discoveredModels.contains(where: { $0.identifier == OpenAIModel.preferredDefault.rawValue }))
         XCTAssertEqual(self.viewModel.openAISelectedModelIdentifier, OpenAIModel.preferredDefault.rawValue)
     }
 }
