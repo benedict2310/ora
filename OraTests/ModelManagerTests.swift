@@ -276,6 +276,16 @@ final class ModelManagerTests: XCTestCase {
 
         let recommended = await manager.recommendedLLM()
 
+        XCTAssertEqual(recommended, .recommendedLocalLLM())
+    }
+
+    func test_modelManager_recommendedLLM_fallsBackToLegacyOn8GBHardware() {
+        let recommended = ModelIdentifier.recommendedLocalLLM(for: 8_000_000_000)
+        XCTAssertEqual(recommended, .qwen3_4B)
+    }
+
+    func test_modelManager_recommendedLLM_prefersVisionOnSupportedHardware() {
+        let recommended = ModelIdentifier.recommendedLocalLLM(for: 16_000_000_000)
         XCTAssertEqual(recommended, .qwen35_4B_Vision)
     }
 

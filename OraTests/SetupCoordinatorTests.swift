@@ -117,7 +117,7 @@ final class SetupStateTests: XCTestCase {
 
     func test_initialState_primaryLLMDefault() {
         let state = SetupState()
-        XCTAssertEqual(state.primaryLLM, .qwen35_4B_Vision)
+        XCTAssertEqual(state.primaryLLM, .recommendedLocalLLM())
     }
 
     // MARK: - System Info
@@ -129,7 +129,7 @@ final class SetupStateTests: XCTestCase {
 
     func test_recommendedModel_defaultsToVision4B() {
         let state = SetupState()
-        XCTAssertEqual(state.recommendedModel, "Qwen3 VL 4B")
+        XCTAssertEqual(state.recommendedModel, ModelIdentifier.recommendedLocalLLM().displayName)
     }
 
     // MARK: - State Mutation Tests
@@ -330,13 +330,13 @@ final class SetupCoordinatorTests: XCTestCase {
     func test_state_hasRecommendedModel() {
         let coordinator = SetupCoordinator.shared
 
-        XCTAssertEqual(coordinator.state.recommendedModel, "Qwen3 VL 4B")
+        XCTAssertEqual(coordinator.state.recommendedModel, ModelIdentifier.recommendedLocalLLM().displayName)
     }
 
     func test_state_primaryLLMMatchesRAM() {
         let coordinator = SetupCoordinator.shared
 
-        XCTAssertEqual(coordinator.state.primaryLLM, .qwen35_4B_Vision)
+        XCTAssertEqual(coordinator.state.primaryLLM, .recommendedLocalLLM())
     }
 
     func test_resolvePrimaryLLM_firstRunHonorsPersistedVisionModel() {
@@ -363,7 +363,7 @@ final class SetupCoordinatorTests: XCTestCase {
             isRepairFlow: true,
             totalRAMBytes: 8_000_000_000
         )
-        XCTAssertEqual(resolved, .qwen35_4B_Vision)
+        XCTAssertEqual(resolved, .qwen3_4B)
     }
 
     func test_resolvePrimaryLLM_legacyQwen3FallsBackToVision4B() {
@@ -373,6 +373,15 @@ final class SetupCoordinatorTests: XCTestCase {
             totalRAMBytes: 32_000_000_000
         )
         XCTAssertEqual(resolved, .qwen35_4B_Vision)
+    }
+
+    func test_resolvePrimaryLLM_firstRunDefaultsToLegacyOn8GBHardware() {
+        let resolved = SetupCoordinator.resolvePrimaryLLM(
+            persistedLLM: nil,
+            isRepairFlow: false,
+            totalRAMBytes: 8_000_000_000
+        )
+        XCTAssertEqual(resolved, .qwen3_4B)
     }
 
     func test_resolvePrimaryLLM_retainsSupported8BSelection() {

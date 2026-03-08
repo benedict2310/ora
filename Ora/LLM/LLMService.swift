@@ -439,7 +439,9 @@ actor LLMService: LLMServicing {
         return model.isSupported(on: totalRAMBytes)
     }
     
-    static func recommendedModel() -> ModelIdentifier {
-        return .qwen35_4B_Vision
+    static func recommendedModel(
+        totalRAMBytes: UInt64 = ProcessInfo.processInfo.physicalMemory
+    ) -> ModelIdentifier {
+        return .recommendedLocalLLM(for: totalRAMBytes)
     }
 }

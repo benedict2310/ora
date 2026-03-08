@@ -79,6 +79,51 @@ final class ModelMigrationCoordinatorTests: XCTestCase {
         }
     }
 
+    func test_runIfNeeded_skipsMigrationOnUnsupportedHardware() async throws {
+        let (coordinator, modelManager, overlay, notifier, defaults) = self.makeCoordinator(
+            primaryLLM: .qwen3_4B,
+            totalRAMBytes: 8_000_000_000
+        )
+
+        await coordinator.runIfNeeded()
+        try await self.waitForCoordinatorToSettle(coordinator)
+
+        let state = await modelManager.currentState()
+        let downloadedModels = await modelManager.downloadedModelsSnapshot()
+        let setPrimaryModels = await modelManager.setPrimaryModelsSnapshot()
+        XCTAssertEqual(state.primaryLLM, .qwen3_4B)
+        XCTAssertEqual(downloadedModels, [])
+        XCTAssertEqual(setPrimaryModels, [])
+        XCTAssertTrue(defaults.bool(forKey: "com.ora.migration.qwen35VisionMigrationComplete"))
+        XCTAssertFalse(defaults.bool(forKey: "com.ora.migration.qwen35VisionMigrationManualRetryRequired"))
+        XCTAssertEqual(notifier.posts.count, 0)
+        XCTAssertEqual(overlay.clearCount, 1)
+        XCTAssertEqual(coordinator.status, .idle)
+    }
+
+    func test_runIfNeeded_doesNotMarkCompleteWhenPrimarySwitchFails() async throws {
+        let (coordinator, modelManager, overlay, notifier, defaults) = self.makeCoordinator(
+            primaryLLM: .qwen3_4B,
+            shouldSetPrimarySucceed: false
+        )
+
+        await coordinator.runIfNeeded()
+        try await self.waitForCoordinatorToSettle(coordinator)
+
+        let state = await modelManager.currentState()
+        XCTAssertEqual(state.primaryLLM, .qwen3_4B)
+        XCTAssertFalse(defaults.bool(forKey: "com.ora.migration.qwen35VisionMigrationComplete"))
+        XCTAssertTrue(defaults.bool(forKey: "com.ora.migration.qwen35VisionMigrationManualRetryRequired"))
+        XCTAssertEqual(notifier.posts.count, 1)
+        XCTAssertEqual(overlay.notices.last?.action, .openModelsPreferences)
+
+        if case .failed(let message) = coordinator.status {
+            XCTAssertTrue(message.contains("retry"))
+        } else {
+            XCTFail("Expected failure status")
+        }
+    }
+
     func test_retryFromPreferences_retriesAfterFailure() async throws {
         let suiteName = "ModelMigrationCoordinatorTests-\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
@@ -89,7 +134,11 @@ final class ModelMigrationCoordinatorTests: XCTestCase {
 
         let overlay = MockMigrationOverlayPresenter()
         let notifier = MockMigrationNotificationDeliverer()
-        let modelManager = MockMigrationModelManager(primaryLLM: .qwen3_4B, shouldDownloadSucceed: false)
+        let modelManager = MockMigrationModelManager(
+            primaryLLM: .qwen3_4B,
+            shouldDownloadSucceed: false,
+            shouldSetPrimarySucceed: true
+        )
         let coordinator = ModelMigrationCoordinator(
             modelManager: modelManager,
             overlayPresenter: overlay,
@@ -111,7 +160,9 @@ final class ModelMigrationCoordinatorTests: XCTestCase {
 
     private func makeCoordinator(
         primaryLLM: ModelIdentifier,
-        shouldDownloadSucceed: Bool = true
+        shouldDownloadSucceed: Bool = true,
+        shouldSetPrimarySucceed: Bool = true,
+        totalRAMBytes: UInt64 = 32_000_000_000
     ) -> (
         coordinator: ModelMigrationCoordinator,
         modelManager: MockMigrationModelManager,
@@ -130,13 +181,15 @@ final class ModelMigrationCoordinatorTests: XCTestCase {
         let notifier = MockMigrationNotificationDeliverer()
         let modelManager = MockMigrationModelManager(
             primaryLLM: primaryLLM,
-            shouldDownloadSucceed: shouldDownloadSucceed
+            shouldDownloadSucceed: shouldDownloadSucceed,
+            shouldSetPrimarySucceed: shouldSetPrimarySucceed
         )
         let coordinator = ModelMigrationCoordinator(
             modelManager: modelManager,
             overlayPresenter: overlay,
             notificationDeliverer: notifier,
-            userDefaults: defaults
+            userDefaults: defaults,
+            totalRAMBytes: totalRAMBytes
         )
 
         return (coordinator, modelManager, overlay, notifier, defaults)
@@ -181,15 +234,17 @@ private final class MockMigrationNotificationDeliverer: ModelMigrationNotificati
 private actor MockMigrationModelManager: ModelMigrationModelManaging {
     private var stateValue: ModelsState
     private var shouldDownloadSucceed: Bool
+    private var shouldSetPrimarySucceed: Bool
     private(set) var downloadedModels: [ModelIdentifier] = []
     private(set) var setPrimaryModels: [ModelIdentifier] = []
 
-    init(primaryLLM: ModelIdentifier, shouldDownloadSucceed: Bool) {
+    init(primaryLLM: ModelIdentifier, shouldDownloadSucceed: Bool, shouldSetPrimarySucceed: Bool) {
         var state = ModelsState()
         state.primaryLLM = primaryLLM
         state.statuses[primaryLLM] = .ready
         self.stateValue = state
         self.shouldDownloadSucceed = shouldDownloadSucceed
+        self.shouldSetPrimarySucceed = shouldSetPrimarySucceed
     }
 
     func ensureInitialized() async {}
@@ -217,6 +272,12 @@ private actor MockMigrationModelManager: ModelMigrationModelManaging {
 
     func setPrimaryLLM(_ model: ModelIdentifier, totalRAMBytes: UInt64) async {
         self.setPrimaryModels.append(model)
+        guard self.shouldSetPrimarySucceed else {
+            return
+        }
+        guard model.isSupported(on: totalRAMBytes) else {
+            return
+        }
         self.stateValue.primaryLLM = model
         self.stateValue.statuses[model] = .ready
     }

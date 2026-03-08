@@ -265,6 +265,15 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
         return totalRAMBytes >= minimumSupportedRAMBytes
     }
 
+    static func recommendedLocalLLM(
+        for totalRAMBytes: UInt64 = ProcessInfo.processInfo.physicalMemory
+    ) -> ModelIdentifier {
+        if ModelIdentifier.qwen35_4B_Vision.isSupported(on: totalRAMBytes) {
+            return .qwen35_4B_Vision
+        }
+        return .qwen3_4B
+    }
+
     var sizeDisplay: String {
         switch self {
         case .parakeetTDT:
@@ -347,7 +356,7 @@ struct ModelMetadata: Codable, Sendable, Equatable {
 struct ModelsState: Sendable, Equatable {
     var statuses: [ModelIdentifier: ModelStatus] = [:]
     var metadata: [ModelIdentifier: ModelMetadata] = [:]
-    var primaryLLM: ModelIdentifier = .qwen35_4B_Vision
+    var primaryLLM: ModelIdentifier = .recommendedLocalLLM()
     
     // MARK: - Download Progress Metrics (Unified Tracking)
     
