@@ -108,6 +108,7 @@ Local multimodal inference, image attachments, and screenshot understanding.
 | V.02 | [Local VLM Runtime & Qwen 3.5 4B Vision Model](vision-integration/V.02-LOCAL-VLM-RUNTIME-AND-QWEN35-4B-VISION-MODEL.md) | 🚧 To Do |
 | V.03 | [Image Attachments & Screenshot Capture UX](vision-integration/V.03-IMAGE-ATTACHMENTS-AND-SCREENSHOT-CAPTURE-UX.md) | 🚧 To Do |
 | V.04 | [Multimodal Agent Loop & Session Integration](vision-integration/V.04-MULTIMODAL-AGENT-LOOP-AND-SESSION-INTEGRATION.md) | 🚧 To Do |
+| V.05 | [Vision Model Size Variants and Qwen3 4B Retirement](vision-integration/V.05-VISION-MODEL-SIZE-VARIANTS-AND-QWEN3-RETIREMENT.md) | 🚧 To Do |
 
 ### 🗣 TTS Integration (T)
 Text-to-speech using Kokoro MLX.
