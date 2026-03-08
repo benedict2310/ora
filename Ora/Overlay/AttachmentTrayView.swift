@@ -63,10 +63,11 @@ private struct AttachmentChipView: View {
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+        let thumbnailSize: CGFloat = 36
 
         HStack(spacing: 8) {
             AttachmentThumbnailView(attachment: self.attachment)
-                .frame(width: 36, height: 36)
+                .frame(width: thumbnailSize, height: thumbnailSize)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
             VStack(alignment: .leading, spacing: 2) {
@@ -132,8 +133,12 @@ private struct AttachmentChipView: View {
                 .fill(Color(nsColor: .controlBackgroundColor).opacity(0.95))
                 .overlay(shape.stroke(Color.white.opacity(0.08), lineWidth: 0.5))
         } else {
+            // Use solid fill instead of glassEffect — glass compositor on macOS 26
+            // obscures bitmap images (thumbnails) while vector content (text, SF Symbols)
+            // renders fine. A subtle translucent fill avoids this without visual regression.
             shape
-                .glassEffect(.regular.tint(.white.opacity(0.05)), in: shape)
+                .fill(Color.white.opacity(0.08))
+                .overlay(shape.stroke(Color.white.opacity(0.10), lineWidth: 0.5))
         }
     }
 }
@@ -155,11 +160,9 @@ private struct AttachmentThumbnailView: View {
         }
     }
 
+    /// Builds an NSImage from in-memory thumbnail data (no file I/O, no lazy loading).
     private var thumbnailImage: NSImage? {
-        if let thumbnailURL = self.attachment.thumbnailFileURL,
-           let image = NSImage(contentsOf: thumbnailURL) {
-            return image
-        }
-        return NSImage(contentsOf: self.attachment.stagedFileURL)
+        guard let data = self.attachment.thumbnailData else { return nil }
+        return NSImage(data: data)
     }
 }
