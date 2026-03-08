@@ -68,7 +68,7 @@ struct VoiceInputControlView: View {
             // glassEffect must be LAST - apply shadow to outer container
             base
                 .glassEffect(
-                    .regular.tint(.black.opacity(0.88)),
+                    .regular.tint(.black.opacity(0.88)).interactive(true),
                     in: shape
                 )
                 .glassEffectID("voiceInput", in: self.namespace)

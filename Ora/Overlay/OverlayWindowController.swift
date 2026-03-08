@@ -161,7 +161,6 @@ final class OverlayWindowController {
 
         // Ensure app is active to receive input (required for accessory apps)
         // Use the newer API which works better with accessory apps
-        NSApp.activate(ignoringOtherApps: true)
         NSRunningApplication.current.activate(options: [.activateIgnoringOtherApps])
 
         // Add dismiss monitors

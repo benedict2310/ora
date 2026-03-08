@@ -34,7 +34,6 @@ final class PreferencesCoordinator: ObservableObject {
     func showPreferences() {
         if let window = self.window {
             window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
             return
         }
 
@@ -61,7 +60,6 @@ final class PreferencesCoordinator: ObservableObject {
         }
 
         newWindow.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
 
         self.window = newWindow
 

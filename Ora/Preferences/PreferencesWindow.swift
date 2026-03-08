@@ -11,40 +11,28 @@ struct PreferencesWindow: View {
     @EnvironmentObject var coordinator: PreferencesCoordinator
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Tab picker
-            Picker("", selection: $coordinator.selectedTab) {
-                ForEach(PreferencesTab.allCases, id: \.self) { tab in
-                    Label(tab.title, systemImage: tab.icon)
-                        .tag(tab)
-                }
+        TabView(selection: $coordinator.selectedTab) {
+            Tab("General", systemImage: "gear", value: PreferencesTab.general) {
+                GeneralPreferencesView()
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(.horizontal, 80)
-            .padding(.top, 12)
-            .padding(.bottom, 16)
-
-            // Content area
-            Group {
-                switch coordinator.selectedTab {
-                case .general:
-                    GeneralPreferencesView()
-                case .skills:
-                    SkillsPreferencesView()
-                case .providers:
-                    ProviderPreferencesView()
-                case .models:
-                    ModelsPreferencesView()
-                case .memory:
-                    MemoryPreferencesView()
-                case .permissions:
-                    PermissionsPreferencesView()
-                case .about:
-                    AboutPreferencesView()
-                }
+            Tab("Skills", systemImage: "sparkles", value: PreferencesTab.skills) {
+                SkillsPreferencesView()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Tab("Providers", systemImage: "icloud", value: PreferencesTab.providers) {
+                ProviderPreferencesView()
+            }
+            Tab("Models", systemImage: "cpu", value: PreferencesTab.models) {
+                ModelsPreferencesView()
+            }
+            Tab("Memory", systemImage: "brain", value: PreferencesTab.memory) {
+                MemoryPreferencesView()
+            }
+            Tab("Permissions", systemImage: "lock.shield", value: PreferencesTab.permissions) {
+                PermissionsPreferencesView()
+            }
+            Tab("About", systemImage: "info.circle", value: PreferencesTab.about) {
+                AboutPreferencesView()
+            }
         }
         .frame(minWidth: 550, minHeight: 450)
     }
