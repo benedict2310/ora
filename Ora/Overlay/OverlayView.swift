@@ -20,6 +20,7 @@ struct OverlayView: View {
 
     // Coalesces rapid-fire scroll triggers (e.g. mode + messages firing within one frame).
     @State private var pendingScrollTask: Task<Void, Never>?
+    @State private var measuredTailHeight: CGFloat = 0
 
     private static let scrollAnchorID = "overlay-scroll-anchor"
 
@@ -235,6 +236,11 @@ struct OverlayView: View {
                             .frame(height: 1)
                             .id(Self.scrollAnchorID)
                     }
+                    .background(
+                        GeometryReader { proxy in
+                            Color.clear.preference(key: OverlayTailHeightPreferenceKey.self, value: proxy.size.height)
+                        }
+                    )
                 }
                 .padding(.horizontal, 4)
                 .padding(.bottom, 4)
@@ -257,6 +263,11 @@ struct OverlayView: View {
             }
             .onChange(of: self.viewModel.attachmentNotice) { _, _ in
                 self.invalidateWindowShadow()
+            }
+            .onPreferenceChange(OverlayTailHeightPreferenceKey.self) { newHeight in
+                guard abs(newHeight - self.measuredTailHeight) > 0.5 else { return }
+                self.measuredTailHeight = newHeight
+                self.scrollToBottom(proxy)
             }
         }
     }
@@ -453,6 +464,14 @@ struct OverlayView: View {
         Task { @MainActor in
             self.currentProviderType = await LLMProviderManager.shared.getSelectedProviderType()
         }
+    }
+}
+
+private struct OverlayTailHeightPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
