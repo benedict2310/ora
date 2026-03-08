@@ -39,11 +39,8 @@ enum CodexImageResizeMode {
 }
 
 enum CodexImageEncoder {
-    static let maxLandscapeWidth = 2048
-    static let maxLandscapeHeight = 768
-    static let maxPortraitWidth = 768
-    static let maxPortraitHeight = 2048
-    static let maxSquareDimension = 2048
+    static let maxWidth = 2048
+    static let maxHeight = 768
 
     static func dataURL(
         for attachment: LLMImageAttachmentReference,
@@ -119,19 +116,8 @@ enum CodexImageEncoder {
         return CGSize(width: pixelWidth, height: pixelHeight)
     }
 
-    private static func maxSize(for displaySize: CGSize) -> CGSize {
-        if displaySize.width == displaySize.height {
-            return CGSize(width: Self.maxSquareDimension, height: Self.maxSquareDimension)
-        }
-        if displaySize.width > displaySize.height {
-            return CGSize(width: Self.maxLandscapeWidth, height: Self.maxLandscapeHeight)
-        }
-        return CGSize(width: Self.maxPortraitWidth, height: Self.maxPortraitHeight)
-    }
-
     private static func isWithinBounds(_ displaySize: CGSize) -> Bool {
-        let maxSize = Self.maxSize(for: displaySize)
-        return displaySize.width <= maxSize.width && displaySize.height <= maxSize.height
+        return displaySize.width <= CGFloat(Self.maxWidth) && displaySize.height <= CGFloat(Self.maxHeight)
     }
 
     private static func canPreserveOriginalBytes(mimeType: String) -> Bool {
@@ -148,9 +134,8 @@ enum CodexImageEncoder {
             return displaySize
         }
 
-        let maxSize = Self.maxSize(for: displaySize)
-        let widthScale = maxSize.width / displaySize.width
-        let heightScale = maxSize.height / displaySize.height
+        let widthScale = CGFloat(Self.maxWidth) / displaySize.width
+        let heightScale = CGFloat(Self.maxHeight) / displaySize.height
         let scale = min(widthScale, heightScale)
 
         return CGSize(

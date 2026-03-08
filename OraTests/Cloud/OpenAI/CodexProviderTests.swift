@@ -400,11 +400,11 @@ final class CodexProviderTests: XCTestCase {
         let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
         let width = try XCTUnwrap(properties[kCGImagePropertyPixelWidth] as? Int)
         let height = try XCTUnwrap(properties[kCGImagePropertyPixelHeight] as? Int)
-        XCTAssertLessThanOrEqual(width, CodexImageEncoder.maxLandscapeWidth)
-        XCTAssertLessThanOrEqual(height, CodexImageEncoder.maxLandscapeHeight)
+        XCTAssertLessThanOrEqual(width, CodexImageEncoder.maxWidth)
+        XCTAssertLessThanOrEqual(height, CodexImageEncoder.maxHeight)
     }
 
-    func test_codexProvider_resizesPortraitImageUsingPortraitBounds() async throws {
+    func test_codexProvider_resizesPortraitImageWithinCodexBounds() async throws {
         let imageURL = try self.writePNGFixture(width: 2048, height: 4096)
         defer { try? FileManager.default.removeItem(at: imageURL) }
 
@@ -442,8 +442,8 @@ final class CodexProviderTests: XCTestCase {
         let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
         let width = try XCTUnwrap(properties[kCGImagePropertyPixelWidth] as? Int)
         let height = try XCTUnwrap(properties[kCGImagePropertyPixelHeight] as? Int)
-        XCTAssertEqual(width, CodexImageEncoder.maxPortraitWidth)
-        XCTAssertEqual(height, 1536)
+        XCTAssertEqual(width, 384)
+        XCTAssertEqual(height, CodexImageEncoder.maxHeight)
     }
 
     func test_codexProvider_normalizesImageOrientationWhenReencoding() async throws {
@@ -486,8 +486,8 @@ final class CodexProviderTests: XCTestCase {
         let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
         let width = try XCTUnwrap(properties[kCGImagePropertyPixelWidth] as? Int)
         let height = try XCTUnwrap(properties[kCGImagePropertyPixelHeight] as? Int)
-        XCTAssertEqual(width, 600)
-        XCTAssertEqual(height, 1200)
+        XCTAssertEqual(width, 384)
+        XCTAssertEqual(height, CodexImageEncoder.maxHeight)
     }
 
     private func makeProvider(model: String = OpenAIModel.gpt4o.rawValue) -> CodexProvider {
