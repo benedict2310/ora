@@ -115,7 +115,7 @@ struct OverlayView: View {
 
     private var chatScrollView: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: OverlayLayout.rowSpacing) {
+            LazyVStack(alignment: .leading, spacing: OverlayLayout.rowSpacing) {
                 ForEach(self.visibleMessages) { message in
                     ChatBubbleView(
                         text: message.content,
@@ -238,8 +238,8 @@ struct OverlayView: View {
                 self.scrollToBottom()
                 self.invalidateWindowShadow()
             }
-            .onChange(of: self.viewModel.activity) { _, _ in
-                // Activity changes are label-only — no layout change — so no scroll needed.
+            .onChange(of: self.viewModel.activity) { oldActivity, newActivity in
+                self.scrollToBottomIfNeededForActivityChange(from: oldActivity, to: newActivity)
                 self.invalidateWindowShadow()
             }
             .onChange(of: self.viewModel.pendingImageAttachments.count) { _, _ in
@@ -375,10 +375,32 @@ struct OverlayView: View {
         self.pendingScrollTask?.cancel()
         self.pendingScrollTask = Task { @MainActor in
             do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
-            // VStack measures all items eagerly so content size is always current by the time
-            // this runs. No animation avoids competing with bubble insertion transitions.
+            // Let SwiftUI finish the current layout pass before scrolling the lazy transcript.
+            // No animation avoids competing with bubble insertion transitions.
             self.scrollPosition.scrollTo(edge: .bottom)
         }
+    }
+
+    private func scrollToBottomIfNeededForActivityChange(from oldActivity: OverlayActivity, to newActivity: OverlayActivity) {
+        guard Self.activityChangeAffectsTranscriptLayout(
+            from: oldActivity,
+            to: newActivity,
+            mode: self.viewModel.mode
+        ) else {
+            return
+        }
+        self.scrollToBottom()
+    }
+
+    static func activityChangeAffectsTranscriptLayout(
+        from oldActivity: OverlayActivity,
+        to newActivity: OverlayActivity,
+        mode: OverlayMode
+    ) -> Bool {
+        if case .thinking = mode {
+            return oldActivity != newActivity
+        }
+        return oldActivity == .speaking || newActivity == .speaking
     }
 
     /// Invalidate window shadow to help clear glass rendering artifacts.
