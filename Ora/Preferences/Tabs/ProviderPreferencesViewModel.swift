@@ -370,6 +370,19 @@ final class ProviderPreferencesViewModel: ObservableObject {
             discoveredIDs.append(trimmed)
             UserDefaults.standard.openAIDiscoveredModelIdentifiers = discoveredIDs
         }
+        var discoveredModels = UserDefaults.standard.openAIDiscoveredModels
+        if !discoveredModels.contains(where: { $0.identifier == trimmed }) {
+            discoveredModels.append(
+                OpenAIModelOption(
+                    identifier: trimmed,
+                    source: .discovered,
+                    supportsImageInput: self.codexAuthStatus.isConnected && OpenAIModel.codexCuratedImageFallbackSupportsInput(for: trimmed)
+                        ? true
+                        : nil
+                )
+            )
+            UserDefaults.standard.openAIDiscoveredModels = discoveredModels
+        }
         await self.registerOpenAIFactory()
 
         if self.selectedProvider == .openai {

@@ -14,6 +14,7 @@ final class OpenAIModelDiscoveryServiceTests: XCTestCase {
     override func tearDown() async throws {
         OpenAIModelDiscoveryURLProtocol.reset()
         UserDefaults.standard.removeObject(forKey: "com.ora.openAI.discoveredModelIdentifiers")
+        UserDefaults.standard.removeObject(forKey: "com.ora.openAI.discoveredModels")
     }
 
     func test_openAIModelDiscovery_withCredential_returnsFilteredList() async throws {
@@ -169,6 +170,35 @@ final class OpenAIModelDiscoveryServiceTests: XCTestCase {
         let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
         XCTAssertNotNil(queryItems.first(where: { $0.name == "client_version" && ($0.value?.isEmpty == false) }))
         XCTAssertEqual(models.map(\.identifier), ["gpt-5.2", "gpt-5.2-codex"])
+        XCTAssertTrue(models.allSatisfy { $0.supportsImageInput == true })
+        XCTAssertTrue(models.allSatisfy { $0.supportsImageDetailOriginal == false })
+    }
+
+    func test_openAIModelDiscovery_loadsStructuredCache_beforeIdentifierFallback() async {
+        UserDefaults.standard.openAIDiscoveredModels = [
+            OpenAIModelOption(
+                identifier: "gpt-5.2-codex",
+                source: .discovered,
+                supportsImageInput: true,
+                supportsImageDetailOriginal: false
+            ),
+        ]
+
+        let service = OpenAIModelDiscoveryService(
+            credentialStore: OpenAIModelDiscoveryCredentialStore(apiKey: nil),
+            session: self.makeSession(),
+            cacheTTL: 300
+        )
+
+        let state = await service.fetchModelAvailability(forceRefresh: false)
+
+        guard case .available(let models, let isStale) = state else {
+            return XCTFail("Expected cached available models")
+        }
+        XCTAssertFalse(isStale)
+        XCTAssertEqual(models.count, 1)
+        XCTAssertEqual(models[0].identifier, "gpt-5.2-codex")
+        XCTAssertEqual(models[0].supportsImageInput, true)
     }
 
     // MARK: - Helpers

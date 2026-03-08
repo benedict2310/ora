@@ -417,4 +417,25 @@ extension UserDefaults {
             set(deduped, forKey: OraKey.openAIDiscoveredModelIdentifiers)
         }
     }
+
+    var openAIDiscoveredModels: [OpenAIModelOption] {
+        get {
+            if let data = data(forKey: OraKey.openAIDiscoveredModels),
+               let decoded = try? JSONDecoder().decode([OpenAIModelOption].self, from: data) {
+                return decoded
+            }
+
+            return self.openAIDiscoveredModelIdentifiers.map {
+                OpenAIModelOption(identifier: $0, source: .discovered)
+            }
+        }
+        set {
+            if let encoded = try? JSONEncoder().encode(newValue) {
+                set(encoded, forKey: OraKey.openAIDiscoveredModels)
+            } else {
+                removeObject(forKey: OraKey.openAIDiscoveredModels)
+            }
+            self.openAIDiscoveredModelIdentifiers = newValue.map(\.identifier)
+        }
+    }
 }

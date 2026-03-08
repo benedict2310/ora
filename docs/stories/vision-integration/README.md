@@ -107,6 +107,7 @@ Apple references:
 | **V.02** | [Local VLM Runtime & Qwen 3.5 4B Vision Model](V.02-LOCAL-VLM-RUNTIME-AND-QWEN35-4B-VISION-MODEL.md) | Add `MLXVLM`, local multimodal model support, download metadata, and memory gating | V.01, F.03, F.09 |
 | **V.03** | [Image Attachments & Screenshot Capture UX](V.03-IMAGE-ATTACHMENTS-AND-SCREENSHOT-CAPTURE-UX.md) | Let users attach screenshots or images from the overlay with staging, previews, and permission guidance | V.01, F.06, F.07 |
 | **V.04** | [Multimodal Agent Loop & Session Integration](V.04-MULTIMODAL-AGENT-LOOP-AND-SESSION-INTEGRATION.md) | Send image-bearing turns through the agent loop, preserve follow-up behavior, and persist metadata safely | V.01, V.02, V.03, O.06, F.08 |
+| **V.05** | [Vision Model Size Variants and Qwen3 4B Retirement](V.05-VISION-MODEL-SIZE-VARIANTS-AND-QWEN3-RETIREMENT.md) | Add 9B and 27B vision model variants; retire text-only Qwen 3 4B with auto-migration UX | V.02 |
 
 ## Dependency Graph
 
@@ -116,6 +117,8 @@ L.01/L.03/O.06/F.08
         └──► V.01 (Multimodal Message Model & Provider Capabilities)
                  │
                  ├──► V.02 (Local VLM Runtime & Qwen 3.5 4B Vision Model)
+                 │        │
+                 │        └──► V.05 (Vision Model Size Variants & Qwen3 4B Retirement)
                  ├──► V.03 (Image Attachments & Screenshot Capture UX)
                  └──► V.04 (Multimodal Agent Loop & Session Integration)
                                ▲

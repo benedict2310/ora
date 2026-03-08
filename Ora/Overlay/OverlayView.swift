@@ -18,7 +18,11 @@ struct OverlayView: View {
 
     @Namespace private var inputGlassNamespace
 
-    private let scrollAnchorID = "overlayScrollAnchor"
+    // Coalesces rapid-fire scroll triggers (e.g. mode + messages firing within one frame).
+    @State private var pendingScrollTask: Task<Void, Never>?
+    @State private var measuredTailHeight: CGFloat = 0
+
+    private static let scrollAnchorID = "overlay-scroll-anchor"
 
     var body: some View {
         GlassEffectContainer(spacing: OverlayLayout.containerSpacing) {
@@ -111,118 +115,132 @@ struct OverlayView: View {
     private var chatScrollView: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: OverlayLayout.rowSpacing) {
-                    ForEach(self.visibleMessages) { message in
-                        ChatBubbleView(
-                            text: message.content,
-                            role: message.role == .user ? .user : .assistant,
-                            state: nil,
-                            isPartial: message.isPartial,
-                            reduceTransparency: self.reduceTransparency,
-                            reduceMotion: self.reduceMotion,
-                            thumbnailURLs: message.thumbnailURLs
-                        )
-                        .id(message.id)
+                VStack(alignment: .leading, spacing: OverlayLayout.rowSpacing) {
+                    LazyVStack(alignment: .leading, spacing: OverlayLayout.rowSpacing) {
+                        ForEach(self.historicalMessages) { message in
+                            ChatBubbleView(
+                                text: message.content,
+                                role: message.role == .user ? .user : .assistant,
+                                state: nil,
+                                isPartial: message.isPartial,
+                                reduceTransparency: self.reduceTransparency,
+                                reduceMotion: self.reduceMotion,
+                                thumbnailURLs: message.thumbnailURLs
+                            )
+                            .id(message.id)
+                        }
                     }
 
-                    if self.shouldShowThinkingBubble {
-                        ChatBubbleView(
-                            text: nil,
-                            role: .assistant,
-                            state: .thinking(self.thinkingBubbleLabel),
-                            isPartial: false,
-                            reduceTransparency: self.reduceTransparency,
-                            reduceMotion: self.reduceMotion
-                        )
-                        .id("thinking-bubble")
-                    }
+                    VStack(alignment: .leading, spacing: OverlayLayout.rowSpacing) {
+                        if let latestMessage = self.latestVisibleMessage {
+                            self.bubbleView(for: latestMessage)
+                        }
 
-                    if self.shouldShowToolBubble {
-                        ChatBubbleView(
-                            text: nil,
-                            role: .tool,
-                            state: .tool(self.viewModel.activity.displayLabel),
-                            isPartial: false,
-                            reduceTransparency: self.reduceTransparency,
-                            reduceMotion: self.reduceMotion
-                        )
-                        .id("tool-bubble")
-                        .transition(.opacity)
-                    }
+                        if self.shouldShowThinkingBubble {
+                            ChatBubbleView(
+                                text: nil,
+                                role: .assistant,
+                                state: .thinking(self.thinkingBubbleLabel),
+                                isPartial: false,
+                                reduceTransparency: self.reduceTransparency,
+                                reduceMotion: self.reduceMotion
+                            )
+                            .id("thinking-bubble")
+                            .transition(.opacity)
+                        }
 
-                    if self.shouldShowExecutingBubble {
-                        ToolStateView(
-                            mode: .executing(label: "Executing action"),
-                            reduceTransparency: self.reduceTransparency,
-                            reduceMotion: self.reduceMotion,
-                            onConfirmProposal: { },
-                            onConfirmAndTrustProposal: { },
-                            onDenyProposal: { }
-                        )
-                        .id("executing-bubble")
-                    }
+                        if self.shouldShowToolBubble {
+                            ChatBubbleView(
+                                text: nil,
+                                role: .tool,
+                                state: .tool(self.viewModel.activity.displayLabel),
+                                isPartial: false,
+                                reduceTransparency: self.reduceTransparency,
+                                reduceMotion: self.reduceMotion
+                            )
+                            .id("tool-bubble")
+                            .transition(.opacity)
+                        }
 
-                    if case .proposing(let proposal) = self.viewModel.mode,
-                       !proposal.presentation.usesModalSheet {
-                        ToolStateView(
-                            mode: .proposal(proposal),
-                            reduceTransparency: self.reduceTransparency,
-                            reduceMotion: self.reduceMotion,
-                            onConfirmProposal: {
-                                self.viewModel.actionHandler?.confirmToolProposal()
-                            },
-                            onConfirmAndTrustProposal: {
-                                self.viewModel.actionHandler?.confirmAndTrustToolProposal()
-                            },
-                            onDenyProposal: {
-                                self.viewModel.actionHandler?.denyToolProposal()
-                            }
-                        )
-                        .id("proposal-bubble")
-                    }
+                        if self.shouldShowExecutingBubble {
+                            ToolStateView(
+                                mode: .executing(label: "Executing action"),
+                                reduceTransparency: self.reduceTransparency,
+                                reduceMotion: self.reduceMotion,
+                                onConfirmProposal: { },
+                                onConfirmAndTrustProposal: { },
+                                onDenyProposal: { }
+                            )
+                            .id("executing-bubble")
+                        }
 
-                    if case .awaitingFollowUp = self.viewModel.mode {
-                        FollowUpPromptView(reduceTransparency: self.reduceTransparency)
-                            .id("followup-prompt")
-                    }
+                        if case .proposing(let proposal) = self.viewModel.mode,
+                           !proposal.presentation.usesModalSheet {
+                            ToolStateView(
+                                mode: .proposal(proposal),
+                                reduceTransparency: self.reduceTransparency,
+                                reduceMotion: self.reduceMotion,
+                                onConfirmProposal: {
+                                    self.viewModel.actionHandler?.confirmToolProposal()
+                                },
+                                onConfirmAndTrustProposal: {
+                                    self.viewModel.actionHandler?.confirmAndTrustToolProposal()
+                                },
+                                onDenyProposal: {
+                                    self.viewModel.actionHandler?.denyToolProposal()
+                                }
+                            )
+                            .id("proposal-bubble")
+                        }
 
-                    if self.shouldShowSkillsHint,
-                       let skillsHintText = self.viewModel.skillsHintText {
-                        OverlayPromptView(
-                            text: skillsHintText,
-                            iconName: "sparkles",
-                            accessibilityLabel: skillsHintText,
-                            reduceTransparency: self.reduceTransparency,
-                            action: nil
-                        )
-                        .id("skills-hint")
-                    }
+                        if case .awaitingFollowUp = self.viewModel.mode {
+                            FollowUpPromptView(reduceTransparency: self.reduceTransparency)
+                                .id("followup-prompt")
+                        }
 
-                    if self.shouldShowStopSpeakingPrompt {
-                        StopSpeakingPromptView(
-                            reduceTransparency: self.reduceTransparency,
-                            onStopSpeaking: {
-                                self.viewModel.actionHandler?.stopSpeechPlayback()
-                            }
-                        )
+                        if self.shouldShowSkillsHint,
+                           let skillsHintText = self.viewModel.skillsHintText {
+                            OverlayPromptView(
+                                text: skillsHintText,
+                                iconName: "sparkles",
+                                accessibilityLabel: skillsHintText,
+                                reduceTransparency: self.reduceTransparency,
+                                action: nil
+                            )
+                            .id("skills-hint")
+                        }
+
+                        if self.shouldShowStopSpeakingPrompt {
+                            StopSpeakingPromptView(
+                                reduceTransparency: self.reduceTransparency,
+                                onStopSpeaking: {
+                                    self.viewModel.actionHandler?.stopSpeechPlayback()
+                                }
+                            )
                             .id("stop-speaking-prompt")
-                    }
+                        }
 
-                    if case .error(let message) = self.viewModel.mode {
-                        ChatBubbleView(
-                            text: message,
-                            role: .tool,
-                            state: .tool("Error"),
-                            isPartial: false,
-                            reduceTransparency: self.reduceTransparency,
-                            reduceMotion: self.reduceMotion
-                        )
-                        .id("error-bubble")
-                    }
+                        if case .error(let message) = self.viewModel.mode {
+                            ChatBubbleView(
+                                text: message,
+                                role: .tool,
+                                state: .tool("Error"),
+                                isPartial: false,
+                                reduceTransparency: self.reduceTransparency,
+                                reduceMotion: self.reduceMotion
+                            )
+                            .id("error-bubble")
+                        }
 
-                    Color.clear
-                        .frame(height: 1)
-                        .id(self.scrollAnchorID)
+                        Color.clear
+                            .frame(height: 1)
+                            .id(Self.scrollAnchorID)
+                    }
+                    .background(
+                        GeometryReader { proxy in
+                            Color.clear.preference(key: OverlayTailHeightPreferenceKey.self, value: proxy.size.height)
+                        }
+                    )
                 }
                 .padding(.horizontal, 4)
                 .padding(.bottom, 4)
@@ -236,8 +254,8 @@ struct OverlayView: View {
                 self.scrollToBottom(proxy)
                 self.invalidateWindowShadow()
             }
-            .onChange(of: self.viewModel.activity) { _, _ in
-                self.scrollToBottom(proxy)
+            .onChange(of: self.viewModel.activity) { oldActivity, newActivity in
+                self.scrollToBottomIfNeededForActivityChange(from: oldActivity, to: newActivity, proxy: proxy)
                 self.invalidateWindowShadow()
             }
             .onChange(of: self.viewModel.pendingImageAttachments.count) { _, _ in
@@ -245,6 +263,11 @@ struct OverlayView: View {
             }
             .onChange(of: self.viewModel.attachmentNotice) { _, _ in
                 self.invalidateWindowShadow()
+            }
+            .onPreferenceChange(OverlayTailHeightPreferenceKey.self) { newHeight in
+                guard abs(newHeight - self.measuredTailHeight) > 0.5 else { return }
+                self.measuredTailHeight = newHeight
+                self.scrollToBottom(proxy)
             }
         }
     }
@@ -258,6 +281,28 @@ struct OverlayView: View {
             }
             return true
         }
+    }
+
+    private var historicalMessages: [OverlayMessage] {
+        Array(self.visibleMessages.dropLast())
+    }
+
+    private var latestVisibleMessage: OverlayMessage? {
+        self.visibleMessages.last
+    }
+
+    @ViewBuilder
+    private func bubbleView(for message: OverlayMessage) -> some View {
+        ChatBubbleView(
+            text: message.content,
+            role: message.role == .user ? .user : .assistant,
+            state: nil,
+            isPartial: message.isPartial,
+            reduceTransparency: self.reduceTransparency,
+            reduceMotion: self.reduceMotion,
+            thumbnailURLs: message.thumbnailURLs
+        )
+        .id(message.id)
     }
 
     private var modalProposal: ToolProposal? {
@@ -370,20 +415,40 @@ struct OverlayView: View {
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
-        let action = {
-            proxy.scrollTo(self.scrollAnchorID, anchor: .bottom)
+        // Cancel any pending scroll — coalesces rapid-fire triggers (mode + messages in one frame).
+        self.pendingScrollTask?.cancel()
+        self.pendingScrollTask = Task { @MainActor in
+            do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
+            // Scroll to an eager bottom anchor that lives outside the lazy transcript rows.
+            // No animation avoids competing with bubble insertion transitions.
+            proxy.scrollTo(Self.scrollAnchorID, anchor: .bottom)
         }
+    }
 
-        // Defer to the next run loop so newly inserted bubbles are laid out first.
-        DispatchQueue.main.async {
-            if self.reduceMotion {
-                action()
-            } else {
-                withAnimation(.easeOut(duration: 0.2)) {
-                    action()
-                }
-            }
+    private func scrollToBottomIfNeededForActivityChange(
+        from oldActivity: OverlayActivity,
+        to newActivity: OverlayActivity,
+        proxy: ScrollViewProxy
+    ) {
+        guard Self.activityChangeAffectsTranscriptLayout(
+            from: oldActivity,
+            to: newActivity,
+            mode: self.viewModel.mode
+        ) else {
+            return
         }
+        self.scrollToBottom(proxy)
+    }
+
+    static func activityChangeAffectsTranscriptLayout(
+        from oldActivity: OverlayActivity,
+        to newActivity: OverlayActivity,
+        mode: OverlayMode
+    ) -> Bool {
+        if case .thinking = mode {
+            return oldActivity != newActivity
+        }
+        return oldActivity == .speaking || newActivity == .speaking
     }
 
     /// Invalidate window shadow to help clear glass rendering artifacts.
@@ -399,6 +464,14 @@ struct OverlayView: View {
         Task { @MainActor in
             self.currentProviderType = await LLMProviderManager.shared.getSelectedProviderType()
         }
+    }
+}
+
+private struct OverlayTailHeightPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 

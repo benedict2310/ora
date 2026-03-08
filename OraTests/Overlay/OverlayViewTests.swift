@@ -50,6 +50,36 @@ final class OverlayViewTests: XCTestCase {
         XCTAssertNil(viewModel.attachmentNotice)
     }
 
+    func test_activityChangeAffectsTranscriptLayout_returnsTrueWhileThinking() {
+        XCTAssertTrue(
+            OverlayView.activityChangeAffectsTranscriptLayout(
+                from: .planning,
+                to: .toolCall(label: "Calendar"),
+                mode: .thinking
+            )
+        )
+    }
+
+    func test_activityChangeAffectsTranscriptLayout_returnsTrueForSpeakingPromptToggle() {
+        XCTAssertTrue(
+            OverlayView.activityChangeAffectsTranscriptLayout(
+                from: .composing,
+                to: .speaking,
+                mode: .responding
+            )
+        )
+    }
+
+    func test_activityChangeAffectsTranscriptLayout_returnsFalseForNonSpeakingNonThinkingChanges() {
+        XCTAssertFalse(
+            OverlayView.activityChangeAffectsTranscriptLayout(
+                from: .planning,
+                to: .composing,
+                mode: .responding
+            )
+        )
+    }
+
     private static func sampleAttachment() -> StagedImageAttachment {
         return StagedImageAttachment(
             id: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!,
