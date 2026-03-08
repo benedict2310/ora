@@ -64,11 +64,11 @@ private struct AttachmentChipView: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
         let thumbnailSize: CGFloat = 36
-        let chipLeadingPadding: CGFloat = 10
 
         HStack(spacing: 8) {
-            // Reserve space — thumbnail is rendered as overlay above the glass layer.
-            Color.clear.frame(width: thumbnailSize, height: thumbnailSize)
+            AttachmentThumbnailView(attachment: self.attachment)
+                .frame(width: thumbnailSize, height: thumbnailSize)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(self.title)
@@ -91,16 +91,9 @@ private struct AttachmentChipView: View {
             .foregroundStyle(.secondary)
             .accessibilityLabel("Remove image attachment")
         }
-        .padding(.horizontal, chipLeadingPadding)
+        .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(self.background(shape: shape))
-        // Thumbnail rendered as overlay so it sits above the glass layer.
-        .overlay(alignment: .leading) {
-            AttachmentThumbnailView(attachment: self.attachment)
-                .frame(width: thumbnailSize, height: thumbnailSize)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .padding(.leading, chipLeadingPadding)
-        }
     }
 
     private var title: String {
@@ -140,8 +133,12 @@ private struct AttachmentChipView: View {
                 .fill(Color(nsColor: .controlBackgroundColor).opacity(0.95))
                 .overlay(shape.stroke(Color.white.opacity(0.08), lineWidth: 0.5))
         } else {
+            // Use solid fill instead of glassEffect — glass compositor on macOS 26
+            // obscures bitmap images (thumbnails) while vector content (text, SF Symbols)
+            // renders fine. A subtle translucent fill avoids this without visual regression.
             shape
-                .glassEffect(.regular.tint(.white.opacity(0.05)), in: shape)
+                .fill(Color.white.opacity(0.08))
+                .overlay(shape.stroke(Color.white.opacity(0.10), lineWidth: 0.5))
         }
     }
 }
