@@ -424,8 +424,8 @@ actor LLMService: LLMServicing {
             return false
         }
 
-        if model == .qwen3_4B && totalRAM < 8_000_000_000 {
-            logger.warning("Low RAM for Qwen 3 4B. Available Total: \(totalRAM / 1_000_000_000)GB - proceeding anyway")
+        if model == .qwen35_4B_Vision && totalRAM < 20_000_000_000 {
+            logger.warning("Low RAM headroom for Qwen3 VL 4B. Available Total: \(totalRAM / 1_000_000_000)GB")
         }
         
         return true
@@ -440,7 +440,6 @@ actor LLMService: LLMServicing {
     }
     
     static func recommendedModel() -> ModelIdentifier {
-        // Qwen 3 4B is the only active model now
-        return .qwen3_4B
+        return .qwen35_4B_Vision
     }
 }

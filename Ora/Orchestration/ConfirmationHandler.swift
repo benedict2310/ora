@@ -13,6 +13,7 @@ final class ConfirmationHandler: OverlayActionHandling {
     var onRemovePendingImageAttachment: ((UUID) -> Void)?
     var onClearPendingImageAttachments: (() -> Void)?
     var onOpenScreenRecordingSettings: (() -> Void)?
+    var onOpenModelsPreferences: (() -> Void)?
 
     func confirmToolProposal() {
         self.onConfirmProposal?()
@@ -52,5 +53,9 @@ final class ConfirmationHandler: OverlayActionHandling {
 
     func openScreenRecordingSettings() {
         self.onOpenScreenRecordingSettings?()
+    }
+
+    func openModelsPreferences() {
+        self.onOpenModelsPreferences?()
     }
 }

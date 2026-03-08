@@ -151,6 +151,64 @@ final class HuggingFaceDownloaderTests: XCTestCase {
         XCTAssertFalse(mock.downloadedFiles.isEmpty)
     }
 
+    func test_huggingFaceStrategy_downloadsVision8BLLMModel() async throws {
+        let mock = MockFileDownloader()
+        mock.downloadDelay = 0.01
+        mock.fileSizeOverrides = [
+            "model-00001-of-00002.safetensors": 5_353_972_197,
+            "model-00002-of-00002.safetensors": 406_693_049,
+            "model.safetensors.index.json": 67_759,
+            "config.json": 7_140,
+            "tokenizer.json": 11_422_654,
+            "tokenizer_config.json": 10_939,
+            "special_tokens_map.json": 632,
+            "chat_template.jinja": 5_292,
+            "preprocessor_config.json": 782,
+            "video_preprocessor_config.json": 817,
+        ]
+
+        let strategy = HuggingFaceStrategy(downloader: mock)
+
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let progressCollector = DoubleCollector()
+        try await strategy.download(model: .qwen35_8B_Vision, to: tempDir) { progress in
+            progressCollector.append(progress.progress)
+        }
+
+        XCTAssertFalse(mock.downloadedFiles.isEmpty)
+        XCTAssertLessThanOrEqual(progressCollector.values.max() ?? 0, 1.0)
+    }
+
+    func test_huggingFaceStrategy_downloadsVision32BLLMModel() async throws {
+        let mock = MockFileDownloader()
+        mock.downloadDelay = 0.01
+        mock.fileSizeOverrides = [
+            "model-00001-of-00004.safetensors": 5_320_786_075,
+            "model-00002-of-00004.safetensors": 5_359_012_183,
+            "model-00003-of-00004.safetensors": 5_338_391_026,
+            "model-00004-of-00004.safetensors": 3_602_259_399,
+            "model.safetensors.index.json": 97_831,
+            "config.json": 7_140,
+            "tokenizer.json": 11_422_654,
+            "tokenizer_config.json": 10_939,
+            "special_tokens_map.json": 632,
+            "chat_template.jinja": 5_292,
+            "preprocessor_config.json": 782,
+            "video_preprocessor_config.json": 817,
+        ]
+
+        let strategy = HuggingFaceStrategy(downloader: mock)
+
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        try await strategy.download(model: .qwen35_32B_Vision, to: tempDir) { _ in }
+
+        XCTAssertFalse(mock.downloadedFiles.isEmpty)
+    }
+
     func test_huggingFaceStrategy_downloadsTTSModel() async throws {
         let mock = MockFileDownloader()
         mock.downloadDelay = 0.01
@@ -584,6 +642,10 @@ final class HuggingFaceDownloaderTests: XCTestCase {
                        "processor_config.json is absent from the Qwen3-VL repo (verified 2026-03-06)")
         XCTAssertTrue(ModelIdentifier.qwen35_4B_Vision.requiredFiles.contains("preprocessor_config.json"))
         XCTAssertTrue(ModelIdentifier.qwen35_4B_Vision.requiredFiles.contains("video_preprocessor_config.json"))
+        XCTAssertTrue(ModelIdentifier.qwen35_8B_Vision.requiredFiles.contains("model-00002-of-00002.safetensors"))
+        XCTAssertTrue(ModelIdentifier.qwen35_8B_Vision.requiredFiles.contains("model.safetensors.index.json"))
+        XCTAssertTrue(ModelIdentifier.qwen35_32B_Vision.requiredFiles.contains("model-00004-of-00004.safetensors"))
+        XCTAssertTrue(ModelIdentifier.qwen35_32B_Vision.requiredFiles.contains("model.safetensors.index.json"))
         XCTAssertTrue(ModelIdentifier.kokoro.requiredFiles.contains("kokoro-v1_0.safetensors"))
     }
 

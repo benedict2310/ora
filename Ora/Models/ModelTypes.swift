@@ -26,6 +26,8 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
     // LLM - Qwen 3 models
     case qwen3_4B = "qwen3-4b-instruct-4bit"
     case qwen35_4B_Vision = "qwen3.5-4b-vision-4bit"
+    case qwen35_8B_Vision = "qwen3.5-8b-vision-4bit"
+    case qwen35_32B_Vision = "qwen3.5-32b-vision-4bit"
 
     // Legacy Qwen 2.5 identifiers (for migration detection)
     // These are kept for backward compatibility with existing metadata
@@ -38,7 +40,7 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
     /// Whether this is a legacy model that should trigger migration
     var isLegacy: Bool {
         switch self {
-        case .qwen7B, .qwen3B: return true
+        case .qwen3_4B, .qwen7B, .qwen3B: return true
         default: return false
         }
     }
@@ -51,7 +53,7 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
     var category: ModelCategory {
         switch self {
         case .parakeetTDT: return .asr
-        case .qwen3_4B, .qwen35_4B_Vision, .qwen7B, .qwen3B: return .llm
+        case .qwen3_4B, .qwen35_4B_Vision, .qwen35_8B_Vision, .qwen35_32B_Vision, .qwen7B, .qwen3B: return .llm
         case .kokoro: return .tts
         }
     }
@@ -61,6 +63,8 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
         case .parakeetTDT: return "Parakeet TDT 0.6B"
         case .qwen3_4B: return "Qwen 3 4B"
         case .qwen35_4B_Vision: return "Qwen3 VL 4B"
+        case .qwen35_8B_Vision: return "Qwen3 VL 8B"
+        case .qwen35_32B_Vision: return "Qwen3 VL 32B"
         case .qwen7B: return "Qwen 2.5 7B (Legacy)"
         case .qwen3B: return "Qwen 2.5 3B (Legacy)"
         case .kokoro: return "Kokoro TTS"
@@ -72,6 +76,8 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
         case .parakeetTDT: return "FluidInference/parakeet-tdt-0.6b-v3-coreml"
         case .qwen3_4B: return "mlx-community/Qwen3-4B-Instruct-2507-4bit"
         case .qwen35_4B_Vision: return "lmstudio-community/Qwen3-VL-4B-Instruct-MLX-4bit"
+        case .qwen35_8B_Vision: return "lmstudio-community/Qwen3-VL-8B-Instruct-MLX-4bit"
+        case .qwen35_32B_Vision: return "lmstudio-community/Qwen3-VL-32B-Instruct-MLX-4bit"
         case .qwen7B: return "mlx-community/Qwen2.5-7B-Instruct-4bit"  // Legacy
         case .qwen3B: return "mlx-community/Qwen2.5-3B-Instruct-4bit"  // Legacy
         case .kokoro: return "mlx-community/Kokoro-82M-bf16"
@@ -83,6 +89,8 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
         case .parakeetTDT: return 600_000_000      // ~600 MB
         case .qwen3_4B: return 2_500_000_000       // ~2.5 GB (actual: 2.26 GB model + tokenizer)
         case .qwen35_4B_Vision: return 3_500_000_000  // ~3.5 GB
+        case .qwen35_8B_Vision: return 5_800_000_000  // ~5.8 GB
+        case .qwen35_32B_Vision: return 19_700_000_000  // ~19.7 GB
         case .qwen7B: return 5_000_000_000         // ~5 GB (legacy)
         case .qwen3B: return 2_000_000_000         // ~2 GB (legacy)
         case .kokoro: return 500_000_000           // ~500 MB
@@ -92,7 +100,8 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
     var isRequired: Bool {
         switch self {
         case .parakeetTDT, .kokoro: return true
-        case .qwen3_4B, .qwen35_4B_Vision: return false  // LLM requirement is handled via primaryLLM
+        case .qwen3_4B, .qwen35_4B_Vision, .qwen35_8B_Vision, .qwen35_32B_Vision:
+            return false  // LLM requirement is handled via primaryLLM
         case .qwen7B, .qwen3B: return false  // Legacy models
         }
     }
@@ -105,6 +114,8 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
         case .parakeetTDT: return "asr/parakeet-tdt-0.6b-v3-coreml"
         case .qwen3_4B: return "llm/qwen3-4b-instruct-4bit"
         case .qwen35_4B_Vision: return "llm/qwen3-vl-4b-instruct-4bit"
+        case .qwen35_8B_Vision: return "llm/qwen3-vl-8b-instruct-4bit"
+        case .qwen35_32B_Vision: return "llm/qwen3-vl-32b-instruct-4bit"
         case .qwen7B: return "llm/qwen2.5-7b-instruct-4bit"  // Legacy
         case .qwen3B: return "llm/qwen2.5-3b-instruct-4bit"  // Legacy
         case .kokoro: return "tts/kokoro"
@@ -128,6 +139,30 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
                 "config.json",
                 "tokenizer.json",
                 "model.safetensors",
+                "chat_template.jinja",
+                "preprocessor_config.json",
+                "video_preprocessor_config.json",
+            ]
+        case .qwen35_8B_Vision:
+            return [
+                "config.json",
+                "tokenizer.json",
+                "model.safetensors.index.json",
+                "model-00001-of-00002.safetensors",
+                "model-00002-of-00002.safetensors",
+                "chat_template.jinja",
+                "preprocessor_config.json",
+                "video_preprocessor_config.json",
+            ]
+        case .qwen35_32B_Vision:
+            return [
+                "config.json",
+                "tokenizer.json",
+                "model.safetensors.index.json",
+                "model-00001-of-00004.safetensors",
+                "model-00002-of-00004.safetensors",
+                "model-00003-of-00004.safetensors",
+                "model-00004-of-00004.safetensors",
                 "chat_template.jinja",
                 "preprocessor_config.json",
                 "video_preprocessor_config.json",
@@ -158,6 +193,8 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
         case .qwen35_4B_Vision:
             // Runtime fetches exact sizes from the HuggingFace API when available.
             // Keep this empty to avoid brittle hardcoded values for frequently-updated multimodal repos.
+            return [:]
+        case .qwen35_8B_Vision, .qwen35_32B_Vision:
             return [:]
         case .qwen7B:
             return [
@@ -192,7 +229,7 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
 
     var supportsImageInput: Bool {
         switch self {
-        case .qwen35_4B_Vision:
+        case .qwen35_4B_Vision, .qwen35_8B_Vision, .qwen35_32B_Vision:
             return true
         default:
             return false
@@ -201,7 +238,7 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
 
     var isAdvancedLocalModel: Bool {
         switch self {
-        case .qwen35_4B_Vision:
+        case .qwen35_4B_Vision, .qwen35_8B_Vision, .qwen35_32B_Vision:
             return true
         default:
             return false
@@ -212,6 +249,10 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
         switch self {
         case .qwen35_4B_Vision, .qwen7B:
             return 16_000_000_000
+        case .qwen35_8B_Vision:
+            return 24_000_000_000
+        case .qwen35_32B_Vision:
+            return 48_000_000_000
         default:
             return nil
         }
@@ -232,6 +273,10 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
             return "~2.5 GB"
         case .qwen35_4B_Vision:
             return "~3.5 GB"
+        case .qwen35_8B_Vision:
+            return "~5.8 GB"
+        case .qwen35_32B_Vision:
+            return "~19.7 GB"
         case .qwen7B:
             return "~5 GB"
         case .qwen3B:
@@ -302,7 +347,7 @@ struct ModelMetadata: Codable, Sendable, Equatable {
 struct ModelsState: Sendable, Equatable {
     var statuses: [ModelIdentifier: ModelStatus] = [:]
     var metadata: [ModelIdentifier: ModelMetadata] = [:]
-    var primaryLLM: ModelIdentifier = .qwen3_4B
+    var primaryLLM: ModelIdentifier = .qwen35_4B_Vision
     
     // MARK: - Download Progress Metrics (Unified Tracking)
     
@@ -322,7 +367,7 @@ struct ModelsState: Sendable, Equatable {
     
     /// Whether legacy Qwen 2.5 models are detected (for migration prompts)
     var hasLegacyModels: Bool {
-        for model in [ModelIdentifier.qwen7B, .qwen3B] {
+        for model in [ModelIdentifier.qwen3_4B, .qwen7B, .qwen3B] {
             if statuses[model]?.isReady == true {
                 return true
             }

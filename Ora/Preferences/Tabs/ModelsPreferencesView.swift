@@ -18,6 +18,7 @@ struct ModelsPreferencesView: View {
     @State private var modelToDelete: ModelIdentifier?
     @State private var downloadErrorMessage: String?
     @State private var totalRAMBytes: UInt64 = ProcessInfo.processInfo.physicalMemory
+    @StateObject private var migrationCoordinator = ModelMigrationCoordinator.shared
 
     // MARK: - Body
 
@@ -59,8 +60,14 @@ struct ModelsPreferencesView: View {
             } header: {
                 Text("Language Model")
             } footer: {
-                if self.totalRAMBytes < 16_000_000_000 {
-                    Text("Qwen 3.5 4B Vision is available as an advanced local model but needs at least 16 GB RAM to be selected as Primary on this Mac.")
+                Text(self.languageModelFooterText)
+            }
+
+            if self.shouldShowMigrationSection {
+                Section {
+                    self.migrationSectionContent
+                } header: {
+                    Text("Model Upgrade")
                 }
             }
 
@@ -108,7 +115,7 @@ struct ModelsPreferencesView: View {
                 } header: {
                     Text("Legacy Models")
                 } footer: {
-                    Text("These models can be deleted to free up disk space. Ora now uses Qwen 3.")
+                    Text("These models can be deleted to free up disk space. Ora now uses Qwen3 Vision.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -196,6 +203,83 @@ struct ModelsPreferencesView: View {
 
         let minimumRAMGB = Int(Double(minimumRAMBytes) / 1_000_000_000)
         return "Requires \(minimumRAMGB) GB RAM to set as Primary."
+    }
+
+    private var shouldShowMigrationSection: Bool {
+        if self.migrationCoordinator.migrationCompleted && self.migrationCoordinator.status == .idle {
+            return false
+        }
+
+        if self.modelsState.primaryLLM == .qwen3_4B {
+            return true
+        }
+
+        if self.modelsState.statuses[.qwen3_4B]?.isReady == true {
+            return true
+        }
+
+        switch self.migrationCoordinator.status {
+        case .idle:
+            return self.migrationCoordinator.manualRetryRequired
+        case .migrating, .failed, .completed:
+            return true
+        }
+    }
+
+    @ViewBuilder
+    private var migrationSectionContent: some View {
+        switch self.migrationCoordinator.status {
+        case .idle:
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Qwen 3 4B has been retired. Upgrade to Qwen3 VL 4B to keep the local model current and image-capable.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Button("Upgrade Now") {
+                    Task {
+                        await self.migrationCoordinator.retryFromPreferences()
+                    }
+                }
+            }
+
+        case .migrating(let progress):
+            VStack(alignment: .leading, spacing: 8) {
+                ProgressView(value: progress)
+                Text("Upgrading the retired Qwen 3 4B install to Qwen3 VL 4B.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+        case .failed(let message):
+            VStack(alignment: .leading, spacing: 8) {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundColor(.orange)
+                    .font(.caption)
+
+                Button("Retry Upgrade") {
+                    Task {
+                        await self.migrationCoordinator.retryFromPreferences()
+                    }
+                }
+            }
+
+        case .completed:
+            Label("Qwen3 VL 4B is now the default local model.", systemImage: "checkmark.circle.fill")
+                .foregroundColor(.green)
+                .font(.caption)
+        }
+    }
+
+    private var languageModelFooterText: String {
+        if self.totalRAMBytes < 24_000_000_000 {
+            return "Qwen3 VL 4B needs 16 GB RAM, Qwen3 VL 8B needs 24 GB RAM, and Qwen3 VL 32B needs 48 GB RAM to be selected as Primary on this Mac."
+        }
+
+        if self.totalRAMBytes < 48_000_000_000 {
+            return "Qwen3 VL 32B is visible here, but it needs 48 GB RAM to be selected as Primary on this Mac."
+        }
+
+        return "Choose the fastest model your Mac can comfortably run. Larger variants trade speed for higher quality."
     }
 }
 

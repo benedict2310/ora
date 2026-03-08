@@ -139,6 +139,9 @@ final class SimplePipelineController: ObservableObject {
         self.confirmationHandler.onOpenScreenRecordingSettings = { [weak self] in
             self?.openScreenRecordingSettings()
         }
+        self.confirmationHandler.onOpenModelsPreferences = { [weak self] in
+            self?.openModelsPreferences()
+        }
         self.overlayPresenter.model.actionHandler = self.confirmationHandler
         Task { @MainActor in
             self.agentLoop.setDelegate(self)
@@ -439,6 +442,10 @@ final class SimplePipelineController: ObservableObject {
             try? await Task.sleep(for: .milliseconds(500))
             ExternalFocusTracker.shared.endExternalOperation()
         }
+    }
+
+    func openModelsPreferences() {
+        PreferencesCoordinator.shared.selectTab(.models)
     }
 
     func clearPendingImageAttachmentsState() {

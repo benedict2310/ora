@@ -117,7 +117,7 @@ final class SetupStateTests: XCTestCase {
 
     func test_initialState_primaryLLMDefault() {
         let state = SetupState()
-        XCTAssertEqual(state.primaryLLM, .qwen3_4B)
+        XCTAssertEqual(state.primaryLLM, .qwen35_4B_Vision)
     }
 
     // MARK: - System Info
@@ -127,9 +127,9 @@ final class SetupStateTests: XCTestCase {
         XCTAssertEqual(state.systemRAMGB, 0)
     }
 
-    func test_recommendedModel_defaultsToQwen3() {
+    func test_recommendedModel_defaultsToVision4B() {
         let state = SetupState()
-        XCTAssertEqual(state.recommendedModel, "Qwen 3 4B")
+        XCTAssertEqual(state.recommendedModel, "Qwen3 VL 4B")
     }
 
     // MARK: - State Mutation Tests
@@ -210,7 +210,7 @@ final class SetupStateTests: XCTestCase {
     }
 
     func test_totalModelSizeDisplay_returnsExpectedValue() {
-        XCTAssertEqual(SetupState.totalModelSizeDisplay, "~3.6 GB")
+        XCTAssertEqual(SetupState.totalModelSizeDisplay, "~4.6 GB")
     }
 
     func test_totalModelSizeDisplay_forVisionModel_returnsExpectedValue() {
@@ -241,14 +241,14 @@ final class ModelsStateDownloadTrackingTests: XCTestCase {
             bytesDownloaded: 300_000_000,
             totalBytes: 600_000_000
         )
-        state.downloadProgress[.qwen3_4B] = ModelDownloadProgress(
-            identifier: .qwen3_4B,
+        state.downloadProgress[.qwen35_4B_Vision] = ModelDownloadProgress(
+            identifier: .qwen35_4B_Vision,
             bytesDownloaded: 1_000_000_000,
-            totalBytes: 2_500_000_000
+            totalBytes: 3_500_000_000
         )
 
         XCTAssertEqual(state.totalBytesDownloaded, 1_300_000_000)
-        XCTAssertEqual(state.totalBytesToDownload, 3_100_000_000)
+        XCTAssertEqual(state.totalBytesToDownload, 4_100_000_000)
     }
 
     func test_formattedDownloadSpeed_formatsCorrectly() {
@@ -330,24 +330,22 @@ final class SetupCoordinatorTests: XCTestCase {
     func test_state_hasRecommendedModel() {
         let coordinator = SetupCoordinator.shared
 
-        // Should recommend Qwen 3 4B for all RAM configurations
-        XCTAssertEqual(coordinator.state.recommendedModel, "Qwen 3 4B")
+        XCTAssertEqual(coordinator.state.recommendedModel, "Qwen3 VL 4B")
     }
 
     func test_state_primaryLLMMatchesRAM() {
         let coordinator = SetupCoordinator.shared
 
-        // Primary LLM is now always Qwen 3 4B regardless of RAM
-        XCTAssertEqual(coordinator.state.primaryLLM, .qwen3_4B)
+        XCTAssertEqual(coordinator.state.primaryLLM, .qwen35_4B_Vision)
     }
 
-    func test_resolvePrimaryLLM_firstRunIgnoresPersistedVisionModel() {
+    func test_resolvePrimaryLLM_firstRunHonorsPersistedVisionModel() {
         let resolved = SetupCoordinator.resolvePrimaryLLM(
             persistedLLM: .qwen35_4B_Vision,
             isRepairFlow: false,
             totalRAMBytes: 32_000_000_000
         )
-        XCTAssertEqual(resolved, .qwen3_4B)
+        XCTAssertEqual(resolved, .qwen35_4B_Vision)
     }
 
     func test_resolvePrimaryLLM_repairFlowHonorsPersistedVisionModel() {
@@ -365,7 +363,34 @@ final class SetupCoordinatorTests: XCTestCase {
             isRepairFlow: true,
             totalRAMBytes: 8_000_000_000
         )
-        XCTAssertEqual(resolved, .qwen3_4B)
+        XCTAssertEqual(resolved, .qwen35_4B_Vision)
+    }
+
+    func test_resolvePrimaryLLM_legacyQwen3FallsBackToVision4B() {
+        let resolved = SetupCoordinator.resolvePrimaryLLM(
+            persistedLLM: .qwen3_4B,
+            isRepairFlow: true,
+            totalRAMBytes: 32_000_000_000
+        )
+        XCTAssertEqual(resolved, .qwen35_4B_Vision)
+    }
+
+    func test_resolvePrimaryLLM_retainsSupported8BSelection() {
+        let resolved = SetupCoordinator.resolvePrimaryLLM(
+            persistedLLM: .qwen35_8B_Vision,
+            isRepairFlow: true,
+            totalRAMBytes: 32_000_000_000
+        )
+        XCTAssertEqual(resolved, .qwen35_8B_Vision)
+    }
+
+    func test_resolvePrimaryLLM_fallsBackFromUnsupported32BSelection() {
+        let resolved = SetupCoordinator.resolvePrimaryLLM(
+            persistedLLM: .qwen35_32B_Vision,
+            isRepairFlow: true,
+            totalRAMBytes: 32_000_000_000
+        )
+        XCTAssertEqual(resolved, .qwen35_4B_Vision)
     }
 
     // MARK: - Models State (Unified Tracking)

@@ -15,7 +15,7 @@ final class SetupViewsTests: XCTestCase {
     func test_welcomeStepView_bodyBuilds() {
         var state = SetupState()
         state.systemRAMGB = 16
-        state.recommendedModel = "Qwen 3 4B"
+        state.recommendedModel = "Qwen3 VL 4B"
 
         let view = WelcomeStepView(state: state)
         _ = view.body
@@ -59,7 +59,7 @@ final class SetupViewsTests: XCTestCase {
         var downloadingModelsState = ModelsState()
         downloadingModelsState.statuses = [
             .parakeetTDT: .downloading(progress: 0.35),
-            .qwen3_4B: .notDownloaded,
+            .qwen35_4B_Vision: .notDownloaded,
             .kokoro: .notDownloaded
         ]
         downloadingModelsState.downloadProgress = [
@@ -85,7 +85,7 @@ final class SetupViewsTests: XCTestCase {
         var completeModelsState = ModelsState()
         completeModelsState.statuses = [
             .parakeetTDT: .ready,
-            .qwen3_4B: .ready,
+            .qwen35_4B_Vision: .ready,
             .kokoro: .ready
         ]
         completeModelsState.downloadProgress = [
@@ -94,10 +94,10 @@ final class SetupViewsTests: XCTestCase {
                 bytesDownloaded: 600_000_000,
                 totalBytes: 600_000_000
             ),
-            .qwen3_4B: ModelDownloadProgress(
-                identifier: .qwen3_4B,
-                bytesDownloaded: 2_500_000_000,
-                totalBytes: 2_500_000_000
+            .qwen35_4B_Vision: ModelDownloadProgress(
+                identifier: .qwen35_4B_Vision,
+                bytesDownloaded: 3_500_000_000,
+                totalBytes: 3_500_000_000
             ),
             .kokoro: ModelDownloadProgress(
                 identifier: .kokoro,
@@ -121,7 +121,7 @@ final class SetupViewsTests: XCTestCase {
         var errorModelsState = ModelsState()
         errorModelsState.statuses = [
             .parakeetTDT: .ready,
-            .qwen3_4B: .failed("Network error"),
+            .qwen35_4B_Vision: .failed("Network error"),
             .kokoro: .notDownloaded
         ]
         errorModelsState.downloadProgress = [
@@ -130,10 +130,10 @@ final class SetupViewsTests: XCTestCase {
                 bytesDownloaded: 600_000_000,
                 totalBytes: 600_000_000
             ),
-            .qwen3_4B: ModelDownloadProgress(
-                identifier: .qwen3_4B,
+            .qwen35_4B_Vision: ModelDownloadProgress(
+                identifier: .qwen35_4B_Vision,
                 bytesDownloaded: 1_500_000_000,
-                totalBytes: 2_500_000_000
+                totalBytes: 3_500_000_000
             )
         ]
 
@@ -217,7 +217,7 @@ final class SetupViewsTests: XCTestCase {
         if step == .download {
             modelsState.statuses = [
                 .parakeetTDT: .downloading(progress: 0.4),
-                .qwen3_4B: .notDownloaded,
+                .qwen35_4B_Vision: .notDownloaded,
                 .kokoro: .notDownloaded
             ]
             modelsState.downloadProgress = [
@@ -231,7 +231,7 @@ final class SetupViewsTests: XCTestCase {
         } else {
             modelsState.statuses = [
                 .parakeetTDT: .ready,
-                .qwen3_4B: .ready,
+                .qwen35_4B_Vision: .ready,
                 .kokoro: .ready
             ]
         }
