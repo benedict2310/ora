@@ -21,8 +21,8 @@ struct MarkdownTextView: View {
     var body: some View {
         let blocks = MarkdownParser.parseBlocks(self.text)
         VStack(alignment: self.horizontalAlignment, spacing: MarkdownLayout.blockSpacing) {
-            ForEach(blocks.indices, id: \.self) { index in
-                self.blockView(blocks[index])
+            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                self.blockView(block)
             }
         }
         .multilineTextAlignment(self.textAlignment)

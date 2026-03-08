@@ -29,11 +29,11 @@ struct WelcomeStepView: View {
 
                 Text("A private voice assistant for your Mac that can understand, respond, and take action.")
                     .font(.title3)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
 
-            GlassEffectContainer(spacing: 16) {
+            GlassEffectContainer(spacing: 8) {
                 VStack(spacing: 16) {
                     self.systemInfoCard
                     self.privacyCard
@@ -71,7 +71,7 @@ struct WelcomeStepView: View {
     private var privacyCard: some View {
         Label("By default, core voice processing runs locally on your device.", systemImage: "lock.shield")
             .font(.caption)
-            .foregroundColor(.secondary)
+            .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)
             .background(Color(nsColor: .controlBackgroundColor).opacity(0.6))
@@ -88,10 +88,10 @@ struct SystemInfoRow: View {
         HStack {
             Image(systemName: self.icon)
                 .frame(width: 24)
-                .foregroundColor(.accentColor)
+                .foregroundStyle(.tint)
 
             Text(self.title)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             Spacer()
 

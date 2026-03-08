@@ -18,7 +18,7 @@ struct ModelExplanationStepView: View {
                 .fontWeight(.bold)
 
             Text("Ora uses three local models. If they are already on this Mac, Ora reuses them.")
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
 
             GlassEffectContainer(spacing: 16) {
@@ -68,10 +68,10 @@ struct ModelExplanationStepView: View {
             HStack {
                 Spacer()
                 Text("Total download:")
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 Text(SetupState.totalModelSizeDisplay(for: self.state.primaryLLM))
                     .fontWeight(.semibold)
-                    .foregroundColor(.accentColor)
+                    .foregroundStyle(.tint)
             }
             .padding()
         }
@@ -83,14 +83,14 @@ struct ModelExplanationStepView: View {
         HStack(spacing: 12) {
             Image(systemName: "lock.shield.fill")
                 .font(.title2)
-                .foregroundColor(.green)
+                .foregroundStyle(.green)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Privacy-first by default")
                     .fontWeight(.medium)
                 Text("Model files run on your Mac. Existing downloads are verified and skipped.")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
 
             Spacer()
@@ -120,7 +120,7 @@ private struct ModelInfoRow: View {
 
                 Image(systemName: self.icon)
                     .font(.system(size: 18))
-                    .foregroundColor(self.iconColor)
+                    .foregroundStyle(self.iconColor)
             }
 
             // Name and description
@@ -129,7 +129,7 @@ private struct ModelInfoRow: View {
                     .fontWeight(.medium)
                 Text(self.description)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
 
             Spacer()
@@ -137,7 +137,7 @@ private struct ModelInfoRow: View {
             // Size
             Text(self.size)
                 .font(.callout)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
         .padding()
     }
