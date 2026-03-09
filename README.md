@@ -22,8 +22,8 @@ Ora is a **local-first voice assistant** for macOS that puts your privacy first.
 Ora can also use **optional cloud providers** (for example OpenAI or Anthropic) if you explicitly enable them in **Preferences > Providers**.
 
 ```
-Voice → Parakeet ASR → MLX + Qwen 3 → Kokoro TTS → Voice/UI
-                    ↘ (Optional) Cloud LLM ↗
+Voice → Parakeet ASR → MLX + Qwen 3.5 VL → Kokoro TTS → Voice/UI
+                     ↘ (Optional) Cloud LLM ↗
 ```
 
 ### Demo
@@ -39,7 +39,10 @@ https://github.com/benedict2310/ora/assets/demo.mp4
 - **🔒 Local-First** — On-device inference by default using Apple Silicon acceleration
 - **🎤 Push-to-Talk** — Hotkey activation (⌥Space) with menu bar control
 - **⚡ Streaming Pipeline** — Live transcription, streaming LLM tokens, early TTS start
-- **🤖 Agentic Tools** — Calendar, Reminders, Contacts, and System integrations
+- **🤖 Agentic Tools** — Calendar, Reminders, Contacts, Mail, Messages, Notes, and System integrations
+- **🧩 Skills & Scripts** — Extend Ora with custom workflow playbooks and executable scripts
+- **🧠 Persistent Memory** — Remembers context and preferences across conversations
+- **👁️ Vision Model** — Qwen 3.5 VL with image understanding support
 - **📝 Audit Trail** — Every action logged for transparency
 - **☁️ Optional Cloud Providers** — OpenAI (API key or Codex OAuth) and Anthropic (API key)
 - **🔄 Auto-Updates** — Seamless updates via Sparkle
@@ -120,8 +123,8 @@ Ora uses a streaming pipeline architecture for maximum responsiveness:
 
 1. **Audio Capture** → Real-time microphone input via AVAudioEngine
 2. **ASR** → FluidAudio Parakeet for streaming speech-to-text
-3. **LLM** → MLX Swift with Qwen 3 (on-device), or optional cloud providers (OpenAI/Anthropic)
-4. **Tools** → Native macOS integrations (EventKit, Contacts)
+3. **LLM** → MLX Swift with Qwen 3.5 VL (on-device), or optional cloud providers (OpenAI/Anthropic)
+4. **Tools** → Native macOS integrations (EventKit, Contacts, Mail, Messages, Notes)
 5. **TTS** → Kokoro MLX for natural speech synthesis
 
 **Tech Stack:**
@@ -141,8 +144,8 @@ Ora/
 ├── Ora/                    # Main app source
 │   ├── Audio/              # Audio capture and VAD
 │   ├── ASR/                # Speech recognition (Parakeet)
-│   ├── LLM/                # Language model (Qwen 3)
-│   ├── Tools/              # Calendar, Reminders, Contacts
+│   ├── LLM/                # Language model (Qwen 3.5 VL)
+│   ├── Tools/              # Calendar, Reminders, Contacts, Mail, Messages, Notes, Skills
 │   ├── TTS/                # Text-to-speech (Kokoro)
 │   ├── UI/                 # AppKit + SwiftUI interface
 │   └── Orchestration/      # Core app logic
@@ -227,7 +230,7 @@ Built with these amazing open-source projects:
 - [MLX Swift](https://github.com/ml-explore/mlx-swift) — Apple Silicon ML framework
 - [FluidAudio](https://github.com/FluidInference/FluidAudio) — Streaming ASR
 - [Sparkle](https://github.com/sparkle-project/Sparkle) — Auto-update framework
-- [Qwen 3](https://huggingface.co/Qwen) — Language model
+- [Qwen 3.5 VL](https://huggingface.co/Qwen) — Vision-language model
 - [Kokoro TTS](https://huggingface.co/hexgrad/Kokoro-82M) — Text-to-speech
 
 ---
