@@ -468,7 +468,11 @@ actor AgentLoop {
             await notifyDelegateActivity(.planning)
 
             let messages = await conversationManager.getMessagesForLLM()
-            logger.info("Agent step \(steps): sending \(messages.count) messages to LLM")
+            logger.notice("Agent step \(steps, privacy: .public): sending \(messages.count, privacy: .public) messages to LLM")
+            for (idx, msg) in messages.enumerated() {
+                let preview = String(msg.textContent.prefix(500))
+                logger.notice("  MSG[\(idx, privacy: .public)] role=\(msg.role.rawValue, privacy: .public) len=\(msg.textContent.count, privacy: .public): \(preview, privacy: .public)")
+            }
 
             // Generate structured response
             let output: LLMOutput

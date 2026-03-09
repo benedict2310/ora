@@ -331,7 +331,7 @@ final class ConversationManagerTests: XCTestCase {
         XCTAssertEqual(messageCount, 40, "Default 32K budget should retain all 20 turns")
     }
 
-    func test_memoryContext_whenSet_includesAdditionalSystemMessage() async {
+    func test_memoryContext_whenSet_mergedIntoSystemMessage() async {
         // Given
         let manager = ConversationManager.makeTestInstance(maxContextTokens: 6000)
         await manager.startConversation(systemPrompt: "Base system prompt")
@@ -341,13 +341,12 @@ final class ConversationManagerTests: XCTestCase {
         // When
         let messages = await manager.getMessagesForLLM()
 
-        // Then
-        XCTAssertEqual(messages.count, 3)
+        // Then — memory is merged into the single system message (Qwen drops extra system messages)
+        XCTAssertEqual(messages.count, 2)
         XCTAssertEqual(messages[0].role, .system)
-        XCTAssertEqual(messages[0].content, "Base system prompt")
-        XCTAssertEqual(messages[1].role, .system)
-        XCTAssertEqual(messages[1].content, "Relevant memory chunk")
-        XCTAssertEqual(messages[2].role, .user)
+        XCTAssertTrue(messages[0].content.contains("Base system prompt"))
+        XCTAssertTrue(messages[0].content.contains("Relevant memory chunk"))
+        XCTAssertEqual(messages[1].role, .user)
     }
 
     func test_memoryContext_includedInTokenEstimate() async {

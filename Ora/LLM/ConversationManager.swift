@@ -106,20 +106,24 @@ actor ConversationManager {
     /// - Returns: Array of messages with system prompt as first element
     func getMessagesForLLM() -> [LLMMessage] {
         var result: [LLMMessage] = []
-        
-        // System prompt is always first (AC-1)
-        if !self.systemPrompt.isEmpty {
-            result.append(LLMMessage(role: .system, content: self.systemPrompt))
-        }
 
+        // Merge system prompt and memory context into a single system message.
+        // Qwen's chat template only processes messages[0] for the system role —
+        // any additional system messages are silently dropped during tokenization.
+        // This was the root cause of "Ora doesn't remember my name": the memory
+        // context was sent as a second system message and never reached the model.
+        var systemContent = self.systemPrompt
         if let memoryContext = self.memoryContext,
             !memoryContext.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            result.append(LLMMessage(role: .system, content: memoryContext))
+            systemContent += "\n\n---\n\n" + memoryContext
         }
-        
+        if !systemContent.isEmpty {
+            result.append(LLMMessage(role: .system, content: systemContent))
+        }
+
         // Add conversation messages in order (AC-2)
         result.append(contentsOf: self.messages)
-        
+
         return result
     }
     

@@ -85,6 +85,9 @@ struct KeywordMemoryRetrievalCoordinator: MemoryRetrievalCoordinating {
         // the LLM always knows the user's name, preferences, and key facts even
         // when the query has no keyword overlap with memory entities.
         let memoryFileContent = self.loadMemoryFileContent()
+        self.logger.notice(
+            "Memory retrieval: memoryFileContent=\(memoryFileContent != nil ? "\(memoryFileContent!.count) chars" : "nil", privacy: .public), trigger=\(triggerResult.shouldTrigger, privacy: .public)"
+        )
 
         // Supplementary retrieval (search index + transcripts) is gated on the
         // trigger to avoid unnecessary index queries on simple greetings etc.
@@ -161,8 +164,8 @@ struct KeywordMemoryRetrievalCoordinator: MemoryRetrievalCoordinating {
         }
 
         await conversationManager.setMemoryContext(context)
-        self.logger.debug(
-            "Injected memory context (full MEMORY.md + \(selectedSupplementaryChunks.count) supplementary chunk(s))"
+        self.logger.notice(
+            "Injected memory context (\(context.count, privacy: .public) chars, \(selectedSupplementaryChunks.count, privacy: .public) supplementary chunk(s))"
         )
     }
 
