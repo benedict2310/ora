@@ -47,7 +47,8 @@ final class ModelManagerTests: XCTestCase {
     
     func test_modelIdentifier_isLegacy() {
         XCTAssertFalse(ModelIdentifier.parakeetTDT.isLegacy)
-        XCTAssertTrue(ModelIdentifier.qwen3_4B.isLegacy)
+        XCTAssertTrue(ModelIdentifier.qwen3_4B.isLegacy(on: 32_000_000_000))
+        XCTAssertFalse(ModelIdentifier.qwen3_4B.isLegacy(on: 8_000_000_000))
         XCTAssertFalse(ModelIdentifier.qwen35_4B_Vision.isLegacy)
         XCTAssertFalse(ModelIdentifier.qwen35_8B_Vision.isLegacy)
         XCTAssertFalse(ModelIdentifier.qwen35_32B_Vision.isLegacy)
@@ -57,7 +58,7 @@ final class ModelManagerTests: XCTestCase {
     }
     
     func test_modelIdentifier_activeModels() {
-        let activeModels = ModelIdentifier.activeModels
+        let activeModels = ModelIdentifier.activeModels(for: 32_000_000_000)
         XCTAssertTrue(activeModels.contains(.parakeetTDT))
         XCTAssertTrue(activeModels.contains(.qwen35_4B_Vision))
         XCTAssertTrue(activeModels.contains(.qwen35_8B_Vision))
@@ -66,6 +67,11 @@ final class ModelManagerTests: XCTestCase {
         XCTAssertFalse(activeModels.contains(.qwen3_4B))
         XCTAssertFalse(activeModels.contains(.qwen7B))  // Legacy
         XCTAssertFalse(activeModels.contains(.qwen3B))  // Legacy
+    }
+
+    func test_modelIdentifier_activeModels_includeQwen3FallbackOnLowMemoryHardware() {
+        let activeModels = ModelIdentifier.activeModels(for: 8_000_000_000)
+        XCTAssertTrue(activeModels.contains(.qwen3_4B))
     }
 
     func test_modelIdentifier_requiredFiles() {
@@ -276,6 +282,16 @@ final class ModelManagerTests: XCTestCase {
 
         let recommended = await manager.recommendedLLM()
 
+        XCTAssertEqual(recommended, .recommendedLocalLLM())
+    }
+
+    func test_modelManager_recommendedLLM_fallsBackToLegacyOn8GBHardware() {
+        let recommended = ModelIdentifier.recommendedLocalLLM(for: 8_000_000_000)
+        XCTAssertEqual(recommended, .qwen3_4B)
+    }
+
+    func test_modelManager_recommendedLLM_prefersVisionOnSupportedHardware() {
+        let recommended = ModelIdentifier.recommendedLocalLLM(for: 16_000_000_000)
         XCTAssertEqual(recommended, .qwen35_4B_Vision)
     }
 
@@ -335,7 +351,7 @@ final class ModelManagerTests: XCTestCase {
     }
 
     func test_modelManager_setPrimaryLLM_ignoresNonLLM() async {
-        let manager = ModelManager(downloader: MockModelDownloader())
+        let manager = ModelManager(downloader: MockModelDownloader(), totalRAMBytes: 16_000_000_000)
 
         await manager.setPrimaryLLM(.parakeetTDT) // This should be ignored
 
@@ -344,7 +360,7 @@ final class ModelManagerTests: XCTestCase {
     }
 
     func test_modelManager_setPrimaryLLM_visionBlockedOnUnsupportedHardware() async {
-        let manager = ModelManager(downloader: MockModelDownloader())
+        let manager = ModelManager(downloader: MockModelDownloader(), totalRAMBytes: 16_000_000_000)
 
         await manager.setPrimaryLLM(.qwen35_4B_Vision, totalRAMBytes: 8_000_000_000)
 
@@ -353,7 +369,7 @@ final class ModelManagerTests: XCTestCase {
     }
 
     func test_modelManager_setPrimaryLLM_visionAllowedOnSupportedHardware() async {
-        let manager = ModelManager(downloader: MockModelDownloader())
+        let manager = ModelManager(downloader: MockModelDownloader(), totalRAMBytes: 16_000_000_000)
 
         await manager.setPrimaryLLM(.qwen35_4B_Vision, totalRAMBytes: 16_000_000_000)
 
@@ -362,7 +378,7 @@ final class ModelManagerTests: XCTestCase {
     }
 
     func test_modelManager_setPrimaryLLM_8BBlockedOnUnsupportedHardware() async {
-        let manager = ModelManager(downloader: MockModelDownloader())
+        let manager = ModelManager(downloader: MockModelDownloader(), totalRAMBytes: 16_000_000_000)
 
         await manager.setPrimaryLLM(.qwen35_8B_Vision, totalRAMBytes: 16_000_000_000)
 
@@ -371,7 +387,7 @@ final class ModelManagerTests: XCTestCase {
     }
 
     func test_modelManager_setPrimaryLLM_32BBlockedOnUnsupportedHardware() async {
-        let manager = ModelManager(downloader: MockModelDownloader())
+        let manager = ModelManager(downloader: MockModelDownloader(), totalRAMBytes: 16_000_000_000)
 
         await manager.setPrimaryLLM(.qwen35_32B_Vision, totalRAMBytes: 32_000_000_000)
 
@@ -391,7 +407,7 @@ final class ModelManagerTests: XCTestCase {
         let mock = MockModelDownloader()
         mock.existingModels = [.parakeetTDT, .qwen35_4B_Vision, .kokoro]
 
-        let manager = ModelManager(downloader: mock)
+        let manager = ModelManager(downloader: mock, totalRAMBytes: 16_000_000_000)
 
         let available = await manager.requiredModelsAvailable()
 

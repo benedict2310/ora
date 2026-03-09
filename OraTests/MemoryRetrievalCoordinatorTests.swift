@@ -10,15 +10,26 @@ import XCTest
 
 actor StubMemoryIndex: MemoryIndexing {
     private let chunks: [MemoryChunk]
+    private let transcriptChunks: [MemoryChunk]
 
-    init(chunks: [MemoryChunk]) {
+    init(chunks: [MemoryChunk], transcriptChunks: [MemoryChunk] = []) {
         self.chunks = chunks
+        self.transcriptChunks = transcriptChunks
     }
 
     func rebuild() async {}
 
     func search(query: String, limit: Int) async -> [MemoryChunk] {
         return Array(self.chunks.prefix(limit))
+    }
+
+    func searchTranscriptFallback(
+        query: String,
+        summarySessionIDs: [UUID],
+        recentSessionLimit: Int,
+        limit: Int
+    ) async -> [MemoryChunk] {
+        return Array(self.transcriptChunks.prefix(limit))
     }
 }
 
@@ -109,11 +120,11 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
         )
         let messages = await conversationManager.getMessagesForLLM()
 
-        // Then
-        XCTAssertEqual(messages.count, 2)
-        XCTAssertEqual(messages[1].role, .system)
+        // Then — memory is merged into the single system message (Qwen drops extra system messages)
+        XCTAssertEqual(messages.count, 1)
+        XCTAssertEqual(messages[0].role, .system)
 
-        let context = messages[1].content
+        let context = messages[0].content
         XCTAssertTrue(context.contains("MEMORY.md"))
         XCTAssertTrue(context.contains("TestUser"))
         XCTAssertTrue(context.contains("Additional context from prior sessions"))
@@ -166,11 +177,11 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
         let messages = await conversationManager.getMessagesForLLM()
 
         // Then
-        XCTAssertEqual(messages.count, 2)
-        XCTAssertEqual(messages[1].role, .system)
-        XCTAssertTrue(messages[1].content.contains("MEMORY.md"))
-        XCTAssertTrue(messages[1].content.contains("TestUser"))
-        XCTAssertTrue(messages[1].content.contains("Likes unit tests"))
+        XCTAssertEqual(messages.count, 1)
+        XCTAssertEqual(messages[0].role, .system)
+        XCTAssertTrue(messages[0].content.contains("MEMORY.md"))
+        XCTAssertTrue(messages[0].content.contains("TestUser"))
+        XCTAssertTrue(messages[0].content.contains("Likes unit tests"))
     }
 
     func test_prepareRetrieval_topScoreBelowThreshold_stillInjectsFullMemory() async {
@@ -224,12 +235,12 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
         let messages = await conversationManager.getMessagesForLLM()
 
         // Then — full MEMORY.md is injected even though search scores are low
-        XCTAssertEqual(messages.count, 2)
-        XCTAssertEqual(messages[1].role, .system)
-        XCTAssertTrue(messages[1].content.contains("MEMORY.md"))
-        XCTAssertTrue(messages[1].content.contains("TestUser"))
+        XCTAssertEqual(messages.count, 1)
+        XCTAssertEqual(messages[0].role, .system)
+        XCTAssertTrue(messages[0].content.contains("MEMORY.md"))
+        XCTAssertTrue(messages[0].content.contains("TestUser"))
         // No supplementary chunks since scores are below threshold
-        XCTAssertFalse(messages[1].content.contains("Additional context"))
+        XCTAssertFalse(messages[0].content.contains("Additional context"))
     }
 
     func test_prepareRetrieval_oversizedMemoryFile_isTruncated() async {
@@ -261,15 +272,16 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
         let messages = await conversationManager.getMessagesForLLM()
 
         // Then — content is capped with head+tail and omission marker is present
-        XCTAssertEqual(messages.count, 2)
-        let context = messages[1].content
+        XCTAssertEqual(messages.count, 1)
+        let context = messages[0].content
         XCTAssertTrue(context.contains("characters omitted"))
         // The raw oversized content should NOT appear in full
         XCTAssertFalse(context.contains(oversizedContent))
     }
 
-    func test_prepareRetrieval_notTriggered_doesNotInjectContext() async {
-        // Given
+    func test_prepareRetrieval_notTriggered_stillInjectsMemoryFile() async {
+        // Given — trigger doesn't fire, but MEMORY.md should still be injected
+        // so the LLM always knows the user's name, preferences, etc.
         let conversationManager = ConversationManager.makeTestInstance(maxContextTokens: 6000)
         await conversationManager.startConversation(systemPrompt: "System prompt")
 
@@ -292,9 +304,186 @@ final class MemoryRetrievalCoordinatorTests: XCTestCase {
         )
         let messages = await conversationManager.getMessagesForLLM()
 
-        // Then — no trigger means no context injected
+        // Then — MEMORY.md is merged into system prompt, no supplementary chunks
+        XCTAssertEqual(messages.count, 1)
+        XCTAssertEqual(messages[0].role, .system)
+        XCTAssertTrue(messages[0].content.contains("MEMORY.md"))
+        XCTAssertTrue(messages[0].content.contains("TestUser"))
+        XCTAssertFalse(messages[0].content.contains("Additional context"))
+    }
+
+    func test_prepareRetrieval_multiTurn_memoryPersistsWhenTriggerStops() async {
+        // Regression test: the user's name should remain available even when
+        // a follow-up turn has no keyword overlap with memory entities.
+        // This was the root cause of "Ora doesn't remember my name anymore".
+        let now = Date(timeIntervalSince1970: 1_739_599_200)
+        let chunks: [MemoryChunk] = [
+            MemoryChunk(
+                content: "User prefers dark mode.",
+                documentType: .summary,
+                sessionID: UUID(),
+                sectionName: "Preferences",
+                lastModified: now,
+                score: 4.50
+            )
+        ]
+
+        let conversationManager = ConversationManager.makeTestInstance(maxContextTokens: 6000)
+        await conversationManager.startConversation(systemPrompt: "System prompt")
+
+        let coordinator = KeywordMemoryRetrievalCoordinator(
+            memoryIndex: StubMemoryIndex(chunks: chunks),
+            memoryFileURL: self.temporaryMemoryFileURL,
+            configuration: .default
+        )
+
+        // Turn 1: trigger fires (e.g., "do you remember my name?")
+        let triggeredResult = MemoryTriggerResult(
+            shouldTrigger: true,
+            confidence: 0.92,
+            triggerType: .linguistic,
+            matchedSignals: ["remember"]
+        )
+        await coordinator.prepareRetrievalIfNeeded(
+            userText: "do you remember my name?",
+            triggerResult: triggeredResult,
+            conversationManager: conversationManager
+        )
+        let turn1Messages = await conversationManager.getMessagesForLLM()
+        XCTAssertTrue(turn1Messages.contains { $0.content.contains("TestUser") },
+                       "Turn 1: MEMORY.md with user name should be injected")
+
+        // Turn 2: trigger does NOT fire (e.g., "tell me a joke")
+        let notTriggeredResult = MemoryTriggerResult(
+            shouldTrigger: false,
+            confidence: 0.0,
+            triggerType: .none,
+            matchedSignals: []
+        )
+        await coordinator.prepareRetrievalIfNeeded(
+            userText: "tell me a joke",
+            triggerResult: notTriggeredResult,
+            conversationManager: conversationManager
+        )
+        let turn2Messages = await conversationManager.getMessagesForLLM()
+        XCTAssertTrue(turn2Messages.contains { $0.content.contains("TestUser") },
+                       "Turn 2: MEMORY.md should still be injected even without trigger")
+        XCTAssertFalse(turn2Messages.contains { $0.content.contains("Additional context") },
+                        "Turn 2: no supplementary chunks without trigger")
+    }
+
+    func test_prepareRetrieval_notTriggered_doesNotQueryIndex() async {
+        // Given — trigger doesn't fire; supplementary chunks exist in the index
+        // but should NOT be retrieved (avoids unnecessary index queries).
+        let now = Date(timeIntervalSince1970: 1_739_599_200)
+        let chunks: [MemoryChunk] = [
+            MemoryChunk(
+                content: "Sensitive project detail from prior session.",
+                documentType: .summary,
+                sessionID: UUID(),
+                sectionName: "Projects",
+                lastModified: now,
+                score: 5.0
+            )
+        ]
+
+        let conversationManager = ConversationManager.makeTestInstance(maxContextTokens: 6000)
+        await conversationManager.startConversation(systemPrompt: "System prompt")
+
+        let coordinator = KeywordMemoryRetrievalCoordinator(
+            memoryIndex: StubMemoryIndex(chunks: chunks),
+            memoryFileURL: self.temporaryMemoryFileURL,
+            configuration: .default
+        )
+        let triggerResult = MemoryTriggerResult(
+            shouldTrigger: false,
+            confidence: 0.0,
+            triggerType: .none,
+            matchedSignals: []
+        )
+
+        // When
+        await coordinator.prepareRetrievalIfNeeded(
+            userText: "good morning",
+            triggerResult: triggerResult,
+            conversationManager: conversationManager
+        )
+        let messages = await conversationManager.getMessagesForLLM()
+
+        // Then — MEMORY.md merged into system prompt, but supplementary chunks NOT included
+        XCTAssertEqual(messages.count, 1)
+        XCTAssertTrue(messages[0].content.contains("TestUser"))
+        XCTAssertFalse(messages[0].content.contains("Sensitive project detail"),
+                        "Supplementary chunks should not be included when trigger doesn't fire")
+    }
+
+    func test_prepareRetrieval_notTriggered_missingMemoryFile_doesNotInjectContext() async {
+        // Given — trigger doesn't fire AND memory file doesn't exist
+        let conversationManager = ConversationManager.makeTestInstance(maxContextTokens: 6000)
+        await conversationManager.startConversation(systemPrompt: "System prompt")
+
+        let missingURL = self.temporaryDirectoryURL.appendingPathComponent("nonexistent-MEMORY.md")
+        let coordinator = KeywordMemoryRetrievalCoordinator(
+            memoryIndex: StubMemoryIndex(chunks: []),
+            memoryFileURL: missingURL
+        )
+        let triggerResult = MemoryTriggerResult(
+            shouldTrigger: false,
+            confidence: 0.0,
+            triggerType: .none,
+            matchedSignals: []
+        )
+
+        // When
+        await coordinator.prepareRetrievalIfNeeded(
+            userText: "hello",
+            triggerResult: triggerResult,
+            conversationManager: conversationManager
+        )
+        let messages = await conversationManager.getMessagesForLLM()
+
+        // Then — no memory file means just the system prompt
         XCTAssertEqual(messages.count, 1)
         XCTAssertEqual(messages[0].role, .system)
         XCTAssertEqual(messages[0].content, "System prompt")
+    }
+
+    func test_prepareRetrieval_memoryMergedIntoSystemMessage() async {
+        // Regression: Qwen's chat template only processes messages[0] for
+        // the system role — additional system messages are silently dropped.
+        // Memory context MUST be merged into the first system message.
+        let conversationManager = ConversationManager.makeTestInstance(maxContextTokens: 6000)
+        await conversationManager.startConversation(systemPrompt: "System prompt")
+
+        let coordinator = KeywordMemoryRetrievalCoordinator(
+            memoryIndex: StubMemoryIndex(chunks: []),
+            memoryFileURL: self.temporaryMemoryFileURL
+        )
+        let triggerResult = MemoryTriggerResult(
+            shouldTrigger: true,
+            confidence: 0.90,
+            triggerType: .linguistic,
+            matchedSignals: ["name"]
+        )
+
+        // When
+        await coordinator.prepareRetrievalIfNeeded(
+            userText: "what's my name?",
+            triggerResult: triggerResult,
+            conversationManager: conversationManager
+        )
+        let messages = await conversationManager.getMessagesForLLM()
+
+        // Then — exactly 1 system message containing BOTH prompt and memory
+        XCTAssertEqual(messages.count, 1)
+        XCTAssertEqual(messages[0].role, .system)
+        XCTAssertTrue(messages[0].content.contains("System prompt"),
+                       "System prompt must be present in merged message")
+        XCTAssertTrue(messages[0].content.contains("TestUser"),
+                       "Memory context must be merged into the same system message")
+        // No second system message
+        let systemMessages = messages.filter { $0.role == .system }
+        XCTAssertEqual(systemMessages.count, 1,
+                        "Must be exactly 1 system message — Qwen drops additional ones")
     }
 }

@@ -274,7 +274,8 @@ final class StatusBarControllerTests: XCTestCase {
         controller.triggerMenuUpdate()
 
         let titles = controller.menuItemTitles
-        let headerItems = titles.filter { $0.contains("Local (On-Device)") && $0.contains("Qwen3 VL 4B") }
+        let expectedLocalModel = ModelIdentifier.recommendedLocalLLM().displayName
+        let headerItems = titles.filter { $0.contains("Local (On-Device)") && $0.contains(expectedLocalModel) }
         XCTAssertEqual(headerItems.count, 1, "Submenu should show active provider and model")
 
         controller.shutdown()

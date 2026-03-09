@@ -36,10 +36,10 @@ struct SkillsRunScriptTool: Tool {
             description: "Run a script from a skill's scripts folder. Call skills.load first to learn the expected arguments.",
             parameters: [
                 "skill_id": ParameterSchema(type: "string", description: "Skill id or spoken skill name"),
-                "script": ParameterSchema(type: "string", description: "Script filename relative to scripts/"),
+                "script": ParameterSchema(type: "string", description: "Script filename relative to scripts/. If omitted and the skill has exactly one script, it is used automatically."),
                 "args": ParameterSchema(type: "array", description: "Positional string arguments for the script")
             ],
-            requiredParameters: ["skill_id", "script"],
+            requiredParameters: ["skill_id"],
             requiresConfirmation: false
         )
     }
@@ -50,11 +50,7 @@ struct SkillsRunScriptTool: Tool {
             throw ToolHostError.validationFailed(self.name, "Missing required parameter: skill_id")
         }
 
-        guard let script = args["script"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !script.isEmpty else {
-            throw ToolHostError.validationFailed(self.name, "Missing required parameter: script")
-        }
-
+        // script is optional at validation time — resolved in execute() if missing
         if let values = args["args"] {
             guard case .array(let items) = values else {
                 throw ToolHostError.validationFailed(self.name, "args must be an array of strings")
@@ -67,10 +63,10 @@ struct SkillsRunScriptTool: Tool {
 
     func authorizationPlan(args: [String: JSONValue]) async throws -> ToolAuthorizationPlan {
         let requestedSkillID = args["skill_id"]?.stringValue ?? ""
-        let scriptName = args["script"]?.stringValue ?? ""
         let scriptArgs = Self.argumentValues(from: args)
 
         let metadata = try await self.skillStore.metadata(id: requestedSkillID)
+        let scriptName = try await self.resolveScriptName(from: args, metadata: metadata)
         let manifest = try await self.skillStore.scriptManifest(id: metadata.id)
         let scriptURL = try self.sandbox.resolve(skillRoot: metadata.rootURL, scriptPath: scriptName)
         let scriptHash = try self.sandbox.scriptHash(at: scriptURL)
@@ -129,10 +125,10 @@ struct SkillsRunScriptTool: Tool {
         try await SkillsFeatureGate.requireEnabled()
 
         let requestedSkillID = args["skill_id"]?.stringValue ?? ""
-        let requestedScript = args["script"]?.stringValue ?? ""
         let scriptArgs = Self.argumentValues(from: args)
 
         let metadata = try await self.skillStore.metadata(id: requestedSkillID)
+        let requestedScript = try await self.resolveScriptName(from: args, metadata: metadata)
         let manifest = try await self.skillStore.scriptManifest(id: metadata.id)
         let scriptURL = try self.sandbox.resolve(skillRoot: metadata.rootURL, scriptPath: requestedScript)
         let config = manifest.config(for: scriptURL.lastPathComponent)
@@ -250,6 +246,35 @@ struct SkillsRunScriptTool: Tool {
             return .null
         default:
             return .string(String(describing: any))
+        }
+    }
+
+    /// Resolves the script name from args, auto-selecting the only script if omitted.
+    private func resolveScriptName(from args: [String: JSONValue], metadata: SkillMetadata) async throws -> String {
+        if let explicit = args["script"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !explicit.isEmpty {
+            return explicit
+        }
+
+        let scriptFiles = (try? await self.skillStore.scriptFiles(id: metadata.id)) ?? []
+        let scriptNames = scriptFiles.map { $0.lastPathComponent }
+
+        if scriptNames.count == 1 {
+            return scriptNames[0]
+        } else if scriptNames.isEmpty {
+            throw ScriptToolFailure(
+                message: "Skill '\(metadata.name)' has no scripts to run.",
+                payload: ["skill_id": .string(metadata.id)]
+            )
+        } else {
+            let listing = scriptNames.sorted().joined(separator: ", ")
+            throw ScriptToolFailure(
+                message: "Missing required parameter: script. Skill '\(metadata.name)' has multiple scripts: \(listing). Specify which one to run.",
+                payload: [
+                    "skill_id": .string(metadata.id),
+                    "available_scripts": .array(scriptNames.sorted().map { .string($0) })
+                ]
+            )
         }
     }
 

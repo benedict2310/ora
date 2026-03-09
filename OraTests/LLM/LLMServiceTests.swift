@@ -35,6 +35,16 @@ final class LLMServiceTests: XCTestCase {
     func testMemoryCheckLogic() {
         // Since we cannot easily mock ProcessInfo, we just verify the helper method exists and returns a valid identifier
         let recommended = LLMService.recommendedModel()
+        XCTAssertEqual(recommended, .recommendedLocalLLM())
+    }
+
+    func testMemoryCheckLogic_fallsBackToLegacyOn8GBHardware() {
+        let recommended = LLMService.recommendedModel(totalRAMBytes: 8_000_000_000)
+        XCTAssertEqual(recommended, .qwen3_4B)
+    }
+
+    func testMemoryCheckLogic_prefersVisionOnSupportedHardware() {
+        let recommended = LLMService.recommendedModel(totalRAMBytes: 16_000_000_000)
         XCTAssertEqual(recommended, .qwen35_4B_Vision)
     }
 

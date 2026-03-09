@@ -113,6 +113,64 @@ final class SkillsRunScriptToolTests: XCTestCase {
         XCTAssertEqual(payload["output"]?.objectValue?["ok"]?.boolValue, true)
     }
 
+    func test_execute_autoResolvesScriptWhenOmitted() async throws {
+        let tool = SkillsRunScriptTool(skillStore: self.store)
+
+        // bundled-script has exactly one script (echo.sh), so omitting "script" should auto-resolve
+        let result = try await tool.execute(args: [
+            "skill_id": .string("bundled-script")
+        ])
+
+        guard case .object(let payload) = result.json else {
+            return XCTFail("Expected object payload")
+        }
+
+        XCTAssertEqual(payload["exit_code"]?.numberValue, 0)
+        XCTAssertEqual(payload["script"]?.stringValue, "echo.sh")
+        XCTAssertEqual(payload["stdout"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), "hello")
+    }
+
+    func test_execute_multipleScripts_failsWithListing() async throws {
+        // Create a skill with two scripts
+        try self.writeSkill(
+            root: self.bundledRoot,
+            id: "multi-script",
+            scriptName: "first.sh",
+            scriptContents: "#!/bin/bash\necho first\n"
+        )
+        let secondScriptsDir = self.bundledRoot
+            .appendingPathComponent("multi-script", isDirectory: true)
+            .appendingPathComponent("scripts", isDirectory: true)
+        try "#!/bin/bash\necho second\n".write(
+            to: secondScriptsDir.appendingPathComponent("second.sh"),
+            atomically: true,
+            encoding: .utf8
+        )
+        await self.store.rebuildIndex()
+
+        let tool = SkillsRunScriptTool(skillStore: self.store)
+
+        do {
+            _ = try await tool.execute(args: [
+                "skill_id": .string("multi-script")
+            ])
+            XCTFail("Expected error for multiple scripts without specifying which one")
+        } catch {
+            let message = error.localizedDescription
+            XCTAssertTrue(message.contains("first.sh"), "Error should list available scripts")
+            XCTAssertTrue(message.contains("second.sh"), "Error should list available scripts")
+        }
+    }
+
+    func test_validate_succeedsWithoutScript() throws {
+        let tool = SkillsRunScriptTool(skillStore: self.store)
+
+        // Should not throw — script is now optional at validation time
+        try tool.validate(args: [
+            "skill_id": .string("bundled-script")
+        ])
+    }
+
     private func writeSkill(
         root: URL,
         id: String,

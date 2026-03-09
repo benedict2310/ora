@@ -39,15 +39,26 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
     
     /// Whether this is a legacy model that should trigger migration
     var isLegacy: Bool {
+        return self.isLegacy(on: ProcessInfo.processInfo.physicalMemory)
+    }
+
+    func isLegacy(on totalRAMBytes: UInt64) -> Bool {
         switch self {
-        case .qwen3_4B, .qwen7B, .qwen3B: return true
+        case .qwen3_4B:
+            return ModelIdentifier.qwen35_4B_Vision.isSupported(on: totalRAMBytes)
+        case .qwen7B, .qwen3B:
+            return true
         default: return false
         }
     }
     
     /// All active (non-legacy) models
     static var activeModels: [ModelIdentifier] {
-        return allCases.filter { !$0.isLegacy }
+        return activeModels(for: ProcessInfo.processInfo.physicalMemory)
+    }
+
+    static func activeModels(for totalRAMBytes: UInt64) -> [ModelIdentifier] {
+        return allCases.filter { !$0.isLegacy(on: totalRAMBytes) }
     }
 
     var category: ModelCategory {
@@ -265,6 +276,15 @@ enum ModelIdentifier: String, Codable, Sendable, CaseIterable {
         return totalRAMBytes >= minimumSupportedRAMBytes
     }
 
+    static func recommendedLocalLLM(
+        for totalRAMBytes: UInt64 = ProcessInfo.processInfo.physicalMemory
+    ) -> ModelIdentifier {
+        if ModelIdentifier.qwen35_4B_Vision.isSupported(on: totalRAMBytes) {
+            return .qwen35_4B_Vision
+        }
+        return .qwen3_4B
+    }
+
     var sizeDisplay: String {
         switch self {
         case .parakeetTDT:
@@ -347,7 +367,7 @@ struct ModelMetadata: Codable, Sendable, Equatable {
 struct ModelsState: Sendable, Equatable {
     var statuses: [ModelIdentifier: ModelStatus] = [:]
     var metadata: [ModelIdentifier: ModelMetadata] = [:]
-    var primaryLLM: ModelIdentifier = .qwen35_4B_Vision
+    var primaryLLM: ModelIdentifier = .recommendedLocalLLM()
     
     // MARK: - Download Progress Metrics (Unified Tracking)
     
@@ -368,7 +388,7 @@ struct ModelsState: Sendable, Equatable {
     /// Whether legacy Qwen 2.5 models are detected (for migration prompts)
     var hasLegacyModels: Bool {
         for model in [ModelIdentifier.qwen3_4B, .qwen7B, .qwen3B] {
-            if statuses[model]?.isReady == true {
+            if model.isLegacy, statuses[model]?.isReady == true {
                 return true
             }
         }

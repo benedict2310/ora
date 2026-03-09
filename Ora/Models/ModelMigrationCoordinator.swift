@@ -111,6 +111,7 @@ final class ModelMigrationCoordinator: ObservableObject {
     private weak var overlayPresenter: (any ModelMigrationOverlayPresenting)?
     private let notificationDeliverer: any ModelMigrationNotificationDelivering
     private let userDefaults: UserDefaults
+    private let totalRAMBytes: UInt64
     private var migrationTask: Task<Void, Never>?
     private var clearSuccessNoticeTask: Task<Void, Never>?
 
@@ -121,12 +122,14 @@ final class ModelMigrationCoordinator: ObservableObject {
         modelManager: any ModelMigrationModelManaging = ModelManager.shared,
         overlayPresenter: (any ModelMigrationOverlayPresenting)? = OverlayWindowController.shared.model,
         notificationDeliverer: any ModelMigrationNotificationDelivering = UserNotificationMigrationNotifier(),
-        userDefaults: UserDefaults = .standard
+        userDefaults: UserDefaults = .standard,
+        totalRAMBytes: UInt64 = ProcessInfo.processInfo.physicalMemory
     ) {
         self.modelManager = modelManager
         self.overlayPresenter = overlayPresenter
         self.notificationDeliverer = notificationDeliverer
         self.userDefaults = userDefaults
+        self.totalRAMBytes = totalRAMBytes
     }
 
     var manualRetryRequired: Bool {
@@ -159,6 +162,11 @@ final class ModelMigrationCoordinator: ObservableObject {
                 self.userDefaults.set(true, forKey: Self.completionKey)
                 self.userDefaults.set(false, forKey: Self.manualRetryRequiredKey)
             }
+            return
+        }
+
+        guard ModelIdentifier.qwen35_4B_Vision.isSupported(on: self.totalRAMBytes) else {
+            self.completeUnsupportedHardwareSkip()
             return
         }
 
@@ -214,9 +222,15 @@ final class ModelMigrationCoordinator: ObservableObject {
 
     private func completeMigration(shouldNotify: Bool) async {
         self.migrationTask = nil
+        await self.modelManager.setPrimaryLLM(.qwen35_4B_Vision, totalRAMBytes: self.totalRAMBytes)
+        let state = await self.modelManager.currentState()
+        guard state.primaryLLM == .qwen35_4B_Vision else {
+            await self.failMigration(error: MigrationError.primarySwitchFailed)
+            return
+        }
+
         self.userDefaults.set(true, forKey: Self.completionKey)
         self.userDefaults.set(false, forKey: Self.manualRetryRequiredKey)
-        await self.modelManager.setPrimaryLLM(.qwen35_4B_Vision, totalRAMBytes: ProcessInfo.processInfo.physicalMemory)
 
         self.status = .completed
         self.overlayPresenter?.showMigrationNotice(
@@ -235,6 +249,15 @@ final class ModelMigrationCoordinator: ObservableObject {
 
         self.scheduleSuccessNoticeClear()
         self.logger.info("Model migration completed successfully")
+    }
+
+    private func completeUnsupportedHardwareSkip() {
+        self.migrationTask = nil
+        self.status = .idle
+        self.userDefaults.set(true, forKey: Self.completionKey)
+        self.userDefaults.set(false, forKey: Self.manualRetryRequiredKey)
+        self.overlayPresenter?.clearMigrationNotice()
+        self.logger.info("Skipping Qwen3 VL 4B migration because this Mac does not meet the 16 GB RAM requirement")
     }
 
     private func cancelMigration() async {
@@ -285,4 +308,8 @@ final class ModelMigrationCoordinator: ObservableObject {
             message: "Upgrading local model to Qwen3 VL 4B (\(percent)% complete)."
         )
     }
+}
+
+private enum MigrationError: Error {
+    case primarySwitchFailed
 }

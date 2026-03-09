@@ -43,7 +43,7 @@ struct ModelsPreferencesView: View {
             }
 
             Section {
-                ForEach(ModelIdentifier.activeModels.filter { $0.category == .llm }, id: \.self) { model in
+                ForEach(ModelIdentifier.activeModels(for: self.totalRAMBytes).filter { $0.category == .llm }, id: \.self) { model in
                     let isPrimarySelectionSupported = model.isSupported(on: self.totalRAMBytes)
                     let primarySelectionGuidance = self.primarySelectionGuidance(for: model, isPrimarySelectionSupported: isPrimarySelectionSupported)
                     ModelRowView(
@@ -89,9 +89,9 @@ struct ModelsPreferencesView: View {
             }
             
             // Show legacy models section if any are present
-            if modelsState.hasLegacyModels {
+            if !self.visibleLegacyModels.isEmpty {
                 Section {
-                    ForEach(ModelIdentifier.allCases.filter { $0.isLegacy && modelsState.statuses[$0]?.isReady == true }, id: \.self) { model in
+                    ForEach(self.visibleLegacyModels, id: \.self) { model in
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(model.displayName)
@@ -280,6 +280,12 @@ struct ModelsPreferencesView: View {
         }
 
         return "Choose the fastest model your Mac can comfortably run. Larger variants trade speed for higher quality."
+    }
+
+    private var visibleLegacyModels: [ModelIdentifier] {
+        return ModelIdentifier.allCases.filter {
+            $0.isLegacy(on: self.totalRAMBytes) && self.modelsState.statuses[$0]?.isReady == true
+        }
     }
 }
 

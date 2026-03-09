@@ -29,7 +29,8 @@ Add or remove details that you want Ora to remember long-term.
 """
 
     private static let writeLock = NSLock()
-    private static let fuzzyDedupThreshold = 0.85
+    private static let fuzzyDedupThreshold = 0.95
+    private static let containmentDedupMinLength = 20
 
     // MARK: - Properties
 
@@ -244,30 +245,52 @@ Add or remove details that you want Ora to remember long-term.
                 seenKeys.insert(key)
             }
 
-            if entry.normalizedKeyToken == nil {
-                let existingContent = seenSectionContentBySection[entry.section] ?? []
-                let normalizedContent = MemoryEntry.normalizeForDedup(entry.content)
-                if self.hasFuzzyDuplicate(normalizedContent, against: existingContent) {
-                    continue
-                }
+            // Always run fuzzy dedup against existing entries regardless of
+            // normalizedKey. Previously this was gated on normalizedKeyToken == nil
+            // which allowed near-duplicate entries to accumulate across sessions
+            // when the distiller assigned different keys.
+            let existingContent = seenSectionContentBySection[entry.section] ?? []
+            let normalizedContent = MemoryEntry.normalizeForDedup(entry.content)
+            if self.hasFuzzyDuplicate(normalizedContent, against: existingContent) {
+                continue
             }
 
             output.append(entry)
             seenFingerprints.insert(fingerprint)
-            seenSectionContentBySection[entry.section, default: []].append(MemoryEntry.normalizeForDedup(entry.content))
+            seenSectionContentBySection[entry.section, default: []].append(normalizedContent)
         }
 
         return output
     }
 
     private static func hasFuzzyDuplicate(_ normalizedContent: String, against candidates: [String]) -> Bool {
+        let strippedContent = Self.stripPunctuation(normalizedContent)
+
         for candidate in candidates {
+            // Containment check: if one entry's core text is a substring of the
+            // other, it's a duplicate (e.g., "user sent a message to alex" vs
+            // "user sent a message to alex, which was successfully delivered").
+            // Punctuation is stripped so that "alex." matches "alex," etc.
+            let strippedCandidate = Self.stripPunctuation(candidate)
+            if strippedContent.count >= Self.containmentDedupMinLength
+                || strippedCandidate.count >= Self.containmentDedupMinLength {
+                if strippedCandidate.contains(strippedContent) || strippedContent.contains(strippedCandidate) {
+                    return true
+                }
+            }
+
             let similarity = StringSimilarity.jaroWinkler(normalizedContent, candidate)
             if similarity >= Self.fuzzyDedupThreshold {
                 return true
             }
         }
         return false
+    }
+
+    private static func stripPunctuation(_ text: String) -> String {
+        text.unicodeScalars.filter { !CharacterSet.punctuationCharacters.contains($0) }
+            .map { String($0) }
+            .joined()
     }
 
     private static func existingEntryFingerprints(in lines: [String]) -> Set<String> {

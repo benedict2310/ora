@@ -49,12 +49,12 @@ struct SetupState: Sendable {
     var downloadProgress: Double = 0  // Overall progress for backward compatibility
     var downloadingModel: String? = nil  // Currently downloading model name
     var downloadError: String? = nil  // Error message
-    var primaryLLM: ModelIdentifier = .qwen35_4B_Vision  // The actual LLM being downloaded
+    var primaryLLM: ModelIdentifier = .recommendedLocalLLM()  // The actual LLM being downloaded
     var downloadWasCancelled: Bool = false  // Cancellation flag
 
     // System info
     var systemRAMGB: Int = 0
-    var recommendedModel: String = "Qwen3 VL 4B"
+    var recommendedModel: String = ModelIdentifier.recommendedLocalLLM().displayName
 
     // MARK: - Helpers
 
@@ -70,7 +70,7 @@ struct SetupState: Sendable {
 
     /// Total size of all models to download (for display)
     static var totalModelSizeDisplay: String {
-        return totalModelSizeDisplay(for: .qwen35_4B_Vision)
+        return totalModelSizeDisplay(for: .recommendedLocalLLM())
     }
 
     static func totalModelSizeDisplay(for primaryLLM: ModelIdentifier) -> String {

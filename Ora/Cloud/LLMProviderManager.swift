@@ -104,7 +104,7 @@ actor LLMProviderManager: LLMServicing {
     func getSelectedModelIdentifier(for provider: LLMProviderType) -> String {
         switch provider {
         case .local:
-            return ModelIdentifier.qwen35_4B_Vision.rawValue
+            return ModelIdentifier.recommendedLocalLLM().rawValue
         case .anthropic:
             return UserDefaults.standard.selectedAnthropicModel.rawValue
         case .openai:
@@ -116,7 +116,7 @@ actor LLMProviderManager: LLMServicing {
     func getSelectedModelDisplayName(for provider: LLMProviderType) -> String {
         switch provider {
         case .local:
-            return ModelIdentifier.qwen35_4B_Vision.displayName
+            return ModelIdentifier.recommendedLocalLLM().displayName
         case .anthropic:
             return UserDefaults.standard.selectedAnthropicModel.displayName
         case .openai:
@@ -166,9 +166,10 @@ actor LLMProviderManager: LLMServicing {
         do {
             try await self.ensureCredentialExists(for: selectedType)
         } catch {
+            let localModelName = ModelIdentifier.recommendedLocalLLM().displayName
             return await self.fallbackToLocal(
                 reason: "Missing credential for \(selectedType.rawValue): \(error.localizedDescription)",
-                guidance: "\(selectedType.displayName) is not configured. I switched to Local (Qwen3 VL 4B). Open Preferences > Providers to reconnect."
+                guidance: "\(selectedType.displayName) is not configured. I switched to Local (\(localModelName)). Open Preferences > Providers to reconnect."
             )
         }
 
@@ -180,9 +181,10 @@ actor LLMProviderManager: LLMServicing {
             }
             return .ready
         } catch {
+            let localModelName = ModelIdentifier.recommendedLocalLLM().displayName
             return await self.fallbackToLocal(
                 reason: "Provider preflight failed for \(selectedType.rawValue): \(error.localizedDescription)",
-                guidance: "I could not connect to \(selectedType.displayName), so I switched to Local (Qwen3 VL 4B). Open Preferences > Providers to fix the connection."
+                guidance: "I could not connect to \(selectedType.displayName), so I switched to Local (\(localModelName)). Open Preferences > Providers to fix the connection."
             )
         }
     }

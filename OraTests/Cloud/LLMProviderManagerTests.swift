@@ -147,9 +147,11 @@ final class LLMProviderManagerTests: XCTestCase {
 
     func test_capabilities_defaultLocalProvider_reportsVisionSupport() async {
         let capabilities = await self.manager.capabilities()
+        let recommendedModel = ModelIdentifier.recommendedLocalLLM()
 
         XCTAssertTrue(capabilities.supportsTextInput)
-        XCTAssertTrue(capabilities.supportsImageInput)
+        // Vision support depends on hardware — only available when recommended model supports images
+        XCTAssertEqual(capabilities.supportsImageInput, recommendedModel.supportsImageInput)
     }
 
     func test_capabilities_passThroughFromActiveProvider() async throws {

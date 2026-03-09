@@ -156,10 +156,10 @@ final class TranscriptRetrievalTests: XCTestCase {
         XCTAssertEqual(snapshot.summarySessionIDs, [summarySessionID])
 
         let messages = await conversationManager.getMessagesForLLM()
-        XCTAssertEqual(messages.count, 2)
-        XCTAssertTrue(messages[1].content.contains("MEMORY.md"))
-        XCTAssertTrue(messages[1].content.contains("transcript \(summarySessionID.uuidString) turn 4"))
-        XCTAssertTrue(messages[1].content.contains("rollback risk was lower"))
+        XCTAssertEqual(messages.count, 1)
+        XCTAssertTrue(messages[0].content.contains("MEMORY.md"))
+        XCTAssertTrue(messages[0].content.contains("transcript \(summarySessionID.uuidString) turn 4"))
+        XCTAssertTrue(messages[0].content.contains("rollback risk was lower"))
     }
 
     func test_prepareRetrieval_primaryScoreHigh_skipsTranscriptFallback() async {
@@ -219,9 +219,9 @@ final class TranscriptRetrievalTests: XCTestCase {
         XCTAssertEqual(snapshot.callCount, 0)
 
         let messages = await conversationManager.getMessagesForLLM()
-        XCTAssertEqual(messages.count, 2)
-        XCTAssertTrue(messages[1].content.contains("MEMORY.md"))
-        XCTAssertTrue(messages[1].content.contains("Test user"))
+        XCTAssertEqual(messages.count, 1)
+        XCTAssertTrue(messages[0].content.contains("MEMORY.md"))
+        XCTAssertTrue(messages[0].content.contains("Test user"))
     }
 
     func test_searchTranscriptFallback_withSummarySessionScope_limitsToSummarySessions() async throws {
