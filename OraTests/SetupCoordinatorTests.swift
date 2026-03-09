@@ -210,7 +210,9 @@ final class SetupStateTests: XCTestCase {
     }
 
     func test_totalModelSizeDisplay_returnsExpectedValue() {
-        XCTAssertEqual(SetupState.totalModelSizeDisplay, "~4.6 GB")
+        // Expected value depends on hardware — use the same model the property uses
+        let expected = SetupState.totalModelSizeDisplay(for: .recommendedLocalLLM())
+        XCTAssertEqual(SetupState.totalModelSizeDisplay, expected)
     }
 
     func test_totalModelSizeDisplay_forVisionModel_returnsExpectedValue() {

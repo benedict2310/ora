@@ -50,8 +50,12 @@ actor ModelManager {
     }
 
     /// Create with custom downloader (for testing)
-    init(downloader: ModelDownloader) {
+    /// - Parameters:
+    ///   - downloader: Custom model downloader
+    ///   - totalRAMBytes: Override RAM for hardware-independent default model selection
+    init(downloader: ModelDownloader, totalRAMBytes: UInt64 = ProcessInfo.processInfo.physicalMemory) {
         self.downloader = downloader
+        _state.primaryLLM = .recommendedLocalLLM(for: totalRAMBytes)
         // Test instances don't need async initialization
     }
     

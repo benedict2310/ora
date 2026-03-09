@@ -143,7 +143,8 @@ final class ModelMigrationCoordinatorTests: XCTestCase {
             modelManager: modelManager,
             overlayPresenter: overlay,
             notificationDeliverer: notifier,
-            userDefaults: defaults
+            userDefaults: defaults,
+            totalRAMBytes: 32_000_000_000
         )
 
         await coordinator.runIfNeeded()

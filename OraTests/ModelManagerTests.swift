@@ -351,7 +351,7 @@ final class ModelManagerTests: XCTestCase {
     }
 
     func test_modelManager_setPrimaryLLM_ignoresNonLLM() async {
-        let manager = ModelManager(downloader: MockModelDownloader())
+        let manager = ModelManager(downloader: MockModelDownloader(), totalRAMBytes: 16_000_000_000)
 
         await manager.setPrimaryLLM(.parakeetTDT) // This should be ignored
 
@@ -360,7 +360,7 @@ final class ModelManagerTests: XCTestCase {
     }
 
     func test_modelManager_setPrimaryLLM_visionBlockedOnUnsupportedHardware() async {
-        let manager = ModelManager(downloader: MockModelDownloader())
+        let manager = ModelManager(downloader: MockModelDownloader(), totalRAMBytes: 16_000_000_000)
 
         await manager.setPrimaryLLM(.qwen35_4B_Vision, totalRAMBytes: 8_000_000_000)
 
@@ -369,7 +369,7 @@ final class ModelManagerTests: XCTestCase {
     }
 
     func test_modelManager_setPrimaryLLM_visionAllowedOnSupportedHardware() async {
-        let manager = ModelManager(downloader: MockModelDownloader())
+        let manager = ModelManager(downloader: MockModelDownloader(), totalRAMBytes: 16_000_000_000)
 
         await manager.setPrimaryLLM(.qwen35_4B_Vision, totalRAMBytes: 16_000_000_000)
 
@@ -378,7 +378,7 @@ final class ModelManagerTests: XCTestCase {
     }
 
     func test_modelManager_setPrimaryLLM_8BBlockedOnUnsupportedHardware() async {
-        let manager = ModelManager(downloader: MockModelDownloader())
+        let manager = ModelManager(downloader: MockModelDownloader(), totalRAMBytes: 16_000_000_000)
 
         await manager.setPrimaryLLM(.qwen35_8B_Vision, totalRAMBytes: 16_000_000_000)
 
@@ -387,7 +387,7 @@ final class ModelManagerTests: XCTestCase {
     }
 
     func test_modelManager_setPrimaryLLM_32BBlockedOnUnsupportedHardware() async {
-        let manager = ModelManager(downloader: MockModelDownloader())
+        let manager = ModelManager(downloader: MockModelDownloader(), totalRAMBytes: 16_000_000_000)
 
         await manager.setPrimaryLLM(.qwen35_32B_Vision, totalRAMBytes: 32_000_000_000)
 
@@ -407,7 +407,7 @@ final class ModelManagerTests: XCTestCase {
         let mock = MockModelDownloader()
         mock.existingModels = [.parakeetTDT, .qwen35_4B_Vision, .kokoro]
 
-        let manager = ModelManager(downloader: mock)
+        let manager = ModelManager(downloader: mock, totalRAMBytes: 16_000_000_000)
 
         let available = await manager.requiredModelsAvailable()
 
