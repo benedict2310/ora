@@ -407,6 +407,7 @@ final class ProviderPreferencesViewModel: ObservableObject {
     // MARK: - Private
 
     private func refreshLocalModelsState() async {
+        await ModelManager.shared.ensureInitialized()
         self.localModelsState = await ModelManager.shared.state
     }
 

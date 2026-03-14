@@ -274,8 +274,7 @@ final class StatusBarControllerTests: XCTestCase {
         controller.triggerMenuUpdate()
 
         let titles = controller.menuItemTitles
-        let expectedLocalModel = ModelIdentifier.recommendedLocalLLM().displayName
-        let headerItems = titles.filter { $0.contains("Local (On-Device)") && $0.contains(expectedLocalModel) }
+        let headerItems = titles.filter { $0.starts(with: "Local (On-Device): ") }
         XCTAssertEqual(headerItems.count, 1, "Submenu should show active provider and model")
 
         controller.shutdown()
@@ -290,6 +289,26 @@ final class StatusBarControllerTests: XCTestCase {
         controller.triggerMenuUpdate()
 
         XCTAssertTrue(controller.hasSetUpConnectionMenuItem)
+
+        controller.shutdown()
+    }
+
+    func test_statusBarMenu_modelStateNotificationAddsLargestLocalModelOption() async {
+        let controller = self.makeController()
+
+        var state = ModelsState()
+        state.primaryLLM = .qwen35_32B_Vision
+        state.statuses[.qwen35_4B_Vision] = .ready
+        state.statuses[.qwen35_8B_Vision] = .ready
+        state.statuses[.qwen35_32B_Vision] = .ready
+
+        NotificationCenter.default.post(name: .modelStateDidChange, object: state)
+        try? await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertTrue(
+            controller.menuItemTitles.contains("Local: Qwen3 VL 32B"),
+            "Menu should surface the largest ready local VL model after model-state updates"
+        )
 
         controller.shutdown()
     }

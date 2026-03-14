@@ -60,6 +60,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private let updateChecker: UpdateChecking
     private let providerPreferencesViewModel: ProviderPreferencesViewModel
     private var modelRefreshTask: Task<Void, Never>?
+    private var modelStateObserver: NSObjectProtocol?
 
     private(set) var state: State = .idle {
         didSet {
@@ -82,6 +83,20 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             self.defaultActionHandler = DefaultStatusBarActionHandler()
         }
         super.init()
+        self.modelStateObserver = NotificationCenter.default.addObserver(
+            forName: .modelStateDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let state = notification.object as? ModelsState else {
+                return
+            }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.providerPreferencesViewModel.localModelsState = state
+                self.rebuildMenu()
+            }
+        }
         self.setupStatusItem()
 
         Task { @MainActor in
@@ -111,6 +126,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     func shutdown() {
         self.modelRefreshTask?.cancel()
         self.modelRefreshTask = nil
+        if let observer = self.modelStateObserver {
+            NotificationCenter.default.removeObserver(observer)
+            self.modelStateObserver = nil
+        }
 
         if let item = self.statusItem {
             NSStatusBar.system.removeStatusItem(item)
