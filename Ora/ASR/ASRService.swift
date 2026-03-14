@@ -211,13 +211,13 @@ actor ASRService: @preconcurrency ASRServicing {
     }
 
     /// Transcribe audio frames to text events
-    func transcribe(frames: AsyncStream<AudioFrame>) -> AsyncThrowingStream<ASREvent, Error> {
+    nonisolated func transcribe(frames: AsyncStream<AudioFrame>) -> AsyncThrowingStream<ASREvent, Error> {
         // Default implementation without VAD callback
         return transcribe(frames: frames, onVADStateChange: { _ in })
     }
 
     /// Transcribe audio frames to text events with VAD state changes
-    func transcribe(
+    nonisolated func transcribe(
         frames: AsyncStream<AudioFrame>,
         onVADStateChange: @escaping @Sendable @MainActor (Bool) -> Void
     ) -> AsyncThrowingStream<ASREvent, Error> {

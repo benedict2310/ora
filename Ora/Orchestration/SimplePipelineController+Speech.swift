@@ -45,6 +45,12 @@ extension SimplePipelineController {
     // MARK: - Private - TTS
     
     func speakResponse(_ text: String) {
+        // Skip TTS in text mode — the user is reading, not listening
+        if self.inputMode == .text {
+            self.finishSpeaking()
+            return
+        }
+
         self.transition(to: .speaking)
         self.setOverlayActivity(.speaking)
 
