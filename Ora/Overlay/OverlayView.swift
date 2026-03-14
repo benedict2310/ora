@@ -27,23 +27,48 @@ struct OverlayView: View {
     var body: some View {
         GlassEffectContainer(spacing: OverlayLayout.containerSpacing) {
             VStack(alignment: .leading, spacing: OverlayLayout.containerSpacing) {
-                VoiceInputControlView(
-                    state: self.voiceInputState,
-                    reduceMotion: self.reduceMotion,
-                    reduceTransparency: self.reduceTransparency,
-                    namespace: self.inputGlassNamespace,
-                    onPasteImage: {
-                        self.viewModel.actionHandler?.pasteImageAttachment()
-                    },
-                    onChooseImageFile: {
-                        self.viewModel.actionHandler?.chooseImageAttachmentFile()
-                    },
-                    onCaptureScreenshot: {
-                        self.viewModel.actionHandler?.captureScreenshotAttachment()
-                    }
-                )
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel(self.voiceInputAccessibilityLabel)
+                if self.shouldShowTextInputControl {
+                    TextInputView(
+                        text: self.$viewModel.textInputText,
+                        reduceMotion: self.reduceMotion,
+                        reduceTransparency: self.reduceTransparency,
+                        namespace: self.inputGlassNamespace,
+                        onSubmit: { text in
+                            SimplePipelineController.shared.submitTextInput(text)
+                        },
+                        onCancel: {
+                            SimplePipelineController.shared.cancel()
+                        },
+                        onPasteImage: {
+                            self.viewModel.actionHandler?.pasteImageAttachment()
+                        },
+                        onChooseImageFile: {
+                            self.viewModel.actionHandler?.chooseImageAttachmentFile()
+                        },
+                        onCaptureScreenshot: {
+                            self.viewModel.actionHandler?.captureScreenshotAttachment()
+                        }
+                    )
+                    .accessibilityLabel("Type a message")
+                } else {
+                    VoiceInputControlView(
+                        state: self.voiceInputState,
+                        reduceMotion: self.reduceMotion,
+                        reduceTransparency: self.reduceTransparency,
+                        namespace: self.inputGlassNamespace,
+                        onPasteImage: {
+                            self.viewModel.actionHandler?.pasteImageAttachment()
+                        },
+                        onChooseImageFile: {
+                            self.viewModel.actionHandler?.chooseImageAttachmentFile()
+                        },
+                        onCaptureScreenshot: {
+                            self.viewModel.actionHandler?.captureScreenshotAttachment()
+                        }
+                    )
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(self.voiceInputAccessibilityLabel)
+                }
 
                 if !self.viewModel.pendingImageAttachments.isEmpty {
                     AttachmentTrayView(
@@ -334,8 +359,19 @@ struct OverlayView: View {
     }
 
     private var voiceInputState: VoiceInputControlView.State {
+        if self.viewModel.inputMode == .text,
+           self.viewModel.mode == .awaitingFollowUp,
+           !self.viewModel.isTextInputVisible {
+            return .idle(label: "Type a message or ⌘D for voice")
+        }
+
         switch self.viewModel.mode {
         case .listening:
+            if self.viewModel.inputMode == .voice,
+               self.viewModel.typingHintVisible,
+               self.currentPartialTranscript == nil {
+                return .idle(label: "Start typing...")
+            }
             return .active(transcript: self.currentPartialTranscript)
         case .awaitingFollowUp:
             return .idle(label: self.activityLabelOr("Press Enter to reply"))
@@ -354,6 +390,10 @@ struct OverlayView: View {
         case .hidden:
             return .idle(label: "Listening")
         }
+    }
+
+    private var shouldShowTextInputControl: Bool {
+        return self.viewModel.inputMode == .text && self.viewModel.isTextInputVisible
     }
 
     /// Returns the activity display label if set, otherwise the fallback

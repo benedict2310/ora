@@ -5,9 +5,18 @@ extension SimplePipelineController {
     // MARK: - Private - Agent Processing
     
     func processTranscript() async {
-        self.logger.info("Processing transcript: \(self.currentTranscript.prefix(50))...")
+        await self.processUserInput(self.currentTranscript)
+    }
+
+    func processTextInput(_ text: String) async {
+        await self.processUserInput(text)
+    }
+
+    private func processUserInput(_ userText: String) async {
+        self.logger.info("Processing input: \(userText.prefix(50))...")
         self.logger.notice("PIPELINE_TURN_PROCESSING_STARTED")
 
+        self.currentTranscript = userText
         let turnAttachments = self.consumePendingImageAttachmentsForTurn()
         let turnAttachmentIDs = turnAttachments.map(\.id)
         self.currentResponse = ""
@@ -18,7 +27,7 @@ extension SimplePipelineController {
         
         do {
             // Preflight provider/model readiness to avoid generic startup failures.
-            let preflight = await LLMProviderManager.shared.preflightForConversationStart()
+            let preflight = await self.providerPreflight()
             if case .guidance(let guidance) = preflight {
                 await self.attachmentStore.removeAttachments(ids: turnAttachmentIDs)
                 self.handleAgentError(guidance)
@@ -26,14 +35,11 @@ extension SimplePipelineController {
             }
 
             // Ensure LLM is ready
-            try await LLMProviderManager.shared.prepare()
+            try await self.prepareLLM()
             self.sessionImageAttachmentIDs.formUnion(turnAttachmentIDs)
             
             // Process through agent loop (session preserves conversation context)
-            let result = try await self.agentLoop.process(
-                userText: self.currentTranscript,
-                imageAttachments: turnAttachments.map(\.llmReference)
-            )
+            let result = try await self.agentProcessor(userText, turnAttachments.map(\.llmReference))
             
             guard !Task.isCancelled else {
                 self.logger.debug("Session cancelled after agent processing")
@@ -119,6 +125,10 @@ extension SimplePipelineController {
             self.transition(to: .awaitingFollowUp)
             self.overlayPresenter.mode = .awaitingFollowUp
             self.setOverlayActivity(.waiting)
+            if self.inputMode == .text {
+                self.overlayPresenter.model.isTextInputVisible = false
+                self.overlayPresenter.model.textInputText = ""
+            }
         }
     }
 
@@ -148,6 +158,10 @@ extension SimplePipelineController {
         self.transition(to: .awaitingFollowUp)
         self.overlayPresenter.mode = .awaitingFollowUp
         self.setOverlayActivity(.waiting)
+        if self.inputMode == .text {
+            self.overlayPresenter.model.isTextInputVisible = false
+            self.overlayPresenter.model.textInputText = ""
+        }
     }
 
     func handleProposalConfirmedAndTrust() {
@@ -170,6 +184,10 @@ extension SimplePipelineController {
             self.logger.error("No pending proposal to execute")
             self.transition(to: .awaitingFollowUp)
             self.overlayPresenter.mode = .awaitingFollowUp
+            if self.inputMode == .text {
+                self.overlayPresenter.model.isTextInputVisible = false
+                self.overlayPresenter.model.textInputText = ""
+            }
             return
         }
         
