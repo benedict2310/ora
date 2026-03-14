@@ -127,6 +127,48 @@ final class OverlayWindowTests: XCTestCase {
         controller.hide(animated: false)
     }
 
+    func test_printableCharacters_detectsPrintableKey() {
+        let event = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "a",
+            charactersIgnoringModifiers: "a",
+            isARepeat: false,
+            keyCode: 0
+        )
+
+        guard let event else {
+            XCTFail("Failed to construct key event")
+            return
+        }
+        XCTAssertEqual(OverlayWindowController.printableCharacters(from: event), "a")
+    }
+
+    func test_isReEnableVoiceShortcut_detectsCommandD() {
+        let event = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [.command],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "d",
+            charactersIgnoringModifiers: "d",
+            isARepeat: false,
+            keyCode: 2
+        )
+
+        guard let event else {
+            XCTFail("Failed to construct key event")
+            return
+        }
+        XCTAssertTrue(OverlayWindowController.isReEnableVoiceShortcut(event))
+    }
+
     private func extractPanel() -> NSPanel? {
         let mirror = Mirror(reflecting: OverlayWindowController.shared)
         return mirror.children.first(where: { $0.label == "panel" })?.value as? NSPanel
