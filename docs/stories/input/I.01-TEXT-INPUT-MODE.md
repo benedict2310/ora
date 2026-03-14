@@ -162,11 +162,52 @@ As a user, I want to start typing after pressing the hotkey so that I can intera
 
 ## Implementation Summary
 
-(TBD after implementation.)
+**Date:** 2026-03-14
+**Branch:** `feat/I.01-text-input-mode`
+**Commits:** 3
+**Implemented by:** codex (complexity score: 9/10)
+**Reviewed by:** orchestrator (1 iteration)
+
+### Files Changed
+- `Ora/Orchestration/SimplePipelineController.swift` - Modified: added InputMode enum, switchToTextInput(), submitTextInput(), reEnableVoiceInput(), typing hint timer
+- `Ora/Orchestration/SimplePipelineController+Session.swift` - Modified: guard audio capture on inputMode, start typing hint timer, cancel hint on VAD
+- `Ora/Orchestration/SimplePipelineController+Agent.swift` - Modified: unified processUserInput() for voice and text paths
+- `Ora/Orchestration/SimplePipelineController+Speech.swift` - Modified: text mode awareness in speech completion follow-up
+- `Ora/Overlay/OverlayState.swift` - Modified: added inputMode, typingHintVisible, textInputText, isTextInputVisible to OverlayViewModel
+- `Ora/Overlay/OverlayView.swift` - Modified: conditional TextInputView/VoiceInputControlView, status pill hints
+- `Ora/Overlay/OverlayWindowController.swift` - Modified: printable key detection, ⌘D shortcut, text mode key routing
+- `Ora/Overlay/TextInputView.swift` - Created: single-line text field with glass styling and Enter-to-submit
+- `OraTests/Orchestration/TextInputModeTests.swift` - Created: 6 tests covering mode switch, submit, follow-up, re-enable, cancel/reset, timer
+- `OraTests/Orchestration/MockPipelineDependencies.swift` - Modified: added MockASRService and accessor methods
+- `OraTests/Overlay/TextInputViewTests.swift` - Created: 3 tests for submit, empty guard, escape
+- `OraTests/Overlay/OverlayWindowTests.swift` - Modified: 2 tests for printable key detection and ⌘D shortcut
 
 ## Code Review Findings
 
-(TBD by review agent.)
+**Reviewer:** Orchestrator
+**Date:** 2026-03-14
+**Iteration:** 1
+
+### Summary
+- Files reviewed: 12
+- Build status: Pass
+- Tests: 1609/1610 passed (1 pre-existing unrelated failure)
+
+### Issues Found
+
+#### P0 - Critical (Must fix)
+- [x] None.
+
+#### P1 - Major (Should fix)
+- [x] None.
+
+#### P2 - Minor (Can defer)
+- [x] None.
+
+### Approval Status
+- [x] All P0 issues resolved
+- [x] All P1 issues resolved
+- [x] Ready for merge
 
 ## Completion Status
 
