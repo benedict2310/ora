@@ -39,11 +39,21 @@ extension SimplePipelineController {
 
     func runListeningSession() async {
         do {
+            guard self.inputMode == .voice else {
+                self.logger.debug("Skipping audio listening session while in text input mode")
+                return
+            }
+
+            defer {
+                self.cancelTypingHintTimer()
+            }
+
             // Reset ASR state for new session
-            await ASRService.shared.reset()
+            await self.asrService.reset()
 
             // Set up silence detection for conversation mode (AC-1, AC-7)
             self.setupSilenceDetector()
+            self.startTypingHintTimer()
 
             // Pre-emptively track permission prompt if microphone permission is not determined
             // This prevents a race condition where the system permission dialog appears
@@ -73,11 +83,14 @@ extension SimplePipelineController {
 
             // Start transcription with VAD callback
             // VAD state changes drive the silence detector timeout
-            let asrStream = await ASRService.shared.transcribe(
+            let asrStream = self.asrService.transcribe(
                 frames: audioStream,
                 onVADStateChange: { [weak self] isSpeech in
                     // Wire VAD state changes to silence detector (AC-4, AC-5)
                     self?.silenceDetector?.onVADStateChanged(isSpeech: isSpeech)
+                    if isSpeech {
+                        self?.cancelTypingHintForVoiceActivity()
+                    }
                 }
             )
 
@@ -94,11 +107,13 @@ extension SimplePipelineController {
                     self.overlayPresenter.model.addUserMessage(text, isPartial: true)
                     // Notify silence detector of new partial (AC-7)
                     self.silenceDetector?.onPartialReceived(text: text)
+                    self.cancelTypingHintForVoiceActivity()
 
                 case .final(let text):
                     self.currentTranscript = text
                     let thumbnails = self.pendingImageAttachments.compactMap(\.thumbnailFileURL)
                     self.overlayPresenter.model.addUserMessage(text, isPartial: false, thumbnailURLs: thumbnails)
+                    self.cancelTypingHintForVoiceActivity()
                 }
             }
             
@@ -113,6 +128,7 @@ extension SimplePipelineController {
                 self.logger.info("Empty transcript, transitioning to awaitingFollowUp")
                 self.transition(to: .awaitingFollowUp)
                 self.overlayPresenter.mode = .awaitingFollowUp
+                self.cancelTypingHintTimer()
                 return
             }
             

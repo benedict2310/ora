@@ -218,6 +218,10 @@ protocol OverlayActionHandling: AnyObject {
 final class OverlayViewModel: ObservableObject {
     private let logger = Logger.ora(category: "OverlayViewModel")
     @Published var mode: OverlayMode = .hidden
+    @Published var inputMode: InputMode = .voice
+    @Published var typingHintVisible: Bool = false
+    @Published var textInputText: String = ""
+    @Published var isTextInputVisible: Bool = false
     @Published var messages: [OverlayMessage] = []
     @Published var currentProposal: ToolProposal?
     @Published var activity: OverlayActivity = .none
@@ -273,6 +277,13 @@ final class OverlayViewModel: ObservableObject {
         guard lastMessage.role == .assistant, lastMessage.isPartial else { return }
         self.messages.removeLast()
         self.logger.notice("OVERLAY_DISCARDED_PARTIAL_ASSISTANT_MESSAGE")
+    }
+
+    func discardTrailingPartialUserMessage() {
+        guard let lastMessage = self.messages.last else { return }
+        guard lastMessage.role == .user, lastMessage.isPartial else { return }
+        self.messages.removeLast()
+        self.logger.notice("OVERLAY_DISCARDED_PARTIAL_USER_MESSAGE")
     }
 
     // MARK: - Tool Proposals
@@ -337,6 +348,10 @@ final class OverlayViewModel: ObservableObject {
         self.currentProposal = nil
         self.pendingImageAttachments.removeAll()
         self.attachmentNotice = nil
+        self.inputMode = .voice
+        self.typingHintVisible = false
+        self.textInputText = ""
+        self.isTextInputVisible = false
         self.mode = .hidden
         self.activity = .none
     }

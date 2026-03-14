@@ -278,6 +278,35 @@ final class OverlayWindowController {
                 }
                 return nil // Consume the event
             }
+
+            if Self.isReEnableVoiceShortcut(event) {
+                SimplePipelineController.shared.reEnableVoiceInput()
+                return nil
+            }
+
+            if self.viewModel.inputMode == .text {
+                if let printableCharacters = Self.printableCharacters(from: event),
+                   !self.viewModel.isTextInputVisible,
+                   self.viewModel.mode == .awaitingFollowUp || self.viewModel.mode == .listening {
+                    SimplePipelineController.shared.switchToTextInput(initialText: printableCharacters)
+                    return nil
+                }
+
+                if event.keyCode == 36 {
+                    // Let TextField handle Enter while composing in text mode.
+                    if self.viewModel.isTextInputVisible, self.viewModel.mode == .listening {
+                        return event
+                    }
+                    // Let Enter pass through to SwiftUI controls for proposal confirmation
+                    if case .proposing = self.viewModel.mode {
+                        return event
+                    }
+                    // Ignore Enter in thinking/responding states
+                    if self.viewModel.mode == .thinking || self.viewModel.mode == .responding || self.viewModel.mode == .executing {
+                        return nil
+                    }
+                }
+            }
             
             if event.keyCode == 36 { // Enter key
                 // Check state and decide action
@@ -300,6 +329,13 @@ final class OverlayWindowController {
                     // Let other cases pass through (e.g. confirming proposals)
                     break
                 }
+            }
+
+            if self.viewModel.mode == .listening,
+               self.viewModel.inputMode == .voice,
+               let printableCharacters = Self.printableCharacters(from: event) {
+                SimplePipelineController.shared.switchToTextInput(initialText: printableCharacters)
+                return nil
             }
             
             return event
@@ -457,6 +493,49 @@ final class OverlayWindowController {
         // External focus operation completed - no need to restore focus
         // since user intentionally opened another app/folder
         self.logger.debug("External focus operation ended")
+    }
+
+    static func isReEnableVoiceShortcut(_ event: NSEvent) -> Bool {
+        guard event.type == .keyDown else {
+            return false
+        }
+
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard modifiers == [.command] else {
+            return false
+        }
+
+        return event.charactersIgnoringModifiers?.lowercased() == "d"
+    }
+
+    static func printableCharacters(from event: NSEvent) -> String? {
+        guard event.type == .keyDown else {
+            return nil
+        }
+        guard event.keyCode != 53, event.keyCode != 36 else {
+            return nil
+        }
+
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard !modifiers.contains(.command), !modifiers.contains(.control) else {
+            return nil
+        }
+
+        guard let characters = event.characters, !characters.isEmpty else {
+            return nil
+        }
+
+        let functionKeyRange = 0xF700...0xF8FF
+        for scalar in characters.unicodeScalars {
+            if functionKeyRange.contains(Int(scalar.value)) {
+                return nil
+            }
+            if CharacterSet.controlCharacters.contains(scalar) {
+                return nil
+            }
+        }
+
+        return characters
     }
 }
 

@@ -82,9 +82,13 @@ extension SimplePipelineController {
         self.transition(to: .awaitingFollowUp)
         self.overlayPresenter.mode = .awaitingFollowUp
         self.setOverlayActivity(.waiting)
+        if self.inputMode == .text {
+            self.overlayPresenter.model.isTextInputVisible = false
+            self.overlayPresenter.model.textInputText = ""
+        }
 
         // Handle Conversation Mode: auto-listen after response (AC-7, AC-11)
-        guard autoListen else { return }
+        guard autoListen, self.inputMode == .voice else { return }
 
         self.logger.info("Conversation mode enabled, scheduling follow-up")
         Task {

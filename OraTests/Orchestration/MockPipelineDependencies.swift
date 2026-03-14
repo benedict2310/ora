@@ -35,6 +35,78 @@ actor MockAudioService: AudioServicing {
     func cancel() async {
         self.cancelCallCount += 1
     }
+
+    func startCalls() -> Int {
+        return self.startCallCount
+    }
+
+    func stopCalls() -> Int {
+        return self.stopCallCount
+    }
+
+    func cancelCalls() -> Int {
+        return self.cancelCallCount
+    }
+}
+
+final class MockASRService: ASRServicing, @unchecked Sendable {
+    private let lock = NSLock()
+    private var transcribeCallCount = 0
+    private var resetCallCount = 0
+    var events: [ASREvent] = []
+
+    func transcribe(frames: AsyncStream<AudioFrame>) -> AsyncThrowingStream<ASREvent, Error> {
+        let emittedEvents = self.lock.withLock { () -> [ASREvent] in
+            self.transcribeCallCount += 1
+            return self.events
+        }
+        return AsyncThrowingStream { continuation in
+            for event in emittedEvents {
+                continuation.yield(event)
+            }
+            continuation.finish()
+        }
+    }
+
+    func transcribe(
+        frames: AsyncStream<AudioFrame>,
+        onVADStateChange: @escaping @Sendable @MainActor (Bool) -> Void
+    ) -> AsyncThrowingStream<ASREvent, Error> {
+        let emittedEvents = self.lock.withLock { () -> [ASREvent] in
+            self.transcribeCallCount += 1
+            return self.events
+        }
+        return AsyncThrowingStream { continuation in
+            for event in emittedEvents {
+                switch event {
+                case .partial:
+                    Task { @MainActor in
+                        onVADStateChange(true)
+                    }
+                case .final:
+                    Task { @MainActor in
+                        onVADStateChange(false)
+                    }
+                }
+                continuation.yield(event)
+            }
+            continuation.finish()
+        }
+    }
+
+    func reset() async {
+        self.lock.withLock {
+            self.resetCallCount += 1
+        }
+    }
+
+    func transcribeCalls() -> Int {
+        return self.lock.withLock { self.transcribeCallCount }
+    }
+
+    func resetCalls() -> Int {
+        return self.lock.withLock { self.resetCallCount }
+    }
 }
 
 final class MockTTSService: TTSServicing, @unchecked Sendable {

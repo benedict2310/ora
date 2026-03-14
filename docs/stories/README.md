@@ -110,6 +110,13 @@ Local multimodal inference, image attachments, and screenshot understanding.
 | V.04 | [Multimodal Agent Loop & Session Integration](vision-integration/V.04-MULTIMODAL-AGENT-LOOP-AND-SESSION-INTEGRATION.md) | 🚧 To Do |
 | V.05 | [Vision Model Size Variants and Qwen3 4B Retirement](vision-integration/V.05-VISION-MODEL-SIZE-VARIANTS-AND-QWEN3-RETIREMENT.md) | 🚧 To Do |
 
+### ⌨️ Input (I)
+Alternative input methods beyond voice.
+
+| ID | Title | Status |
+|:---|:------|:-------|
+| I.01 | [Text Input Mode](input/I.01-TEXT-INPUT-MODE.md) | 🚧 Not Started |
+
 ### 🗣 TTS Integration (T)
 Text-to-speech using Kokoro MLX.
 

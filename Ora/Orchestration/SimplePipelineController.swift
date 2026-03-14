@@ -11,6 +11,11 @@ import UniformTypeIdentifiers
 import os
 import Combine
 
+enum InputMode: Equatable, Sendable {
+    case voice
+    case text
+}
+
 /// Coordinates ASR → AgentLoop → TTS pipeline with tool proposals and execution
 ///
 /// ## State Machine
@@ -48,21 +53,27 @@ final class SimplePipelineController: ObservableObject {
     @Published var state: PipelineState = .idle
     @Published var currentTranscript: String = ""
     @Published var currentResponse: String = ""
+    @Published var inputMode: InputMode = .voice
     
     var sessionTask: Task<Void, Never>?
     var autoDismissTask: Task<Void, Never>?
     var ttsTask: Task<Void, Never>?
     var confirmationTask: Task<Void, Never>?
+    var typingHintTask: Task<Void, Never>?
     let streamingResponseHandler = StreamingResponseHandler()
     
     /// The agent loop for processing requests
     let agentLoop: AgentLoop
+    let asrService: any ASRServicing
     let overlayPresenter: any OverlayPresenting
     let audioService: any AudioServicing
     let ttsService: any TTSServicing
     let persistenceService: any PersistenceServicing
     let attachmentStore: any AttachmentStoring
     let screenshotCaptureService: any ScreenshotCapturing
+    let providerPreflight: @Sendable () async -> ProviderPreflightStatus
+    let prepareLLM: @Sendable () async throws -> Void
+    let agentProcessor: @Sendable (String, [LLMImageAttachmentReference]) async throws -> AgentResult
     let stateMachine = PipelineStateMachine()
     let confirmationHandler: ConfirmationHandler
 
@@ -75,6 +86,8 @@ final class SimplePipelineController: ObservableObject {
     let errorRecoveryDelay: TimeInterval = OraConstants.Timing.pipelineErrorRecoveryDelay
     /// Delay before auto-starting follow-up listening (conversation mode)
     let followUpAutoListenDelay: TimeInterval = OraConstants.Timing.pipelineFollowUpAutoListenDelay
+    /// Delay before showing the passive typing hint while listening in voice mode.
+    let typingHintDelay: TimeInterval
     
     /// Whether conversation mode is enabled (combines silence detection + auto-listen)
     var isConversationModeEnabled: Bool {
@@ -94,20 +107,36 @@ final class SimplePipelineController: ObservableObject {
     
     init(
         agentLoop: AgentLoop = AgentLoop(),
+        asrService: any ASRServicing = ASRService.shared,
         overlayPresenter: any OverlayPresenting = OverlayWindowController.shared,
         audioService: any AudioServicing = AudioService.shared,
         ttsService: any TTSServicing = TTSService.shared,
         persistenceService: any PersistenceServicing = PersistenceManager.shared,
         attachmentStore: any AttachmentStoring = AttachmentStore.shared,
-        screenshotCaptureService: any ScreenshotCapturing = ScreenshotCaptureService.shared
+        screenshotCaptureService: any ScreenshotCapturing = ScreenshotCaptureService.shared,
+        typingHintDelay: TimeInterval = 3.0,
+        providerPreflight: (@Sendable () async -> ProviderPreflightStatus)? = nil,
+        prepareLLM: (@Sendable () async throws -> Void)? = nil,
+        agentProcessor: (@Sendable (String, [LLMImageAttachmentReference]) async throws -> AgentResult)? = nil
     ) {
         self.agentLoop = agentLoop
+        self.asrService = asrService
         self.overlayPresenter = overlayPresenter
         self.audioService = audioService
         self.ttsService = ttsService
         self.persistenceService = persistenceService
         self.attachmentStore = attachmentStore
         self.screenshotCaptureService = screenshotCaptureService
+        self.typingHintDelay = typingHintDelay
+        self.providerPreflight = providerPreflight ?? {
+            return await LLMProviderManager.shared.preflightForConversationStart()
+        }
+        self.prepareLLM = prepareLLM ?? {
+            try await LLMProviderManager.shared.prepare()
+        }
+        self.agentProcessor = agentProcessor ?? { text, imageAttachments in
+            return try await agentLoop.process(userText: text, imageAttachments: imageAttachments)
+        }
         self.confirmationHandler = ConfirmationHandler()
         self.confirmationHandler.onConfirmProposal = { [weak self] in
             self?.handleProposalConfirmed()
@@ -155,21 +184,31 @@ final class SimplePipelineController: ObservableObject {
     /// Create a test instance with injectable agent loop
     static func makeTestInstance(
         agentLoop: AgentLoop? = nil,
+        asrService: (any ASRServicing)? = nil,
         overlayPresenter: (any OverlayPresenting)? = nil,
         audioService: (any AudioServicing)? = nil,
         ttsService: (any TTSServicing)? = nil,
         persistenceService: (any PersistenceServicing)? = nil,
         attachmentStore: (any AttachmentStoring)? = nil,
-        screenshotCaptureService: (any ScreenshotCapturing)? = nil
+        screenshotCaptureService: (any ScreenshotCapturing)? = nil,
+        typingHintDelay: TimeInterval = 3.0,
+        providerPreflight: (@Sendable () async -> ProviderPreflightStatus)? = nil,
+        prepareLLM: (@Sendable () async throws -> Void)? = nil,
+        agentProcessor: (@Sendable (String, [LLMImageAttachmentReference]) async throws -> AgentResult)? = nil
     ) -> SimplePipelineController {
         return SimplePipelineController(
             agentLoop: agentLoop ?? AgentLoop(),
+            asrService: asrService ?? ASRService.shared,
             overlayPresenter: overlayPresenter ?? OverlayWindowController.shared,
             audioService: audioService ?? AudioService.shared,
             ttsService: ttsService ?? TTSService.shared,
             persistenceService: persistenceService ?? PersistenceManager.shared,
             attachmentStore: attachmentStore ?? AttachmentStore.shared,
-            screenshotCaptureService: screenshotCaptureService ?? ScreenshotCaptureService.shared
+            screenshotCaptureService: screenshotCaptureService ?? ScreenshotCaptureService.shared,
+            typingHintDelay: typingHintDelay,
+            providerPreflight: providerPreflight,
+            prepareLLM: prepareLLM,
+            agentProcessor: agentProcessor
         )
     }
     
@@ -194,12 +233,18 @@ final class SimplePipelineController: ObservableObject {
         // Reset state for new session
         self.currentTranscript = ""
         self.currentResponse = ""
+        self.inputMode = .voice
         self.resetStreamingResponse()
+        self.cancelTypingHintTimer()
         
         // Reset overlay for new session
         self.logger.info("Resetting overlay for new session")
         self.clearPendingImageAttachmentsState()
         self.overlayPresenter.model.reset()
+        self.overlayPresenter.model.inputMode = .voice
+        self.overlayPresenter.model.typingHintVisible = false
+        self.overlayPresenter.model.textInputText = ""
+        self.overlayPresenter.model.isTextInputVisible = false
         self.refreshSkillsHint()
         
         self.transition(to: .listening)
@@ -243,6 +288,11 @@ final class SimplePipelineController: ObservableObject {
             self.logger.warning("Cannot start follow-up in state: \(self.state.description)")
             return
         }
+
+        if self.inputMode == .text {
+            self.logger.debug("Ignoring voice follow-up start while text mode is active")
+            return
+        }
         
         self.logger.info("Starting follow-up")
 
@@ -254,6 +304,98 @@ final class SimplePipelineController: ObservableObject {
         self.currentTranscript = ""
         
         // Start listening again (keeping conversation history via agent loop session)
+        self.sessionTask = Task {
+            await self.runListeningSession()
+        }
+    }
+
+    func switchToTextInput(initialText: String? = nil) {
+        guard self.state == .listening || self.state == .awaitingFollowUp else {
+            return
+        }
+
+        self.logger.info("Switching to text input mode")
+        self.inputMode = .text
+        self.overlayPresenter.model.inputMode = .text
+        self.overlayPresenter.model.typingHintVisible = false
+        self.cancelTypingHintTimer()
+        self.silenceDetector?.cancel()
+        self.silenceDetector = nil
+        self.currentTranscript = ""
+        self.overlayPresenter.model.discardTrailingPartialUserMessage()
+
+        self.sessionTask?.cancel()
+        self.sessionTask = nil
+
+        Task {
+            await self.audioService.stop()
+            await self.asrService.reset()
+        }
+
+        if self.state == .awaitingFollowUp {
+            self.transition(to: .listening)
+            self.overlayPresenter.mode = .listening
+            self.setOverlayActivity(.listening)
+        }
+
+        if let initialText, !initialText.isEmpty {
+            self.overlayPresenter.model.textInputText.append(initialText)
+        }
+        self.overlayPresenter.model.isTextInputVisible = true
+    }
+
+    func submitTextInput(_ text: String) {
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty else {
+            return
+        }
+
+        guard self.state == .listening else {
+            self.logger.warning("Cannot submit text input in state: \(self.state.description)")
+            return
+        }
+
+        self.currentTranscript = trimmedText
+        self.overlayPresenter.model.textInputText = ""
+        self.overlayPresenter.model.isTextInputVisible = false
+        self.cancelTypingHintTimer()
+        self.overlayPresenter.model.typingHintVisible = false
+        let thumbnails = self.pendingImageAttachments.compactMap(\.thumbnailFileURL)
+        self.overlayPresenter.model.addUserMessage(trimmedText, isPartial: false, thumbnailURLs: thumbnails)
+
+        self.sessionTask?.cancel()
+        self.sessionTask = Task {
+            await self.processTextInput(trimmedText)
+        }
+    }
+
+    func reEnableVoiceInput() {
+        guard self.inputMode == .text else {
+            return
+        }
+
+        self.logger.info("Re-enabling voice input mode")
+        self.inputMode = .voice
+        self.overlayPresenter.model.inputMode = .voice
+        self.overlayPresenter.model.isTextInputVisible = false
+        self.overlayPresenter.model.textInputText = ""
+        self.overlayPresenter.model.typingHintVisible = false
+        self.currentTranscript = ""
+        self.overlayPresenter.model.discardTrailingPartialUserMessage()
+        self.silenceDetector?.cancel()
+        self.silenceDetector = nil
+        self.sessionTask?.cancel()
+        self.cancelTypingHintTimer()
+
+        guard self.state == .listening || self.state == .awaitingFollowUp else {
+            return
+        }
+
+        if self.state == .awaitingFollowUp {
+            self.startFollowUp()
+            return
+        }
+
         self.sessionTask = Task {
             await self.runListeningSession()
         }
@@ -272,6 +414,12 @@ final class SimplePipelineController: ObservableObject {
         // Cancel silence detector
         self.silenceDetector?.cancel()
         self.silenceDetector = nil
+        self.cancelTypingHintTimer()
+        self.inputMode = .voice
+        self.overlayPresenter.model.inputMode = .voice
+        self.overlayPresenter.model.typingHintVisible = false
+        self.overlayPresenter.model.textInputText = ""
+        self.overlayPresenter.model.isTextInputVisible = false
 
         // Cancel all tasks
         self.sessionTask?.cancel()
@@ -282,6 +430,8 @@ final class SimplePipelineController: ObservableObject {
         self.ttsTask = nil
         self.confirmationTask?.cancel()
         self.confirmationTask = nil
+        self.typingHintTask?.cancel()
+        self.typingHintTask = nil
         self.resetStreamingResponse()
 
         // Stop audio capture and TTS playback
@@ -297,6 +447,46 @@ final class SimplePipelineController: ObservableObject {
         self.setOverlayActivity(.none)
         self.overlayPresenter.hide(animated: true)
         self.clearSessionImageAttachments()
+    }
+
+    func startTypingHintTimer() {
+        guard self.state == .listening else {
+            return
+        }
+        guard self.inputMode == .voice else {
+            return
+        }
+
+        self.cancelTypingHintTimer()
+        self.overlayPresenter.model.typingHintVisible = false
+
+        self.typingHintTask = Task { @MainActor in
+            do {
+                try await Task.sleep(for: .seconds(self.typingHintDelay))
+            } catch {
+                return
+            }
+
+            guard !Task.isCancelled else { return }
+            guard self.state == .listening else { return }
+            guard self.inputMode == .voice else { return }
+            guard self.currentTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+
+            self.overlayPresenter.model.typingHintVisible = true
+        }
+    }
+
+    func cancelTypingHintTimer() {
+        self.typingHintTask?.cancel()
+        self.typingHintTask = nil
+        self.overlayPresenter.model.typingHintVisible = false
+    }
+
+    func cancelTypingHintForVoiceActivity() {
+        guard self.inputMode == .voice else {
+            return
+        }
+        self.cancelTypingHintTimer()
     }
 
     private func refreshSkillsHint() {
