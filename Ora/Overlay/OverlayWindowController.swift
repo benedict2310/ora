@@ -297,8 +297,14 @@ final class OverlayWindowController {
                     if self.viewModel.isTextInputVisible, self.viewModel.mode == .listening {
                         return event
                     }
-                    // Ignore Enter otherwise while text mode is active.
-                    return nil
+                    // Let Enter pass through to SwiftUI controls for proposal confirmation
+                    if case .proposing = self.viewModel.mode {
+                        return event
+                    }
+                    // Ignore Enter in thinking/responding states
+                    if self.viewModel.mode == .thinking || self.viewModel.mode == .responding || self.viewModel.mode == .executing {
+                        return nil
+                    }
                 }
             }
             
