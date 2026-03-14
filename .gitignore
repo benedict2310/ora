@@ -107,3 +107,12 @@ RELEASE.md
 
 # Social media assets (generated from source)
 docs/media/social/
+
+# Local workspace files
+.mcp.json
+.pi/
+*.dmg
+node_modules/
+/package.json
+/package-lock.json
+/resources/
