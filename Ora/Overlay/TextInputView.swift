@@ -5,6 +5,7 @@
 //  Single-line text input control for silent interaction mode.
 //
 
+import AppKit
 import SwiftUI
 
 struct TextInputCommandHandler {
@@ -34,19 +35,16 @@ struct TextInputView: View {
     let onChooseImageFile: () -> Void
     let onCaptureScreenshot: () -> Void
 
-    @FocusState private var isFocused: Bool
-
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
         let base = HStack(spacing: 10) {
-            TextField("Type a message", text: self.$text)
-                .textFieldStyle(.plain)
-                .font(.callout)
-                .lineLimit(1)
-                .focused(self.$isFocused)
-                .onSubmit {
-                    self.submitText()
-                }
+            CursorEndTextField(
+                text: self.$text,
+                placeholder: "Type a message",
+                onSubmit: { self.submitText() },
+                onEscape: { self.onCancel() }
+            )
+            .frame(height: 20)
             self.attachmentActions
         }
         .foregroundStyle(Color.white.opacity(0.95))
@@ -74,12 +72,6 @@ struct TextInputView: View {
         }
         .frame(maxWidth: .infinity, minHeight: 48, alignment: .center)
         .padding(.bottom, OverlayLayout.voiceInputBottomPadding)
-        .onAppear {
-            self.isFocused = true
-        }
-        .onExitCommand {
-            TextInputCommandHandler.handleEscape(self.onCancel)
-        }
     }
 
     private func submitText() {
@@ -126,6 +118,75 @@ struct TextInputView: View {
         .buttonStyle(.plain)
         .foregroundStyle(Color.white.opacity(0.82))
         .accessibilityLabel(accessibilityLabel)
+    }
+}
+
+// MARK: - NSTextField Wrapper (cursor placement control)
+
+private struct CursorEndTextField: NSViewRepresentable {
+    @Binding var text: String
+    let placeholder: String
+    let onSubmit: () -> Void
+    let onEscape: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = NSTextField()
+        field.delegate = context.coordinator
+        field.placeholderString = self.placeholder
+        field.isBordered = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.font = NSFont.preferredFont(forTextStyle: .callout)
+        field.textColor = NSColor.white.withAlphaComponent(0.95)
+        field.lineBreakMode = .byTruncatingTail
+        field.maximumNumberOfLines = 1
+        field.cell?.isScrollable = true
+        field.stringValue = self.text
+
+        // Become first responder with cursor at end
+        DispatchQueue.main.async {
+            field.window?.makeFirstResponder(field)
+            field.currentEditor()?.moveToEndOfDocument(nil)
+        }
+
+        return field
+    }
+
+    func updateNSView(_ field: NSTextField, context: Context) {
+        if field.stringValue != self.text {
+            field.stringValue = self.text
+            // Keep cursor at end after programmatic text changes (e.g., clearing after submit)
+            field.currentEditor()?.moveToEndOfDocument(nil)
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        let parent: CursorEndTextField
+
+        init(parent: CursorEndTextField) {
+            self.parent = parent
+        }
+
+        func controlTextDidChange(_ obj: Notification) {
+            guard let field = obj.object as? NSTextField else { return }
+            self.parent.text = field.stringValue
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                self.parent.onSubmit()
+                return true
+            }
+            if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+                self.parent.onEscape()
+                return true
+            }
+            return false
+        }
     }
 }
 
