@@ -123,7 +123,6 @@ actor BackgroundTaskManager {
             return try? record.snapshot()
         }
 
-        let task = self.runningTasks.removeValue(forKey: taskID)
         let completedAt = Date()
         let previousState = currentState
         record.state = .canceled
@@ -135,12 +134,20 @@ actor BackgroundTaskManager {
             try self.saveContext()
             let snapshot = try record.snapshot()
             self.emitEvent(for: snapshot, from: previousState, at: completedAt)
-            task?.cancel()
-            await self.scheduleWorkIfNeeded()
+
+            if let task = self.runningTasks[taskID] {
+                // Don't remove from runningTasks yet — the task stays counted
+                // until its executor actually exits via finishCancellation,
+                // preventing the concurrency limit from being exceeded.
+                task.cancel()
+            } else {
+                // Queued task (not running), safe to schedule immediately.
+                await self.scheduleWorkIfNeeded()
+            }
             return snapshot
         } catch {
             self.logger.error("Failed to cancel background task \(taskID): \(error.localizedDescription)")
-            task?.cancel()
+            self.runningTasks[taskID]?.cancel()
             return nil
         }
     }

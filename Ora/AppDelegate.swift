@@ -210,7 +210,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if let backgroundTaskManager = self.backgroundTaskManager {
             let semaphore = DispatchSemaphore(value: 0)
-            Task {
+            Task.detached {
                 await backgroundTaskManager.cancelAll()
                 semaphore.signal()
             }
