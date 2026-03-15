@@ -127,9 +127,10 @@ actor ArtifactStore {
         try self.fileManager.createDirectory(at: taskDirectoryURL, withIntermediateDirectories: true)
         try self.ensurePathHasNoSymlinks(from: layout.rootURL, through: taskDirectoryURL)
 
-        try self.writeAtomically(manifestData, to: taskDirectoryURL.appendingPathComponent("manifest.json"))
         try self.writeAtomically(resultData, to: taskDirectoryURL.appendingPathComponent("result.json"))
         try self.writeAtomically(citationsData, to: taskDirectoryURL.appendingPathComponent("citations.json"))
+        // Write manifest last so incomplete saves are not surfaced by scanEntries
+        try self.writeAtomically(manifestData, to: taskDirectoryURL.appendingPathComponent("manifest.json"))
 
         if !rawPages.isEmpty {
             let rawDirectoryURL = taskDirectoryURL.appendingPathComponent("raw", isDirectory: true)
@@ -155,6 +156,14 @@ actor ArtifactStore {
 
         let rawHTMLPages: [ArtifactRawHTMLPage] = try result.pages.compactMap { page in
             guard let rawHTMLFilename = page.rawHTMLFilename else {
+                return nil
+            }
+            // Validate filename against path traversal
+            guard !rawHTMLFilename.contains(".."),
+                  !rawHTMLFilename.contains("/"),
+                  !rawHTMLFilename.contains("\\"),
+                  rawHTMLFilename == URL(fileURLWithPath: rawHTMLFilename).lastPathComponent else {
+                self.logger.warning("Skipping raw HTML file with suspicious filename: \(rawHTMLFilename)")
                 return nil
             }
             let rawURL = entry.directoryURL
@@ -276,7 +285,11 @@ actor ArtifactStore {
                 }
 
                 let manifestURL = taskDirectory.appendingPathComponent("manifest.json")
-                guard self.fileManager.fileExists(atPath: manifestURL.path) else {
+                let resultURL = taskDirectory.appendingPathComponent("result.json")
+                let citationsURL = taskDirectory.appendingPathComponent("citations.json")
+                guard self.fileManager.fileExists(atPath: manifestURL.path),
+                      self.fileManager.fileExists(atPath: resultURL.path),
+                      self.fileManager.fileExists(atPath: citationsURL.path) else {
                     continue
                 }
 
