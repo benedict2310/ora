@@ -352,7 +352,7 @@ actor BackgroundTaskManager {
             let outcome: Result<BackgroundTaskExecutionResult, BackgroundTaskExecutionFailure>
             do {
                 let result = try await Self.runWithTimeout(timeoutSeconds: snapshot.policy.timeoutSeconds) {
-                    return try await self.executeRequest(request)
+                    return try await self.executeRequest(request: request)
                 }
                 outcome = .success(result)
             } catch is CancellationError {
