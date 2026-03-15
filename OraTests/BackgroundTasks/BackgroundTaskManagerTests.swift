@@ -261,19 +261,55 @@ final class BackgroundTaskManagerTests: XCTestCase {
         XCTAssertTrue(cleaned)
     }
 
+    func test_execution_persistsArtifactsAndUpdatesArtifactPath() async throws {
+        let rootURL = try self.makeTemporaryArtifactRootURL()
+        let artifactStore = ArtifactStore(
+            rootURL: rootURL,
+            now: { Self.artifactCompletedAt }
+        )
+        let manager = await self.makeInMemoryManager(
+            executor: { _ in
+                return BackgroundTaskExecutionResult(
+                    workerResult: Self.sampleWorkerResult(),
+                    persistRawHTML: true
+                )
+            },
+            artifactStore: artifactStore
+        )
+
+        let snapshot = try await manager.enqueue(
+            inputs: BackgroundTaskInputs(urls: ["https://example.com/research"], label: "Artifact Task")
+        )
+
+        let completed = await self.waitUntil {
+            let task = await manager.task(id: snapshot.id)
+            return task?.state == .completed && task?.artifactPath != nil
+        }
+        XCTAssertTrue(completed)
+
+        let storedTask = await manager.task(id: snapshot.id)
+        XCTAssertNotNil(storedTask?.artifactPath)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: storedTask?.artifactPath ?? ""))
+        let artifact = try await artifactStore.read(taskID: snapshot.id)
+        XCTAssertEqual(artifact.result.summary, Self.sampleWorkerResult().summary)
+        XCTAssertEqual(artifact.rawHTMLPages.count, 2)
+    }
+
     // MARK: - Helpers
 
     private func makeInMemoryManager(
         executor: @escaping BackgroundTaskManager.Executor = { _ in BackgroundTaskExecutionResult() },
         concurrencyLimit: Int = BackgroundTaskManager.defaultConcurrencyLimit,
-        queueDepthLimit: Int = BackgroundTaskManager.defaultQueueDepthLimit
+        queueDepthLimit: Int = BackgroundTaskManager.defaultQueueDepthLimit,
+        artifactStore: ArtifactStore? = nil
     ) async -> BackgroundTaskManager {
         let persistence = PersistenceManager.createForTesting(inMemory: true)
         let manager = BackgroundTaskManager(modelContainer: persistence.container)
         await manager.configureForTesting(
             executor: executor,
             concurrencyLimit: concurrencyLimit,
-            queueDepthLimit: queueDepthLimit
+            queueDepthLimit: queueDepthLimit,
+            artifactStore: artifactStore
         )
         return manager
     }
@@ -286,6 +322,16 @@ final class BackgroundTaskManagerTests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
         return directory.appendingPathComponent("default.store")
+    }
+
+    private func makeTemporaryArtifactRootURL() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BackgroundTaskArtifacts-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        self.addTeardownBlock {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        return directory
     }
 
     private func waitUntil(
@@ -314,6 +360,39 @@ final class BackgroundTaskManagerTests: XCTestCase {
             errorHandler(error)
         }
     }
+
+    private static func sampleWorkerResult() -> BackgroundTaskWorkerResult {
+        return BackgroundTaskWorkerResult(
+            title: "Background Artifact",
+            summary: "Saved artifact data for the completed task.",
+            markdown: "Background task completed successfully.",
+            pages: [
+                BackgroundTaskArtifactPage(
+                    pageNumber: 1,
+                    url: "https://example.com/source-a",
+                    title: "Source A",
+                    extractedText: "Source A text",
+                    rawHTML: "<html><body>A</body></html>"
+                ),
+                BackgroundTaskArtifactPage(
+                    pageNumber: 2,
+                    url: "https://example.com/source-b",
+                    title: "Source B",
+                    extractedText: "Source B text",
+                    rawHTML: "<html><body>B</body></html>"
+                )
+            ],
+            citations: [
+                BackgroundTaskArtifactCitation(
+                    url: "https://example.com/source-a",
+                    title: "Source A",
+                    snippet: "Source A text"
+                )
+            ]
+        )
+    }
+
+    private static let artifactCompletedAt = ISO8601DateFormatter().date(from: "2026-01-06T12:00:00Z")!
 }
 
 private actor BlockingExecutorController {
