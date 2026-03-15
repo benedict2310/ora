@@ -184,6 +184,29 @@ public protocol LLMServicing: Sendable {
     
     /// Clear the KV cache to free memory and start fresh for a new session
     func clearCache() async
+
+    /// Generate a one-shot completion with an isolated KV cache.
+    ///
+    /// Unlike `generate(messages:maxTokens:)`, this method creates a fresh KV cache,
+    /// runs generation, and discards the cache afterward. This prevents background
+    /// summarization from corrupting the foreground conversation's persistent cache.
+    func generateOneShot(prompt: String, maxTokens: Int) async throws -> String
+}
+
+// Default implementation for conformers that don't need one-shot generation.
+// Falls back to using the standard generate method with a single user message.
+extension LLMServicing {
+    func generateOneShot(prompt: String, maxTokens: Int = 800) async throws -> String {
+        let messages = [LLMMessage(role: .user, content: prompt)]
+        let stream = await self.generate(messages: messages, maxTokens: maxTokens)
+        var result = ""
+        for try await delta in stream {
+            if case .token(let token) = delta {
+                result += token
+            }
+        }
+        return result
+    }
 }
 
 /// Errors specific to LLM Service

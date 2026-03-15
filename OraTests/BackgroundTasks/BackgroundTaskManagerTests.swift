@@ -282,14 +282,16 @@ final class BackgroundTaskManagerTests: XCTestCase {
 
     func test_execution_persistsArtifactsAndUpdatesArtifactPath() async throws {
         let rootURL = try self.makeTemporaryArtifactRootURL()
+        let completedAt = Self.artifactCompletedAt
         let artifactStore = ArtifactStore(
             rootURL: rootURL,
-            now: { Self.artifactCompletedAt }
+            now: { completedAt }
         )
+        let sampleResult = Self.sampleWorkerResult()
         let manager = await self.makeInMemoryManager(
             executor: { _ in
                 return BackgroundTaskExecutionResult(
-                    workerResult: Self.sampleWorkerResult(),
+                    artifactWorkerResult: sampleResult,
                     persistRawHTML: true
                 )
             },

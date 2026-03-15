@@ -66,6 +66,13 @@ actor BackgroundTaskManager {
     static let defaultConcurrencyLimit = 2
     static let recoveryCancellationReason = "Ora quit before task completed."
 
+    /// Resolve the shared BackgroundTaskManager from PersistenceManager.
+    /// Returns nil when called from test harnesses that don't use PersistenceManager.shared.
+    @MainActor
+    static func resolveShared() -> BackgroundTaskManager? {
+        return PersistenceManager.shared.backgroundTaskManager
+    }
+
     // MARK: - Properties
 
     private let logger = Logger.ora(category: "orchestration")
@@ -78,6 +85,7 @@ actor BackgroundTaskManager {
     private var concurrencyLimit: Int = BackgroundTaskManager.defaultConcurrencyLimit
     private var queueDepthLimit: Int = BackgroundTaskManager.defaultQueueDepthLimit
     private var artifactStore: ArtifactStore = .shared
+    private var summaryGenerator: SummaryGenerator?
 
     // MARK: - Configuration
 
@@ -85,7 +93,8 @@ actor BackgroundTaskManager {
         worker: any BackgroundWorker,
         concurrencyLimit: Int = BackgroundTaskManager.defaultConcurrencyLimit,
         queueDepthLimit: Int = BackgroundTaskManager.defaultQueueDepthLimit,
-        artifactStore: ArtifactStore? = nil
+        artifactStore: ArtifactStore? = nil,
+        summaryGenerator: SummaryGenerator? = nil
     ) {
         self.worker = worker
         self.executorOverride = nil
@@ -94,6 +103,7 @@ actor BackgroundTaskManager {
         if let artifactStore {
             self.artifactStore = artifactStore
         }
+        self.summaryGenerator = summaryGenerator
     }
 
     func configureForTesting(
@@ -435,6 +445,10 @@ actor BackgroundTaskManager {
             record.artifactPath = result.artifactPath
             record.errorMessage = nil
             record.completedAt = completedAt
+            // Mark summary as pending when artifacts were persisted
+            if result.artifactPath != nil {
+                record.summaryState = .pending
+            }
 
         case .failure(.timedOut(let seconds)):
             record.state = .failed
@@ -453,6 +467,13 @@ actor BackgroundTaskManager {
             try self.saveContext()
             let snapshot = try record.snapshot()
             self.emitEvent(for: snapshot, from: previousState, at: completedAt)
+
+            // Enqueue summary generation for successfully completed tasks with artifacts
+            if case .success(let result) = outcome, result.artifactPath != nil {
+                if let summaryGenerator = self.summaryGenerator {
+                    await summaryGenerator.enqueueSummary(taskID: taskID)
+                }
+            }
         } catch {
             self.logger.error("Failed to finish background task \(taskID): \(error.localizedDescription)")
         }
@@ -498,6 +519,21 @@ actor BackgroundTaskManager {
             policy: request.policy
         )
         return BackgroundTaskExecutionResult(workerResult: workerResult)
+    }
+
+    // MARK: - Summary State
+
+    func updateSummaryState(taskID: UUID, state: BackgroundTaskSummaryState) {
+        guard let record = try? self.fetchRecord(id: taskID) else {
+            self.logger.warning("Cannot update summary state: task \(taskID) not found")
+            return
+        }
+        record.summaryState = state
+        do {
+            try self.saveContext()
+        } catch {
+            self.logger.error("Failed to persist summary state for task \(taskID): \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Persistence

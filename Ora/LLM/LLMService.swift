@@ -413,6 +413,93 @@ actor LLMService: LLMServicing {
         }
     }
     
+    // MARK: - One-Shot Generation
+
+    /// Generate a one-shot completion with an isolated KV cache.
+    ///
+    /// Creates a fresh KV cache that is discarded after generation completes.
+    /// This prevents background work (e.g., summary generation) from corrupting
+    /// the foreground conversation's persistent KV cache.
+    func generateOneShot(prompt: String, maxTokens: Int = 800) async throws -> String {
+        guard isReady, let container = modelContainer else {
+            try await self.prepare()
+            guard let container = modelContainer else {
+                throw LLMServiceError.notReady
+            }
+            return try await self.runOneShotGeneration(
+                prompt: prompt,
+                maxTokens: maxTokens,
+                container: container
+            )
+        }
+
+        return try await self.runOneShotGeneration(
+            prompt: prompt,
+            maxTokens: maxTokens,
+            container: container
+        )
+    }
+
+    private func runOneShotGeneration(
+        prompt: String,
+        maxTokens: Int,
+        container: ModelContainer
+    ) async throws -> String {
+        let parameters = GenerateParameters(
+            maxTokens: maxTokens,
+            temperature: temperature,
+            topP: topP
+        )
+
+        self.logger.info("Starting one-shot generation (\(maxTokens) max tokens)")
+
+        let result: String = try await MLXMetalGate.shared.withExclusiveAccess {
+            try await container.perform { context -> String in
+                let inputTokens = context.tokenizer.encode(text: prompt)
+                let input = LMInput(tokens: MLXArray(inputTokens))
+
+                // Create a fresh KV cache - do NOT touch self.kvCache
+                let freshCache = context.model.newCache(parameters: parameters)
+
+                let iterator = try TokenIterator(
+                    input: input,
+                    model: context.model,
+                    cache: freshCache,
+                    parameters: parameters
+                )
+
+                var tokens: [String] = []
+
+                for await generation in MLXLMCommon.generate(
+                    input: input,
+                    context: context,
+                    iterator: iterator
+                ) {
+                    if Task.isCancelled { break }
+
+                    if let chunk = generation.chunk {
+                        // Stop on end-of-turn tokens
+                        if chunk.contains("<|im_end|>") ||
+                           chunk.contains("<|endoftext|>") {
+                            break
+                        }
+                        tokens.append(chunk)
+                    }
+                }
+
+                Stream.gpu.synchronize()
+                // freshCache is discarded when this scope exits
+                return tokens.joined()
+            }
+        }
+
+        // Clear GPU cache after one-shot generation to free memory
+        GPU.clearCache()
+
+        self.logger.info("One-shot generation complete (\(result.count) chars)")
+        return result
+    }
+
     // MARK: - Memory Management
     
     private func checkMemoryAvailable(for model: ModelIdentifier) -> Bool {

@@ -1,5 +1,15 @@
 import Foundation
 
+extension Notification.Name {
+    /// Posted when the foreground pipeline transitions to an active state
+    /// (listening, thinking, speaking, executing).
+    static let oraForegroundWorkStarted = Notification.Name("oraForegroundWorkStarted")
+
+    /// Posted when the foreground pipeline transitions to an idle or terminal state
+    /// (idle, completed, error).
+    static let oraForegroundWorkIdle = Notification.Name("oraForegroundWorkIdle")
+}
+
 @MainActor
 extension SimplePipelineController {
     // MARK: - Private - Error Handling
@@ -47,11 +57,20 @@ extension SimplePipelineController {
             return
         }
         self.state = newState
-        
+
         self.logger.debug("State: \(oldState.description) → \(newState.description)")
-        
+
         // Update status bar
         self.updateStatusBar(for: newState)
+
+        // Post foreground activity notifications for background task coordination
+        let wasActive = Self.isSessionActive(for: oldState)
+        let isActive = Self.isSessionActive(for: newState)
+        if isActive && !wasActive {
+            NotificationCenter.default.post(name: .oraForegroundWorkStarted, object: nil)
+        } else if !isActive && wasActive {
+            NotificationCenter.default.post(name: .oraForegroundWorkIdle, object: nil)
+        }
     }
     
     func updateStatusBar(for state: PipelineState) {
