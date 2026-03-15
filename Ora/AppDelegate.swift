@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkeyPressObserver: NSObjectProtocol?
     private var hotkeyReleaseObserver: NSObjectProtocol?
     private var memoryFileWatcher: MemoryFileWatcher?
+    private var backgroundTaskManager: BackgroundTaskManager?
     // Sparkle/updates are not relevant for unit tests and can cause hangs in headless CI.
     private lazy var updateController = UpdateController.shared
 
@@ -124,6 +125,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await ModelMigrationCoordinator.shared.runIfNeeded()
         }
 
+        self.backgroundTaskManager = PersistenceManager.shared.backgroundTaskManager
+        if let backgroundTaskManager = self.backgroundTaskManager {
+            Task {
+                await backgroundTaskManager.recoverUnfinishedTasksOnLaunch()
+                self.logger.info("Background task manager reconciled stale tasks")
+            }
+        }
+
         // Start preloading models in the background
         Task {
             do {
@@ -198,6 +207,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if let watcher = self.memoryFileWatcher {
             Task { await watcher.stopWatching() }
+        }
+        if let backgroundTaskManager = self.backgroundTaskManager {
+            let semaphore = DispatchSemaphore(value: 0)
+            Task.detached {
+                await backgroundTaskManager.cancelAll()
+                semaphore.signal()
+            }
+            _ = semaphore.wait(timeout: .now() + 5)
         }
         PersistenceManager.shared.flushSave()
 

@@ -1,223 +1,124 @@
 # BG.05 - Summary Generation
 
 **Epic:** Background Tasks
-**Status:** Not Started
+**Status:** Ready for Implementation
 **Priority:** P1 (High)
 **Estimated Effort:** 2 days
 **Dependencies:** BG.02, BG.04
 **Target:** macOS 26 (Tahoe)
-**Design Reference:** BG.00
 
----
+## Summary
 
-## 1. Objective
+Generate `summary.md` from stored research artifacts using the **local** LLM runtime only. Summary jobs must stay off the foreground path, sanitize fetched content before inference, and cooperate with Ora’s existing MLX serialization rather than trying to manage the GPU lock themselves.
 
-Generate a concise, human-readable `summary.md` from background task results using the local LLM. The summary must be safe (no raw HTML injected into context), queued properly behind active conversation turns (GPU serialization), and written to the artifact folder alongside `result.json`.
+## Architecture Context and Reuse Guidance
 
-## 2. User Story
+- Use [LLMService.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/LLM/LLMService.swift) directly for summarization, not `LLMProviderManager`.
+- Do **not** manually acquire [MLXMetalGate.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/LLM/MLXMetalGate.swift) before calling `LLMService`; `LLMService` already serializes GPU access.
+- Foreground pipeline state transitions already live in [SimplePipelineController+State.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/Orchestration/SimplePipelineController+State.swift).
+- Keep summary state on `BackgroundTaskRecord`; do not invent a second persistence model for summary jobs.
 
-As a **user**, I want background research results to include a **readable summary** so that I can **quickly understand the findings without reading raw extracted text**.
+## Resolved Decisions
 
-## 3. Scope
+- Summaries use `LLMService.shared` even when the user has a cloud provider selected.
+- **Model selection (v1):** Use the currently loaded model via `LLMService.shared`. If no model is loaded, `prepare()` loads the default. No separate model configuration for background tasks in v1. A future story can add the option to use a smaller model (e.g., 3B) for lighter summaries.
+- **KV cache isolation (CRITICAL):** Background summarization must **not** use or pollute the foreground conversation's persistent KV cache. Add a `generateOneShot(prompt:maxTokens:)` method to `LLMService` that creates a fresh context/cache for the call and discards it afterward. `SummaryGenerator` must use this method exclusively.
+- Summary jobs run only when the foreground pipeline is inactive.
+- If foreground work starts while a summary is generating, cancel and requeue the summary job.
+- `summary.md` is markdown prose plus bullets; no structured JSON output file is added in this story.
 
-### In Scope
+## File Touch List
 
-- `SummaryGenerator` actor that loads `result.json` and produces `summary.md`
-- Content sanitization before LLM injection (strip HTML, limit input length, escape control characters)
-- GPU serialization: queue summary generation behind active conversation via `MLXMetalGate`
-- Dedicated summarization prompt (not the conversation system prompt)
-- Fallback: if LLM is busy or fails after retries, write a basic extractive summary (first N sentences)
-- Write `summary.md` to the task's artifact folder
-- Update task record with summary status
+- `Ora/BackgroundTasks/Summary/SummaryGenerator.swift`
+  Purpose: local-only summary job queue and execution.
+- `Ora/BackgroundTasks/Summary/SummaryPrompt.swift`
+  Purpose: deterministic summarization prompt builder.
+- `Ora/BackgroundTasks/Summary/ContentSanitizer.swift`
+  Purpose: strip unsafe/noisy content before inference.
+- `Ora/BackgroundTasks/BackgroundTaskRecord.swift`
+  Purpose: add `summaryState` and optional `summaryError`.
+- `Ora/BackgroundTasks/BackgroundTaskManager.swift`
+  Purpose: enqueue summary jobs after artifacts are written.
+- `Ora/Orchestration/SimplePipelineController+State.swift`
+  Purpose: publish foreground activity notifications consumed by `SummaryGenerator`.
+- `OraTests/BackgroundTasks/SummaryGeneratorTests.swift`
+- `OraTests/BackgroundTasks/ContentSanitizerTests.swift`
 
-### Out of Scope
+## Implementation Steps
 
-- Real-time streaming of summary generation to UI
-- Multi-document synthesis (each page summarized independently, then combined)
-- Embedding-based retrieval or semantic search
-- Custom summary templates or user-configurable summary length
+1. Add foreground activity notifications in `SimplePipelineController+State.swift`.
+   Required signals:
+   - foreground work started
+   - foreground work became idle
 
-## 4. Architecture Alignment
+   **Cross-isolation mechanism:** Use `NotificationCenter` (consistent with existing Ora patterns). `SimplePipelineController` is `@MainActor`; `SummaryGenerator` will be a non-`@MainActor` actor. Post `Notification.Name.oraForegroundWorkStarted` and `.oraForegroundWorkIdle` from the pipeline controller. `SummaryGenerator` observes via `NotificationCenter.default.notifications(named:)` async sequence.
 
-### Component Placement
+2. Add summary state to `BackgroundTaskRecord`.
+   States:
+   - `pending`
+   - `generating`
+   - `complete`
+   - `failed`
 
-```
-Ora/BackgroundTasks/
-  ├── Summary/
-  │   ├── SummaryGenerator.swift        // Actor: orchestrates summarization
-  │   ├── SummaryPrompt.swift           // Prompt template for summarization
-  │   └── ContentSanitizer.swift        // Strip HTML, limit length, escape
-  └── ... (existing from BG.01, BG.02, BG.04)
-```
+3. Implement `ContentSanitizer`.
+   Rules:
+   - remove remaining HTML tags
+   - collapse whitespace
+   - strip control characters
+   - normalize Unicode (strip invisible characters, RTL overrides, zero-width joiners)
+   - cap each page at `4_000` chars
+   - cap combined input at `8_000` chars
+   - **prompt injection framing:** wrap fetched content in clear delimiters before passing to the LLM: `[BEGIN FETCHED CONTENT FROM <url>]...[END FETCHED CONTENT]`. This does not prevent all prompt injection but makes the boundary explicit.
+   - check model availability before attempting generation (if model download is incomplete, skip directly to extractive fallback)
 
-### GPU Serialization (Critical)
+4. Implement `SummaryGenerator`.
+   Behavior:
+   - observe foreground activity
+   - queue pending summary jobs
+   - start only when pipeline is idle
+   - call `LLMService.shared.prepare()` and `generateOneShot(prompt:maxTokens:)` (NOT the multi-turn `generate` method)
+   - collect the streamed output into one markdown string
+   - on cancellation from foreground activity, requeue the job
+   - **cancel/requeue bounds:** maximum 3 requeue attempts per task. After 3 cancellations, use extractive fallback. Minimum idle window of 5 seconds before starting a new summary attempt (prevents thrashing if user speaks frequently). Partially generated summaries are discarded on cancellation (not resumed).
+   - on repeated failure (3 LLM failures or 3 requeue exhaustions), write an extractive fallback summary
+   - **extractive fallback algorithm:** take the first 500 characters of extracted text from each page (up to 5 pages), concatenate with page URL headers, and write as `summary.md`. Format: `## <page title>\n<first 500 chars>\n\nSource: <url>\n\n---\n` per page. This is deliberately simple — it provides *something* useful rather than nothing.
 
-MLX uses a single Metal command queue. The LLM and TTS cannot generate concurrently. Ora already handles this via `MLXMetalGate` in `Ora/LLM/MLXMetalGate.swift`.
+5. Write `summary.md` into the artifact folder and update task summary state.
 
-```
-Active Conversation Turn (LLM + TTS)
-  |
-  └── completes → MLXMetalGate releases
-                    |
-                    v
-              SummaryGenerator acquires MLXMetalGate
-                    |
-                    ├── Generates summary via LLMService
-                    ├── Writes summary.md
-                    └── Releases MLXMetalGate
-```
+## Tests and Validation
 
-**Rules:**
-- Summary generation NEVER preempts an active conversation turn
-- If user starts a new conversation while summary is generating, cancel summary and re-queue
-- Summary generation uses a lower priority than conversation (yield on contention)
+- `test_sanitizer_stripsTagsAndControlCharacters`
+- `test_sanitizer_capsPerPageAndTotalInput`
+- `test_generator_usesLocalLLMServiceNotProviderManager`
+- `test_generator_writesSummaryMarkdown`
+- `test_generator_requeuesWhenForegroundWorkStarts`
+- `test_generator_fallbackWritesExtractiveSummaryOnFailure`
+- `test_generator_updatesSummaryState`
+- `test_generator_maxRequeueAttemptsTriggersExtractiveFallback`
+- `test_generator_respectsMinimumIdleWindow`
+- `test_sanitizer_wrapsContentInDelimiters`
+- `test_sanitizer_stripsUnicodeInvisibleCharacters`
 
-### Sanitization Pipeline
+Manual validation:
+- Complete a task while Ora is idle and confirm `summary.md` is created.
+- Start a new foreground turn while summarization is running and confirm the summary job is canceled/requeued.
 
-```
-result.json (WorkerResult)
-  |
-  ├── For each page:
-  |   ├── Strip any residual HTML tags
-  |   ├── Normalize whitespace (collapse runs, trim)
-  |   ├── Escape control characters
-  |   ├── Truncate to 4000 chars per page
-  |   └── Combine into sanitized input
-  |
-  ├── Total input capped at 8000 chars (across all pages)
-  |
-  └── Wrapped in summarization prompt → LLM
-```
+## Acceptance Criteria
 
-### Summarization Prompt
+- [ ] Background-task summaries are generated through `LLMService.shared`, not a cloud provider.
+- [ ] Summary generation does not manually acquire `MLXMetalGate`.
+- [ ] Summary jobs only run while the foreground pipeline is idle and requeue on foreground interruption.
+- [ ] Input content is sanitized and size-bounded before inference.
+- [ ] `summary.md` is written for successful jobs, with an extractive fallback on repeated LLM failure.
+- [ ] `BackgroundTaskRecord` tracks summary lifecycle state.
 
-```
-You are summarizing research results. Produce a concise markdown summary.
+## File Touch List (additional)
 
-RULES:
-1. Write 3-5 bullet points covering the key findings.
-2. Include a one-sentence overview at the top.
-3. Cite sources using [Source Title](URL) format.
-4. Do not include raw URLs or HTML.
-5. Keep the summary under 500 words.
+- `Ora/LLM/LLMService.swift`
+  Purpose: add `generateOneShot(prompt:maxTokens:)` method that creates a fresh KV cache context, generates, and discards the context. This prevents background summarization from corrupting the foreground conversation state.
 
-RESEARCH DATA:
----
-{sanitized_content}
----
+## Risks and Open Questions
 
-SOURCES:
-{citations_list}
-
-Write the summary now:
-```
-
-### Integration Points
-
-| Component | Integration |
-|:----------|:------------|
-| `MLXMetalGate` | Acquire before LLM generation, release after |
-| `LLMService` | Use existing `generate()` method with summarization messages |
-| `ArtifactStore` | Read `result.json`, write `summary.md` |
-| `BackgroundTaskManager` | Trigger summary after worker completion |
-| `TaskNotificationService` (BG.06) | Include summary preview in completion notification |
-
-## 5. Implementation Plan (Draft)
-
-### 5.1 Files to Create
-
-- `Ora/BackgroundTasks/Summary/SummaryGenerator.swift` — Actor: load result, sanitize, generate summary, write file
-- `Ora/BackgroundTasks/Summary/SummaryPrompt.swift` — Prompt template with content injection
-- `Ora/BackgroundTasks/Summary/ContentSanitizer.swift` — HTML stripping, length limiting, escaping
-- `OraTests/BackgroundTasks/SummaryGeneratorTests.swift` — Unit tests
-- `OraTests/BackgroundTasks/ContentSanitizerTests.swift` — Sanitization tests
-
-### 5.2 Files to Modify
-
-- `Ora/BackgroundTasks/BackgroundTaskManager.swift` — Trigger `SummaryGenerator` after worker completes and artifacts are saved
-- `Ora/BackgroundTasks/BackgroundTask.swift` — Add `summaryStatus` field (pending, generating, complete, failed)
-
-### 5.3 Tests to Add
-
-- `OraTests/BackgroundTasks/ContentSanitizerTests.swift`:
-  - `test_sanitize_stripsHTMLTags`
-  - `test_sanitize_normalizesWhitespace`
-  - `test_sanitize_escapesControlCharacters`
-  - `test_sanitize_truncatesLongContent`
-  - `test_sanitize_combinesMultiplePages`
-  - `test_sanitize_capsTotalAt8000Chars`
-  - `test_sanitize_handlesEmptyInput`
-  - `test_sanitize_handlesUnicodeContent`
-- `OraTests/BackgroundTasks/SummaryGeneratorTests.swift`:
-  - `test_generate_producesMarkdownSummary` (mock LLM)
-  - `test_generate_writesSummaryToArtifactFolder`
-  - `test_generate_fallbackOnLLMFailure`
-  - `test_generate_respectsMLXMetalGate`
-  - `test_generate_cancellableOnNewConversation`
-
-### 5.4 Dependencies/Config
-
-- None (reuses existing `LLMService`, `MLXMetalGate`)
-
-## 6. Acceptance Criteria
-
-- [ ] AC-1: `SummaryGenerator` reads `result.json` from artifact folder and produces `summary.md`
-- [ ] AC-2: Content is sanitized before LLM injection (no HTML tags, max 8000 chars total, control chars escaped)
-- [ ] AC-3: Summary generation acquires `MLXMetalGate` and never preempts active conversation
-- [ ] AC-4: If LLM fails after 2 retries, a basic extractive fallback summary is written (first 3 sentences per page)
-- [ ] AC-5: `summary.md` is valid Markdown with bullet points and source citations
-- [ ] AC-6: Summary generation is cancelable (responds to task cancellation within 2s)
-- [ ] AC-7: Task record updated with `summaryStatus` (pending, generating, complete, failed)
-- [ ] AC-8: Per-page input truncated to 4000 chars; total input capped at 8000 chars
-- [ ] AC-9: `GPU.clearCache()` called after summary generation completes
-
-## 7. Verification Plan
-
-### Automated Tests
-
-- [ ] Content sanitization unit tests (HTML stripping, truncation, escaping)
-- [ ] Summary generation with mocked LLM (verify prompt structure, output parsing)
-- [ ] Fallback path test (LLM returns error, extractive summary written)
-- [ ] File write verification (summary.md exists and is valid Markdown)
-
-### Manual Tests
-
-- [ ] Trigger a background research task end-to-end and verify `summary.md` appears in artifact folder
-- [ ] Start a conversation while summary is generating — verify conversation is not delayed
-- [ ] Force LLM failure and verify fallback summary is readable
-- [ ] Check GPU memory after summary generation (should not grow unbounded)
-
-## 8. Performance / Reliability Considerations
-
-- Summary generation adds 2-5 seconds per task (LLM inference on ~8000 char input)
-- GPU memory: reuses existing LLM model; no additional model loading
-- `GPU.clearCache()` called after summary generation (consistent with existing pattern in `LLMService`)
-- If summary queue grows (multiple tasks complete while user is in conversation), process sequentially
-- Summary LLM generation uses `maxTokens: 600` (sufficient for 500-word summary)
-
-## 9. Risks & Mitigations
-
-- **Prompt injection via extracted content** — Sanitization pipeline strips HTML and limits length; summarization prompt uses a separate system message (not the conversation system prompt) with explicit "data only" framing
-- **GPU contention with conversation** — `MLXMetalGate` serializes access; summary yields to conversation. Worst case: summary is delayed, not conversation
-- **LLM generates unsafe summary** — Summary is shown to user (not fed back to agentic loop); low risk. Future: add output validation
-- **Large result sets** — Truncation to 8000 chars means some content is lost; acceptable for v1. Future: chunked summarization with multi-pass combining
-
-## 10. Open Questions
-
-- Should the summarization use the same model as conversation (Qwen 3) or a dedicated smaller model? (Proposed: same model — avoids loading a second model into GPU memory)
-- Should summaries be re-generatable if the user doesn't like them? (Proposed: not in v1)
-- Should the summary include structured data (key-value pairs) in addition to prose? (Proposed: prose only for v1)
-
----
-
-## Implementation Summary
-
-(TBD after implementation.)
-
-## Code Review Findings
-
-(TBD by review agent.)
-
-## Completion Status
-
-(TBD after merge.)
+- Cancel/requeue behavior adds some coordination complexity, but it is necessary to protect Ora’s main interactive path.
+- **KV cache isolation is the highest-risk item in this story.** If `generateOneShot()` is not implemented correctly, background summaries will corrupt foreground conversations. Test thoroughly with concurrent foreground + background generation.
+- Prompt injection via fetched web content is a known risk surface. The content framing delimiters are a partial mitigation, not a complete defense.

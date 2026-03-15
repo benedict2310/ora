@@ -37,6 +37,10 @@ final class PersistenceManager {
         return BackgroundPersistenceActor(modelContainer: self.container)
     }()
 
+    private(set) lazy var backgroundTaskManager: BackgroundTaskManager = {
+        return BackgroundTaskManager(modelContainer: self.container)
+    }()
+
     // MARK: - Initialization
 
     private init() {
@@ -48,7 +52,8 @@ final class PersistenceManager {
             Session.self,
             AuditLogEntryModel.self,
             AppSettings.self,
-            ScriptTrustRecordModel.self
+            ScriptTrustRecordModel.self,
+            BackgroundTaskRecord.self
         ])
 
         let storeURL = FileManager.default
@@ -126,7 +131,8 @@ final class PersistenceManager {
             Session.self,
             AuditLogEntryModel.self,
             AppSettings.self,
-            ScriptTrustRecordModel.self
+            ScriptTrustRecordModel.self,
+            BackgroundTaskRecord.self
         ])
 
         let configuration: ModelConfiguration

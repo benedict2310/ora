@@ -26,7 +26,8 @@ final class PersistenceTests: XCTestCase {
         let schema = Schema([
             Session.self,
             AuditLogEntryModel.self,
-            AppSettings.self
+            AppSettings.self,
+            BackgroundTaskRecord.self
         ])
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         container = try! ModelContainer(for: schema, configurations: [config])

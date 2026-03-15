@@ -1,233 +1,124 @@
 # BG.02 - Worker Abstraction
 
 **Epic:** Background Tasks
-**Status:** Not Started
+**Status:** Ready for Implementation
 **Priority:** P1 (High)
 **Estimated Effort:** 3 days
 **Dependencies:** BG.01
 **Target:** macOS 26 (Tahoe)
-**Design Reference:** BG.00
 
----
+## Summary
 
-## 1. Objective
+Implement the phase-1 in-process worker that fetches explicit URLs and extracts clean text for later summarization. The worker contract must be pluggable so future isolation strategies can replace the in-process implementation without changing the queue or research tools.
 
-Define a `BackgroundWorker` protocol with a pluggable isolation strategy, and implement the Phase 1 in-process worker using `URLSession` and HTML readability extraction. Future phases (XPC Service, Apple Container) slot in by conforming to the same protocol.
+## Architecture Context and Reuse Guidance
 
-## 2. User Story
+- The queue actor from BG.01 should own worker dispatch.
+- BG.02 should not add new package dependencies. Keep the v1 extractor in-repo.
+- Network safety is applied through BG.03’s `SafeURLSession`; do not let the worker talk to raw `URLSession` directly once BG.03 lands.
+- New files under `Ora/BackgroundTasks/Workers/` are auto-included by `project.yml`.
 
-As a **user**, I want Ora to **fetch web pages and extract readable content** so that I can **get summarized research results from online sources**.
+## Resolved Decisions
 
-## 3. Scope
+- No SwiftSoup dependency in v1.
+- `research.start` is URL-based; the worker does not discover sources on its own.
+- Multiple URLs are fetched sequentially.
+- Partial failure is allowed: one failed page does not fail the whole task unless every page fails.
 
-### In Scope
+## File Touch List
 
-- `BackgroundWorker` protocol defining the worker contract (JSON in → JSON out)
-- `URLSessionWorker`: Phase 1 in-process implementation
-  - HTTP GET with configurable timeout and size limit
-  - HTML → readable text extraction (SwiftSoup or equivalent)
-  - Structured JSON output (title, text, metadata, source URL)
-  - Support for fetching multiple URLs per task
-- Worker lifecycle: start → progress → complete/fail
-- Hard timeout enforcement via `Task` cancellation
-- Content-type validation (reject binary, images, etc.)
-- Integration with `BackgroundTaskManager` for dispatching
+- `Ora/BackgroundTasks/Workers/BackgroundWorker.swift`
+  Purpose: shared worker protocol.
+- `Ora/BackgroundTasks/Workers/WorkerResult.swift`
+  Purpose: codable result types returned by workers.
+- `Ora/BackgroundTasks/Workers/URLSessionWorker.swift`
+  Purpose: phase-1 worker implementation.
+- `Ora/BackgroundTasks/Workers/HTMLTextExtractor.swift`
+  Purpose: in-repo HTML-to-text extraction without third-party dependencies.
+- `Ora/BackgroundTasks/Workers/WorkerError.swift`
+  Purpose: typed worker failures for queue/audit surfaces.
+- `Ora/BackgroundTasks/BackgroundTaskManager.swift`
+  Purpose: inject and execute the worker.
+- `OraTests/BackgroundTasks/URLSessionWorkerTests.swift`
+  Purpose: fetch/cancellation/partial-failure coverage.
+- `OraTests/BackgroundTasks/HTMLTextExtractorTests.swift`
+  Purpose: extraction quality coverage.
 
-### Out of Scope
+## Implementation Steps
 
-- XPC Service worker (Phase 2 — future)
-- Apple Container worker (Phase 3 — future)
-- Browser automation / JavaScript rendering
-- PDF parsing (future extension)
-- Network safety policy details (BG.03 — applied before worker dispatch)
+1. Define `BackgroundWorker`.
+   ```swift
+   protocol BackgroundWorker: Sendable {
+       func execute(
+           taskID: UUID,
+           input: BackgroundTaskInputs,
+           policy: BackgroundTaskPolicy
+       ) async throws -> WorkerResult
+   }
+   ```
 
-## 4. Architecture Alignment
+2. Define `WorkerResult`.
+   Required fields:
+   - `pages: [PageResult]`
+   - `metadata: WorkerMetadata`
+   - `failedURLs: [FailedPage]`
 
-### Component Placement
+   `PageResult` should include:
+   - `url`
+   - `finalURL`
+   - `title`
+   - `text`
+   - `contentType`
+   - `wordCount`
+   - `fetchedAt`
+   - optional `rawHTML`
 
-```
-Ora/BackgroundTasks/
-  ├── Workers/
-  │   ├── BackgroundWorker.swift        // Protocol
-  │   ├── URLSessionWorker.swift        // Phase 1: in-process
-  │   └── WorkerResult.swift            // Structured output type
-  └── ... (existing from BG.01)
-```
+3. Implement `HTMLTextExtractor`.
+   Minimum behavior:
+   - remove `script`, `style`, and `noscript` blocks
+   - extract `<title>`
+   - strip remaining tags
+   - decode common HTML entities
+   - collapse whitespace/newlines
+   - preserve enough paragraph breaks to make summaries readable
 
-### Worker Protocol
+4. Implement `URLSessionWorker`.
+   - Use injected fetch client from BG.03.
+   - Fetch URLs sequentially.
+   - Convert HTML/text responses into `PageResult`.
+   - Record per-URL failure details without aborting the whole task unless every URL fails.
 
-```swift
-/// Contract for background task workers.
-/// Phase 1: in-process URLSession. Phase 2: XPC. Phase 3: Apple Container.
-protocol BackgroundWorker: Sendable {
-    /// Execute the task and return structured results.
-    /// - Parameter input: Task inputs (URLs, query, options)
-    /// - Parameter policy: Execution policy (timeout, size limits)
-    /// - Returns: Structured extraction results
-    /// - Throws: On timeout, network error, or extraction failure
-    func execute(
-        input: BackgroundTaskInputs,
-        policy: BackgroundTaskPolicy
-    ) async throws -> WorkerResult
-}
-```
+5. Wire worker execution into `BackgroundTaskManager`.
+   The manager should mark task state based on the aggregate worker result.
 
-### Worker Result Schema
+## Tests and Validation
 
-```swift
-struct WorkerResult: Sendable, Codable {
-    let pages: [PageResult]
-    let metadata: WorkerMetadata
+- `test_execute_singleHTMLURL_returnsPageResult`
+- `test_execute_multipleURLs_returnsSequentialResults`
+- `test_execute_partialFailure_keepsSuccessfulPages`
+- `test_execute_allFailures_throws`
+- `test_execute_cancellationStopsRemainingFetches`
+- `test_extract_titleAndBodyText`
+- `test_extract_removesScriptsAndStyles`
+- `test_extract_decodesEntities`
+- `test_extract_collapsesWhitespace`
+- `test_extract_emptyHTML_returnsEmptyText`
 
-    struct PageResult: Sendable, Codable {
-        let url: String
-        let title: String?
-        let text: String           // Readability-extracted text
-        let byline: String?
-        let excerpt: String?
-        let wordCount: Int
-        let fetchedAt: Date
-    }
+Manual validation:
+- Fetch two real docs pages and confirm extracted text is readable enough for summarization.
+- Cancel a running multi-URL task and confirm later URLs are never requested.
 
-    struct WorkerMetadata: Sendable, Codable {
-        let totalPages: Int
-        let successfulPages: Int
-        let failedPages: Int
-        let totalBytes: Int
-        let executionTimeSeconds: Double
-    }
-}
-```
+## Acceptance Criteria
 
-### Integration with BackgroundTaskManager
+- [ ] `BackgroundWorker` exists and is injectable from `BackgroundTaskManager`.
+- [ ] `URLSessionWorker` returns structured, codable `WorkerResult` data for HTML and plain-text responses.
+- [ ] Extraction is implemented in-repo; BG.02 does not add a new package dependency.
+- [ ] Multiple URLs are processed sequentially.
+- [ ] Per-page failures are preserved without losing successful pages.
+- [ ] Worker cancellation stops further work quickly enough for queue cancellation to feel immediate.
 
-```
-BackgroundTaskManager.enqueue(task)
-  │
-  ├── Validates inputs (BG.01)
-  ├── Applies network safety policy (BG.03)
-  │
-  └── Dispatches to worker:
-      let worker = URLSessionWorker()  // Phase 1
-      let result = try await worker.execute(input: task.inputs, policy: task.policy)
-      │
-      └── ArtifactStore.save(result, for: task)  // BG.04
-```
+## Risks and Open Questions
 
-### Concurrency
-
-- Each worker runs in its own `Task` (managed by `BackgroundTaskManager`)
-- `URLSession` is configured per-worker (ephemeral, no cookies, no cache)
-- Multiple URLs within a task are fetched sequentially (not parallel) to respect rate limits
-- Worker `Task` is canceled on timeout via parent task cancellation
-
-### Existing Patterns
-
-- Follows the same actor-based pattern as `ToolHost` (execute method, validation, result type)
-- Result type mirrors `ToolResult` structure (structured data + human summary)
-- Error handling matches `ToolHostError` pattern (typed errors with descriptive messages)
-
-## 5. Implementation Plan (Draft)
-
-### 5.1 Files to Create
-
-- `Ora/BackgroundTasks/Workers/BackgroundWorker.swift` — Protocol definition
-- `Ora/BackgroundTasks/Workers/URLSessionWorker.swift` — Phase 1: HTTP fetch + HTML extraction
-- `Ora/BackgroundTasks/Workers/WorkerResult.swift` — Structured output types
-- `Ora/BackgroundTasks/Workers/HTMLExtractor.swift` — Readability extraction (SwiftSoup wrapper)
-- `Ora/BackgroundTasks/Workers/WorkerError.swift` — Typed error enum
-- `OraTests/BackgroundTasks/URLSessionWorkerTests.swift` — Unit tests with URLProtocol mocking
-
-### 5.2 Files to Modify
-
-- `Ora/BackgroundTasks/BackgroundTaskManager.swift` — Add worker dispatch logic
-- `project.yml` — Add SwiftSoup SPM dependency (or equivalent HTML parser)
-
-### 5.3 Tests to Add
-
-- `OraTests/BackgroundTasks/URLSessionWorkerTests.swift`:
-  - `test_fetchSingleURL_returnsExtractedText`
-  - `test_fetchMultipleURLs_returnsAllResults`
-  - `test_timeout_throwsTimeoutError`
-  - `test_oversizedResponse_throwsSizeLimitError`
-  - `test_invalidContentType_throwsContentTypeError`
-  - `test_networkError_throwsNetworkError`
-  - `test_htmlExtraction_extractsReadableContent`
-  - `test_htmlExtraction_handlesNoContent`
-  - `test_cancellation_stopsInFlightRequest`
-- `OraTests/BackgroundTasks/HTMLExtractorTests.swift`:
-  - `test_extract_simpleHTML_returnsText`
-  - `test_extract_complexPage_removesNavAndAds`
-  - `test_extract_emptyBody_returnsEmpty`
-  - `test_extract_plainText_returnsAsIs`
-
-### 5.4 Dependencies/Config
-
-- `project.yml` — Add HTML parsing dependency:
-  - Option A: [SwiftSoup](https://github.com/scinfu/SwiftSoup) (most popular, JSoup port)
-  - Option B: Custom lightweight parser (fewer dependencies but more effort)
-  - Recommendation: SwiftSoup — mature, well-tested, pure Swift
-
-## 6. Acceptance Criteria
-
-- [ ] AC-1: `BackgroundWorker` protocol is defined with `execute(input:policy:)` method
-- [ ] AC-2: `URLSessionWorker` fetches HTTP(S) URLs and returns structured `WorkerResult`
-- [ ] AC-3: HTML content is extracted to readable text (title, body text, byline, word count)
-- [ ] AC-4: Response size limit is enforced (default 5MB; request aborted if exceeded)
-- [ ] AC-5: Per-request timeout is enforced (default 30s)
-- [ ] AC-6: Task-level timeout is enforced (default 120s for entire task)
-- [ ] AC-7: Non-HTML content types are handled gracefully (plain text returned as-is; binary rejected)
-- [ ] AC-8: Worker is fully cancelable (responds to `Task.isCancelled` within 1s)
-- [ ] AC-9: `URLSession` is ephemeral (no cookies, no persistent cache)
-- [ ] AC-10: Multiple URLs per task are fetched sequentially with individual error handling (one failure doesn't abort all)
-
-## 7. Verification Plan
-
-### Automated Tests
-
-- [ ] URLProtocol-mocked HTTP tests for success, timeout, size limit, content type
-- [ ] HTML extraction tests with real-world HTML fixtures
-- [ ] Cancellation propagation test
-- [ ] Multi-URL partial failure test
-
-### Manual Tests
-
-- [ ] Fetch a real web page (e.g., Swift blog post) and verify readable text extraction
-- [ ] Fetch a page that takes >30s and verify timeout
-- [ ] Fetch a binary file (image) and verify rejection
-- [ ] Cancel a running task and verify worker stops
-
-## 8. Performance / Reliability Considerations
-
-- URLSession configured with 30s per-request timeout; total task timeout 120s
-- Response body limited to 5MB via `URLSessionDataDelegate` byte counting
-- Ephemeral session: no disk cache, no cookies (privacy)
-- HTML extraction should complete in under 1 second for typical web pages
-- Memory: peak usage during fetch is bounded by response size limit (5MB)
-
-## 9. Risks & Mitigations
-
-- **SwiftSoup dependency size** — SwiftSoup is pure Swift (~200KB); acceptable. Alternative: use NSAttributedString HTML init but it's MainActor-bound and less reliable
-- **Redirect loops** — URLSession's default redirect limit (20) is sufficient; additionally cap total redirects at 5
-- **Encoding issues** — Detect encoding from HTTP Content-Type header; fall back to UTF-8
-- **Memory spike on large HTML** — Stream response body; abort if size limit exceeded before full download
-
-## 10. Open Questions
-
-- Should we support following links within a page (crawling depth beyond 1)? (Proposed: no for v1)
-- Should we cache fetched content for re-use across tasks? (Proposed: no — ephemeral is simpler and more private)
-- Which HTML parser to use? (Proposed: SwiftSoup — needs project owner approval for new dependency)
-
----
-
-## Implementation Summary
-
-(TBD after implementation.)
-
-## Code Review Findings
-
-(TBD by review agent.)
-
-## Completion Status
-
-(TBD after merge.)
+- v1 extraction quality is intentionally “clean text” rather than full readability scoring. If that proves too weak, add a dedicated parser in a follow-up story after explicit dependency approval.
+- **Decompressed body size:** The 5MB limit in BG.03 applies to transfer size. A gzip-compressed response could decompress to much more. The worker should validate decompressed size during streaming and abort if it exceeds the limit. Check `Content-Length` header against `maxResponseBytes` as an early guard.
+- **HTML extraction timeout:** `HTMLTextExtractor` processing on adversarial HTML (deeply nested tags, huge attribute strings) could consume excessive CPU. Add a processing timeout separate from the network timeout (e.g., 10s).

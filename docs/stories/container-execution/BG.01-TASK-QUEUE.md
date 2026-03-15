@@ -1,171 +1,129 @@
 # BG.01 - Task Queue
 
 **Epic:** Background Tasks
-**Status:** Not Started
+**Status:** Ready for Implementation
 **Priority:** P1 (High)
 **Estimated Effort:** 2 days
-**Dependencies:** None
+**Dependencies:** BG.00
 **Target:** macOS 26 (Tahoe)
-**Design Reference:** BG.00
 
----
+## Summary
 
-## 1. Objective
+Implement the persistent queue and lifecycle layer for background research jobs. `BackgroundTaskManager` owns enqueue, cancellation, bounded concurrency, timeout handling, observer streams, and launch-time reconciliation of stale tasks. v1 persists task records in SwiftData but never resumes unfinished work after relaunch.
 
-Create a persistent task queue inside Ora with lifecycle management, concurrency control, and timeout enforcement. This is the foundation for all background task execution.
+## Architecture Context and Reuse Guidance
 
-## 2. User Story
+- Reuse [PersistenceManager.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/Persistence/PersistenceManager.swift) for the SwiftData container and schema registration. Do **not** create a parallel persistence controller.
+- App lifecycle hooks belong in [AppDelegate.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/AppDelegate.swift), not in `SimplePipelineController`.
+- Keep queue orchestration in an actor, matching existing patterns in `ToolRegistry`, `ToolHost`, and `LLMService`.
+- `project.yml` already includes the whole `Ora` tree, so new Swift files under `Ora/BackgroundTasks/` do not require source-list changes.
 
-As a **developer**, I want a **reliable task queue** so that **background tasks are tracked, persisted, and executed with proper lifecycle management**.
+## Resolved Decisions
 
-## 3. Scope
+- Persisted task model name: `BackgroundTaskRecord`.
+- Unfinished tasks (`queued` / `running`) are marked `canceled` on next launch with a reason like `"Ora quit before task completed."`
+- Queue depth limit: `10`.
+- Concurrent workers: default `2`, injected for tests.
+- Task timeout: default `120s`, max `300s`.
 
-### In Scope
+## File Touch List
 
-- SwiftData-persisted task model with full state machine
-- `BackgroundTaskManager` actor with enqueue/cancel/query API
-- Concurrency limit enforcement (configurable, default: 2)
-- Timeout enforcement per task (configurable, default: 120s)
-- Task cancellation (user-initiated and app-quit)
-- Task state observation via `AsyncStream` for UI/notification consumers
-- Audit logging of task lifecycle events
+- `Ora/BackgroundTasks/BackgroundTaskRecord.swift`
+  Purpose: SwiftData `@Model` for persisted task metadata and state.
+- `Ora/BackgroundTasks/BackgroundTaskState.swift`
+  Purpose: strongly typed lifecycle enum plus transition validation helpers.
+- `Ora/BackgroundTasks/BackgroundTaskInputs.swift`
+  Purpose: codable payload for requested `urls` and optional user-facing label/query.
+- `Ora/BackgroundTasks/BackgroundTaskPolicy.swift`
+  Purpose: codable task policy values shared with worker and artifact stories.
+- `Ora/BackgroundTasks/BackgroundTaskEvent.swift`
+  Purpose: observer stream payloads for queue/UI/notification consumers.
+- `Ora/BackgroundTasks/BackgroundTaskManager.swift`
+  Purpose: actor that persists records, schedules work, cancels jobs, and emits events.
+- `Ora/Persistence/PersistenceManager.swift`
+  Purpose: add `BackgroundTaskRecord` to both production and test schemas.
+- `Ora/AppDelegate.swift`
+  Purpose: initialize the queue after setup completes, reconcile stale tasks on launch, cancel all tasks on termination.
+- `OraTests/BackgroundTasks/BackgroundTaskManagerTests.swift`
+  Purpose: queue/lifecycle/concurrency/timeout/reconciliation coverage.
 
-### Out of Scope
+## Implementation Steps
 
-- Worker execution (BG.02)
-- Network policy (BG.03)
-- Artifact storage (BG.04)
-- Notifications (BG.06)
-- Task persistence across app restarts (v1 — tasks are canceled on quit)
-- Task scheduling / cron
+1. Add `BackgroundTaskRecord` as a SwiftData model.
+   Required fields:
+   - `id: UUID`
+   - `taskKind: String`
+   - `inputsData: Data`
+   - `policyData: Data`
+   - `stateRawValue: String`
+   - `summaryStateRawValue: String?` (initially `nil`; set to `pending` by BG.05 when summary is enqueued after artifacts are written)
+   - `artifactPath: String?`
+   - `errorMessage: String?`
+   - `createdAt`, `startedAt`, `completedAt`
+   - `sessionID: UUID?`
 
-## 4. Architecture Alignment
+2. Add codable value types for `BackgroundTaskInputs` and `BackgroundTaskPolicy`.
+   v1 inputs:
+   - `urls: [String]`
+   - `label: String?` for notification text / list display
 
-### Component Placement
+3. Extend `PersistenceManager` schema registration for the new model in both initializers.
 
-```
-Ora/BackgroundTasks/
-  ├── BackgroundTask.swift              // SwiftData model
-  ├── BackgroundTaskManager.swift       // Actor: queue management
-  ├── BackgroundTaskPolicy.swift        // Timeout, limits, domain rules
-  └── BackgroundTaskState.swift         // State machine enum
-```
+4. Implement `BackgroundTaskManager` as the only write owner for task lifecycle.
+   Responsibilities:
+   - `enqueue(inputs:policy:sessionID:)`
+   - `cancel(taskID:)`
+   - `cancelAll()`
+   - `task(id:)`
+   - `list(limit:)`
+   - `observe() -> AsyncStream<BackgroundTaskEvent>`
+   - `recoverUnfinishedTasksOnLaunch()`
 
-### Concurrency Model
+5. Use the `@ModelActor` macro for `BackgroundTaskManager` to get a properly isolated `ModelContext`.
+   This follows the existing `BackgroundPersistenceActor` pattern in the codebase. Do **not** create a raw `ModelContext(container)` inside a regular actor — this violates Swift 6 sendability rules.
+   Requirement: do not bounce queue state writes through the main actor for normal operation.
 
-- `BackgroundTaskManager` is an **actor** (consistent with `ToolHost`, `ToolRegistry`, `LLMService`)
-- Task execution dispatched as Swift Concurrency `Task` instances
-- Running tasks tracked in a dictionary for cancellation
-- State changes published via `AsyncStream<BackgroundTaskEvent>` for observers
+6. Add launch and termination hooks in `AppDelegate`.
+   - After setup: initialize manager and call `recoverUnfinishedTasksOnLaunch()`.
+   - On terminate: `await cancelAll()` before `PersistenceManager.shared.flushSave()`.
+   - **Async termination bridging:** `applicationWillTerminate` is synchronous on AppKit. Bridge async cleanup with a synchronous flush path (e.g., `DispatchSemaphore`-based bridging or a dedicated synchronous `cancelAllSync()` method). Do **not** use `ProcessInfo.performExpiringActivity` — it is iOS/Catalyst only.
 
-### Integration Points
+7. For BG.01 only, worker dispatch can be a stubbed hook.
+   The manager must still transition queued tasks to running/completed in tests via an injected executor.
 
-| Existing Component | Integration |
-|:-------------------|:------------|
-| `ToolRegistry` | Register `research.start` tool (BG.02) |
-| `AuditLogger` | Log task lifecycle events |
-| `SimplePipelineController` | Cancel all tasks on app quit |
-| SwiftData (`ModelContainer`) | Reuse existing persistence container |
+## Tests and Validation
 
-### Guardrails
+- `test_enqueue_createsQueuedRecord`
+- `test_enqueue_rejectsEmptyURLList`
+- `test_enqueue_rejectsWhenQueueIsFull`
+- `test_runningCount_neverExceedsConcurrencyLimit`
+- `test_timeout_movesTaskToFailed`
+- `test_cancelQueuedTask_movesToCanceled`
+- `test_cancelRunningTask_movesToCanceled`
+- `test_observe_emitsLifecycleEventsInOrder`
+- `test_recoverUnfinishedTasksOnLaunch_marksQueuedAndRunningAsCanceled`
+- `test_cancelAll_marksActiveAndQueuedTasksCanceled`
 
-- Maximum queue depth: 10 tasks (reject beyond this)
-- Maximum concurrent workers: 2 (configurable)
-- Per-task timeout: 120s default, 300s max
-- Enqueue validation: reject invalid URLs, empty inputs
+Manual validation:
+- Enqueue several stub tasks and confirm only `N` run concurrently.
+- Quit and relaunch with a seeded `running` task and confirm it is reconciled to `canceled`.
 
-## 5. Implementation Plan (Draft)
+## Acceptance Criteria
 
-### 5.1 Files to Create
+- [ ] `BackgroundTaskRecord` is part of the SwiftData schema used by `PersistenceManager`.
+- [ ] `BackgroundTaskManager.enqueue()` persists a queued record and starts work when capacity exists.
+- [ ] Queue depth and timeout limits are enforced.
+- [ ] `observe()` emits deterministic lifecycle events suitable for UI/notification consumers.
+- [ ] `cancel()` and `cancelAll()` transition tasks to `canceled` and stop in-flight work.
+- [ ] Launch reconciliation marks stale unfinished tasks as `canceled`; v1 does not resume them.
+- [ ] `AppDelegate` owns queue startup and termination hooks.
 
-- `Ora/BackgroundTasks/BackgroundTask.swift` — SwiftData `@Model` with id, type, inputs, policy, state, timestamps, error, artifactPath, sessionID
-- `Ora/BackgroundTasks/BackgroundTaskState.swift` — Enum: `queued`, `running`, `succeeded`, `failed`, `canceled` with valid transitions
-- `Ora/BackgroundTasks/BackgroundTaskPolicy.swift` — Struct: timeoutSeconds, maxResponseBytes, allowedDomains, maxRequests
-- `Ora/BackgroundTasks/BackgroundTaskInputs.swift` — Struct: urls, query, taskType
-- `Ora/BackgroundTasks/BackgroundTaskManager.swift` — Actor with enqueue/cancel/query/observe API
-- `Ora/BackgroundTasks/BackgroundTaskEvent.swift` — Enum for state change events
-- `OraTests/BackgroundTasks/BackgroundTaskManagerTests.swift` — Unit tests
+## Resolved v1 Decisions (from review)
 
-### 5.2 Files to Modify
+- `summaryStateRawValue` is `nil` on creation; set to `pending` only when BG.05 enqueues a summary job after artifacts are written.
+- `BackgroundTaskManager` **must** use the `@ModelActor` macro (matching `BackgroundPersistenceActor` pattern), not a raw actor with a stored `ModelContext`.
 
-- `Ora/Persistence/PersistenceController.swift` — Add `BackgroundTask` to SwiftData model container
-- `Ora/Orchestration/SimplePipelineController.swift` — Cancel background tasks on app quit (`cancelAllTasks()`)
-- `project.yml` — Add `Ora/BackgroundTasks/` to sources
+## Risks and Open Questions
 
-### 5.3 Tests to Add
-
-- `OraTests/BackgroundTasks/BackgroundTaskManagerTests.swift`:
-  - `test_enqueue_createsTaskInQueuedState`
-  - `test_enqueue_rejectsWhenQueueFull`
-  - `test_cancel_movesTaskToCanceledState`
-  - `test_cancelAll_cancelsAllRunningAndQueuedTasks`
-  - `test_concurrencyLimit_queuesExcessTasks`
-  - `test_timeout_failsTaskAfterDeadline`
-  - `test_stateTransitions_rejectsInvalidTransitions`
-  - `test_observe_emitsStateChangeEvents`
-  - `test_dequeue_startsNextQueuedTaskWhenSlotAvailable`
-
-### 5.4 Dependencies/Config
-
-- `project.yml` — Add `Ora/BackgroundTasks/` source group
-
-## 6. Acceptance Criteria
-
-- [ ] AC-1: `BackgroundTask` SwiftData model persists with all required fields (id, type, inputs, policy, state, timestamps)
-- [ ] AC-2: State machine enforces valid transitions only (queued→running, running→succeeded/failed/canceled, queued→canceled)
-- [ ] AC-3: `BackgroundTaskManager.enqueue()` creates task and starts execution when a slot is available
-- [ ] AC-4: Concurrency limit prevents more than N tasks running simultaneously
-- [ ] AC-5: Tasks exceeding timeout are automatically moved to `failed` state
-- [ ] AC-6: `cancelAll()` cancels all queued and running tasks (called on app quit)
-- [ ] AC-7: `observe()` returns an `AsyncStream` that emits task state change events
-- [ ] AC-8: Queue depth limit (10) rejects new tasks with descriptive error
-- [ ] AC-9: Task lifecycle events logged via `AuditLogger`
-
-## 7. Verification Plan
-
-### Automated Tests
-
-- [ ] State machine transition tests (all valid/invalid paths)
-- [ ] Concurrency limit enforcement test
-- [ ] Timeout enforcement test (use short timeout in test)
-- [ ] Cancel propagation test
-- [ ] Queue depth limit test
-- [ ] Event stream emission test
-
-### Manual Tests
-
-- [ ] Trigger multiple research tasks and verify only 2 run concurrently
-- [ ] Quit Ora while tasks are running and verify all are canceled
-- [ ] Verify task records persist in SwiftData during app session
-
-## 8. Performance / Reliability Considerations
-
-- Task queue operations must be O(1) for enqueue, O(n) for cancelAll where n is active tasks
-- SwiftData writes are batched (save after state transitions, not on every field change)
-- `AsyncStream` for observation uses buffering policy `.bufferingNewest(10)` to avoid backpressure
-- Memory: task model is lightweight (~1KB per task); 10 tasks = negligible
-
-## 9. Risks & Mitigations
-
-- **SwiftData thread safety** — All access through `BackgroundTaskManager` actor; no direct model context sharing
-- **Task leak on crash** — v1 accepts this; tasks don't survive app restart. Future: mark stale tasks on launch
-- **Timeout race condition** — Use `Task.sleep` with cancellation check; timeout task cancels worker task
-
-## 10. Open Questions
-
-- Should failed tasks be retryable? (Proposed: not in v1, add in future)
-- Should the queue persist across app restarts? (Proposed: no for v1 — tasks are lightweight and re-triggerable)
-
----
-
-## Implementation Summary
-
-(TBD after implementation.)
-
-## Code Review Findings
-
-(TBD by review agent.)
-
-## Completion Status
-
-(TBD after merge.)
+- The only intentionally deferred behavior is worker execution, which is implemented in BG.02.
+- Retry semantics are out of scope for v1; failures remain terminal.
