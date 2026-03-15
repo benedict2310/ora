@@ -364,9 +364,6 @@ actor BackgroundTaskManager {
                 outcome = .failure(.failed(message: error.localizedDescription))
             }
 
-            guard let self else {
-                return
-            }
             await self.finishExecution(taskID: snapshot.id, outcome: outcome)
         }
 
