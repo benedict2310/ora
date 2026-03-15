@@ -18,18 +18,21 @@ struct BackgroundTaskExecutionRequest: Sendable, Equatable {
 }
 
 struct BackgroundTaskExecutionResult: Sendable, Equatable {
-    let workerResult: BackgroundTaskWorkerResult?
+    let artifactWorkerResult: BackgroundTaskWorkerResult?
     let persistRawHTML: Bool
     let artifactPath: String?
+    let workerResult: WorkerResult?
 
     init(
-        workerResult: BackgroundTaskWorkerResult? = nil,
+        artifactWorkerResult: BackgroundTaskWorkerResult? = nil,
         persistRawHTML: Bool = false,
-        artifactPath: String? = nil
+        artifactPath: String? = nil,
+        workerResult: WorkerResult? = nil
     ) {
-        self.workerResult = workerResult
+        self.artifactWorkerResult = artifactWorkerResult
         self.persistRawHTML = persistRawHTML
         self.artifactPath = artifactPath
+        self.workerResult = workerResult
     }
 }
 
@@ -70,20 +73,40 @@ actor BackgroundTaskManager {
     private var runningTasks: [UUID: Task<Void, Never>] = [:]
     private var nextEventSequenceNumber: UInt64 = 0
 
-    private var executor: Executor = BackgroundTaskManager.defaultExecutor
+    private var worker: any BackgroundWorker = URLSessionWorker()
+    private var executorOverride: Executor?
     private var concurrencyLimit: Int = BackgroundTaskManager.defaultConcurrencyLimit
     private var queueDepthLimit: Int = BackgroundTaskManager.defaultQueueDepthLimit
     private var artifactStore: ArtifactStore = .shared
 
     // MARK: - Configuration
 
-    func configureForTesting(
-        executor: @escaping Executor,
+    func configure(
+        worker: any BackgroundWorker,
         concurrencyLimit: Int = BackgroundTaskManager.defaultConcurrencyLimit,
         queueDepthLimit: Int = BackgroundTaskManager.defaultQueueDepthLimit,
         artifactStore: ArtifactStore? = nil
     ) {
-        self.executor = executor
+        self.worker = worker
+        self.executorOverride = nil
+        self.concurrencyLimit = max(1, concurrencyLimit)
+        self.queueDepthLimit = max(1, queueDepthLimit)
+        if let artifactStore {
+            self.artifactStore = artifactStore
+        }
+    }
+
+    func configureForTesting(
+        executor: @escaping Executor,
+        worker: (any BackgroundWorker)? = nil,
+        concurrencyLimit: Int = BackgroundTaskManager.defaultConcurrencyLimit,
+        queueDepthLimit: Int = BackgroundTaskManager.defaultQueueDepthLimit,
+        artifactStore: ArtifactStore? = nil
+    ) {
+        self.executorOverride = executor
+        if let worker {
+            self.worker = worker
+        }
         self.concurrencyLimit = max(1, concurrencyLimit)
         self.queueDepthLimit = max(1, queueDepthLimit)
         if let artifactStore {
@@ -328,7 +351,6 @@ actor BackgroundTaskManager {
     }
 
     private func startExecution(for snapshot: BackgroundTaskRecordSnapshot) {
-        let executor = self.executor
         let request = BackgroundTaskExecutionRequest(
             taskID: snapshot.id,
             taskKind: snapshot.taskKind,
@@ -338,15 +360,14 @@ actor BackgroundTaskManager {
         )
 
         let handle = Task { [weak self] in
+            guard let self else {
+                return
+            }
+
             let outcome: Result<BackgroundTaskExecutionResult, BackgroundTaskExecutionFailure>
             do {
-                let executorResult = try await Self.runWithTimeout(
-                    request: request,
-                    timeoutSeconds: snapshot.policy.timeoutSeconds,
-                    executor: executor
-                )
-                guard let self else {
-                    return
+                let executorResult = try await Self.runWithTimeout(timeoutSeconds: snapshot.policy.timeoutSeconds) {
+                    return try await self.executeRequest(request: request)
                 }
                 let persistedResult = try await self.persistArtifactsIfNeeded(
                     for: snapshot,
@@ -354,9 +375,6 @@ actor BackgroundTaskManager {
                 )
                 outcome = .success(persistedResult)
             } catch is CancellationError {
-                guard let self else {
-                    return
-                }
                 await self.finishCancellation(taskID: snapshot.id)
                 return
             } catch let error as BackgroundTaskExecutionFailure {
@@ -365,9 +383,6 @@ actor BackgroundTaskManager {
                 outcome = .failure(.failed(message: error.localizedDescription))
             }
 
-            guard let self else {
-                return
-            }
             await self.finishExecution(taskID: snapshot.id, outcome: outcome)
         }
 
@@ -378,19 +393,20 @@ actor BackgroundTaskManager {
         for task: BackgroundTaskRecordSnapshot,
         executionResult: BackgroundTaskExecutionResult
     ) async throws -> BackgroundTaskExecutionResult {
-        guard let workerResult = executionResult.workerResult else {
+        guard let artifactWorkerResult = executionResult.artifactWorkerResult else {
             return executionResult
         }
 
         let manifest = try await self.artifactStore.save(
             task: task,
-            workerResult: workerResult,
+            workerResult: artifactWorkerResult,
             persistRawHTML: executionResult.persistRawHTML
         )
         return BackgroundTaskExecutionResult(
-            workerResult: workerResult,
+            artifactWorkerResult: artifactWorkerResult,
             persistRawHTML: executionResult.persistRawHTML,
-            artifactPath: manifest.artifactPath
+            artifactPath: manifest.artifactPath,
+            workerResult: executionResult.workerResult
         )
     }
 
@@ -450,13 +466,12 @@ actor BackgroundTaskManager {
     }
 
     private static func runWithTimeout(
-        request: BackgroundTaskExecutionRequest,
         timeoutSeconds: Int,
-        executor: @escaping Executor
+        execute: @escaping @Sendable () async throws -> BackgroundTaskExecutionResult
     ) async throws -> BackgroundTaskExecutionResult {
         return try await withThrowingTaskGroup(of: BackgroundTaskExecutionResult.self) { group in
             group.addTask {
-                return try await executor(request)
+                return try await execute()
             }
 
             group.addTask {
@@ -470,12 +485,19 @@ actor BackgroundTaskManager {
         }
     }
 
-    @Sendable
-    private static func defaultExecutor(
+    private func executeRequest(
         request: BackgroundTaskExecutionRequest
     ) async throws -> BackgroundTaskExecutionResult {
-        _ = request
-        return BackgroundTaskExecutionResult()
+        if let executorOverride = self.executorOverride {
+            return try await executorOverride(request)
+        }
+
+        let workerResult = try await self.worker.execute(
+            taskID: request.taskID,
+            input: request.inputs,
+            policy: request.policy
+        )
+        return BackgroundTaskExecutionResult(workerResult: workerResult)
     }
 
     // MARK: - Persistence

@@ -203,6 +203,25 @@ final class BackgroundTaskManagerTests: XCTestCase {
         XCTAssertEqual(events.map(\.sequenceNumber), [1, 2, 3])
     }
 
+    func test_configuredWorker_executesThroughManager() async throws {
+        let worker = RecordingBackgroundWorker()
+        let manager = await self.makeInMemoryManager()
+        await manager.configure(worker: worker)
+
+        let snapshot = try await manager.enqueue(
+            inputs: BackgroundTaskInputs(urls: ["https://example.com/worker"]),
+            policy: BackgroundTaskPolicy()
+        )
+
+        let completed = await self.waitUntil(timeout: .seconds(2)) {
+            let task = await manager.task(id: snapshot.id)
+            return task?.state == .completed
+        }
+        XCTAssertTrue(completed)
+        let executedTaskIDs = await worker.executedTaskIDs()
+        XCTAssertEqual(executedTaskIDs, [snapshot.id])
+    }
+
     func test_recoverUnfinishedTasksOnLaunch_marksQueuedAndRunningAsCanceled() async throws {
         let storeURL = try self.makeTemporaryStoreURL()
         let persistence = PersistenceManager.createForTesting(inMemory: false, storeURL: storeURL)
@@ -463,5 +482,48 @@ private actor EventCollector {
 
     func events() -> [BackgroundTaskEvent] {
         return self.storedEvents
+    }
+}
+
+private actor RecordingBackgroundWorker: BackgroundWorker {
+    private var taskIDs: [UUID] = []
+
+    func execute(
+        taskID: UUID,
+        input: BackgroundTaskInputs,
+        policy: BackgroundTaskPolicy
+    ) async throws -> WorkerResult {
+        _ = input
+        self.taskIDs.append(taskID)
+
+        return WorkerResult(
+            pages: [
+                PageResult(
+                    url: "https://example.com/worker",
+                    finalURL: "https://example.com/worker",
+                    title: "Worker",
+                    text: "Text",
+                    contentType: "text/plain",
+                    wordCount: 1,
+                    fetchedAt: Date(),
+                    rawHTML: nil
+                )
+            ],
+            metadata: WorkerMetadata(
+                taskID: taskID,
+                taskKind: policy.taskKind,
+                startedAt: Date(),
+                completedAt: Date(),
+                requestedURLCount: 1,
+                succeededURLCount: 1,
+                failedURLCount: 0,
+                processedSequentially: true
+            ),
+            failedURLs: []
+        )
+    }
+
+    func executedTaskIDs() -> [UUID] {
+        return self.taskIDs
     }
 }
