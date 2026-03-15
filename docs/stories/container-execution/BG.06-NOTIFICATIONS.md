@@ -1,221 +1,97 @@
 # BG.06 - Local Notifications
 
 **Epic:** Background Tasks
-**Status:** Not Started
+**Status:** Ready for Implementation
 **Priority:** P2 (Medium)
 **Estimated Effort:** 1.5 days
-**Dependencies:** BG.01
+**Dependencies:** BG.01, BG.04, BG.05
 **Target:** macOS 26 (Tahoe)
-**Design Reference:** BG.00
 
----
+## Summary
 
-## 1. Objective
+Add optional local notifications for background-task completion and failure. v1 should reuse the lightweight authorization/delivery pattern already used by model migration rather than expanding Ora’s global `PermissionsManager` surface.
 
-Notify the user when background tasks start and complete using macOS local notifications (`UNUserNotificationCenter`). Completion notifications include a summary preview and action buttons to open Ora or reveal results in Finder.
+## Architecture Context and Reuse Guidance
 
-## 2. User Story
+- Reuse the `UNUserNotificationCenter` authorization style from [ModelMigrationCoordinator.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/Models/ModelMigrationCoordinator.swift).
+- Do **not** add `.notifications` to `PermissionType` in this story; that would expand setup/preferences scope unnecessarily.
+- `AppDelegate` should own `UNUserNotificationCenter.delegate` setup and pending-notification cleanup on termination.
+- Finder reveal should reuse the artifact path from BG.04.
 
-As a **user**, I want to be **notified when background research completes** so that I can **review results at my convenience without watching Ora**.
+## Resolved Decisions
 
-## 3. Scope
+- Notification permission is requested lazily by the background-task notifier itself.
+- v1 sends notifications for `completed` and `failed` only.
+- Default notification click activates Ora.
+- Explicit action button: `Show in Finder`.
+- No new Preferences UI in this story.
 
-### In Scope
+## File Touch List
 
-- `TaskNotificationService` actor for managing local notifications
-- Notification permission request (new optional permission)
-- "Task Started" notification with task description
-- "Task Completed" notification with summary preview (first 100 chars of summary)
-- "Task Failed" notification with error description
-- Action buttons: "Open in Ora", "Show in Finder"
-- Notification grouping by thread identifier (all Ora background task notifications grouped)
-- `UNUserNotificationCenterDelegate` handling for action button routing
-- Graceful degradation: if notification permission denied, log and continue silently
+- `Ora/BackgroundTasks/Notifications/TaskNotificationService.swift`
+  Purpose: authorization + notification scheduling.
+- `Ora/BackgroundTasks/Notifications/TaskNotificationDelegate.swift`
+  Purpose: handle default click and `Show in Finder`.
+- `Ora/BackgroundTasks/BackgroundTaskManager.swift`
+  Purpose: invoke notification service on terminal state changes.
+- `Ora/AppDelegate.swift`
+  Purpose: set `UNUserNotificationCenter.delegate` and clear pending requests on termination.
+- `OraTests/BackgroundTasks/TaskNotificationServiceTests.swift`
+- `OraTests/BackgroundTasks/TaskNotificationDelegateTests.swift`
 
-### Out of Scope
+## Implementation Steps
 
-- Push notifications (no server component)
-- Notification preferences UI (future: per-task-type notification settings)
-- Sound customization
-- Badge count on Dock icon
-- Rich media attachments (images, thumbnails)
-- Integration with setup wizard (defer permission request to first background task)
+1. Implement `TaskNotificationService`.
+   Required API:
+   - `postCompletion(taskID:title:summaryPreview:artifactPath:)`
+   - `postFailure(taskID:title:errorDescription:)`
 
-## 4. Architecture Alignment
+2. Keep authorization local to the service.
+   Behavior:
+   - check notification settings
+   - request authorization only when first needed
+   - fail silently with logging if denied
 
-### Component Placement
+3. Implement `TaskNotificationDelegate`.
+   Required behavior:
+   - default click: activate Ora
+   - `Show in Finder`: reveal `artifactPath` if present
+   - **artifact path validation (SECURITY):** before using `artifactPath` in Finder reveal, validate it points within `~/Documents/Ora Research/` root. Reject paths outside this root.
+   - **notification content sanitization:** truncate notification body text to prevent adversarial content from summary previews. Strip control characters.
 
-```
-Ora/BackgroundTasks/
-  ├── Notifications/
-  │   ├── TaskNotificationService.swift   // Actor: schedule/manage notifications
-  │   └── TaskNotificationDelegate.swift  // UNUserNotificationCenterDelegate
-  └── ... (existing from BG.01)
+4. Add notification coalescing.
+   If multiple tasks complete within a short window (e.g., 3 seconds), group them into a single notification: "2 research tasks completed" rather than firing 2 separate notifications.
 
-Ora/Permissions/
-  └── NotificationPermission.swift        // New permission type
-```
+5. Wire delegate registration in `AppDelegate`.
 
-### Notification Types
+6. Clear pending requests on `applicationWillTerminate`.
+   Use `removeAllPendingNotificationRequests()` for undelivered notifications. Optionally also call `removeAllDeliveredNotifications()` to clean Notification Center.
 
-| Type | Title | Body | Actions |
-|:-----|:------|:-----|:--------|
-| Started | "Research Started" | Task description (e.g., "Researching Swift concurrency...") | None |
-| Completed | "Research Complete" | Summary preview (first 100 chars) | "Open in Ora", "Show in Finder" |
-| Failed | "Research Failed" | Error description | "Open in Ora" |
+## Tests and Validation
 
-### Notification Identifiers
+- `test_completionNotification_containsSummaryPreview`
+- `test_failureNotification_containsErrorText`
+- `test_permissionDenied_skipsDeliveryWithoutFailingTask`
+- `test_defaultClick_activatesApp`
+- `test_showInFinderAction_revealsArtifactPath`
+- `test_pendingNotificationsClearedOnTerminate`
+- `test_artifactPathValidation_rejectsPathOutsideRoot`
+- `test_notificationCoalescing_groupsRapidCompletions`
 
-```swift
-enum TaskNotificationCategory: String {
-    case taskStarted = "com.ora.task.started"
-    case taskCompleted = "com.ora.task.completed"
-    case taskFailed = "com.ora.task.failed"
-}
+Manual validation:
+- Complete a task and verify a single completion notification appears.
+- Fail a task and verify a failure notification appears.
+- Use `Show in Finder` and confirm the artifact folder is revealed.
 
-enum TaskNotificationAction: String {
-    case openInOra = "com.ora.action.open"
-    case showInFinder = "com.ora.action.finder"
-}
+## Acceptance Criteria
 
-// Thread identifier groups all background task notifications
-let backgroundTaskThread = "com.ora.background-tasks"
-```
+- [ ] Completion and failure notifications are delivered when permission is granted.
+- [ ] Permission is requested lazily by the task notification service, not by setup or `PermissionsManager`.
+- [ ] Default click activates Ora.
+- [ ] `Show in Finder` reveals the saved artifact folder when available.
+- [ ] Denied notification permission does not break task execution.
+- [ ] `AppDelegate` clears pending requests on termination.
 
-### Action Routing
+## Risks and Open Questions
 
-```
-User taps "Open in Ora"
-  → UNUserNotificationCenterDelegate.didReceive(response:)
-  → Extract taskID from notification userInfo
-  → Post NotificationCenter: .backgroundTaskOpenRequested(taskID)
-  → SimplePipelineController / overlay shows task context
-
-User taps "Show in Finder"
-  → UNUserNotificationCenterDelegate.didReceive(response:)
-  → Extract taskID from notification userInfo
-  → ArtifactStore.revealInFinder(taskID:)
-```
-
-### Permission Integration
-
-Notification permission follows the existing `PermissionsManager` pattern:
-- Check via `UNUserNotificationCenter.current().notificationSettings()`
-- Request via `UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])`
-- Status mapped to existing `PermissionStatus` enum (.authorized, .denied, .notDetermined)
-- Permission requested lazily on first background task trigger (not during setup wizard)
-
-### Integration Points
-
-| Component | Integration |
-|:----------|:------------|
-| `BackgroundTaskManager` | Calls `TaskNotificationService` on task state changes |
-| `ArtifactStore` (BG.04) | "Show in Finder" action opens artifact folder |
-| `SummaryGenerator` (BG.05) | Summary preview included in completion notification |
-| `PermissionsManager` | New `.notifications` permission type |
-| `AppDelegate` / `main.swift` | Set `UNUserNotificationCenter.delegate` at launch |
-
-## 5. Implementation Plan (Draft)
-
-### 5.1 Files to Create
-
-- `Ora/BackgroundTasks/Notifications/TaskNotificationService.swift` — Schedule start/complete/fail notifications
-- `Ora/BackgroundTasks/Notifications/TaskNotificationDelegate.swift` — Handle action button responses
-- `Ora/Permissions/NotificationPermission.swift` — Permission check/request for UNUserNotificationCenter
-- `OraTests/BackgroundTasks/TaskNotificationServiceTests.swift` — Unit tests
-- `OraTests/Permissions/NotificationPermissionTests.swift` — Permission tests
-
-### 5.2 Files to Modify
-
-- `Ora/Permissions/PermissionsManager.swift` — Add `.notifications` permission type
-- `Ora/Permissions/PermissionType.swift` — Add `.notifications` case
-- `Ora/BackgroundTasks/BackgroundTaskManager.swift` — Call `TaskNotificationService` on state changes
-- `Ora/main.swift` or `AppDelegate` — Set `UNUserNotificationCenter.delegate` early in app lifecycle
-
-### 5.3 Tests to Add
-
-- `OraTests/BackgroundTasks/TaskNotificationServiceTests.swift`:
-  - `test_scheduleStartNotification_setsCorrectContent`
-  - `test_scheduleCompletionNotification_includesSummaryPreview`
-  - `test_scheduleFailureNotification_includesErrorDescription`
-  - `test_completionNotification_hasActionButtons`
-  - `test_notifications_groupedByThreadIdentifier`
-  - `test_permissionDenied_logsAndContinues`
-  - `test_summaryPreview_truncatedAt100Chars`
-  - `test_removeAll_clearsPendingNotifications`
-- `OraTests/Permissions/NotificationPermissionTests.swift`:
-  - `test_checkStatus_mapsUNAuthorizationStatus`
-  - `test_request_callsUNAuthorization`
-  - `test_notDetermined_returnsCorrectStatus`
-
-### 5.4 Dependencies/Config
-
-- `project.yml` — Ensure `UserNotifications` framework is linked (should already be available on macOS 26)
-- No new SPM dependencies
-
-## 6. Acceptance Criteria
-
-- [ ] AC-1: "Research Started" notification delivered when task begins execution
-- [ ] AC-2: "Research Complete" notification delivered with summary preview when task succeeds
-- [ ] AC-3: "Research Failed" notification delivered with error when task fails
-- [ ] AC-4: "Open in Ora" action brings Ora to foreground and shows task context
-- [ ] AC-5: "Show in Finder" action reveals artifact folder in Finder
-- [ ] AC-6: All background task notifications grouped under single thread
-- [ ] AC-7: Notification permission requested lazily on first background task (not during setup)
-- [ ] AC-8: If notification permission denied, tasks still execute normally (silent mode)
-- [ ] AC-9: Summary preview truncated to 100 characters with ellipsis
-- [ ] AC-10: Pending notifications cleared on app termination
-
-## 7. Verification Plan
-
-### Automated Tests
-
-- [ ] Notification content tests (title, body, category, actions, thread ID, userInfo)
-- [ ] Permission check/request tests (mock UNUserNotificationCenter)
-- [ ] Action routing tests (delegate receives response, posts correct internal notification)
-- [ ] Graceful degradation test (permission denied, no crash, task completes normally)
-- [ ] Summary preview truncation test (exactly 100 chars, with ellipsis)
-
-### Manual Tests
-
-- [ ] Trigger background task and verify "Started" notification appears in Notification Center
-- [ ] Wait for task completion and verify "Complete" notification with summary preview
-- [ ] Tap "Open in Ora" notification action and verify app comes to foreground
-- [ ] Tap "Show in Finder" notification action and verify correct folder opens
-- [ ] Deny notification permission and verify tasks still work silently
-- [ ] Trigger multiple tasks and verify notifications are grouped in Notification Center
-
-## 8. Performance / Reliability Considerations
-
-- Notification scheduling is lightweight (under 1ms per call)
-- `UNUserNotificationCenter` handles delivery timing; no polling needed
-- Delegate must be set early in app lifecycle (before any notifications fire)
-- No impact on conversation pipeline performance
-- Max 2 notifications per task (start + end) prevents notification flood
-
-## 9. Risks & Mitigations
-
-- **Notification permission fatigue** — Make permission optional; request lazily on first background task, not during setup wizard
-- **Stale notifications after app quit** — Remove pending notifications on app termination via `removeAllPendingNotificationRequests()`
-- **Action button handling after app restart** — `UNUserNotificationCenterDelegate` is set on app launch; pending actions delivered on next activation
-- **Notification overload from many tasks** — Group by thread identifier; max 2 notifications per task
-
-## 10. Open Questions
-
-- Should "Task Started" notifications be optional/configurable? (Proposed: yes, default on; some users may find them noisy)
-- Should notifications include a progress indicator for long tasks? (Proposed: not in v1 — macOS doesn't support inline progress in notifications)
-- Should we add a "Notifications" section to Preferences? (Proposed: future — not needed for v1)
-
----
-
-## Implementation Summary
-
-(TBD after implementation.)
-
-## Code Review Findings
-
-(TBD by review agent.)
-
-## Completion Status
-
-(TBD after merge.)
+- If a richer in-app task browser is added later, notification default-click behavior can be upgraded without invalidating this v1 contract.

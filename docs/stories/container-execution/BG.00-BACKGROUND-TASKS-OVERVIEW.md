@@ -1,267 +1,119 @@
 # BG.00 - Background Tasks Overview
 
 **Epic:** Background Tasks
-**Status:** Not Started
+**Status:** Complete
 **Priority:** P1 (High)
 **Estimated Effort:** 1 day
 **Dependencies:** None
 **Target:** macOS 26 (Tahoe)
-**Design Reference:** None
 
----
+## Summary
 
-## 1. Objective
+Add a background-task subsystem that lets Ora fetch and summarize explicit user-provided URLs without blocking the foreground voice/text pipeline. v1 is intentionally narrow: enqueue a research job, run it off the conversational path, persist artifacts in a stable user-visible folder, optionally notify the user when it completes, and let the agent load the summarized result later.
 
-Define the end-to-end architecture and UX flow for background task execution in Ora. This story is the framing document for the entire Background Tasks epic — it establishes the interaction model, isolation strategy, and integration points with the existing pipeline.
+This epic does **not** include open-ended web search, browser automation, scheduled jobs, or daemonized execution.
 
-## 2. User Story
+## Architecture Context and Reuse
 
-As a **user**, I want Ora to **perform research tasks in the background** so that I can **get curated results without waiting for long-running fetches during conversation**.
+- Foreground orchestration already lives in [AgentLoop.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/Orchestration/AgentLoop.swift) and [SimplePipelineController.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/Orchestration/SimplePipelineController.swift).
+- Tool registration is centralized in [ToolRegistry.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/Tools/ToolRegistry.swift).
+- SwiftData schema/container ownership lives in [PersistenceManager.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/Persistence/PersistenceManager.swift).
+- GPU access is already serialized inside [LLMService.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/LLM/LLMService.swift) via [MLXMetalGate.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/LLM/MLXMetalGate.swift).
+- Notification authorization already has a lightweight in-app pattern in [ModelMigrationCoordinator.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/Models/ModelMigrationCoordinator.swift).
 
-## 3. Scope
+## Resolved v1 Decisions
 
-### In Scope
+- `research.start` works on explicit `urls`; it does not discover sources from a freeform query.
+- Background jobs are persisted for auditability and later retrieval, but unfinished jobs are **not resumed** after relaunch.
+- Artifacts are stored under `~/Documents/Ora Research/`.
+- Summary generation uses the **local** runtime only and never routes fetched content through a cloud provider.
+- Notification default click activates Ora; the explicit action button for v1 is `Show in Finder`.
 
-- End-to-end UX flow definition (trigger → queue → execute → notify → load)
-- Phased isolation strategy (in-process → XPC → Apple Container)
-- Architecture diagram showing relationship to existing pipeline components
-- Task lifecycle state machine specification
-- Artifact layout and user-visible folder structure
-- Notification strategy (start + completion)
-- Integration points with `AgentLoop`, `ConversationManager`, and `ToolRegistry`
+## System Shape
 
-### Out of Scope
+```text
+User turn
+  -> AgentLoop
+  -> research.start
+  -> BackgroundTaskManager.enqueue()
+  -> URLSessionWorker + safety policy
+  -> ArtifactStore.save()
+  -> SummaryGenerator.enqueue()
+  -> optional local notification
+  -> research.list_results / research.load_result in a later turn
+```
 
-- Implementation code (covered by BG.01-BG.07)
+## Lifecycle
+
+```text
+queued -> running -> succeeded
+queued -> running -> failed
+queued -> canceled
+running -> canceled
+
+launch reconciliation:
+queued/running from a previous app run -> canceled
+```
+
+## Story Breakdown
+
+- [BG.01](BG.01-TASK-QUEUE.md): task model, queue manager, lifecycle, launch reconciliation
+- [BG.02](BG.02-WORKER-ABSTRACTION.md): in-process worker and HTML text extraction
+- [BG.03](BG.03-NETWORK-SAFETY.md): SSRF/IP/scheme/content-type/size protections
+- [BG.04](BG.04-ARTIFACT-PERSISTENCE.md): deterministic artifact storage and Finder reveal
+- [BG.05](BG.05-SUMMARY-GENERATION.md): local summarization queue, sanitization, foreground-aware cancellation
+- [BG.06](BG.06-NOTIFICATIONS.md): local notifications for completion/failure
+- [BG.07](BG.07-CONTEXT-LOADING.md): research tools for listing/loading results into the agent loop
+
+## Privacy Posture Change (IMPORTANT)
+
+This epic introduces Ora's **first outbound network connections to arbitrary third-party servers**. While the user explicitly provides URLs, this fundamentally changes Ora's privacy posture from "nothing leaves the device" to "user-directed content is fetched." Mitigations:
+
+- Set a generic or empty `User-Agent` header (do not identify Ora).
+- Disable `Referer` headers between multi-URL fetches.
+- Use ephemeral `URLSession` per task (no cookie/credential persistence).
+- Consider a first-use disclosure when `research.start` is invoked for the first time.
+- Document that HTTP requests inherently expose the user's IP to the target server.
+
+## Data Flow Between Stories
+
+```text
+research.start (BG.07)
+  → BackgroundTaskManager.enqueue() (BG.01)
+  → URLSessionWorker.execute() (BG.02) via SafeURLSession (BG.03)
+  → returns WorkerResult (shared type: BG.02)
+  → ArtifactStore.save(task:workerResult:) (BG.04)
+  → SummaryGenerator.enqueue(taskID:) (BG.05) reads from result.json artifact
+  → TaskNotificationService.postCompletion() (BG.06)
+  → research.load_result reads summary.md + result.json (BG.07)
+```
+
+`WorkerResult` is the single data type flowing from BG.02 through BG.04 to BG.05. BG.05 reads from the persisted `result.json` artifact, not from in-memory `WorkerResult`.
+
+## Entitlements (Future Sandboxing)
+
+When Ora adopts App Sandbox, this epic will require:
+- `com.apple.security.network.client` — outbound HTTP/HTTPS
+- `com.apple.security.files.user-selected.read-write` or `com.apple.security.files.downloads.read-write` — artifact storage in `~/Documents/Ora Research/`
+
+## Non-Goals
+
+- Generic internet research without user-provided URLs
 - Browser automation / Playwright
-- Daemon / login item background helper
-- Cloud execution
-- Task scheduling / cron
-- Cross-device sync
+- Arbitrary code execution
+- Daemon or login-item execution while Ora is closed
+- Cron/scheduled tasks
+- Cloud-hosted execution
 
-## 4. Architecture Alignment
+## Acceptance Criteria
 
-### Relationship to Existing Pipeline
+- [x] Epic framing is aligned with the current Ora architecture and file layout.
+- [x] v1 scope is explicit about URL-based research only.
+- [x] Lifecycle, persistence behavior, artifact root, and notification semantics are unambiguous.
+- [x] Downstream stories can be implemented without inventing missing architecture.
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                 EXISTING PIPELINE                        │
-│  Hotkey → ASR → AgentLoop → Tools → TTS                │
-│                    │                                     │
-│                    │ (new tool: research.start)          │
-│                    ▼                                     │
-│  ┌─────────────────────────────────────────┐            │
-│  │        BACKGROUND TASK SYSTEM           │            │
-│  │                                         │            │
-│  │  BackgroundTaskManager (actor)          │            │
-│  │    ├── TaskQueue (SwiftData)            │            │
-│  │    ├── WorkerPool (1-2 concurrent)      │            │
-│  │    ├── ArtifactStore (~/Documents/)     │            │
-│  │    └── NotificationService (UNUser...)  │            │
-│  └──────────────────┬──────────────────────┘            │
-│                     │                                    │
-│                     │ (new tool: research.load_result)   │
-│                     ▼                                    │
-│              AgentLoop context injection                 │
-└─────────────────────────────────────────────────────────┘
-```
+## Risks
 
-### Concurrency Model
-
-- `BackgroundTaskManager` is a new **actor** that runs alongside `SimplePipelineController`
-- Workers execute on background threads via Swift Concurrency tasks
-- GPU access for summary generation serialized via existing `MLXMetalGate`
-- UI updates via `@MainActor` notifications
-
-### Key Boundaries
-
-| Component | Can Access | Cannot Access |
-|:----------|:-----------|:--------------|
-| **BackgroundTaskManager** | URLSession, FileManager, UNNotificationCenter | LLM directly (must queue via MLXMetalGate) |
-| **Workers** | Network (validated URLs only), output directory | Host filesystem, other workers, LLM |
-| **ArtifactStore** | ~/Documents/Ora Research/ | App bundle, ~/Library/ |
-| **NotificationService** | UNUserNotificationCenter | Tool execution, conversation state |
-
-### Phased Isolation Strategy
-
-**Phase 1 (v1): In-Process URLSession**
-- Workers run as Swift Concurrency tasks within Ora's process
-- Network safety enforced by host-side URL validation before fetch
-- HTML parsing via SwiftSoup (or similar) in-process
-- Sufficient for HTTP fetch + readability extraction
-
-**Phase 2 (future): XPC Service**
-- Dedicated XPC service with restricted App Sandbox profile
-- Network-only entitlement, no filesystem access except output dir
-- Swift-native, no cross-compilation needed
-
-**Phase 3 (future): Apple Container**
-- Linux VM via apple/containerization Swift package
-- Full process isolation for untrusted code execution
-- Requires cross-compilation (Swift Static Linux SDK)
-- Sub-second startup on Apple Silicon
-
-### End-to-End UX Flow
-
-```
-1. User: "Research the latest Swift concurrency best practices"
-         │
-2. AgentLoop recognizes research intent
-   LLM generates: {"type": "tool_call", "tool": "research.start", "args": {...}}
-         │
-3. BackgroundTaskManager.enqueue(task)
-   Task state: queued → running
-         │
-4. Notification: "🔍 Research started: Swift concurrency best practices"
-         │
-5. URLSessionWorker executes:
-   - Fetch URLs (validated, rate-limited)
-   - Parse HTML → readability text
-   - Extract structured data → result.json
-         │
-6. ArtifactStore writes to ~/Documents/Ora Research/2026-01-31/task-abc123-swift-concurrency/
-   Task state: running → succeeded
-         │
-7. SummaryGenerator queues LLM summarization (after current turn)
-   Writes summary.md to artifact folder
-         │
-8. Notification: "✅ Research complete: Swift concurrency best practices"
-   Actions: [Open in Ora] [Show in Finder]
-         │
-9. User: "What did you find about structured concurrency?"
-   AgentLoop calls: research.load_result → injects summary into context
-   LLM answers based on summarized research
-```
-
-### Task Lifecycle State Machine
-
-```
-              enqueue()
-                │
-                ▼
-           ┌─────────┐
-           │ queued   │
-           └────┬─────┘
-                │ worker available
-                ▼
-           ┌─────────┐   timeout / error
-           │ running  │──────────────────┐
-           └────┬─────┘                  │
-                │ complete               │
-                ▼                        ▼
-           ┌─────────┐           ┌──────────┐
-           │succeeded│           │  failed   │
-           └─────────┘           └──────────┘
-                                      ▲
-           ┌─────────┐                │
-           │canceled │◄───── user cancel / app quit
-           └─────────┘
-```
-
-### Artifact Layout
-
-```
-~/Documents/Ora Research/
-  └── 2026-01-31/
-      └── task-abc123-swift-concurrency/
-          ├── summary.md          (LLM-generated, human-readable)
-          ├── result.json         (structured extraction data)
-          ├── citations.json      (source URLs + titles)
-          └── raw/                (optional: original fetched content)
-              └── page-1.html
-```
-
-### Task Schema
-
-```swift
-@Model
-final class BackgroundTask {
-    var id: UUID
-    var type: String                    // e.g., "web.research.fetch"
-    var inputs: BackgroundTaskInputs    // URLs, query, etc.
-    var policy: BackgroundTaskPolicy    // timeout, max_bytes, domain allowlist
-    var state: BackgroundTaskState      // queued | running | succeeded | failed | canceled
-    var artifactPath: String?           // ~/Documents/Ora Research/...
-    var error: String?                  // failure reason if failed
-    var createdAt: Date
-    var startedAt: Date?
-    var completedAt: Date?
-    var sessionID: UUID?                // conversation session that triggered this
-}
-```
-
-## 5. Implementation Plan (Draft)
-
-### 5.1 Files to Create
-
-This is a design-only story. No code files are created. Implementation is split across BG.01-BG.07.
-
-### 5.2 Files to Modify
-
-- None
-
-### 5.3 Tests to Add
-
-- None (design document)
-
-### 5.4 Dependencies/Config
-
-- None
-
-## 6. Acceptance Criteria
-
-- [ ] AC-1: Architecture diagram documents all component boundaries and data flow
-- [ ] AC-2: UX flow covers trigger → queue → execute → notify → load lifecycle
-- [ ] AC-3: Phased isolation strategy (Phase 1/2/3) is documented with clear scope per phase
-- [ ] AC-4: Task state machine is fully specified with all transitions
-- [ ] AC-5: Artifact layout and naming convention is defined
-- [ ] AC-6: Integration points with existing pipeline (AgentLoop, ConversationManager, ToolRegistry) are identified
-- [ ] AC-7: Non-goals are explicitly listed
-- [ ] AC-8: Memory/resource considerations documented (impact on 16GB systems)
-
-## 7. Verification Plan
-
-### Automated Tests
-
-- [ ] N/A — design document
-
-### Manual Tests
-
-- [ ] Review by project owner for architectural alignment
-- [ ] Verify no conflicts with existing pipeline components
-
-## 8. Performance / Reliability Considerations
-
-- Background tasks must not degrade foreground conversation latency
-- Workers should be cancelable within 1 second of user request or app quit
-- Memory overhead of task queue + worker pool should stay under 100MB
-- On 16GB systems (~7GB used by models), background tasks have ~2-3GB budget
-- Summary generation must queue behind active conversation (GPU serialization via MLXMetalGate)
-
-## 9. Risks & Mitigations
-
-- **LLM prompt injection via fetched content** — Sanitize all content before LLM context injection; summarize through a controlled prompt, never inject raw HTML
-- **Memory pressure from concurrent tasks + models** — Cap concurrent workers at 1-2; enforce response size limits (5MB)
-- **User confusion about background behavior** — Clear notifications on start/complete; visible artifact folder; quit stops all tasks
-- **Phase 1 in-process isolation is weaker** — Acceptable for HTTP fetch; escalate to XPC/Container for untrusted code in Phase 2/3
-
-## 10. Open Questions
-
-- Should background tasks be triggerable via voice only, or also via a menu/UI action?
-- What is the maximum number of concurrent background tasks? (Proposed: 2)
-- Should artifacts auto-delete after N days? (Proposed: 30 days, configurable)
-- Should we support task retry on transient network failure? (Proposed: yes, max 2 retries)
-
----
-
-## Implementation Summary
-
-(TBD after implementation.)
-
-## Code Review Findings
-
-(TBD by review agent.)
-
-## Completion Status
-
-(TBD after merge.)
+- Narrow v1 scope is less magical than “research anything,” but it is buildable now and composes cleanly with Ora’s existing agent loop.
+- Future phases can add source discovery or stronger isolation without invalidating the v1 queue/artifact interfaces.
+- **Privacy posture change:** See dedicated section above. This is Ora’s first network-initiating feature and must be communicated clearly.
