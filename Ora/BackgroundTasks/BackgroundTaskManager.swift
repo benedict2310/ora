@@ -18,9 +18,17 @@ struct BackgroundTaskExecutionRequest: Sendable, Equatable {
 }
 
 struct BackgroundTaskExecutionResult: Sendable, Equatable {
+    let workerResult: BackgroundTaskWorkerResult?
+    let persistRawHTML: Bool
     let artifactPath: String?
 
-    init(artifactPath: String? = nil) {
+    init(
+        workerResult: BackgroundTaskWorkerResult? = nil,
+        persistRawHTML: Bool = false,
+        artifactPath: String? = nil
+    ) {
+        self.workerResult = workerResult
+        self.persistRawHTML = persistRawHTML
         self.artifactPath = artifactPath
     }
 }
@@ -65,17 +73,22 @@ actor BackgroundTaskManager {
     private var executor: Executor = BackgroundTaskManager.defaultExecutor
     private var concurrencyLimit: Int = BackgroundTaskManager.defaultConcurrencyLimit
     private var queueDepthLimit: Int = BackgroundTaskManager.defaultQueueDepthLimit
+    private var artifactStore: ArtifactStore = .shared
 
     // MARK: - Configuration
 
     func configureForTesting(
         executor: @escaping Executor,
         concurrencyLimit: Int = BackgroundTaskManager.defaultConcurrencyLimit,
-        queueDepthLimit: Int = BackgroundTaskManager.defaultQueueDepthLimit
+        queueDepthLimit: Int = BackgroundTaskManager.defaultQueueDepthLimit,
+        artifactStore: ArtifactStore? = nil
     ) {
         self.executor = executor
         self.concurrencyLimit = max(1, concurrencyLimit)
         self.queueDepthLimit = max(1, queueDepthLimit)
+        if let artifactStore {
+            self.artifactStore = artifactStore
+        }
     }
 
     // MARK: - Public API
@@ -327,12 +340,19 @@ actor BackgroundTaskManager {
         let handle = Task { [weak self] in
             let outcome: Result<BackgroundTaskExecutionResult, BackgroundTaskExecutionFailure>
             do {
-                let result = try await Self.runWithTimeout(
+                let executorResult = try await Self.runWithTimeout(
                     request: request,
                     timeoutSeconds: snapshot.policy.timeoutSeconds,
                     executor: executor
                 )
-                outcome = .success(result)
+                guard let self else {
+                    return
+                }
+                let persistedResult = try await self.persistArtifactsIfNeeded(
+                    for: snapshot,
+                    executionResult: executorResult
+                )
+                outcome = .success(persistedResult)
             } catch is CancellationError {
                 guard let self else {
                     return
@@ -352,6 +372,26 @@ actor BackgroundTaskManager {
         }
 
         self.runningTasks[snapshot.id] = handle
+    }
+
+    private func persistArtifactsIfNeeded(
+        for task: BackgroundTaskRecordSnapshot,
+        executionResult: BackgroundTaskExecutionResult
+    ) async throws -> BackgroundTaskExecutionResult {
+        guard let workerResult = executionResult.workerResult else {
+            return executionResult
+        }
+
+        let manifest = try await self.artifactStore.save(
+            task: task,
+            workerResult: workerResult,
+            persistRawHTML: executionResult.persistRawHTML
+        )
+        return BackgroundTaskExecutionResult(
+            workerResult: workerResult,
+            persistRawHTML: executionResult.persistRawHTML,
+            artifactPath: manifest.artifactPath
+        )
     }
 
     private func finishExecution(
@@ -430,6 +470,7 @@ actor BackgroundTaskManager {
         }
     }
 
+    @Sendable
     private static func defaultExecutor(
         request: BackgroundTaskExecutionRequest
     ) async throws -> BackgroundTaskExecutionResult {
