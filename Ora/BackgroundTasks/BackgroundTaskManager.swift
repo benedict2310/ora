@@ -18,13 +18,19 @@ struct BackgroundTaskExecutionRequest: Sendable, Equatable {
 }
 
 struct BackgroundTaskExecutionResult: Sendable, Equatable {
+    let artifactWorkerResult: BackgroundTaskWorkerResult?
+    let persistRawHTML: Bool
     let artifactPath: String?
     let workerResult: WorkerResult?
 
     init(
+        artifactWorkerResult: BackgroundTaskWorkerResult? = nil,
+        persistRawHTML: Bool = false,
         artifactPath: String? = nil,
         workerResult: WorkerResult? = nil
     ) {
+        self.artifactWorkerResult = artifactWorkerResult
+        self.persistRawHTML = persistRawHTML
         self.artifactPath = artifactPath
         self.workerResult = workerResult
     }
@@ -71,25 +77,31 @@ actor BackgroundTaskManager {
     private var executorOverride: Executor?
     private var concurrencyLimit: Int = BackgroundTaskManager.defaultConcurrencyLimit
     private var queueDepthLimit: Int = BackgroundTaskManager.defaultQueueDepthLimit
+    private var artifactStore: ArtifactStore = .shared
 
     // MARK: - Configuration
 
     func configure(
         worker: any BackgroundWorker,
         concurrencyLimit: Int = BackgroundTaskManager.defaultConcurrencyLimit,
-        queueDepthLimit: Int = BackgroundTaskManager.defaultQueueDepthLimit
+        queueDepthLimit: Int = BackgroundTaskManager.defaultQueueDepthLimit,
+        artifactStore: ArtifactStore? = nil
     ) {
         self.worker = worker
         self.executorOverride = nil
         self.concurrencyLimit = max(1, concurrencyLimit)
         self.queueDepthLimit = max(1, queueDepthLimit)
+        if let artifactStore {
+            self.artifactStore = artifactStore
+        }
     }
 
     func configureForTesting(
         executor: @escaping Executor,
         worker: (any BackgroundWorker)? = nil,
         concurrencyLimit: Int = BackgroundTaskManager.defaultConcurrencyLimit,
-        queueDepthLimit: Int = BackgroundTaskManager.defaultQueueDepthLimit
+        queueDepthLimit: Int = BackgroundTaskManager.defaultQueueDepthLimit,
+        artifactStore: ArtifactStore? = nil
     ) {
         self.executorOverride = executor
         if let worker {
@@ -97,6 +109,9 @@ actor BackgroundTaskManager {
         }
         self.concurrencyLimit = max(1, concurrencyLimit)
         self.queueDepthLimit = max(1, queueDepthLimit)
+        if let artifactStore {
+            self.artifactStore = artifactStore
+        }
     }
 
     // MARK: - Public API
@@ -351,10 +366,14 @@ actor BackgroundTaskManager {
 
             let outcome: Result<BackgroundTaskExecutionResult, BackgroundTaskExecutionFailure>
             do {
-                let result = try await Self.runWithTimeout(timeoutSeconds: snapshot.policy.timeoutSeconds) {
+                let executorResult = try await Self.runWithTimeout(timeoutSeconds: snapshot.policy.timeoutSeconds) {
                     return try await self.executeRequest(request: request)
                 }
-                outcome = .success(result)
+                let persistedResult = try await self.persistArtifactsIfNeeded(
+                    for: snapshot,
+                    executionResult: executorResult
+                )
+                outcome = .success(persistedResult)
             } catch is CancellationError {
                 await self.finishCancellation(taskID: snapshot.id)
                 return
@@ -368,6 +387,27 @@ actor BackgroundTaskManager {
         }
 
         self.runningTasks[snapshot.id] = handle
+    }
+
+    private func persistArtifactsIfNeeded(
+        for task: BackgroundTaskRecordSnapshot,
+        executionResult: BackgroundTaskExecutionResult
+    ) async throws -> BackgroundTaskExecutionResult {
+        guard let artifactWorkerResult = executionResult.artifactWorkerResult else {
+            return executionResult
+        }
+
+        let manifest = try await self.artifactStore.save(
+            task: task,
+            workerResult: artifactWorkerResult,
+            persistRawHTML: executionResult.persistRawHTML
+        )
+        return BackgroundTaskExecutionResult(
+            artifactWorkerResult: artifactWorkerResult,
+            persistRawHTML: executionResult.persistRawHTML,
+            artifactPath: manifest.artifactPath,
+            workerResult: executionResult.workerResult
+        )
     }
 
     private func finishExecution(

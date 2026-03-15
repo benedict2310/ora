@@ -133,6 +133,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        Task {
+            let cutoffDate = Date().addingTimeInterval(-ArtifactStore.defaultCleanupAge)
+            let removedCount = await ArtifactStore.shared.cleanup(olderThan: cutoffDate)
+            if removedCount > 0 {
+                self.logger.info("Artifact cleanup removed \(removedCount) expired task folders")
+            }
+        }
+
         // Start preloading models in the background
         Task {
             do {
