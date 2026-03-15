@@ -27,7 +27,7 @@ struct URLSessionWorker: BackgroundWorker {
     private let extractor: HTMLTextExtractor
 
     init(
-        fetchClient: any WorkerFetchClient = URLSessionFetchClient(),
+        fetchClient: any WorkerFetchClient = SafeURLSession(),
         extractor: HTMLTextExtractor = HTMLTextExtractor()
     ) {
         self.fetchClient = fetchClient

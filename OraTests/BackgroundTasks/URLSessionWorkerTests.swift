@@ -174,10 +174,11 @@ final class URLSessionWorkerTests: XCTestCase {
             )
         }
 
-        XCTAssertTrue(await self.waitUntil {
+        let waitResult = await self.waitUntil {
             let requestedURLs = await fetchClient.requestedURLs()
             return requestedURLs.count == 1
-        })
+        }
+        XCTAssertTrue(waitResult)
 
         task.cancel()
 
@@ -185,7 +186,8 @@ final class URLSessionWorkerTests: XCTestCase {
             _ = try await task.value
             XCTFail("Expected cancellation")
         } catch is CancellationError {
-            XCTAssertEqual(await fetchClient.requestedURLs(), ["https://example.com/1"])
+            let finalURLs = await fetchClient.requestedURLs()
+            XCTAssertEqual(finalURLs, ["https://example.com/1"])
         } catch {
             throw error
         }
