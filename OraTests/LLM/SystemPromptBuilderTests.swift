@@ -484,18 +484,20 @@ final class SystemPromptBuilderTests: XCTestCase {
         XCTAssertTrue(encoded.contains("- messages.send [confirm]"))
     }
 
-    func test_initialDynamicToolBlock_withNoDiscoveredTools_isAtMost45PercentOfFullSchemas() async {
+    func test_initialDynamicToolBlock_withNoDiscoveredTools_isAtMost50PercentOfFullSchemas() async {
         let allTools = await self.loadDefaultToolDefinitions()
         let coreTools = await self.loadCoreToolDefinitions()
         let deferredCatalog = await self.loadDeferredCatalogEntries()
 
         let fullBaseline = SystemPromptBuilder.encodeToolSchemas(allTools).count
+        // encodeDeferredToolCatalog now includes section headers (moved from template to keep
+        // prompt clean when catalog is empty), so the threshold is slightly higher than before.
         let initialBlock = [
             SystemPromptBuilder.encodeToolSchemas(coreTools),
             SystemPromptBuilder.encodeDeferredToolCatalog(deferredCatalog)
         ].joined(separator: "\n")
 
-        let threshold = Int(Double(fullBaseline) * 0.45)
+        let threshold = Int(Double(fullBaseline) * 0.50)
         XCTAssertLessThanOrEqual(initialBlock.count, threshold)
     }
     
