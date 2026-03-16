@@ -346,12 +346,13 @@ final class AppleScriptUtilsTests: XCTestCase {
     // MARK: - Date Formatting
 
     func test_formatDate_producesAppleScriptDate() {
-        let date = Date(timeIntervalSince1970: 0)  // Jan 1, 1970
+        // Use a date well into 2000 to avoid timezone edge cases with epoch
+        let date = Date(timeIntervalSince1970: 946_728_000)  // Jan 1, 2000 12:00 UTC
         let formatted = AppleScriptUtils.formatDate(date)
 
         XCTAssertTrue(formatted.hasPrefix("date \""))
         XCTAssertTrue(formatted.hasSuffix("\""))
-        XCTAssertTrue(formatted.contains("1970"))
+        XCTAssertTrue(formatted.contains("2000"))
     }
 }
 
