@@ -50,3 +50,40 @@ Key challenges:
 For production (LLMService.swift): same optimization applies — the static system prompt prefix is the same for every request. Cache it across requests. Clear when model is unloaded.
 
 Note: This is NOT benchmark cheating — it's a genuine inference optimization that also benefits production.
+
+## Session 3 — KV Cache Implementation Note
+
+**Swift 6 concurrency bypass** for proof-of-concept:
+
+`KVCache` protocol doesn't conform to `Sendable` (class-based, mutable), so returning `[any KVCache]` from `model.perform` fails Swift 6 compilation. 
+
+Workarounds:
+1. Use `nonisolated(unsafe) var prefixCache: [any KVCache]?` on the actor to store the cache without Sendable requirement
+2. Access `prefixCache` only from within actor-isolated methods (guaranteed safe since LLMBackend is serial)
+3. In `model.perform` closure: create the cache, call `context.model.prepare()`, then assign to `self.prefixCache` via escaping capture
+
+**Pseudocode**:
+```swift
+actor LLMBackend {
+    private var model: ModelContainer?
+    nonisolated(unsafe) private var prefixCache: [any KVCache]?
+    nonisolated(unsafe) private var prefixTokenCount: Int = 0
+    
+    func warmUpPrefixCache(tokens: [Int]) async throws {
+        guard let model = model else { return }
+        let lmInput = LMInput(tokens: MLXArray(tokens))
+        await model.perform { context in
+            let cache = context.model.newCache(parameters: nil)
+            try context.model.prepare(lmInput, cache: cache, windowSize: nil)
+            eval(cache)
+            self.prefixCache = cache  // WARNING: unsafe send across actor boundary
+            self.prefixTokenCount = tokens.count
+        }
+    }
+    
+    // Then in generate(): use generate(input:cache:parameters:context:) with
+    // cloned/restored prefixCache, passing deltaInput (not fullInput)
+}
+```
+
+**Note**: The `nonisolated(unsafe)` approach is safe here since LLMBackend is serial (actor) and we only access prefixCache from actor-isolated methods. This is a legitimate Swift 6 escape hatch for known-safe patterns.
