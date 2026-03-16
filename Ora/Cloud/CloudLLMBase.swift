@@ -60,6 +60,18 @@ open class CloudLLMBase: LLMServicing, @unchecked Sendable {
         // No-op: no local KV cache
     }
 
+    open func generateOneShot(prompt: String, maxTokens: Int = 800) async throws -> String {
+        let messages = [LLMMessage(role: .user, content: prompt)]
+        let stream = await self.generate(messages: messages, maxTokens: maxTokens)
+        var result = ""
+        for try await delta in stream {
+            if case .token(let token) = delta {
+                result += token
+            }
+        }
+        return result
+    }
+
     public func assertTextOnlyInput(messages: [LLMMessage], providerName: String) throws {
         guard messages.contains(where: \.containsImageAttachments) else {
             return
