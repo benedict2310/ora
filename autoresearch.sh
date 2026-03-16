@@ -14,7 +14,14 @@ MODEL="mlx-community/Qwen3-4B-Instruct-2507-4bit"
 
 # ── 1. Build (incremental, fast after first run) ─────────────────────────────
 cd "$TESTSUITE_DIR"
-swift build -c release 2>&1 | grep -E "^Build|error:" || true
+BUILD_OUTPUT=$(swift build -c release 2>&1)
+BUILD_EXIT=$?
+echo "$BUILD_OUTPUT" | grep -E "^Build|error:" || true
+if [[ $BUILD_EXIT -ne 0 ]]; then
+    echo "ERROR: Build failed (exit $BUILD_EXIT)" >&2
+    exit 1
+fi
+echo "Build complete! (incremental)"
 
 # Ensure metallib is in place for CLI Metal execution
 METALLIB_SRC=".build/arm64-apple-macosx/debug/default.metallib"
