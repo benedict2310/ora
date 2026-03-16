@@ -11,6 +11,11 @@
 
 Implement the persistent queue and lifecycle layer for background research jobs. `BackgroundTaskManager` owns enqueue, cancellation, bounded concurrency, timeout handling, observer streams, and launch-time reconciliation of stale tasks. v1 persists task records in SwiftData but never resumes unfinished work after relaunch.
 
+## Verification Notes
+
+- Verified on 2026-03-16 against [BackgroundTaskManager.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/BackgroundTasks/BackgroundTaskManager.swift), [BackgroundTaskRecord.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/BackgroundTasks/BackgroundTaskRecord.swift), [PersistenceManager.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/Persistence/PersistenceManager.swift), and [AppDelegate.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/AppDelegate.swift).
+- Focused tests passed in `.artifacts/BGTests-2.xcresult`, including `BackgroundTaskManagerTests`.
+
 ## Architecture Context and Reuse Guidance
 
 - Reuse [PersistenceManager.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/Persistence/PersistenceManager.swift) for the SwiftData container and schema registration. Do **not** create a parallel persistence controller.
@@ -110,13 +115,13 @@ Manual validation:
 
 ## Acceptance Criteria
 
-- [ ] `BackgroundTaskRecord` is part of the SwiftData schema used by `PersistenceManager`.
-- [ ] `BackgroundTaskManager.enqueue()` persists a queued record and starts work when capacity exists.
-- [ ] Queue depth and timeout limits are enforced.
-- [ ] `observe()` emits deterministic lifecycle events suitable for UI/notification consumers.
-- [ ] `cancel()` and `cancelAll()` transition tasks to `canceled` and stop in-flight work.
-- [ ] Launch reconciliation marks stale unfinished tasks as `canceled`; v1 does not resume them.
-- [ ] `AppDelegate` owns queue startup and termination hooks.
+- [x] `BackgroundTaskRecord` is part of the SwiftData schema used by `PersistenceManager`.
+- [x] `BackgroundTaskManager.enqueue()` persists a queued record and starts work when capacity exists.
+- [x] Queue depth and timeout limits are enforced.
+- [x] `observe()` emits deterministic lifecycle events suitable for UI/notification consumers.
+- [x] `cancel()` and `cancelAll()` transition tasks to `canceled` and stop in-flight work.
+- [x] Launch reconciliation marks stale unfinished tasks as `canceled`; v1 does not resume them.
+- [x] `AppDelegate` owns queue startup and termination hooks.
 
 ## Resolved v1 Decisions (from review)
 

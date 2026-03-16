@@ -80,6 +80,66 @@ final class OverlayViewTests: XCTestCase {
         )
     }
 
+    func test_shouldShowTaskStatus_isFalseWithoutActiveTasks() {
+        let observer = TaskProgressObserver(
+            managerProvider: { nil },
+            menuPresenter: {}
+        )
+        let view = OverlayView(taskProgressObserver: observer)
+
+        XCTAssertFalse(view.shouldShowTaskStatus)
+    }
+
+    func test_shouldShowTaskStatus_isTrueWhenTaskIsActive() async throws {
+        let manager = await self.makeTaskManager(
+            executor: { _ in
+                try await Task.sleep(for: .seconds(1))
+                return BackgroundTaskExecutionResult()
+            }
+        )
+        let observer = TaskProgressObserver(
+            managerProvider: { manager },
+            menuPresenter: {}
+        )
+        _ = try await manager.enqueue(
+            inputs: BackgroundTaskInputs(urls: ["https://example.com/overlay"], label: "Overlay Task")
+        )
+
+        let shown = await self.waitUntil {
+            OverlayView(taskProgressObserver: observer).shouldShowTaskStatus
+        }
+        XCTAssertTrue(shown)
+
+        await manager.cancelAll()
+    }
+
+    private func makeTaskManager(
+        executor: @escaping BackgroundTaskManager.Executor
+    ) async -> BackgroundTaskManager {
+        let persistence = PersistenceManager.createForTesting(inMemory: true)
+        let manager = BackgroundTaskManager(modelContainer: persistence.container)
+        await manager.configureForTesting(
+            executor: executor,
+            notificationService: nil
+        )
+        return manager
+    }
+
+    private func waitUntil(
+        timeout: Duration = .seconds(2),
+        condition: @escaping () async -> Bool
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let start = clock.now
+        while clock.now - start < timeout {
+            if await condition() {
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return false
+    }
+
     private static func sampleAttachment() -> StagedImageAttachment {
         return StagedImageAttachment(
             id: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!,

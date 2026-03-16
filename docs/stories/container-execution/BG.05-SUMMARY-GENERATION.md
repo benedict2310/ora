@@ -1,7 +1,7 @@
 # BG.05 - Summary Generation
 
 **Epic:** Background Tasks
-**Status:** Ready for Implementation
+**Status:** Complete
 **Priority:** P1 (High)
 **Estimated Effort:** 2 days
 **Dependencies:** BG.02, BG.04
@@ -10,6 +10,12 @@
 ## Summary
 
 Generate `summary.md` from stored research artifacts using the **local** LLM runtime only. Summary jobs must stay off the foreground path, sanitize fetched content before inference, and cooperate with Ora’s existing MLX serialization rather than trying to manage the GPU lock themselves.
+
+## Verification Notes
+
+- Verified on 2026-03-16 against [SummaryGenerator.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/BackgroundTasks/Summary/SummaryGenerator.swift), [SummaryPrompt.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/BackgroundTasks/Summary/SummaryPrompt.swift), and `LLMService.generateOneShot`.
+- Focused tests passed in `.artifacts/BGTests-2.xcresult`, including `SummaryGeneratorTests` and `SummaryContentSanitizerTests`.
+- Follow-up fix on 2026-03-16 wires `SummaryGenerator` into [AppDelegate.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/AppDelegate.swift) and [BackgroundTaskManager.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/BackgroundTasks/BackgroundTaskManager.swift), so completed tasks now enqueue and run summary generation in the default app path.
 
 ## Architecture Context and Reuse Guidance
 

@@ -221,6 +221,13 @@ final class StatusBarControllerTests: XCTestCase {
         XCTAssertEqual(StatusBarController.symbolName(for: .setupRequired), "arrow.down.circle")
     }
 
+    func test_symbolName_idleWithBackgroundTasks_returnsActivitySymbol() {
+        XCTAssertEqual(
+            StatusBarController.symbolName(for: .idle, hasActiveBackgroundTasks: true),
+            "arrow.triangle.2.circlepath.circle.fill"
+        )
+    }
+
     // MARK: - Asset Name Tests
 
     func test_assetName_idle_returnsMenubarIdle() {
@@ -259,6 +266,33 @@ final class StatusBarControllerTests: XCTestCase {
         XCTAssertTrue(titles.contains("Conversation Mode"), "Menu should contain Conversation Mode")
         XCTAssertTrue(titles.contains("Quit Ora"), "Menu should contain Quit Ora")
 
+        controller.shutdown()
+    }
+
+    func test_menuItemTitles_includeBackgroundTaskSectionWhenActive() async throws {
+        let manager = await self.makeTaskManager(
+            executor: { _ in
+                try await Task.sleep(for: .seconds(1))
+                return BackgroundTaskExecutionResult()
+            }
+        )
+        let observer = TaskProgressObserver(
+            managerProvider: { manager },
+            menuPresenter: {}
+        )
+        let controller = self.makeController(taskProgressObserver: observer)
+
+        _ = try await manager.enqueue(
+            inputs: BackgroundTaskInputs(urls: ["https://example.com/background"], label: "Queued Research")
+        )
+
+        let sectionVisible = await self.waitUntil {
+            controller.menuItemTitles.contains("Background Tasks")
+        }
+        XCTAssertTrue(sectionVisible)
+        XCTAssertTrue(controller.menuItemTitles.contains("Cancel Queued Research"))
+
+        await manager.cancelAll()
         controller.shutdown()
     }
 
@@ -484,7 +518,8 @@ final class StatusBarControllerTests: XCTestCase {
 
     private func makeController(
         actionHandler: StatusBarActionHandler? = nil,
-        canCheckForUpdates: Bool = true
+        canCheckForUpdates: Bool = true,
+        taskProgressObserver: TaskProgressObserver? = nil
     ) -> StatusBarController {
         let updateChecker = MockUpdateChecker(canCheckForUpdates: canCheckForUpdates)
         let credentialStore = StatusBarCredentialStoreMock()
@@ -503,7 +538,38 @@ final class StatusBarControllerTests: XCTestCase {
         return StatusBarController(
             actionHandler: actionHandler,
             updateChecker: updateChecker,
-            providerPreferencesViewModel: viewModel
+            providerPreferencesViewModel: viewModel,
+            taskProgressObserver: taskProgressObserver ?? TaskProgressObserver(
+                managerProvider: { nil },
+                menuPresenter: {}
+            )
         )
+    }
+
+    private func makeTaskManager(
+        executor: @escaping BackgroundTaskManager.Executor
+    ) async -> BackgroundTaskManager {
+        let persistence = PersistenceManager.createForTesting(inMemory: true)
+        let manager = BackgroundTaskManager(modelContainer: persistence.container)
+        await manager.configureForTesting(
+            executor: executor,
+            notificationService: nil
+        )
+        return manager
+    }
+
+    private func waitUntil(
+        timeout: Duration = .seconds(2),
+        condition: @escaping () async -> Bool
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let start = clock.now
+        while clock.now - start < timeout {
+            if await condition() {
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return false
     }
 }

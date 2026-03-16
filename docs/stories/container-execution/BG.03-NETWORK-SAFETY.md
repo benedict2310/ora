@@ -1,7 +1,7 @@
 # BG.03 - Network Safety Policy
 
 **Epic:** Background Tasks
-**Status:** Ready for Implementation
+**Status:** Complete
 **Priority:** P1 (High)
 **Estimated Effort:** 1.5 days
 **Dependencies:** BG.02
@@ -10,6 +10,12 @@
 ## Summary
 
 Add a host-side safety layer that blocks unsafe URLs before the worker ever fetches them. v1 must prevent obvious SSRF paths, private-network access, oversized downloads, unsafe content types, and redirect-based bypasses.
+
+## Verification Notes
+
+- Verified on 2026-03-16 against [SafeURLSession.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/BackgroundTasks/Safety/SafeURLSession.swift) and [URLSafetyValidator.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/BackgroundTasks/Safety/URLSafetyValidator.swift).
+- Focused tests passed in `.artifacts/BGTests-2.xcresult`, including `SafeURLSessionTests` and `URLSafetyValidatorTests`.
+- The safety layer is present and used by [URLSessionWorker.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/BackgroundTasks/Workers/URLSessionWorker.swift).
 
 ## Architecture Context and Reuse Guidance
 
@@ -99,12 +105,12 @@ Manual validation:
 
 ## Acceptance Criteria
 
-- [ ] Unsafe schemes and hosts are rejected before body download begins.
-- [ ] Hostnames resolving to blocked IP ranges are rejected.
-- [ ] Redirects are revalidated through the same policy.
-- [ ] Response-size and content-type limits are enforced by `SafeURLSession`.
-- [ ] Request-count limits are enforced per task.
-- [ ] The worker uses `SafeURLSession`, not raw `URLSession`.
+- [x] Unsafe schemes and hosts are rejected before body download begins.
+- [x] Hostnames resolving to blocked IP ranges are rejected.
+- [x] Redirects are revalidated through the same policy.
+- [x] Response-size and content-type limits are enforced by `SafeURLSession`.
+- [x] Request-count limits are enforced per task.
+- [x] The worker uses `SafeURLSession`, not raw `URLSession`.
 
 ## Risks and Open Questions
 

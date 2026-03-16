@@ -41,6 +41,7 @@ actor TaskNotificationService: TaskNotificationPosting {
     static let showInFinderActionIdentifier = "com.ora.backgroundTask.showInFinder"
     static let artifactPathKey = "artifactPath"
     static let taskIDKey = "taskID"
+    static let threadIdentifier = "ora-background-tasks"
 
     static let maxBodyLength = 200
     static let coalescingWindowSeconds: TimeInterval = 3.0
@@ -103,12 +104,13 @@ actor TaskNotificationService: TaskNotificationPosting {
         content.body = body
         content.sound = .default
         content.categoryIdentifier = Self.categoryIdentifier
+        content.threadIdentifier = Self.threadIdentifier
         content.userInfo = [
             Self.taskIDKey: taskID.uuidString
         ]
 
         let request = UNNotificationRequest(
-            identifier: "com.ora.bg-task.failure.\(taskID.uuidString)",
+            identifier: Self.requestIdentifier(for: taskID),
             content: content,
             trigger: nil
         )
@@ -145,6 +147,14 @@ actor TaskNotificationService: TaskNotificationPosting {
         )
 
         center.setNotificationCategories([category])
+    }
+
+    static func requestIdentifier(for taskID: UUID) -> String {
+        return "ora-task-\(taskID.uuidString.lowercased())"
+    }
+
+    static func coalescedRequestIdentifier(for taskID: UUID) -> String {
+        return Self.requestIdentifier(for: taskID) + "-coalesced"
     }
 
     // MARK: - Authorization
@@ -213,6 +223,7 @@ actor TaskNotificationService: TaskNotificationPosting {
         content.body = body
         content.sound = .default
         content.categoryIdentifier = Self.categoryIdentifier
+        content.threadIdentifier = Self.threadIdentifier
 
         var userInfo: [String: String] = [
             Self.taskIDKey: completion.taskID.uuidString
@@ -223,7 +234,7 @@ actor TaskNotificationService: TaskNotificationPosting {
         content.userInfo = userInfo
 
         let request = UNNotificationRequest(
-            identifier: "com.ora.bg-task.completion.\(completion.taskID.uuidString)",
+            identifier: Self.requestIdentifier(for: completion.taskID),
             content: content,
             trigger: nil
         )
@@ -241,6 +252,7 @@ actor TaskNotificationService: TaskNotificationPosting {
         content.body = "Tap to open Ora."
         content.sound = .default
         content.categoryIdentifier = Self.categoryIdentifier
+        content.threadIdentifier = Self.threadIdentifier
 
         // Use the first completion's artifact path for the Show in Finder action
         var userInfo: [String: String] = [
@@ -252,7 +264,7 @@ actor TaskNotificationService: TaskNotificationPosting {
         content.userInfo = userInfo
 
         let request = UNNotificationRequest(
-            identifier: "com.ora.bg-task.coalesced.\(UUID().uuidString)",
+            identifier: Self.coalescedRequestIdentifier(for: completions[0].taskID),
             content: content,
             trigger: nil
         )

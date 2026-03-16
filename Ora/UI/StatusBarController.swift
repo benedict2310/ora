@@ -6,6 +6,8 @@
 //
 
 import AppKit
+import Combine
+import Dispatch
 import os
 import SwiftData
 
@@ -59,7 +61,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private weak var injectedActionHandler: StatusBarActionHandler?
     private let updateChecker: UpdateChecking
     private let providerPreferencesViewModel: ProviderPreferencesViewModel
+    private let taskProgressObserver: TaskProgressObserver
     private var modelRefreshTask: Task<Void, Never>?
+    private var taskProgressCancellable: AnyCancellable?
 
     private(set) var state: State = .idle {
         didSet {
@@ -72,10 +76,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     init(
         actionHandler: StatusBarActionHandler? = nil,
         updateChecker: UpdateChecking? = nil,
-        providerPreferencesViewModel: ProviderPreferencesViewModel? = nil
+        providerPreferencesViewModel: ProviderPreferencesViewModel? = nil,
+        taskProgressObserver: TaskProgressObserver = .shared
     ) {
         self.updateChecker = updateChecker ?? UpdateController.shared
         self.providerPreferencesViewModel = providerPreferencesViewModel ?? ProviderPreferencesViewModel()
+        self.taskProgressObserver = taskProgressObserver
         if let handler = actionHandler {
             self.injectedActionHandler = handler
         } else {
@@ -83,6 +89,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         }
         super.init()
         self.setupStatusItem()
+        self.observeTaskProgress()
 
         Task { @MainActor in
             await self.providerPreferencesViewModel.loadState()
@@ -107,10 +114,16 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         self.actionHandler?.handlePreferences()
     }
 
+    func presentMenu() {
+        self.statusItem?.button?.performClick(nil)
+    }
+
     /// Removes the status item from the menu bar. Called during cleanup.
     func shutdown() {
         self.modelRefreshTask?.cancel()
         self.modelRefreshTask = nil
+        self.taskProgressCancellable?.cancel()
+        self.taskProgressCancellable = nil
 
         if let item = self.statusItem {
             NSStatusBar.system.removeStatusItem(item)
@@ -141,6 +154,15 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     /// Returns the SF Symbol name for a given state (fallback). Exposed for testing.
     static func symbolName(for state: State) -> String {
+        return self.symbolName(for: state, hasActiveBackgroundTasks: false)
+    }
+
+    /// Returns the SF Symbol name for a given state, optionally accounting for background task activity.
+    static func symbolName(for state: State, hasActiveBackgroundTasks: Bool) -> String {
+        if hasActiveBackgroundTasks, case .idle = state {
+            return "arrow.triangle.2.circlepath.circle.fill"
+        }
+
         switch state {
         case .idle:
             return "circle"
@@ -253,10 +275,31 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         self.logger.debug("Status bar initialized")
     }
 
+    private func observeTaskProgress() {
+        self.taskProgressCancellable = self.taskProgressObserver.$activeTasks
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.updateIcon()
+                self?.rebuildMenu()
+            }
+    }
+
     private func rebuildMenu() {
         guard let menu = self.statusItem?.menu else { return }
 
         menu.removeAllItems()
+
+        for item in TaskProgressMenuItems.makeSection(
+            tasks: self.taskProgressObserver.activeTasks,
+            target: self,
+            cancelAction: #selector(self.cancelBackgroundTaskClicked(_:))
+        ) {
+            menu.addItem(item)
+        }
+        if self.taskProgressObserver.hasActiveTasks {
+            menu.addItem(.separator())
+        }
 
         let selectionState = self.providerPreferencesViewModel.modelSelectionMenuState
 
@@ -370,6 +413,14 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     private func iconForState(_ state: State) -> NSImage? {
+        if self.taskProgressObserver.hasActiveTasks, case .idle = state {
+            let activitySymbolConfiguration = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+            return NSImage(
+                systemSymbolName: Self.symbolName(for: state, hasActiveBackgroundTasks: true),
+                accessibilityDescription: "Ora background tasks active"
+            )?.withSymbolConfiguration(activitySymbolConfiguration)
+        }
+
         let assetName = Self.assetName(for: state)
         if let customImage = NSImage(named: assetName) {
             customImage.isTemplate = true
@@ -420,6 +471,14 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             )
             self.rebuildMenu()
         }
+    }
+
+    @objc private func cancelBackgroundTaskClicked(_ sender: NSMenuItem) {
+        guard let taskID = sender.representedObject as? NSUUID else {
+            self.logger.error("STATUSBAR_CANCEL_BACKGROUND_TASK_INVALID_ID")
+            return
+        }
+        self.taskProgressObserver.cancel(taskID: taskID as UUID)
     }
 
     @objc private func quitClicked() {

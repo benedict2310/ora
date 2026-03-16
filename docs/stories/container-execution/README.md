@@ -19,14 +19,16 @@ v1 is intentionally narrow. It does **not** include generic web search, browser 
 | ID | Title | Status | Dependencies |
 |:---|:------|:-------|:-------------|
 | BG.00 | [Background Tasks Overview](BG.00-BACKGROUND-TASKS-OVERVIEW.md) | ✅ Complete | None |
-| BG.01 | [Task Queue](BG.01-TASK-QUEUE.md) | ✅ Ready | BG.00 |
-| BG.02 | [Worker Abstraction](BG.02-WORKER-ABSTRACTION.md) | ✅ Ready | BG.01 |
-| BG.03 | [Network Safety Policy](BG.03-NETWORK-SAFETY.md) | ✅ Ready | BG.02 |
-| BG.04 | [Artifact Persistence](BG.04-ARTIFACT-PERSISTENCE.md) | ✅ Ready | BG.01 |
-| BG.05 | [Summary Generation](BG.05-SUMMARY-GENERATION.md) | ✅ Ready | BG.02, BG.04 |
-| BG.06 | [Local Notifications](BG.06-NOTIFICATIONS.md) | ✅ Ready | BG.01, BG.04, BG.05 |
-| BG.07 | [Context Loading](BG.07-CONTEXT-LOADING.md) | ✅ Ready | BG.01, BG.04, BG.05 |
-| BG.08 | [Task Progress UI](BG.08-TASK-PROGRESS-UI.md) | 🔄 Draft | BG.01, BG.06 |
+| BG.01 | [Task Queue](BG.01-TASK-QUEUE.md) | ✅ Complete | BG.00 |
+| BG.02 | [Worker Abstraction](BG.02-WORKER-ABSTRACTION.md) | ✅ Complete | BG.01 |
+| BG.03 | [Network Safety Policy](BG.03-NETWORK-SAFETY.md) | ✅ Complete | BG.02 |
+| BG.04 | [Artifact Persistence](BG.04-ARTIFACT-PERSISTENCE.md) | ✅ Complete | BG.01 |
+| BG.05 | [Summary Generation](BG.05-SUMMARY-GENERATION.md) | ✅ Complete | BG.02, BG.04 |
+| BG.06 | [Local Notifications](BG.06-NOTIFICATIONS.md) | ✅ Complete | BG.01, BG.04, BG.05 |
+| BG.07 | [Context Loading](BG.07-CONTEXT-LOADING.md) | ✅ Complete | BG.01, BG.04, BG.05 |
+| BG.08 | [Task Progress UI](BG.08-TASK-PROGRESS-UI.md) | ✅ Complete | BG.01, BG.06 |
+
+Verification note: 2026-03-16 review, fix pass, and BG.08 implementation confirmed BG.01-BG.08 are implemented. Focused BG.08/UI tests passed `55/55`.
 
 ## Recommended Implementation Order
 
@@ -37,7 +39,7 @@ v1 is intentionally narrow. It does **not** include generic web search, browser 
 5. `BG.05` local summary generation
 6. `BG.06` local notifications
 7. `BG.07` research tools and context loading
-8. `BG.08` task progress UI (can start after BG.01, polished after BG.06)
+8. `BG.08` task progress UI
 
 ## Non-Goals
 
