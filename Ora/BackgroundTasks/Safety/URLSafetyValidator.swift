@@ -33,6 +33,9 @@ struct URLSafetyValidator: Sendable {
         // Check if the host is already a literal IP
         if Self.isIPAddress(host) {
             try self.validateIPAddress(host)
+            // When domain allowlist is configured, block literal IP targets
+            // to prevent bypassing domain pinning
+            try self.validateDomainAllowlist(host)
         } else {
             // Resolve hostname and check resolved IPs
             try self.validateDomainAllowlist(host)

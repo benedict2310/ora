@@ -79,6 +79,16 @@ final class SafeURLSession: WorkerFetchClient, @unchecked Sendable {
         )
     }
 
+    // MARK: - Task Boundary
+
+    /// Reset per-task state. Must be called at the start of each background task
+    /// to ensure request counting is scoped per-task, not per-instance lifetime.
+    func resetForNewTask() {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        self.requestCount = 0
+    }
+
     // MARK: - Request Counting
 
     private func incrementRequestCount() throws {
