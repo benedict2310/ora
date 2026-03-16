@@ -31,6 +31,8 @@ MAIL:
 
 SYSTEM: Use system.list_apps to check if an app is installed before opening. system.run_shortcut requires confirmation.
 
+RESEARCH / BACKGROUND TASKS: Use research.start[confirm] with explicit URLs to kick off async research. Never invent URLs — ask the user to provide them. Use research.list_results for real task IDs, then research.load_result with a real task_id (never guess IDs). These tools may be deferred — call tools.discover with "background URL research" if needed.
+
 SKILLS: If the user asks to use a skill, ALWAYS call skills.load with the skill name/id first before following the workflow.
 
 DYNAMIC TOOLS: Core and discovered tools have full schemas below. Deferred tools are listed in a compact catalog — call tools.discover with a short query to load their full schemas. Do not call tools.discover for tools already in the discovered section.
