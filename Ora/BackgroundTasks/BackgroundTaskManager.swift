@@ -86,7 +86,7 @@ actor BackgroundTaskManager {
     private var queueDepthLimit: Int = BackgroundTaskManager.defaultQueueDepthLimit
     private var artifactStore: ArtifactStore = .shared
     private var summaryGenerator: SummaryGenerator?
-    private var notificationService: (any TaskNotificationPosting)?
+    private var notificationService: (any TaskNotificationPosting)? = TaskNotificationService()
 
     // MARK: - Configuration
 
@@ -480,17 +480,20 @@ actor BackgroundTaskManager {
                 }
             }
 
-            // Post local notification for terminal states
+            // Post local notification for terminal states (fire-and-forget to avoid blocking scheduling)
             if let notificationService = self.notificationService {
                 let label = snapshot.inputs.label ?? "Research task"
                 switch outcome {
                 case .success(let result):
-                    await notificationService.postCompletion(
-                        taskID: taskID,
-                        title: label,
-                        summaryPreview: nil,
-                        artifactPath: result.artifactPath
-                    )
+                    let artifactPath = result.artifactPath
+                    Task {
+                        await notificationService.postCompletion(
+                            taskID: taskID,
+                            title: label,
+                            summaryPreview: nil,
+                            artifactPath: artifactPath
+                        )
+                    }
                 case .failure(let failure):
                     let errorText: String
                     switch failure {
@@ -499,11 +502,13 @@ actor BackgroundTaskManager {
                     case .failed(let message):
                         errorText = message
                     }
-                    await notificationService.postFailure(
-                        taskID: taskID,
-                        title: label,
-                        errorDescription: errorText
-                    )
+                    Task {
+                        await notificationService.postFailure(
+                            taskID: taskID,
+                            title: label,
+                            errorDescription: errorText
+                        )
+                    }
                 }
             }
         } catch {
