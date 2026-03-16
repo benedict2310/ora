@@ -27,7 +27,7 @@ struct URLSessionWorker: BackgroundWorker {
     private let extractor: HTMLTextExtractor
 
     init(
-        fetchClient: any WorkerFetchClient = URLSessionFetchClient(),
+        fetchClient: any WorkerFetchClient = SafeURLSession(),
         extractor: HTMLTextExtractor = HTMLTextExtractor()
     ) {
         self.fetchClient = fetchClient
@@ -39,6 +39,11 @@ struct URLSessionWorker: BackgroundWorker {
         input: BackgroundTaskInputs,
         policy: BackgroundTaskPolicy
     ) async throws -> WorkerResult {
+        // Reset per-task state on SafeURLSession to scope request counting per-task
+        if let safeSession = self.fetchClient as? SafeURLSession {
+            safeSession.resetForNewTask()
+        }
+
         let startedAt = Date()
         var pages: [PageResult] = []
         var failedPages: [FailedPage] = []
