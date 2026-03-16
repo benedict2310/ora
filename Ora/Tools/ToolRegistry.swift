@@ -199,6 +199,11 @@ actor ToolRegistry {
         register(MailOpenMessageTool())
         register(MailListMailboxesTool())
 
+        // Research tools
+        register(ResearchStartTool())
+        register(ResearchListResultsTool())
+        register(ResearchLoadResultTool())
+
         // System tools
         register(SystemOpenAppTool())
         register(SystemOpenURLTool())
