@@ -165,13 +165,18 @@ actor SummaryGenerator {
                 return
             }
 
-            // Verify we're still idle
+            // Verify we're still idle; if not, clear state so next idle triggers retry
             guard await self.isStillIdle() else {
+                await self.clearCurrentTask()
                 return
             }
 
             await self.processNextJob()
         }
+    }
+
+    private func clearCurrentTask() {
+        self.currentTask = nil
     }
 
     private func isStillIdle() -> Bool {

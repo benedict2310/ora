@@ -445,8 +445,8 @@ actor BackgroundTaskManager {
             record.artifactPath = result.artifactPath
             record.errorMessage = nil
             record.completedAt = completedAt
-            // Mark summary as pending when artifacts were persisted
-            if result.artifactPath != nil {
+            // Mark summary as pending only when a generator is available
+            if result.artifactPath != nil, self.summaryGenerator != nil {
                 record.summaryState = .pending
             }
 
