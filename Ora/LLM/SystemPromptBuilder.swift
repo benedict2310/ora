@@ -139,7 +139,10 @@ struct SystemPromptBuilder {
         result = result.replacingOccurrences(of: "{{deferred_tools_catalog}}", with: encodeDeferredToolCatalog(deferredCatalog))
         result = result.replacingOccurrences(of: "{{discovered_tools_section}}", with: encodeDiscoveredToolsSection(discoveredTools))
         result = result.replacingOccurrences(of: "{{available_skills}}", with: encodeSkillsMetadata(skills))
-        
+        // Collapse multiple consecutive blank lines from empty variable substitutions
+        while result.contains("\n\n\n") {
+            result = result.replacingOccurrences(of: "\n\n\n", with: "\n\n")
+        }
         return result
     }
     
@@ -173,13 +176,17 @@ struct SystemPromptBuilder {
 
     static func encodeDeferredToolCatalog(_ catalog: [DeferredToolCatalogEntry]) -> String {
         guard !catalog.isEmpty else {
-            return "No deferred tools available."
+            return ""
         }
 
         let grouped = Dictionary(grouping: catalog) { $0.domain }
         let orderedDomains = orderedDomains(from: grouped.keys)
 
-        var lines: [String] = []
+        var lines: [String] = [
+            "DYNAMIC TOOLS: tools.discover for deferred tool schemas; don't re-discover already-discovered.",
+            "",
+            "DEFERRED TOOL CATALOG (COMPACT):"
+        ]
         for domain in orderedDomains {
             guard let rows = grouped[domain] else {
                 continue

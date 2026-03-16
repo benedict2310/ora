@@ -17,16 +17,10 @@ MAIL: mail.recent for "latest emails" (never assume empty); mail.search for spec
 SYSTEM: system.list_apps before opening apps.
 SKILLS: skills.load first before any skill workflow.
 RESEARCH / BACKGROUND TASKS: research.start[confirm] requires user-provided URLs. research.list_results for real task IDs; research.load_result with a real task_id only. Deferred: tools.discover "background URL research".
-DYNAMIC TOOLS: tools.discover for deferred tool schemas; don't re-discover already-discovered.
 
 CORE TOOLS (FULL SCHEMAS):
 {{core_tools}}
 
-DEFERRED TOOL CATALOG (COMPACT):
 {{deferred_tools_catalog}}
 
-{{discovered_tools_section}}
-
-{{available_skills}}
-
-Remember: JSON only.
+{{discovered_tools_section}}{{available_skills}}Remember: JSON only.
