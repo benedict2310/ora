@@ -209,8 +209,8 @@ final class SystemPromptBuilderTests: XCTestCase {
         XCTAssertTrue(result.contains("calendar.list: List all calendars"), "Should include compact read-only line")
         XCTAssertTrue(result.contains("calendar.create"), "Should include second tool name")
         XCTAssertTrue(result.contains("calendar.create[confirm]"), "Should indicate confirmation requirement")
-        XCTAssertTrue(result.contains("title:str*"), "Should mark required params with *")
-        XCTAssertTrue(result.contains("start:datetime*"), "Should abbreviate date types")
+        XCTAssertTrue(result.contains("title*"), "Should mark required params with *")
+        XCTAssertTrue(result.contains("start*"), "Should include required start param")
     }
 
     func test_resolveVariables_replacesAvailableSkillsBlock() {
@@ -330,8 +330,8 @@ final class SystemPromptBuilderTests: XCTestCase {
 
         XCTAssertEqual(lines.count, 2, "Should emit one line per tool")
         XCTAssertFalse(result.hasSuffix("\n"), "Should not end with trailing blank lines")
-        XCTAssertEqual(lines[0], "alpha.read: Read alpha data [query:str*]")
-        XCTAssertEqual(lines[1], "beta.write[confirm]: Write beta data [enabled:bool*]")
+        XCTAssertEqual(lines[0], "alpha.read: Read alpha data [query*]")
+        XCTAssertEqual(lines[1], "beta.write[confirm]: Write beta data [enabled*]")
     }
 
     func test_encodeSkillsMetadata_emptyList_returnsEmptyString() {
@@ -357,7 +357,7 @@ final class SystemPromptBuilderTests: XCTestCase {
         XCTAssertTrue(result.contains("<description>Use &quot;safe&quot; checks &amp; outputs</description>"))
     }
 
-    func test_encodeToolSchemas_marksRequiredAndUsesTypeAbbreviations() {
+    func test_encodeToolSchemas_requiredParamsOnly() {
         let tools = [
             ToolDefinition(
                 name: "types.demo",
@@ -376,9 +376,10 @@ final class SystemPromptBuilderTests: XCTestCase {
 
         let result = SystemPromptBuilder.encodeToolSchemas(tools)
 
+        // Only required params shown (no type suffixes, no optional params)
         XCTAssertEqual(
             result,
-            "types.demo: Type mapping [count:int, flag:bool, tags:str[], title:str*, when:datetime*]"
+            "types.demo: Type mapping [title*, when*]"
         )
     }
 
