@@ -1,0 +1,1 @@
+{"type":"config","name":"Ora LLM Time-to-First-Token Optimization (qwen3-4b)","metricName":"avg_ttft_ms","metricUnit":"ms","bestDirection":"lower"}
