@@ -17,3 +17,4 @@ extension MessagesToolError: ToolError {}
 extension NotesToolError: ToolError {}
 extension RemindersToolError: ToolError {}
 extension SystemToolError: ToolError {}
+extension ResearchToolError: ToolError {}
