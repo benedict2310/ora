@@ -133,13 +133,12 @@ final class TaskProgressObserver: ObservableObject {
                     continue
                 }
 
-                let snapshots = await manager.list(limit: 50)
+                let observation = await manager.observeWithSnapshot(limit: 50)
                 await MainActor.run {
-                    self?.applySnapshots(snapshots)
+                    self?.applySnapshots(observation.initialSnapshots)
                 }
 
-                let stream = await manager.observe()
-                for await event in stream {
+                for await event in observation.stream {
                     guard !Task.isCancelled else {
                         break
                     }

@@ -203,6 +203,40 @@ final class BackgroundTaskManagerTests: XCTestCase {
         XCTAssertEqual(events.map(\.sequenceNumber), [1, 2, 3])
     }
 
+    func test_observeWithSnapshot_returnsInitialStateAndFutureEvents() async throws {
+        let controller = BlockingExecutorController()
+        let manager = await self.makeInMemoryManager(
+            executor: { request in
+                return try await controller.execute(request: request)
+            },
+            concurrencyLimit: 1
+        )
+
+        let snapshot = try await manager.enqueue(
+            inputs: BackgroundTaskInputs(urls: ["https://example.com/observe-with-snapshot"])
+        )
+
+        let observation = await manager.observeWithSnapshot(limit: 50)
+        XCTAssertEqual(observation.initialSnapshots.map(\.id), [snapshot.id])
+
+        let terminalEventTask = Task<BackgroundTaskRecordSnapshot?, Never> {
+            for await event in observation.stream {
+                if event.record.id == snapshot.id, event.toState == .canceled {
+                    return event.record
+                }
+            }
+            return nil
+        }
+
+        _ = await manager.cancel(taskID: snapshot.id)
+        let terminalRecord = await terminalEventTask.value
+
+        XCTAssertEqual(terminalRecord?.state, .canceled)
+        XCTAssertEqual(terminalRecord?.id, snapshot.id)
+        let cleaned = await self.waitUntil { await controller.currentRunningCount() == 0 }
+        XCTAssertTrue(cleaned)
+    }
+
     func test_configuredWorker_executesThroughManager() async throws {
         let worker = RecordingBackgroundWorker()
         let manager = await self.makeInMemoryManager()

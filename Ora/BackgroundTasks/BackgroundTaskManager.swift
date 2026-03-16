@@ -36,6 +36,11 @@ struct BackgroundTaskExecutionResult: Sendable, Equatable {
     }
 }
 
+struct BackgroundTaskObservation: Sendable {
+    let initialSnapshots: [BackgroundTaskRecordSnapshot]
+    let stream: AsyncStream<BackgroundTaskEvent>
+}
+
 enum BackgroundTaskManagerError: LocalizedError, Equatable, Sendable {
     case emptyURLList
     case queueFull(limit: Int)
@@ -262,6 +267,26 @@ actor BackgroundTaskManager {
     }
 
     func list(limit: Int = 50) async -> [BackgroundTaskRecordSnapshot] {
+        return self.fetchSnapshots(limit: limit)
+    }
+
+    func observeWithSnapshot(limit: Int = 50) -> BackgroundTaskObservation {
+        let observerID = UUID()
+        let initialSnapshots = self.fetchSnapshots(limit: limit)
+        let stream = self.makeObserverStream(observerID: observerID)
+
+        return BackgroundTaskObservation(
+            initialSnapshots: initialSnapshots,
+            stream: stream
+        )
+    }
+
+    func observe() -> AsyncStream<BackgroundTaskEvent> {
+        let observerID = UUID()
+        return self.makeObserverStream(observerID: observerID)
+    }
+
+    private func fetchSnapshots(limit: Int) -> [BackgroundTaskRecordSnapshot] {
         let clampedLimit = max(1, limit)
         var descriptor = FetchDescriptor<BackgroundTaskRecord>(
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
@@ -276,8 +301,7 @@ actor BackgroundTaskManager {
         }
     }
 
-    func observe() -> AsyncStream<BackgroundTaskEvent> {
-        let observerID = UUID()
+    private func makeObserverStream(observerID: UUID) -> AsyncStream<BackgroundTaskEvent> {
         return AsyncStream { continuation in
             self.observers[observerID] = continuation
             continuation.onTermination = { @Sendable [weak self] _ in
