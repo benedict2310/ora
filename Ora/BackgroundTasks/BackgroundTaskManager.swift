@@ -86,6 +86,7 @@ actor BackgroundTaskManager {
     private var queueDepthLimit: Int = BackgroundTaskManager.defaultQueueDepthLimit
     private var artifactStore: ArtifactStore = .shared
     private var summaryGenerator: SummaryGenerator?
+    private var notificationService: (any TaskNotificationPosting)? = TaskNotificationService()
 
     // MARK: - Configuration
 
@@ -94,7 +95,8 @@ actor BackgroundTaskManager {
         concurrencyLimit: Int = BackgroundTaskManager.defaultConcurrencyLimit,
         queueDepthLimit: Int = BackgroundTaskManager.defaultQueueDepthLimit,
         artifactStore: ArtifactStore? = nil,
-        summaryGenerator: SummaryGenerator? = nil
+        summaryGenerator: SummaryGenerator? = nil,
+        notificationService: (any TaskNotificationPosting)? = TaskNotificationService()
     ) {
         self.worker = worker
         self.executorOverride = nil
@@ -104,6 +106,7 @@ actor BackgroundTaskManager {
             self.artifactStore = artifactStore
         }
         self.summaryGenerator = summaryGenerator
+        self.notificationService = notificationService
     }
 
     func configureForTesting(
@@ -111,7 +114,8 @@ actor BackgroundTaskManager {
         worker: (any BackgroundWorker)? = nil,
         concurrencyLimit: Int = BackgroundTaskManager.defaultConcurrencyLimit,
         queueDepthLimit: Int = BackgroundTaskManager.defaultQueueDepthLimit,
-        artifactStore: ArtifactStore? = nil
+        artifactStore: ArtifactStore? = nil,
+        notificationService: (any TaskNotificationPosting)? = nil
     ) {
         self.executorOverride = executor
         if let worker {
@@ -122,6 +126,7 @@ actor BackgroundTaskManager {
         if let artifactStore {
             self.artifactStore = artifactStore
         }
+        self.notificationService = notificationService
     }
 
     // MARK: - Public API
@@ -472,6 +477,38 @@ actor BackgroundTaskManager {
             if case .success(let result) = outcome, result.artifactPath != nil {
                 if let summaryGenerator = self.summaryGenerator {
                     await summaryGenerator.enqueueSummary(taskID: taskID)
+                }
+            }
+
+            // Post local notification for terminal states (fire-and-forget to avoid blocking scheduling)
+            if let notificationService = self.notificationService {
+                let label = snapshot.inputs.label ?? "Research task"
+                switch outcome {
+                case .success(let result):
+                    let artifactPath = result.artifactPath
+                    Task {
+                        await notificationService.postCompletion(
+                            taskID: taskID,
+                            title: label,
+                            summaryPreview: nil,
+                            artifactPath: artifactPath
+                        )
+                    }
+                case .failure(let failure):
+                    let errorText: String
+                    switch failure {
+                    case .timedOut(let seconds):
+                        errorText = "Task timed out after \(seconds) seconds."
+                    case .failed(let message):
+                        errorText = message
+                    }
+                    Task {
+                        await notificationService.postFailure(
+                            taskID: taskID,
+                            title: label,
+                            errorDescription: errorText
+                        )
+                    }
                 }
             }
         } catch {
