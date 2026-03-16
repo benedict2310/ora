@@ -261,21 +261,12 @@ struct SystemPromptBuilder {
     }
 
     private static func encodeParameterList(for tool: ToolDefinition) -> String {
-        guard !tool.parameters.isEmpty else {
+        guard !tool.requiredParameters.isEmpty else {
             return ""
         }
 
-        let orderedNames = tool.parameters.keys.sorted()
-        return orderedNames.compactMap { name in
-            guard let parameter = tool.parameters[name] else {
-                return nil
-            }
-
-            let shortType = abbreviatedType(type: parameter.type, format: parameter.format)
-            let requiredSuffix = tool.requiredParameters.contains(name) ? "*" : ""
-            return "\(name):\(shortType)\(requiredSuffix)"
-        }
-        .joined(separator: ", ")
+        // Show only required parameters (marked with *), omit optional to reduce token count
+        return tool.requiredParameters.sorted().map { "\($0)*" }.joined(separator: ", ")
     }
 
     private static func abbreviatedType(type: String, format: String?) -> String {
