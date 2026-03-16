@@ -108,8 +108,8 @@ struct ResearchStartTool: Tool {
         try Self.validateURLs(urls)
         let label = args["label"]?.stringValue
 
-        // Rate limiting
-        let sessionID = UUID() // Per-invocation; real session tracking deferred to integration
+        // Rate limiting using the real session ID
+        let sessionID = await MainActor.run { PersistenceManager.shared.currentSession().id }
         try await Self.rateLimiter.checkAndRecord(sessionID: sessionID)
 
         guard let manager = await BackgroundTaskManager.resolveShared() else {
@@ -184,13 +184,13 @@ struct ResearchStartTool: Tool {
 
 actor ResearchRateLimiter {
     private var sessionCounts: [UUID: Int] = [:]
-    private var lastEnqueueTime: Date?
+    private var sessionLastEnqueueTime: [UUID: Date] = [:]
 
     func checkAndRecord(sessionID: UUID) throws {
         let now = Date()
 
-        // Cooldown check
-        if let lastTime = self.lastEnqueueTime {
+        // Per-session cooldown check
+        if let lastTime = self.sessionLastEnqueueTime[sessionID] {
             let elapsed = now.timeIntervalSince(lastTime)
             if elapsed < ResearchStartTool.cooldownSeconds {
                 let remaining = Int(ceil(ResearchStartTool.cooldownSeconds - elapsed))
@@ -206,11 +206,11 @@ actor ResearchRateLimiter {
 
         // Record
         self.sessionCounts[sessionID] = count + 1
-        self.lastEnqueueTime = now
+        self.sessionLastEnqueueTime[sessionID] = now
     }
 
     func reset() {
         self.sessionCounts.removeAll()
-        self.lastEnqueueTime = nil
+        self.sessionLastEnqueueTime.removeAll()
     }
 }
