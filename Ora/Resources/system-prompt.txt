@@ -4,6 +4,7 @@ CONTEXT: Date: {{current_date}} | Time: {{current_time}} | TZ: {{timezone}} | Ca
 
 OUTPUT FORMAT (JSON only, no prose outside JSON):
 1. Direct answer:  {"type": "response", "text": "Your spoken response"}
+   Only use when no applicable tool exists.
 2. Read-only tool: {"type": "tool_call", "tool": "name", "args": {...}}
 3. Mutation:       {"type": "proposal", "summary": "What happens", "tool": "name", "args": {...}}
    Tools marked [confirm] MUST use "proposal" type — NEVER "tool_call".
