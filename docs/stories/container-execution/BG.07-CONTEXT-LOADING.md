@@ -1,7 +1,7 @@
 # BG.07 - Context Loading
 
 **Epic:** Background Tasks
-**Status:** Ready for Implementation
+**Status:** Complete
 **Priority:** P1 (High)
 **Estimated Effort:** 2 days
 **Dependencies:** BG.01, BG.04, BG.05
@@ -10,6 +10,13 @@
 ## Summary
 
 Add research tools that let Ora list saved results, load a compact summary into the conversation, and enqueue new URL-based background tasks. The tools must fit the current agent loop and prompt architecture: compact JSON results, normal `Tool` protocol conformance, and registration through `ToolRegistry` without hand-editing the system prompt template.
+
+## Verification Notes
+
+- Verified on 2026-03-16 against [ResearchStartTool.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/Tools/Research/ResearchStartTool.swift), [ResearchListResultsTool.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/Tools/Research/ResearchListResultsTool.swift), [ResearchLoadResultTool.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/Tools/Research/ResearchLoadResultTool.swift), and [ToolRegistry.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/Tools/ToolRegistry.swift#L202).
+- Focused tests passed in `.artifacts/BGTests-2.xcresult`, including `ResearchToolsTests`.
+- Current implementation detail: `research.list_results` lists saved artifact manifests only; it does not return queue `state` or `summary_state`.
+- Re-verified on 2026-03-16 after the BG.04/BG.05 integration fixes. `research.start` now runs on a path that persists artifacts and background summaries for later `research.load_result` calls.
 
 ## Architecture Context and Reuse Guidance
 

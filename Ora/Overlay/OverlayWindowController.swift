@@ -215,7 +215,7 @@ final class OverlayWindowController {
     private func createPanel() {
         let panelSize = NSSize(width: OverlayLayout.panelWidth, height: OverlayLayout.panelHeight)
 
-        let contentView = OverlayView()
+        let contentView = OverlayView(taskProgressObserver: .shared)
             .environmentObject(self.viewModel)
 
         let hostingView = NSHostingView(rootView: contentView)

@@ -115,6 +115,7 @@ actor BackgroundTaskManager {
         concurrencyLimit: Int = BackgroundTaskManager.defaultConcurrencyLimit,
         queueDepthLimit: Int = BackgroundTaskManager.defaultQueueDepthLimit,
         artifactStore: ArtifactStore? = nil,
+        summaryGenerator: SummaryGenerator? = nil,
         notificationService: (any TaskNotificationPosting)? = nil
     ) {
         self.executorOverride = executor
@@ -126,6 +127,7 @@ actor BackgroundTaskManager {
         if let artifactStore {
             self.artifactStore = artifactStore
         }
+        self.summaryGenerator = summaryGenerator
         self.notificationService = notificationService
     }
 
@@ -408,7 +410,12 @@ actor BackgroundTaskManager {
         for task: BackgroundTaskRecordSnapshot,
         executionResult: BackgroundTaskExecutionResult
     ) async throws -> BackgroundTaskExecutionResult {
-        guard let artifactWorkerResult = executionResult.artifactWorkerResult else {
+        let artifactWorkerResult: BackgroundTaskWorkerResult
+        if let storedResult = executionResult.artifactWorkerResult {
+            artifactWorkerResult = storedResult
+        } else if let workerResult = executionResult.workerResult {
+            artifactWorkerResult = Self.makeArtifactWorkerResult(from: workerResult, task: task)
+        } else {
             return executionResult
         }
 
@@ -423,6 +430,110 @@ actor BackgroundTaskManager {
             artifactPath: manifest.artifactPath,
             workerResult: executionResult.workerResult
         )
+    }
+
+    private static func makeArtifactWorkerResult(
+        from workerResult: WorkerResult,
+        task: BackgroundTaskRecordSnapshot
+    ) -> BackgroundTaskWorkerResult {
+        let pages = workerResult.pages.enumerated().map { index, page in
+            BackgroundTaskArtifactPage(
+                pageNumber: index + 1,
+                url: page.finalURL,
+                title: page.title,
+                extractedText: page.text,
+                rawHTML: page.rawHTML
+            )
+        }
+        let citations = workerResult.pages.map { page in
+            BackgroundTaskArtifactCitation(
+                url: page.finalURL,
+                title: page.title,
+                snippet: Self.citationSnippet(for: page.text)
+            )
+        }
+
+        let title = Self.defaultArtifactTitle(task: task, pages: workerResult.pages)
+        let summary = Self.defaultArtifactSummary(pages: workerResult.pages)
+        let markdown = Self.defaultArtifactMarkdown(title: title, pages: workerResult.pages)
+
+        return BackgroundTaskWorkerResult(
+            title: title,
+            summary: summary,
+            markdown: markdown,
+            pages: pages,
+            citations: citations
+        )
+    }
+
+    private static func defaultArtifactTitle(
+        task: BackgroundTaskRecordSnapshot,
+        pages: [PageResult]
+    ) -> String {
+        if let label = task.inputs.label?.trimmingCharacters(in: .whitespacesAndNewlines), !label.isEmpty {
+            return label
+        }
+        if let pageTitle = pages.lazy.compactMap(\.title).first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+            return pageTitle
+        }
+        if let firstURL = task.inputs.urls.first, let host = URL(string: firstURL)?.host, !host.isEmpty {
+            return "Research: \(host)"
+        }
+        return "Research Result"
+    }
+
+    private static func defaultArtifactSummary(pages: [PageResult]) -> String {
+        let snippets = pages.prefix(3).compactMap { page -> String? in
+            let snippet = Self.citationSnippet(for: page.text, maxLength: 220)
+            guard !snippet.isEmpty else {
+                return nil
+            }
+            if let title = page.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+                return "\(title): \(snippet)"
+            }
+            return snippet
+        }
+
+        if snippets.isEmpty {
+            return "Research completed successfully."
+        }
+        return snippets.joined(separator: "\n")
+    }
+
+    private static func defaultArtifactMarkdown(
+        title: String,
+        pages: [PageResult]
+    ) -> String {
+        var markdown = "# \(title)\n\n"
+        let bullets = pages.prefix(5).compactMap { page -> String? in
+            let snippet = Self.citationSnippet(for: page.text, maxLength: 180)
+            guard !snippet.isEmpty else {
+                return nil
+            }
+            let trimmedTitle = page.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let bulletTitle = trimmedTitle.isEmpty ? page.finalURL : trimmedTitle
+            return "- \(bulletTitle): \(snippet)"
+        }
+
+        if bullets.isEmpty {
+            markdown += "Research completed successfully."
+        } else {
+            markdown += bullets.joined(separator: "\n")
+        }
+
+        return markdown
+    }
+
+    private static func citationSnippet(for text: String, maxLength: Int = 280) -> String {
+        let collapsed = text
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard collapsed.count > maxLength else {
+            return collapsed
+        }
+        return String(collapsed.prefix(maxLength - 1)) + "\u{2026}"
     }
 
     private func finishExecution(
@@ -565,9 +676,18 @@ actor BackgroundTaskManager {
             self.logger.warning("Cannot update summary state: task \(taskID) not found")
             return
         }
+        guard record.summaryState != state else {
+            return
+        }
+
+        let previousState = record.state
+        let timestamp = Date()
         record.summaryState = state
         do {
             try self.saveContext()
+            if let snapshot = try? record.snapshot() {
+                self.emitEvent(for: snapshot, from: previousState, at: timestamp)
+            }
         } catch {
             self.logger.error("Failed to persist summary state for task \(taskID): \(error.localizedDescription)")
         }

@@ -14,6 +14,7 @@ struct OverlayView: View {
     @EnvironmentObject var viewModel: OverlayViewModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @ObservedObject private var taskProgressObserver: TaskProgressObserver
     @State private var currentProviderType: LLMProviderType = .local
 
     @Namespace private var inputGlassNamespace
@@ -23,6 +24,10 @@ struct OverlayView: View {
     @State private var measuredTailHeight: CGFloat = 0
 
     private static let scrollAnchorID = "overlay-scroll-anchor"
+
+    init(taskProgressObserver: TaskProgressObserver = .shared) {
+        self._taskProgressObserver = ObservedObject(wrappedValue: taskProgressObserver)
+    }
 
     var body: some View {
         GlassEffectContainer(spacing: OverlayLayout.containerSpacing) {
@@ -115,8 +120,20 @@ struct OverlayView: View {
                 }
 
                 self.chatScrollView
+
+                if self.shouldShowTaskStatus {
+                    OverlayTaskStatusView(
+                        taskProgressObserver: self.taskProgressObserver,
+                        reduceTransparency: self.reduceTransparency
+                    )
+                    .transition(.opacity)
+                }
             }
             .frame(maxWidth: OverlayLayout.contentMaxWidth, maxHeight: .infinity, alignment: .top)
+            .animation(
+                self.reduceMotion ? nil : .easeOut(duration: OverlayLayout.showAnimationDuration),
+                value: self.shouldShowTaskStatus
+            )
         }
         .padding(16)
         .frame(width: OverlayLayout.panelWidth, height: OverlayLayout.panelHeight)
@@ -308,6 +325,10 @@ struct OverlayView: View {
                 self.scrollToBottom(proxy)
             }
         }
+    }
+
+    var shouldShowTaskStatus: Bool {
+        return self.taskProgressObserver.hasActiveTasks
     }
 
     private var visibleMessages: [OverlayMessage] {

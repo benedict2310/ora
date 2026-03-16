@@ -316,13 +316,103 @@ final class BackgroundTaskManagerTests: XCTestCase {
         XCTAssertEqual(artifact.rawHTMLPages.count, 2)
     }
 
+    func test_execution_withWorkerResult_persistsArtifactsAndUpdatesArtifactPath() async throws {
+        let rootURL = try self.makeTemporaryArtifactRootURL()
+        let completedAt = Self.artifactCompletedAt
+        let artifactStore = ArtifactStore(
+            rootURL: rootURL,
+            now: { completedAt }
+        )
+        let manager = await self.makeInMemoryManager(
+            executor: { request in
+                return BackgroundTaskExecutionResult(
+                    workerResult: Self.sampleQueueWorkerResult(
+                        taskID: request.taskID,
+                        taskKind: request.taskKind
+                    )
+                )
+            },
+            artifactStore: artifactStore
+        )
+
+        let snapshot = try await manager.enqueue(
+            inputs: BackgroundTaskInputs(urls: ["https://example.com/research"], label: "Queue Artifact Task")
+        )
+
+        let completed = await self.waitUntil(timeout: .seconds(5)) {
+            let task = await manager.task(id: snapshot.id)
+            return task?.state == .completed && task?.artifactPath != nil
+        }
+        XCTAssertTrue(completed)
+
+        let storedTask = await manager.task(id: snapshot.id)
+        XCTAssertNotNil(storedTask?.artifactPath)
+
+        let artifact = try await artifactStore.read(taskID: snapshot.id)
+        XCTAssertEqual(artifact.result.title, "Queue Artifact Task")
+        XCTAssertEqual(artifact.result.pages.count, 2)
+        XCTAssertEqual(artifact.citations.count, 2)
+        XCTAssertFalse(artifact.result.summary.isEmpty)
+    }
+
+    func test_execution_withSummaryGenerator_writesSummaryMarkdown() async throws {
+        let rootURL = try self.makeTemporaryArtifactRootURL()
+        let artifactStore = ArtifactStore(rootURL: rootURL)
+        let managerHolder = BackgroundTaskManagerHolder()
+        let summaryGenerator = SummaryGenerator(
+            llmService: BackgroundTaskSummaryMockLLMService(response: "- Summary line"),
+            artifactStore: artifactStore,
+            taskManagerProvider: { await managerHolder.manager }
+        )
+        let manager = await self.makeInMemoryManager(
+            executor: { request in
+                return BackgroundTaskExecutionResult(
+                    workerResult: Self.sampleQueueWorkerResult(
+                        taskID: request.taskID,
+                        taskKind: request.taskKind
+                    )
+                )
+            },
+            artifactStore: artifactStore,
+            summaryGenerator: summaryGenerator
+        )
+        await managerHolder.set(manager)
+        await summaryGenerator.start()
+        self.addTeardownBlock {
+            Task {
+                await summaryGenerator.stop()
+            }
+        }
+
+        let snapshot = try await manager.enqueue(
+            inputs: BackgroundTaskInputs(urls: ["https://example.com/research"], label: "Summary Task")
+        )
+
+        let summarized = await self.waitUntil(timeout: .seconds(15)) {
+            guard let task = await manager.task(id: snapshot.id),
+                  task.summaryState == .completed,
+                  let artifactPath = task.artifactPath else {
+                return false
+            }
+            let summaryURL = URL(fileURLWithPath: artifactPath).appendingPathComponent("summary.md")
+            return FileManager.default.fileExists(atPath: summaryURL.path)
+        }
+        XCTAssertTrue(summarized)
+
+        let task = await manager.task(id: snapshot.id)
+        let summaryURL = URL(fileURLWithPath: task?.artifactPath ?? "").appendingPathComponent("summary.md")
+        let summary = try String(contentsOf: summaryURL, encoding: .utf8)
+        XCTAssertTrue(summary.contains("Summary line"))
+    }
+
     // MARK: - Helpers
 
     private func makeInMemoryManager(
         executor: @escaping BackgroundTaskManager.Executor = { _ in BackgroundTaskExecutionResult() },
         concurrencyLimit: Int = BackgroundTaskManager.defaultConcurrencyLimit,
         queueDepthLimit: Int = BackgroundTaskManager.defaultQueueDepthLimit,
-        artifactStore: ArtifactStore? = nil
+        artifactStore: ArtifactStore? = nil,
+        summaryGenerator: SummaryGenerator? = nil
     ) async -> BackgroundTaskManager {
         let persistence = PersistenceManager.createForTesting(inMemory: true)
         let manager = BackgroundTaskManager(modelContainer: persistence.container)
@@ -330,7 +420,8 @@ final class BackgroundTaskManagerTests: XCTestCase {
             executor: executor,
             concurrencyLimit: concurrencyLimit,
             queueDepthLimit: queueDepthLimit,
-            artifactStore: artifactStore
+            artifactStore: artifactStore,
+            summaryGenerator: summaryGenerator
         )
         return manager
     }
@@ -382,7 +473,7 @@ final class BackgroundTaskManagerTests: XCTestCase {
         }
     }
 
-    private static func sampleWorkerResult() -> BackgroundTaskWorkerResult {
+    nonisolated private static func sampleWorkerResult() -> BackgroundTaskWorkerResult {
         return BackgroundTaskWorkerResult(
             title: "Background Artifact",
             summary: "Saved artifact data for the completed task.",
@@ -413,7 +504,45 @@ final class BackgroundTaskManagerTests: XCTestCase {
         )
     }
 
-    private static let artifactCompletedAt = ISO8601DateFormatter().date(from: "2026-01-06T12:00:00Z")!
+    nonisolated private static func sampleQueueWorkerResult(taskID: UUID, taskKind: String) -> WorkerResult {
+        return WorkerResult(
+            pages: [
+                PageResult(
+                    url: "https://example.com/source-a",
+                    finalURL: "https://example.com/source-a",
+                    title: "Source A",
+                    text: "Launch is scheduled for Q2 and the team is aligned.",
+                    contentType: "text/html",
+                    wordCount: 10,
+                    fetchedAt: artifactCompletedAt,
+                    rawHTML: "<html><body>Source A</body></html>"
+                ),
+                PageResult(
+                    url: "https://example.com/source-b",
+                    finalURL: "https://example.com/source-b",
+                    title: "Source B",
+                    text: "Dependencies are already approved and procurement is complete.",
+                    contentType: "text/html",
+                    wordCount: 9,
+                    fetchedAt: artifactCompletedAt,
+                    rawHTML: "<html><body>Source B</body></html>"
+                )
+            ],
+            metadata: WorkerMetadata(
+                taskID: taskID,
+                taskKind: taskKind,
+                startedAt: artifactCompletedAt.addingTimeInterval(-5),
+                completedAt: artifactCompletedAt,
+                requestedURLCount: 2,
+                succeededURLCount: 2,
+                failedURLCount: 0,
+                processedSequentially: true
+            ),
+            failedURLs: []
+        )
+    }
+
+    nonisolated private static let artifactCompletedAt = ISO8601DateFormatter().date(from: "2026-01-06T12:00:00Z")!
 }
 
 private actor BlockingExecutorController {
@@ -527,5 +656,49 @@ private actor RecordingBackgroundWorker: BackgroundWorker {
 
     func executedTaskIDs() -> [UUID] {
         return self.taskIDs
+    }
+}
+
+private actor BackgroundTaskManagerHolder {
+    private(set) var manager: BackgroundTaskManager?
+
+    func set(_ manager: BackgroundTaskManager) {
+        self.manager = manager
+    }
+}
+
+private actor BackgroundTaskSummaryMockLLMService: LLMServicing {
+    private let response: String
+
+    init(response: String) {
+        self.response = response
+    }
+
+    func generate(messages: [LLMMessage], maxTokens: Int) async -> AsyncThrowingStream<LLMDelta, Error> {
+        _ = messages
+        _ = maxTokens
+        let response = self.response
+        return AsyncThrowingStream { continuation in
+            continuation.yield(.token(response))
+            continuation.finish()
+        }
+    }
+
+    func warmup() async throws {}
+
+    func prepare() async throws {}
+
+    func unload() async {}
+
+    func capabilities() async -> ProviderCapabilities {
+        return .textOnly
+    }
+
+    func clearCache() async {}
+
+    func generateOneShot(prompt: String, maxTokens: Int) async throws -> String {
+        _ = prompt
+        _ = maxTokens
+        return self.response
     }
 }

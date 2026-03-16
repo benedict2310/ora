@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkeyReleaseObserver: NSObjectProtocol?
     private var memoryFileWatcher: MemoryFileWatcher?
     private var backgroundTaskManager: BackgroundTaskManager?
+    private var summaryGenerator: SummaryGenerator?
     private var taskNotificationDelegate: TaskNotificationDelegate?
     // Sparkle/updates are not relevant for unit tests and can cause hangs in headless CI.
     private lazy var updateController = UpdateController.shared
@@ -137,9 +138,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         self.backgroundTaskManager = PersistenceManager.shared.backgroundTaskManager
         if let backgroundTaskManager = self.backgroundTaskManager {
+            let summaryGenerator = self.summaryGenerator ?? SummaryGenerator()
+            self.summaryGenerator = summaryGenerator
             Task {
+                await summaryGenerator.start()
+                await backgroundTaskManager.configure(
+                    worker: URLSessionWorker(),
+                    artifactStore: .shared,
+                    summaryGenerator: summaryGenerator
+                )
                 await backgroundTaskManager.recoverUnfinishedTasksOnLaunch()
-                self.logger.info("Background task manager reconciled stale tasks")
+                self.logger.info("Background task manager configured and reconciled stale tasks")
             }
         }
 
@@ -231,10 +240,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let watcher = self.memoryFileWatcher {
             Task { await watcher.stopWatching() }
         }
+        let summaryGenerator = self.summaryGenerator
         if let backgroundTaskManager = self.backgroundTaskManager {
             let semaphore = DispatchSemaphore(value: 0)
             Task.detached {
+                if let summaryGenerator {
+                    await summaryGenerator.stop()
+                }
                 await backgroundTaskManager.cancelAll()
+                semaphore.signal()
+            }
+            _ = semaphore.wait(timeout: .now() + 5)
+        } else if let summaryGenerator {
+            let semaphore = DispatchSemaphore(value: 0)
+            Task.detached {
+                await summaryGenerator.stop()
                 semaphore.signal()
             }
             _ = semaphore.wait(timeout: .now() + 5)

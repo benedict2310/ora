@@ -1,7 +1,7 @@
 # BG.02 - Worker Abstraction
 
 **Epic:** Background Tasks
-**Status:** Ready for Implementation
+**Status:** Complete
 **Priority:** P1 (High)
 **Estimated Effort:** 3 days
 **Dependencies:** BG.01
@@ -10,6 +10,12 @@
 ## Summary
 
 Implement the phase-1 in-process worker that fetches explicit URLs and extracts clean text for later summarization. The worker contract must be pluggable so future isolation strategies can replace the in-process implementation without changing the queue or research tools.
+
+## Verification Notes
+
+- Verified on 2026-03-16 against [URLSessionWorker.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/BackgroundTasks/Workers/URLSessionWorker.swift) and [HTMLTextExtractor.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/BackgroundTasks/Workers/HTMLTextExtractor.swift).
+- Focused tests passed in `.artifacts/BGTests-2.xcresult`, including `URLSessionWorkerTests` and `HTMLTextExtractorTests`.
+- Remaining end-to-end artifact persistence gaps are tracked under BG.04, not in the worker implementation itself.
 
 ## Architecture Context and Reuse Guidance
 
@@ -110,12 +116,12 @@ Manual validation:
 
 ## Acceptance Criteria
 
-- [ ] `BackgroundWorker` exists and is injectable from `BackgroundTaskManager`.
-- [ ] `URLSessionWorker` returns structured, codable `WorkerResult` data for HTML and plain-text responses.
-- [ ] Extraction is implemented in-repo; BG.02 does not add a new package dependency.
-- [ ] Multiple URLs are processed sequentially.
-- [ ] Per-page failures are preserved without losing successful pages.
-- [ ] Worker cancellation stops further work quickly enough for queue cancellation to feel immediate.
+- [x] `BackgroundWorker` exists and is injectable from `BackgroundTaskManager`.
+- [x] `URLSessionWorker` returns structured, codable `WorkerResult` data for HTML and plain-text responses.
+- [x] Extraction is implemented in-repo; BG.02 does not add a new package dependency.
+- [x] Multiple URLs are processed sequentially.
+- [x] Per-page failures are preserved without losing successful pages.
+- [x] Worker cancellation stops further work quickly enough for queue cancellation to feel immediate.
 
 ## Risks and Open Questions
 

@@ -142,17 +142,6 @@ Agentic tools for system integration.
 | X.08 | [Recent Items: Mail & Notes](tools/X.08-RECENT-ITEMS.md) | ✅ Complete |
 | X.09 | [Mail Multi-Account](tools/X.09-MAIL-MULTI-ACCOUNT.md) | 🚧 To Do |
 
-### 🧰 Background Tasks (BG)
-Background execution for URL-based research in Ora.
-
-| ID | Title | Status |
-|:---|:------|:-------|
-| BG.00 | [Background Tasks Overview](container-execution/BG.00-BACKGROUND-TASKS-OVERVIEW.md) | ✅ Ready |
-| BG.01 | [Task Queue](container-execution/BG.01-TASK-QUEUE.md) | ✅ Ready |
-| BG.02 | [Worker Abstraction](container-execution/BG.02-WORKER-ABSTRACTION.md) | ✅ Ready |
-| BG.03 | [Network Safety Policy](container-execution/BG.03-NETWORK-SAFETY.md) | ✅ Ready |
-| BG.04 | [Artifact Persistence](container-execution/BG.04-ARTIFACT-PERSISTENCE.md) | ✅ Ready |
-
 ### 🧹 Maintenance (M)
 Quality, coverage, and repository hygiene.
 
@@ -234,14 +223,15 @@ Background execution for URL-based research (HTTP fetch + local summarization).
 
 | ID | Title | Status |
 |:---|:------|:-------|
-| BG.00 | [Background Tasks Overview](container-execution/BG.00-BACKGROUND-TASKS-OVERVIEW.md) | ✅ Ready |
-| BG.01 | [Task Queue](container-execution/BG.01-TASK-QUEUE.md) | ✅ Ready |
-| BG.02 | [Worker Abstraction](container-execution/BG.02-WORKER-ABSTRACTION.md) | ✅ Ready |
-| BG.03 | [Network Safety Policy](container-execution/BG.03-NETWORK-SAFETY.md) | ✅ Ready |
-| BG.04 | [Artifact Persistence](container-execution/BG.04-ARTIFACT-PERSISTENCE.md) | ✅ Ready |
-| BG.05 | [Summary Generation](container-execution/BG.05-SUMMARY-GENERATION.md) | ✅ Ready |
-| BG.06 | [Local Notifications](container-execution/BG.06-NOTIFICATIONS.md) | ✅ Ready |
-| BG.07 | [Context Loading](container-execution/BG.07-CONTEXT-LOADING.md) | ✅ Ready |
+| BG.00 | [Background Tasks Overview](container-execution/BG.00-BACKGROUND-TASKS-OVERVIEW.md) | ✅ Complete |
+| BG.01 | [Task Queue](container-execution/BG.01-TASK-QUEUE.md) | ✅ Complete |
+| BG.02 | [Worker Abstraction](container-execution/BG.02-WORKER-ABSTRACTION.md) | ✅ Complete |
+| BG.03 | [Network Safety Policy](container-execution/BG.03-NETWORK-SAFETY.md) | ✅ Complete |
+| BG.04 | [Artifact Persistence](container-execution/BG.04-ARTIFACT-PERSISTENCE.md) | ✅ Complete |
+| BG.05 | [Summary Generation](container-execution/BG.05-SUMMARY-GENERATION.md) | ✅ Complete |
+| BG.06 | [Local Notifications](container-execution/BG.06-NOTIFICATIONS.md) | ✅ Complete |
+| BG.07 | [Context Loading](container-execution/BG.07-CONTEXT-LOADING.md) | ✅ Complete |
+| BG.08 | [Task Progress UI](container-execution/BG.08-TASK-PROGRESS-UI.md) | ✅ Complete |
 
 ---
 

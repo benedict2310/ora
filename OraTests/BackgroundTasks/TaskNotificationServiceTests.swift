@@ -110,6 +110,18 @@ final class TaskNotificationServiceTests: XCTestCase {
         XCTAssertEqual(result, input)
     }
 
+    func test_requestIdentifier_isStablePerTask() {
+        let taskID = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
+        XCTAssertEqual(
+            TaskNotificationService.requestIdentifier(for: taskID),
+            "ora-task-11111111-2222-3333-4444-555555555555"
+        )
+    }
+
+    func test_threadIdentifier_groupsBackgroundTaskNotifications() {
+        XCTAssertEqual(TaskNotificationService.threadIdentifier, "ora-background-tasks")
+    }
+
     // MARK: - Completion Notification Content
 
     func test_completionNotification_containsSummaryPreview() async {
@@ -173,9 +185,7 @@ final class TaskNotificationServiceTests: XCTestCase {
 
     // MARK: - Coalescing
 
-    func test_notificationCoalescing_groupsRapidCompletions() async {
-        // Test that the mock correctly records multiple completions,
-        // which the real service would coalesce.
+    func test_mockNotificationService_recordsRapidCompletionsIndividually() async {
         let mock = MockTaskNotificationService()
 
         for i in 0..<3 {

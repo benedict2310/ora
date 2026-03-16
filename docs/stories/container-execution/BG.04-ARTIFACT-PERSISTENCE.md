@@ -1,7 +1,7 @@
 # BG.04 - Artifact Persistence
 
 **Epic:** Background Tasks
-**Status:** Ready for Implementation
+**Status:** Complete
 **Priority:** P1 (High)
 **Estimated Effort:** 1.5 days
 **Dependencies:** BG.01
@@ -10,6 +10,12 @@
 ## Summary
 
 Persist task outputs in a deterministic, user-visible folder layout under `~/Documents/Ora Research/`. The store must support save, read, list, cleanup, and Finder reveal so later stories can summarize results and load them back into the agent loop.
+
+## Verification Notes
+
+- Verified on 2026-03-16 against [ArtifactStore.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/BackgroundTasks/Artifacts/ArtifactStore.swift) and [ArtifactLayout.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/BackgroundTasks/Artifacts/ArtifactLayout.swift).
+- Focused tests passed in `.artifacts/BGTests-2.xcresult`, including `ArtifactStoreTests` and `ArtifactLayoutTests`.
+- Follow-up fix on 2026-03-16 now converts default `WorkerResult` output into persisted artifact payloads inside [BackgroundTaskManager.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/BackgroundTasks/BackgroundTaskManager.swift), so normal queue execution writes artifacts and populates `artifactPath`.
 
 ## Architecture Context and Reuse Guidance
 

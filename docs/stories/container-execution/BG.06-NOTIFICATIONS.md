@@ -1,7 +1,7 @@
 # BG.06 - Local Notifications
 
 **Epic:** Background Tasks
-**Status:** Ready for Implementation
+**Status:** Complete
 **Priority:** P2 (Medium)
 **Estimated Effort:** 1.5 days
 **Dependencies:** BG.01, BG.04, BG.05
@@ -10,6 +10,12 @@
 ## Summary
 
 Add optional local notifications for background-task completion and failure. v1 should reuse the lightweight authorization/delivery pattern already used by model migration rather than expanding Ora’s global `PermissionsManager` surface.
+
+## Verification Notes
+
+- Verified on 2026-03-16 against [TaskNotificationService.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/BackgroundTasks/Notifications/TaskNotificationService.swift), [TaskNotificationDelegate.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/BackgroundTasks/Notifications/TaskNotificationDelegate.swift), and [AppDelegate.swift](/Users/bene/Dev-Source-NoBackup/ora/Ora/AppDelegate.swift#L44).
+- Focused tests passed in `.artifacts/BGTests-2.xcresult`, including `TaskNotificationServiceTests` and `TaskNotificationDelegateTests`.
+- Re-verified on 2026-03-16 after the BG.04/BG.05 integration fixes. Completion notifications now sit on a path that produces persisted artifact folders and background summaries in the default app flow.
 
 ## Architecture Context and Reuse Guidance
 

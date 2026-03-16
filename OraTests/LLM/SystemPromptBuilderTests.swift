@@ -37,6 +37,15 @@ final class SystemPromptBuilderTests: XCTestCase {
         let template = SystemPromptBuilder.loadTemplate()
         XCTAssertTrue(template.contains("Ora"), "Template should mention Ora")
     }
+
+    func test_loadTemplate_containsResearchGuidance() {
+        let template = SystemPromptBuilder.loadTemplate()
+
+        XCTAssertTrue(template.contains("RESEARCH / BACKGROUND TASKS"))
+        XCTAssertTrue(template.contains("research.start"))
+        XCTAssertTrue(template.contains("research.list_results"))
+        XCTAssertTrue(template.contains("research.load_result"))
+    }
     
     // MARK: - Variable Resolution Tests
     
