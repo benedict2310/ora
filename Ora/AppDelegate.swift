@@ -7,6 +7,7 @@
 
 import AppKit
 import MLX
+import UserNotifications
 import os
 
 @MainActor
@@ -22,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkeyReleaseObserver: NSObjectProtocol?
     private var memoryFileWatcher: MemoryFileWatcher?
     private var backgroundTaskManager: BackgroundTaskManager?
+    private var taskNotificationDelegate: TaskNotificationDelegate?
     // Sparkle/updates are not relevant for unit tests and can cause hangs in headless CI.
     private lazy var updateController = UpdateController.shared
 
@@ -38,6 +40,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         self.logger.info("Ora launching...")
+
+        // Register notification categories and delegate early so
+        // background-task notifications are handled from first launch.
+        let notificationDelegate = TaskNotificationDelegate()
+        self.taskNotificationDelegate = notificationDelegate
+        let notificationCenter = UNUserNotificationCenter.current()
+        notificationCenter.delegate = notificationDelegate
+        TaskNotificationService.registerCategories(on: notificationCenter)
 
         do {
             try MemoryFileManager.ensureDirectories()
@@ -212,6 +222,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         self.logger.info("Ora terminating...")
+
+        // Clear pending and delivered notifications
+        let notificationCenter = UNUserNotificationCenter.current()
+        notificationCenter.removeAllPendingNotificationRequests()
+        notificationCenter.removeAllDeliveredNotifications()
 
         if let watcher = self.memoryFileWatcher {
             Task { await watcher.stopWatching() }
