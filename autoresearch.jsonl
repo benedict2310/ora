@@ -1,1 +1,2 @@
 {"type":"config","name":"Ora LLM Time-to-First-Token Optimization (qwen3-4b)","metricName":"avg_ttft_ms","metricUnit":"ms","bestDirection":"lower"}
+{"run":1,"commit":"e17344e","metric":1578.4,"metrics":{"min_ttft_ms":1554,"max_ttft_ms":2012,"pass_rate":0.5,"prompt_chars":9785},"status":"keep","description":"Baseline: original system-prompt.txt (~9785 chars, ~2935 est tokens). avg_ttft=1578ms, pass=17/34","timestamp":1773677806329,"segment":0}
