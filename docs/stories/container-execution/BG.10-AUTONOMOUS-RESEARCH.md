@@ -95,7 +95,7 @@ into the conversation, exactly as BG.07 already works.
 - The confirmation prompt for query-based research shows the topic, not a URL list. Example: "Research: Nvidia Blackwell server rollout. This will search the public web and fetch sources in an isolated container."
 - Per-session enqueue limit stays at `5` tasks (from BG.07). Cooldown stays at `30` seconds. These are simple abuse-prevention measures, not security boundaries.
 - The system prompt tells Ora to use `research.start(query: ...)` for topic-based requests. No separate planning tool exists, and the prompt change should be limited to the existing hardcoded research guidance line.
-- When the container runtime is unavailable (pre-macOS 26, container not installed), fall back to `URLSessionWorker` which requires explicit `urls`. Ora should tell the user: "I can research specific URLs for you, but topic-based research requires the container runtime."
+- When the container runtime is unavailable (pre-macOS 26, container assets not bundled), the in-process `URLSessionWorker` handles query-based research using DuckDuckGo HTML Lite search → URL discovery → fetch + extract. The user experience is identical regardless of which backend runs. The container provides better isolation but is not required for the feature to work.
 - Explicit user-provided `urls` are still validated on the host before enqueue, even when the container backend is available.
 - Research tool outputs should stop returning `artifact_path`; `task_id` is the stable handle.
 - Progress uses the existing BG.08 state model. For query-based tasks, render `Researching` in the display layer while keeping the underlying state machine unchanged.
@@ -120,8 +120,17 @@ into the conversation, exactly as BG.07 already works.
 - `Ora/BackgroundTasks/Artifacts/ArtifactStore.swift`
   Purpose: persist query/provenance in host-controlled artifact files and stop treating `artifact_path` as model-facing data.
 
+- `Ora/BackgroundTasks/Workers/WebSearchService.swift`
+  Purpose: DuckDuckGo HTML Lite search for in-process query-based URL discovery. Used by `URLSessionWorker` when `input.query` is present and no container runtime is available.
+
+- `Ora/BackgroundTasks/Workers/URLSessionWorker.swift`
+  Purpose: extend `execute()` to handle `input.query` by calling `WebSearchService` for URL discovery before the existing fetch loop. Build `WorkerProvenance` from search results.
+
 - `OraTests/Tools/Research/ResearchToolsTests.swift`
   Purpose: add tests for query-based research flow.
+
+- `OraTests/BackgroundTasks/WebSearchServiceTests.swift`
+  Purpose: unit tests for DuckDuckGo HTML parsing, URL extraction, deduplication, and error handling.
 
 ## Implementation Steps
 
@@ -155,11 +164,10 @@ into the conversation, exactly as BG.07 already works.
    - URL-based: existing prompt showing the URL list.
    - Mixed: "Research: {query}. This will search the public web, fetch sources in an isolated container, and include these specific URLs."
 
-4. **Handle container unavailability.**
-   - If `query` is provided but `ContainerWorker` is not available:
-     - Return a tool error: "Topic-based research requires the container runtime, which is not available on this system. You can still research specific URLs."
-   - If only `urls` are provided: works with either backend (container or in-process).
-
+4. **Handle container unavailability with in-process search fallback.**
+   - When `query` is provided but `ContainerWorker` is not available, the in-process `URLSessionWorker` handles it by performing a DuckDuckGo HTML Lite search to discover URLs, then fetching and extracting those URLs — same logic the container agent uses, just running on-host.
+   - If only `urls` are provided: works with either backend (container or in-process), same as before.
+   - The `ResearchStartTool` does NOT gate query-based research behind container availability. The tool accepts queries unconditionally; the worker backend decides how to execute them.
 5. **Update `BackgroundTaskInputs`.**
    Already extended with `query: String?` in BG.09. Wire it through from the tool to the manager.
 
@@ -207,6 +215,37 @@ into the conversation, exactly as BG.07 already works.
 9. **Update `ArtifactStore` manifest.**
    Persist full provenance in `result.json` alongside page data. Persist compact rollups (for example `query` and `domains_used`) in `manifest.json` so `research.list_results` can stay lightweight.
 
+10. **Add in-process web search to `URLSessionWorker`.**
+    When `input.query` is present and `input.urls` is empty, the worker must discover URLs before fetching:
+
+    a. **Add `WebSearchService`** (`Ora/BackgroundTasks/Workers/WebSearchService.swift`):
+       - Performs a DuckDuckGo HTML Lite search (`https://html.duckduckgo.com/html/?q=...`)
+       - Parses search result links from the HTML response using the existing `HTMLTextExtractor` or simple regex
+       - Returns up to N result URLs (configurable, default 8)
+       - Uses `SafeURLSession` / `WorkerFetchClient` for the search request itself
+       - No API key required — DuckDuckGo HTML Lite is a public endpoint
+
+    b. **Extend `URLSessionWorker.execute()`**:
+       - At the start of `execute()`, check if `input.query != nil && input.urls.isEmpty`
+       - If so, call `WebSearchService.search(query:)` to discover URLs
+       - Merge discovered URLs with any explicit `input.urls`
+       - Proceed with existing fetch loop
+       - Build `WorkerProvenance` from the search results (query, search queries used, domains)
+
+    c. **DuckDuckGo HTML Lite parsing**:
+       - The HTML Lite endpoint returns a simple HTML page with `<a class="result__a" href="...">` links
+       - Extract the `href` values, filter out DuckDuckGo internal links
+       - Deduplicate by domain to get diverse sources
+       - Validate each discovered URL through `SafeURLSession` validation (host safety, scheme checks)
+
+    d. **Constraints**:
+       - Max 8 discovered URLs per query (prevent runaway fetching)
+       - Search request itself counts toward `SafeURLSession` request budget
+       - Total timeout applies across search + fetch phases
+       - If search returns no results, throw `WorkerError.allPagesFailed` with descriptive message
+
+    This ensures query-based research works end-to-end with the existing in-process worker, without requiring the container runtime. When the container IS available, `BackgroundTaskManager.selectWorker()` routes to `ContainerWorker` instead, and the in-process search path is not exercised.
+
 ## Tests and Validation
 
 - `test_researchStart_acceptsQueryParameter`
@@ -217,8 +256,7 @@ into the conversation, exactly as BG.07 already works.
 - `test_researchStart_confirmationPromptShowsURLsForURLs`
 - `test_researchStart_confirmationPromptShowsBothForMixed`
 - `test_researchStart_failsWithQueryWhenContainerUnavailable`
-- `test_researchStart_worksWithURLsWhenContainerUnavailable`
-- `test_researchStart_enqueuesTaskWithQueryInInputs`
+- `test_researchStart_worksWithURLsWhenContainerUnavailable`- `test_researchStart_enqueuesTaskWithQueryInInputs`
 - `test_researchStart_keepsHostValidationForExplicitURLs`
 - `test_researchListResults_includesQueryInMetadata`
 - `test_researchLoadResult_includesProvenanceFromContainer`
@@ -226,6 +264,21 @@ into the conversation, exactly as BG.07 already works.
 - `test_researchStart_perSessionLimitStillEnforced`
 - `test_researchStart_cooldownStillEnforced`
 - `test_researchToolsRemainDeferred`
+
+### WebSearchService Tests
+- `test_webSearch_parsesHTMLLiteResults`
+- `test_webSearch_deduplicatesByDomain`
+- `test_webSearch_respectsMaxResultLimit`
+- `test_webSearch_filtersInternalDDGLinks`
+- `test_webSearch_handlesEmptyResults`
+- `test_webSearch_handlesNetworkError`
+- `test_webSearch_validatesDiscoveredURLs`
+
+### URLSessionWorker Query Tests
+- `test_urlSessionWorker_discoversURLsFromQuery`
+- `test_urlSessionWorker_mergesQueryURLsWithExplicit`
+- `test_urlSessionWorker_buildsProvenanceFromSearch`
+- `test_urlSessionWorker_queryWithEmptySearchResultsFails`
 
 ### Manual Validation
 
@@ -242,8 +295,9 @@ into the conversation, exactly as BG.07 already works.
   - Confirm Ora uses `research.list_results` → `research.load_result` to surface the result.
 
 - On a system without container runtime:
-  - Ask Ora to research a topic → confirm Ora explains container is needed.
+  - Ask Ora to research a topic → confirm it works via in-process search fallback.
   - Ask Ora to summarize a URL → confirm it still works via in-process worker.
+  - Check logs for "Performing in-process web search" or similar to confirm the fallback path.
 
 ## Acceptance Criteria
 
@@ -255,7 +309,8 @@ into the conversation, exactly as BG.07 already works.
 - [ ] Explicit user-provided `urls` are still validated on the host before enqueue.
 - [ ] Results include provenance data (search queries used, domains, rationale) from the container.
 - [ ] System prompt guides Ora to use `query`-based research for topic requests.
-- [ ] Falls back gracefully when container runtime is unavailable.
+- [ ] Falls back gracefully when container runtime is unavailable — in-process worker performs DuckDuckGo search for URL discovery and fetches results.
+- [ ] Query-based research works end-to-end with both container and in-process backends.
 - [ ] Per-session enqueue limits and cooldown are preserved.
 - [ ] Research tool outputs no longer expose `artifact_path` to the model.
 - [ ] No new tools, no planning layer, no autonomy modes, no mode selection UI.
@@ -263,7 +318,8 @@ into the conversation, exactly as BG.07 already works.
 ## Risks and Open Questions
 
 - **Quality depends on the container agent.** If the in-container research agent produces poor results (bad search queries, irrelevant sources, weak extraction), the UX suffers regardless of how clean the Swift integration is. The agent script needs its own testing and iteration cycle, separate from the Swift codebase.
-- **Fallback UX on pre-macOS 26 systems.** Users without container support get the old URL-paste experience. This is acceptable for v1 but should be communicated clearly in Ora's marketing and onboarding.
+- **Fallback UX on pre-macOS 26 systems.** The in-process fallback uses DuckDuckGo HTML Lite for search, which provides a functional experience without container isolation. The container backend provides better security isolation when available, but the feature works regardless.
+- **DuckDuckGo rate limiting.** Both the container agent and the in-process fallback use DuckDuckGo HTML Lite for search. If DDG rate-limits requests, search may fail. The 30-second cooldown between tasks helps mitigate this. If DDG blocks automated requests entirely, a fallback search provider or a different approach would be needed — but this is a container-image update for the container path and a `WebSearchService` update for the in-process path.
 - **No user control over search strategy.** The user can't specify "only use academic sources" or "focus on news articles" in v1. The container agent uses its own heuristics. This is a feature request for a future story (research constraints / preferences).
 - **Provenance visibility.** The user sees provenance after the fact (when loading results), not before. This is intentional — pre-approval of a source plan adds friction without adding safety when the container is isolated. But some users may want to know what Ora plans to do before it does it. A future story could add an optional "show me the plan first" mode for power users, without making it the default.
 - **Model-facing path hygiene.** Removing `artifact_path` from research tool outputs is intentional. If a user wants Finder reveal behavior later, route that through existing system/Finder surfaces rather than path-bearing research payloads.
