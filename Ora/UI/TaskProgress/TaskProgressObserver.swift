@@ -66,6 +66,7 @@ final class TaskProgressObserver: ObservableObject {
     private let managerProvider: @MainActor @Sendable () -> BackgroundTaskManager?
     private let menuPresenter: @MainActor @Sendable () -> Void
     private var observationTask: Task<Void, Never>?
+    private var staleCheckTask: Task<Void, Never>?
 
     init(
         managerProvider: @escaping @MainActor @Sendable () -> BackgroundTaskManager? = {
@@ -78,10 +79,12 @@ final class TaskProgressObserver: ObservableObject {
         self.managerProvider = managerProvider
         self.menuPresenter = menuPresenter
         self.startObserving()
+        self.startStaleCheckTimer()
     }
 
     deinit {
         self.observationTask?.cancel()
+        self.staleCheckTask?.cancel()
     }
 
     var hasActiveTasks: Bool {
@@ -124,6 +127,28 @@ final class TaskProgressObserver: ObservableObject {
 
     func refreshObservation() {
         self.startObserving()
+    }
+
+    private func startStaleCheckTimer() {
+        self.staleCheckTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(Self.staleCheckInterval))
+                guard !Task.isCancelled else { break }
+                await MainActor.run {
+                    self?.reapStaleSummarizingTasks()
+                }
+            }
+        }
+    }
+
+    private func reapStaleSummarizingTasks() {
+        let before = self.activeTasks.count
+        self.activeTasks.removeAll { item in
+            item.phase == .summarizing && Date().timeIntervalSince(item.createdAt) > Self.staleSummaryGracePeriod
+        }
+        if self.activeTasks.count != before {
+            self.logger.info("Reaped \(before - self.activeTasks.count) stale summarizing task(s)")
+        }
     }
 
     private func startObserving() {
@@ -200,6 +225,9 @@ final class TaskProgressObserver: ObservableObject {
         )
     }
 
+    private static let staleSummaryGracePeriod: TimeInterval = 300  // 5 minutes
+    private static let staleCheckInterval: TimeInterval = 60  // recheck every 60s
+
     private static func phase(for snapshot: BackgroundTaskRecordSnapshot) -> TaskProgressPhase? {
         switch snapshot.state {
         case .queued:
@@ -213,6 +241,13 @@ final class TaskProgressObserver: ObservableObject {
             }
             return .fetching(urlCount: snapshot.inputs.urls.count)
         case .completed where snapshot.summaryState == .pending:
+            // Don't show permanently stuck summary items — if the task completed
+            // more than 5 minutes ago and summary is still pending, treat as finished.
+            // Also hide if completedAt is nil (shouldn't happen, but be defensive).
+            guard let completedAt = snapshot.completedAt,
+                  Date().timeIntervalSince(completedAt) <= Self.staleSummaryGracePeriod else {
+                return nil
+            }
             return .summarizing
         case .completed, .failed, .canceled:
             return nil

@@ -148,6 +148,22 @@ actor BackgroundTaskManager {
         self.notificationService = notificationService
     }
 
+    /// Test-only: adjust completedAt by the given offset for a specific task.
+    #if DEBUG
+    func backdateCompletedAt(taskID: UUID, seconds: TimeInterval) {
+        guard let record = try? self.fetchRecord(id: taskID) else {
+            return
+        }
+        if let completedAt = record.completedAt {
+            record.completedAt = completedAt.addingTimeInterval(seconds)
+        }
+        try? self.saveContext()
+        if let snapshot = try? record.snapshot() {
+            self.emitEvent(for: snapshot, from: record.state, at: Date())
+        }
+    }
+    #endif
+
     // MARK: - Public API
 
     func enqueue(
@@ -333,40 +349,85 @@ actor BackgroundTaskManager {
             staleRecords = try self.fetchActiveRecords()
         } catch {
             self.logger.error("Failed to recover unfinished background tasks: \(error.localizedDescription)")
+            // Still attempt summary recovery even if active record fetch fails
+            await self.recoverPendingSummaries()
             return
         }
 
-        guard !staleRecords.isEmpty else {
-            return
-        }
+        if !staleRecords.isEmpty {
+            let recoveredAt = Date()
+            var events: [(BackgroundTaskRecordSnapshot, BackgroundTaskState, Date)] = []
 
-        let recoveredAt = Date()
-        var events: [(BackgroundTaskRecordSnapshot, BackgroundTaskState, Date)] = []
+            for record in staleRecords {
+                let previousState = record.state
+                guard previousState == .queued || previousState == .running else {
+                    continue
+                }
 
-        for record in staleRecords {
-            let previousState = record.state
-            guard previousState == .queued || previousState == .running else {
-                continue
+                record.state = .canceled
+                record.errorMessage = Self.recoveryCancellationReason
+                record.completedAt = recoveredAt
+                record.artifactPath = nil
+
+                if let snapshot = try? record.snapshot() {
+                    events.append((snapshot, previousState, recoveredAt))
+                }
             }
 
-            record.state = .canceled
-            record.errorMessage = Self.recoveryCancellationReason
-            record.completedAt = recoveredAt
-            record.artifactPath = nil
+            do {
+                try self.saveContext()
+            } catch {
+                self.logger.error("Failed to persist recovered background tasks: \(error.localizedDescription)")
+            }
 
-            if let snapshot = try? record.snapshot() {
-                events.append((snapshot, previousState, recoveredAt))
+            for (snapshot, previousState, timestamp) in events {
+                self.emitEvent(for: snapshot, from: previousState, at: timestamp)
             }
         }
 
+        // Recover tasks that completed but whose summary generation was interrupted
+        await self.recoverPendingSummaries()
+    }
+
+    /// Re-enqueue or fail summary jobs for tasks left in completed+pending state after a crash.
+    private func recoverPendingSummaries() async {
+        let pendingRecords: [BackgroundTaskRecord]
         do {
-            try self.saveContext()
+            pendingRecords = try self.fetchPendingSummaryRecords()
         } catch {
-            self.logger.error("Failed to persist recovered background tasks: \(error.localizedDescription)")
+            self.logger.error("Failed to fetch pending summary records: \(error.localizedDescription)")
+            return
         }
 
-        for (snapshot, previousState, timestamp) in events {
-            self.emitEvent(for: snapshot, from: previousState, at: timestamp)
+        guard !pendingRecords.isEmpty else {
+            return
+        }
+
+        if let summaryGenerator = self.summaryGenerator {
+            // Re-enqueue each pending summary into the generator
+            for record in pendingRecords {
+                await summaryGenerator.enqueueSummary(taskID: record.id)
+                self.logger.info("Re-enqueued pending summary for task \(record.id) after launch recovery")
+            }
+        } else {
+            // No summary generator — mark pending summaries as failed
+            for record in pendingRecords {
+                record.summaryStateRawValue = BackgroundTaskSummaryState.failed.rawValue
+                self.logger.info("Marked pending summary as failed (no generator) for task \(record.id)")
+            }
+
+            do {
+                try self.saveContext()
+            } catch {
+                self.logger.error("Failed to persist summary recovery: \(error.localizedDescription)")
+            }
+
+            // Emit events after save so observers see consistent state
+            for record in pendingRecords {
+                if let snapshot = try? record.snapshot() {
+                    self.emitEvent(for: snapshot, from: .completed, at: Date())
+                }
+            }
         }
     }
 
@@ -763,6 +824,15 @@ actor BackgroundTaskManager {
         )
         return try self.modelContext.fetch(descriptor)
             .filter { $0.state == .queued || $0.state == .running }
+    }
+
+    private func fetchPendingSummaryRecords() throws -> [BackgroundTaskRecord] {
+        let descriptor = FetchDescriptor<BackgroundTaskRecord>(
+            predicate: #Predicate { $0.stateRawValue == "completed" },
+            sortBy: [SortDescriptor(\.createdAt, order: .forward)]
+        )
+        return try self.modelContext.fetch(descriptor)
+            .filter { $0.summaryState == .pending }
     }
 
     private func fetchNextQueuedRecord() throws -> BackgroundTaskRecord? {

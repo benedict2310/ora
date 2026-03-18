@@ -286,6 +286,88 @@ final class BackgroundTaskManagerTests: XCTestCase {
         XCTAssertTrue(tasks.allSatisfy { $0.errorMessage == BackgroundTaskManager.recoveryCancellationReason })
     }
 
+    func test_recoverPendingSummaries_reEnqueuesWithGenerator() async throws {
+        let storeURL = try self.makeTemporaryStoreURL()
+        let persistence = PersistenceManager.createForTesting(inMemory: false, storeURL: storeURL)
+
+        let completedWithPendingSummary = BackgroundTaskRecord(
+            inputs: BackgroundTaskInputs(urls: ["https://example.com/page"]),
+            policy: BackgroundTaskPolicy()
+        )
+        completedWithPendingSummary.stateRawValue = BackgroundTaskState.completed.rawValue
+        completedWithPendingSummary.summaryStateRawValue = BackgroundTaskSummaryState.pending.rawValue
+        completedWithPendingSummary.completedAt = Date()
+
+        persistence.context.insert(completedWithPendingSummary)
+        persistence.flushSave()
+
+        let taskID = completedWithPendingSummary.id
+
+        let reloadedPersistence = PersistenceManager.createForTesting(inMemory: false, storeURL: storeURL)
+        let manager = BackgroundTaskManager(modelContainer: reloadedPersistence.container)
+
+        let mockLLM = RecoverySummaryMockLLM()
+        let rootDir = try self.makeTemporaryArtifactRootURL()
+        let summaryGenerator = SummaryGenerator(
+            llmService: mockLLM,
+            artifactStore: ArtifactStore(rootURL: rootDir),
+            taskManagerProvider: { manager }
+        )
+
+        await manager.configure(
+            worker: URLSessionWorker(),
+            artifactStore: ArtifactStore(rootURL: rootDir),
+            summaryGenerator: summaryGenerator
+        )
+
+        await manager.recoverUnfinishedTasksOnLaunch()
+
+        // The summary generator should have received the re-enqueued job
+        let jobCount = await summaryGenerator.pendingJobCount
+        XCTAssertEqual(jobCount, 1, "Pending summary should be re-enqueued in SummaryGenerator")
+
+        // The task should still be completed (not canceled/failed)
+        let task = await manager.task(id: taskID)
+        XCTAssertEqual(task?.state, .completed)
+        XCTAssertEqual(task?.summaryState, .pending)
+    }
+
+    func test_recoverPendingSummaries_marksFailedWithoutGenerator() async throws {
+        let storeURL = try self.makeTemporaryStoreURL()
+        let persistence = PersistenceManager.createForTesting(inMemory: false, storeURL: storeURL)
+
+        let completedWithPendingSummary = BackgroundTaskRecord(
+            inputs: BackgroundTaskInputs(urls: ["https://example.com/page"]),
+            policy: BackgroundTaskPolicy()
+        )
+        completedWithPendingSummary.stateRawValue = BackgroundTaskState.completed.rawValue
+        completedWithPendingSummary.summaryStateRawValue = BackgroundTaskSummaryState.pending.rawValue
+        completedWithPendingSummary.completedAt = Date()
+
+        persistence.context.insert(completedWithPendingSummary)
+        persistence.flushSave()
+
+        let taskID = completedWithPendingSummary.id
+
+        let reloadedPersistence = PersistenceManager.createForTesting(inMemory: false, storeURL: storeURL)
+        let manager = BackgroundTaskManager(modelContainer: reloadedPersistence.container)
+
+        // Configure without summary generator
+        let rootDir = try self.makeTemporaryArtifactRootURL()
+        await manager.configure(
+            worker: URLSessionWorker(),
+            artifactStore: ArtifactStore(rootURL: rootDir),
+            summaryGenerator: nil
+        )
+
+        await manager.recoverUnfinishedTasksOnLaunch()
+
+        // The task should have summaryState marked as failed
+        let task = await manager.task(id: taskID)
+        XCTAssertEqual(task?.state, .completed)
+        XCTAssertEqual(task?.summaryState, .failed, "Pending summary should be marked failed when no generator is available")
+    }
+
     func test_cancelAll_marksActiveAndQueuedTasksCanceled() async throws {
         let controller = BlockingExecutorController()
         let manager = await self.makeInMemoryManager(
@@ -734,5 +816,24 @@ private actor BackgroundTaskSummaryMockLLMService: LLMServicing {
         _ = prompt
         _ = maxTokens
         return self.response
+    }
+}
+
+private actor RecoverySummaryMockLLM: LLMServicing {
+    func prepare() async throws {}
+    func warmup() async throws {}
+    func unload() async {}
+    func capabilities() async -> ProviderCapabilities { .textOnly }
+    func clearCache() async {}
+
+    func generate(messages: [LLMMessage], maxTokens: Int) async -> AsyncThrowingStream<LLMDelta, Error> {
+        return AsyncThrowingStream { continuation in
+            continuation.yield(.token("mock"))
+            continuation.finish()
+        }
+    }
+
+    func generateOneShot(prompt: String, maxTokens: Int) async throws -> String {
+        return "mock summary"
     }
 }
