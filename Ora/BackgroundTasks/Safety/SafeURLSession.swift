@@ -28,24 +28,32 @@ final class SafeURLSession: WorkerFetchClient, @unchecked Sendable {
 
     // MARK: - WorkerFetchClient
 
-    func fetch(url: URL, policy: BackgroundTaskPolicy) async throws -> FetchedPageResponse {
+    func fetch(request: URLRequest, policy: BackgroundTaskPolicy) async throws -> FetchedPageResponse {
         try self.incrementRequestCount()
 
+        guard let requestURL = request.url else {
+            throw NetworkSafetyError.blockedHost("empty")
+        }
+
         // Validate the URL before fetching
-        try await self.validator.validate(url: url)
+        try await self.validator.validate(url: requestURL)
 
         let session = self.makeEphemeralSession(policy: policy)
         defer { session.invalidateAndCancel() }
 
         let delegate = RedirectValidator(validator: self.validator, maxRedirects: self.safetyPolicy.maxRedirects)
 
-        var request = URLRequest(url: url)
+        var request = request
         request.timeoutInterval = TimeInterval(
             min(self.safetyPolicy.requestTimeoutSeconds, policy.timeoutSeconds)
         )
         request.httpShouldHandleCookies = false
-        request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
-        request.setValue("", forHTTPHeaderField: "Referer")
+        if request.value(forHTTPHeaderField: "User-Agent") == nil {
+            request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+        }
+        if request.value(forHTTPHeaderField: "Referer") == nil {
+            request.setValue("", forHTTPHeaderField: "Referer")
+        }
 
         let fetchedAt = Date()
         let (asyncBytes, response) = try await session.bytes(for: request, delegate: delegate)
@@ -70,7 +78,7 @@ final class SafeURLSession: WorkerFetchClient, @unchecked Sendable {
         let body = try await self.readBody(asyncBytes: asyncBytes)
 
         return FetchedPageResponse(
-            finalURL: httpResponse.url ?? url,
+            finalURL: httpResponse.url ?? requestURL,
             statusCode: httpResponse.statusCode,
             contentType: contentType,
             textEncodingName: httpResponse.textEncodingName,

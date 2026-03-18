@@ -26,7 +26,7 @@ struct WorkerResult: Codable, Sendable, Equatable {
     }
 }
 
-/// Provenance data from container-based research.
+/// Provenance data from research tasks (container-based or in-process web search).
 struct WorkerProvenance: Codable, Sendable, Equatable {
     let query: String?
     let searchQueries: [String]

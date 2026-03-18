@@ -212,7 +212,10 @@ final class ResearchToolsTests: XCTestCase {
         if case .userConfirmation(let prompt) = plan.requirement {
             XCTAssertEqual(prompt.title, "Start Research Task")
             XCTAssertTrue(prompt.summary.contains("Nvidia Blackwell"))
-            XCTAssertTrue(prompt.details?.contains("isolated container") ?? false)
+            XCTAssertEqual(
+                prompt.details,
+                "This will search the public web and fetch sources in the background."
+            )
         } else {
             XCTFail("Expected user confirmation requirement")
         }
@@ -242,7 +245,7 @@ final class ResearchToolsTests: XCTestCase {
         if case .userConfirmation(let prompt) = plan.requirement {
             XCTAssertTrue(prompt.summary.contains("Nvidia Blackwell"))
             XCTAssertTrue(prompt.details?.contains("nvidia.com") ?? false)
-            XCTAssertTrue(prompt.details?.contains("isolated container") ?? false)
+            XCTAssertTrue(prompt.details?.contains("fetch sources in the background") ?? false)
         } else {
             XCTFail("Expected user confirmation requirement")
         }
@@ -425,11 +428,6 @@ final class ResearchToolsTests: XCTestCase {
         let error = ResearchToolError.emptyInput
         XCTAssertTrue(error.errorDescription!.contains("query"))
         XCTAssertTrue(error.errorDescription!.contains("URL"))
-    }
-
-    func test_researchToolError_containerRequired_description() {
-        let error = ResearchToolError.containerRequiredForQuery
-        XCTAssertTrue(error.errorDescription!.contains("container runtime"))
     }
 
     // MARK: - Registration

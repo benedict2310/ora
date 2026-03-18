@@ -18,7 +18,6 @@ enum ResearchToolError: LocalizedError, Equatable {
     case managerUnavailable
     case queryTooLong(length: Int, limit: Int)
     case emptyInput
-    case containerRequiredForQuery
 
     var errorDescription: String? {
         switch self {
@@ -42,8 +41,6 @@ enum ResearchToolError: LocalizedError, Equatable {
             return "Query too long (\(length) chars). Maximum is \(limit) characters."
         case .emptyInput:
             return "Either a research query or at least one URL is required."
-        case .containerRequiredForQuery:
-            return "Topic-based research requires the container runtime, which is not available on this system. You can still research specific URLs."
         }
     }
 }
@@ -114,11 +111,11 @@ struct ResearchStartTool: Tool {
             // Mixed: query + explicit URLs
             let urlList = urls.map { "  - \($0)" }.joined(separator: "\n")
             summary = label ?? "Research: \(query)"
-            details = "This will search the public web, fetch sources in an isolated container, and include these specific URLs:\n\(urlList)"
+            details = "This will search the public web, fetch sources in the background, and include these specific URLs:\n\(urlList)"
         } else if let query = query {
             // Query-only
             summary = label ?? "Research: \(query)"
-            details = "This will search the public web and fetch sources in an isolated container."
+            details = "This will search the public web and fetch sources in the background."
         } else if let urls = urls, !urls.isEmpty {
             // URL-only (backward-compatible)
             let urlList = urls.map { "  - \($0)" }.joined(separator: "\n")
