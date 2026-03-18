@@ -3,30 +3,61 @@
 //  Ora
 //
 //  Production implementation of ContainerRuntime backed by Apple's
-//  Containerization stack on macOS 26.
+//  Containerization package (https://github.com/apple/containerization)
+//  on macOS 26.
 //
 
+import Containerization
+import ContainerizationOCI
 import Foundation
 import os
 
-/// Production container runtime using Apple Containerization on macOS 26+.
+/// Production container runtime using Apple's Containerization package on macOS 26+.
 ///
-/// Gated behind `#available(macOS 26, *)`. When the runtime is
-/// unavailable (older macOS, container image missing), `isAvailable`
-/// returns `false` and `ContainerWorker` falls back to the in-process
-/// worker.
+/// Each task gets a fresh `LinuxContainer` instance. No state carries between tasks.
+/// The container has public internet access but no access to host filesystem,
+/// local network, or credentials.
 @available(macOS 26, *)
 final class ContainerizationRuntime: ContainerRuntime, @unchecked Sendable {
+
+    // MARK: - Types
+
+    /// Tracks a running container and its manager so we can stop/kill/cleanup.
+    private struct ActiveContainer {
+        var container: LinuxContainer
+        var manager: ContainerManager
+        let stateDirectory: URL
+    }
+
+    // MARK: - Properties
 
     private let logger = Logger.ora(category: "container")
     private let imageManager: ContainerImageManager
 
-    init(imageManager: ContainerImageManager = ContainerImageManager()) {
+    /// Root directory for container state (image store, rootfs layers).
+    private let stateRoot: URL
+
+    /// Active containers keyed by handle ID.
+    private let activeContainers = OSAllocatedUnfairLock<[String: ActiveContainer]>(initialState: [:])
+
+    // MARK: - Init
+
+    init(
+        imageManager: ContainerImageManager = ContainerImageManager(),
+        stateRoot: URL? = nil
+    ) {
         self.imageManager = imageManager
+        self.stateRoot = stateRoot ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first!
+            .appendingPathComponent("Ora", isDirectory: true)
+            .appendingPathComponent("ContainerState", isDirectory: true)
     }
+
+    // MARK: - ContainerRuntime
 
     var isAvailable: Bool {
         get async {
+            // All three assets must be bundled: kernel, initfs, OCI image
             return self.imageManager.isImageAvailable
         }
     }
@@ -35,7 +66,14 @@ final class ContainerizationRuntime: ContainerRuntime, @unchecked Sendable {
         guard self.imageManager.isImageAvailable else {
             throw ContainerRuntimeError.imageNotFound(path: configuration.imagePath.path)
         }
-        self.logger.info("Container runtime prepared (image validated)")
+
+        // Ensure state root exists
+        try FileManager.default.createDirectory(
+            at: self.stateRoot,
+            withIntermediateDirectories: true
+        )
+
+        self.logger.info("Container runtime prepared (state root: \(self.stateRoot.path))")
     }
 
     func start(configuration: ContainerConfiguration) async throws -> ContainerHandle {
@@ -43,8 +81,10 @@ final class ContainerizationRuntime: ContainerRuntime, @unchecked Sendable {
             throw ContainerRuntimeError.imageNotFound(path: configuration.imagePath.path)
         }
 
-        // Create the shared directory if needed
+        let containerID = UUID().uuidString
         let fm = FileManager.default
+
+        // Ensure shared directory exists
         if !fm.fileExists(atPath: configuration.sharedDirectoryPath.path) {
             try fm.createDirectory(
                 at: configuration.sharedDirectoryPath,
@@ -52,30 +92,161 @@ final class ContainerizationRuntime: ContainerRuntime, @unchecked Sendable {
             )
         }
 
-        let containerID = UUID().uuidString
+        do {
+            // Load the kernel from bundled assets
+            guard let kernelURL = self.imageManager.kernelURL else {
+                throw ContainerRuntimeError.startFailed(reason: "Linux kernel not found in bundle")
+            }
 
-        // TODO: Replace with actual Containerization framework calls when
-        // macOS 26 SDK ships. This placeholder validates the lifecycle
-        // contract and allows full integration testing with MockContainerRuntime.
-        self.logger.info("Starting container \(containerID)")
+            let kernel = Kernel(
+                path: kernelURL,
+                platform: .linuxArm
+            )
 
-        return ContainerHandle(
-            id: containerID,
-            sharedDirectoryURL: configuration.sharedDirectoryPath
-        )
+            // Load the initfs from bundled assets
+            guard let initfsURL = self.imageManager.initfsURL else {
+                throw ContainerRuntimeError.startFailed(reason: "initfs not found in bundle")
+            }
+            let initfs = Mount.block(
+                format: "ext4",
+                source: initfsURL.path,
+                destination: "/",
+                options: ["ro"]
+            )
+
+            // Create an image store in the state root for this container
+            let containerStateDir = self.stateRoot.appendingPathComponent(containerID, isDirectory: true)
+            try fm.createDirectory(at: containerStateDir, withIntermediateDirectories: true)
+
+            let imageStore = try ImageStore(path: containerStateDir)
+
+            // Create container manager with NAT networking for internet access
+            var network: ContainerManager.VmnetNetwork? = nil
+            if configuration.networkPolicy != .noNetwork {
+                network = try ContainerManager.VmnetNetwork()
+            }
+
+            var manager = try ContainerManager(
+                kernel: kernel,
+                initfs: initfs,
+                imageStore: imageStore,
+                network: network
+            )
+
+            // Create the container from the bundled OCI image
+            let imageReference = configuration.imagePath.path
+
+            // Mount for the shared directory (virtiofs share)
+            let sharedMount = Mount.share(
+                source: configuration.sharedDirectoryPath.path,
+                destination: "/task"
+            )
+
+            let container = try await manager.create(
+                containerID,
+                reference: imageReference,
+                rootfsSizeInBytes: 2 * 1024 * 1024 * 1024,  // 2 GiB rootfs
+                readOnly: false,
+                configuration: { (config: inout LinuxContainer.Configuration) in
+                    // Process configuration
+                    config.process.arguments = ["python3", "/agent/agent.py"]
+                    config.process.workingDirectory = "/task"
+
+                    // Resource limits
+                    config.cpus = configuration.cpuCount
+                    config.memoryInBytes = UInt64(configuration.memoryLimitMB) * 1024 * 1024
+
+                    // Mount shared directory as /task inside the container
+                    config.mounts.append(sharedMount)
+
+                    // DNS for internet access
+                    if configuration.networkPolicy != .noNetwork {
+                        config.dns = DNS()
+                    }
+                }
+            )
+
+            // Start the container
+            try await container.create()
+            try await container.start()
+
+            // Track the active container
+            let active = ActiveContainer(
+                container: container,
+                manager: manager,
+                stateDirectory: containerStateDir
+            )
+            self.activeContainers.withLock { $0[containerID] = active }
+
+            self.logger.info("Container \(containerID) started (cpus: \(configuration.cpuCount), memory: \(configuration.memoryLimitMB)MB)")
+
+            return ContainerHandle(
+                id: containerID,
+                sharedDirectoryURL: configuration.sharedDirectoryPath
+            )
+
+        } catch let error as ContainerRuntimeError {
+            throw error
+        } catch {
+            throw ContainerRuntimeError.startFailed(reason: error.localizedDescription)
+        }
     }
 
     func waitForExit(handle: ContainerHandle) async throws -> ContainerExitStatus {
-        // TODO: Hook into actual Containerization lifecycle event.
+        guard let active = self.activeContainers.withLock({ $0[handle.id] }) else {
+            throw ContainerRuntimeError.startFailed(reason: "No active container with id \(handle.id)")
+        }
+
         self.logger.info("Waiting for container \(handle.id) to exit")
-        return ContainerExitStatus(exitCode: 0, stderr: nil)
+
+        let exitStatus = try await active.container.wait()
+
+        self.logger.info("Container \(handle.id) exited with code \(exitStatus.exitCode)")
+
+        return ContainerExitStatus(exitCode: exitStatus.exitCode, stderr: nil)
     }
 
     func stop(handle: ContainerHandle) async throws {
+        guard let active = self.activeContainers.withLock({ $0[handle.id] }) else {
+            return
+        }
+
         self.logger.info("Stopping container \(handle.id)")
+
+        try await active.container.stop()
+        self.cleanupContainer(id: handle.id)
     }
 
     func kill(handle: ContainerHandle) async throws {
+        guard let active = self.activeContainers.withLock({ $0[handle.id] }) else {
+            return
+        }
+
         self.logger.info("Killing container \(handle.id)")
+
+        try await active.container.kill(SIGKILL)
+        self.cleanupContainer(id: handle.id)
+    }
+
+    // MARK: - Private
+
+    private func cleanupContainer(id: String) {
+        guard let active = self.activeContainers.withLock({ $0.removeValue(forKey: id) }) else {
+            return
+        }
+
+        var manager = active.manager
+        do {
+            try manager.releaseNetwork(id)
+        } catch {
+            self.logger.debug("Failed to release container network: \(error.localizedDescription)")
+        }
+        do {
+            try manager.delete(id)
+        } catch {
+            self.logger.debug("Failed to delete container state: \(error.localizedDescription)")
+        }
+
+        try? FileManager.default.removeItem(at: active.stateDirectory)
     }
 }

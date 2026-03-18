@@ -142,8 +142,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.summaryGenerator = summaryGenerator
             Task {
                 await summaryGenerator.start()
+
+                // Set up container worker if runtime is available (macOS 26+)
+                var containerWorkerInstance: ContainerWorker? = nil
+                var containerRuntimeInstance: (any ContainerRuntime)? = nil
+                if #available(macOS 26, *) {
+                    let runtime = ContainerizationRuntime()
+                    if await runtime.isAvailable {
+                        containerRuntimeInstance = runtime
+                        containerWorkerInstance = ContainerWorker(runtime: runtime)
+                        self.logger.info("Container runtime available — query-based research enabled")
+                    } else {
+                        self.logger.info("Container runtime assets not bundled — using in-process worker only")
+                    }
+                }
+
                 await backgroundTaskManager.configure(
                     worker: URLSessionWorker(),
+                    containerWorker: containerWorkerInstance,
+                    containerRuntime: containerRuntimeInstance,
                     artifactStore: .shared,
                     summaryGenerator: summaryGenerator
                 )

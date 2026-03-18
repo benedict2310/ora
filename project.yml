@@ -24,6 +24,9 @@ packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     from: "2.8.0"
+  containerization:
+    url: https://github.com/apple/containerization
+    from: "0.28.0"
 
 settings:
   base:
@@ -79,6 +82,8 @@ targets:
         embed: true
       - package: Sparkle
         product: Sparkle
+      - package: containerization
+        product: Containerization
 
   OraTests:
     type: bundle.unit-test
