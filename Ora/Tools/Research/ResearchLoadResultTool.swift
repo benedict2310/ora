@@ -20,6 +20,8 @@ struct ResearchLoadResultTool: Tool {
     let name = "research.load_result"
     let kind: ToolKind = .read
 
+    var loadPolicy: ToolLoadPolicy { .core }
+
     private static let logger = Logger.ora(category: "tools")
 
     var schema: ToolSchema {

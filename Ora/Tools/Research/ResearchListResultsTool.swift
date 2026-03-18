@@ -15,6 +15,8 @@ struct ResearchListResultsTool: Tool {
     let name = "research.list_results"
     let kind: ToolKind = .read
 
+    var loadPolicy: ToolLoadPolicy { .core }
+
     private static let logger = Logger.ora(category: "tools")
 
     var schema: ToolSchema {

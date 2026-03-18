@@ -98,6 +98,9 @@ final class ToolRegistryTests: XCTestCase {
                 "reminders.list",
                 "system.open_app",
                 "mail.recent",
+                "research.start",
+                "research.list_results",
+                "research.load_result",
                 "tools.discover"
             ])
         )
@@ -111,6 +114,9 @@ final class ToolRegistryTests: XCTestCase {
 
         XCTAssertFalse(deferredNames.contains("calendar.query"))
         XCTAssertFalse(deferredNames.contains("tools.discover"))
+        XCTAssertFalse(deferredNames.contains("research.start"))
+        XCTAssertFalse(deferredNames.contains("research.list_results"))
+        XCTAssertFalse(deferredNames.contains("research.load_result"))
         XCTAssertTrue(deferredNames.contains("messages.send"))
         XCTAssertTrue(deferredNames.contains("system.search_files"))
     }

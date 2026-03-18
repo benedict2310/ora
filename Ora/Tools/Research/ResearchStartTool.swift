@@ -61,6 +61,8 @@ struct ResearchStartTool: Tool {
     let name = "research.start"
     let kind: ToolKind = .mutate
 
+    var loadPolicy: ToolLoadPolicy { .core }
+
     private static let logger = Logger.ora(category: "tools")
 
     /// Per-session enqueue tracking for rate limiting.

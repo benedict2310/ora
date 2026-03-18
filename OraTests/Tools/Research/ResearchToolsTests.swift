@@ -16,7 +16,7 @@ final class ResearchToolsTests: XCTestCase {
         let tool = ResearchStartTool()
         XCTAssertEqual(tool.name, "research.start")
         XCTAssertEqual(tool.kind, .mutate)
-        XCTAssertEqual(tool.loadPolicy, .deferred)
+        XCTAssertEqual(tool.loadPolicy, .core)
         XCTAssertTrue(tool.schema.requiresConfirmation)
         // urls is no longer required — at least one of query or urls must be present
         XCTAssertTrue(tool.schema.requiredParameters.isEmpty)
@@ -272,7 +272,7 @@ final class ResearchToolsTests: XCTestCase {
         let tool = ResearchListResultsTool()
         XCTAssertEqual(tool.name, "research.list_results")
         XCTAssertEqual(tool.kind, .read)
-        XCTAssertEqual(tool.loadPolicy, .deferred)
+        XCTAssertEqual(tool.loadPolicy, .core)
         XCTAssertFalse(tool.schema.requiresConfirmation)
     }
 
@@ -299,7 +299,7 @@ final class ResearchToolsTests: XCTestCase {
         let tool = ResearchLoadResultTool()
         XCTAssertEqual(tool.name, "research.load_result")
         XCTAssertEqual(tool.kind, .read)
-        XCTAssertEqual(tool.loadPolicy, .deferred)
+        XCTAssertEqual(tool.loadPolicy, .core)
         XCTAssertFalse(tool.schema.requiresConfirmation)
         XCTAssertTrue(tool.schema.requiredParameters.contains("task_id"))
     }
@@ -448,16 +448,23 @@ final class ResearchToolsTests: XCTestCase {
         await ToolRegistry.shared.clear()
     }
 
-    func test_researchTools_areDeferred() async {
+    func test_researchTools_areCore() async {
         await ToolRegistry.shared.clear()
         await ToolRegistry.shared.registerDefaultTools()
+
+        let core = await ToolRegistry.shared.coreSchemas()
+        let coreNames = Set(core.map(\.name))
+
+        XCTAssertTrue(coreNames.contains("research.start"))
+        XCTAssertTrue(coreNames.contains("research.list_results"))
+        XCTAssertTrue(coreNames.contains("research.load_result"))
 
         let deferred = await ToolRegistry.shared.deferredCatalogRows()
         let deferredNames = Set(deferred.map(\.name))
 
-        XCTAssertTrue(deferredNames.contains("research.start"))
-        XCTAssertTrue(deferredNames.contains("research.list_results"))
-        XCTAssertTrue(deferredNames.contains("research.load_result"))
+        XCTAssertFalse(deferredNames.contains("research.start"))
+        XCTAssertFalse(deferredNames.contains("research.list_results"))
+        XCTAssertFalse(deferredNames.contains("research.load_result"))
 
         // Cleanup
         await ToolRegistry.shared.clear()
@@ -465,13 +472,13 @@ final class ResearchToolsTests: XCTestCase {
 
     // MARK: - Tool output hygiene (BG.10)
 
-    func test_researchToolsRemainDeferred() {
+    func test_researchToolsAreCore() {
         let startTool = ResearchStartTool()
         let listTool = ResearchListResultsTool()
         let loadTool = ResearchLoadResultTool()
 
-        XCTAssertEqual(startTool.loadPolicy, .deferred)
-        XCTAssertEqual(listTool.loadPolicy, .deferred)
-        XCTAssertEqual(loadTool.loadPolicy, .deferred)
+        XCTAssertEqual(startTool.loadPolicy, .core)
+        XCTAssertEqual(listTool.loadPolicy, .core)
+        XCTAssertEqual(loadTool.loadPolicy, .core)
     }
 }
