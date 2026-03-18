@@ -219,7 +219,7 @@ Cloud LLM provider support (Anthropic, OpenAI) with secure credential management
 | C.06 | [OpenAI Codex OAuth Support](integrations/C.06-CODEX-SUPPORT.md) | 🚧 To Do |
 
 ### 📦 Background Tasks (BG)
-Background execution for URL-based research (HTTP fetch + local summarization).
+Background execution for research (queue, fetch, summarization, and planned query-first follow-ons).
 
 | ID | Title | Status |
 |:---|:------|:-------|
@@ -232,6 +232,8 @@ Background execution for URL-based research (HTTP fetch + local summarization).
 | BG.06 | [Local Notifications](container-execution/BG.06-NOTIFICATIONS.md) | ✅ Complete |
 | BG.07 | [Context Loading](container-execution/BG.07-CONTEXT-LOADING.md) | ✅ Complete |
 | BG.08 | [Task Progress UI](container-execution/BG.08-TASK-PROGRESS-UI.md) | ✅ Complete |
+| BG.09 | [Query-First Research Planning](container-execution/BG.09-QUERY-FIRST-RESEARCH-PLANNING.md) | 🚧 To Do |
+| BG.10 | [Research Autonomy Modes](container-execution/BG.10-RESEARCH-AUTONOMY-MODES.md) | 🚧 To Do |
 
 ---
 

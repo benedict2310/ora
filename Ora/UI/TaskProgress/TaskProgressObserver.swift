@@ -12,6 +12,7 @@ import os
 enum TaskProgressPhase: Equatable, Sendable {
     case queued(urlCount: Int)
     case fetching(urlCount: Int)
+    case researching(query: String)
     case summarizing
 
     var displayText: String {
@@ -20,6 +21,9 @@ enum TaskProgressPhase: Equatable, Sendable {
             return urlCount == 1 ? "Queued 1 URL" : "Queued \(urlCount) URLs"
         case .fetching(let urlCount):
             return urlCount == 1 ? "Fetching 1 URL" : "Fetching \(urlCount) URLs"
+        case .researching(let query):
+            let truncated = query.count > 40 ? String(query.prefix(39)) + "\u{2026}" : query
+            return "Researching \"\(truncated)\""
         case .summarizing:
             return "Summarizing"
         }
@@ -31,6 +35,8 @@ enum TaskProgressPhase: Equatable, Sendable {
             return "clock"
         case .fetching:
             return "arrow.down.circle"
+        case .researching:
+            return "magnifyingglass"
         case .summarizing:
             return "text.alignleft"
         }
@@ -197,8 +203,14 @@ final class TaskProgressObserver: ObservableObject {
     private static func phase(for snapshot: BackgroundTaskRecordSnapshot) -> TaskProgressPhase? {
         switch snapshot.state {
         case .queued:
+            if let query = snapshot.inputs.query {
+                return .researching(query: query)
+            }
             return .queued(urlCount: snapshot.inputs.urls.count)
         case .running:
+            if let query = snapshot.inputs.query {
+                return .researching(query: query)
+            }
             return .fetching(urlCount: snapshot.inputs.urls.count)
         case .completed where snapshot.summaryState == .pending:
             return .summarizing
@@ -210,6 +222,10 @@ final class TaskProgressObserver: ObservableObject {
     private static func label(for snapshot: BackgroundTaskRecordSnapshot) -> String {
         if let label = snapshot.inputs.label?.trimmingCharacters(in: .whitespacesAndNewlines), !label.isEmpty {
             return label
+        }
+
+        if let query = snapshot.inputs.query?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty {
+            return "Research: \(query)"
         }
 
         if let firstURL = snapshot.inputs.urls.first,

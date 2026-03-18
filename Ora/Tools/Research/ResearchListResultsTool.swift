@@ -47,15 +47,24 @@ struct ResearchListResultsTool: Tool {
         formatter.formatOptions = [.withInternetDateTime]
 
         let items: [JSONValue] = manifests.map { manifest in
-            .object([
+            var obj: [String: JSONValue] = [
                 "task_id": .string(manifest.taskID.uuidString),
                 "label": manifest.label.map { .string($0) } ?? .null,
                 "created_at": .string(formatter.string(from: manifest.createdAt)),
                 "completed_at": .string(formatter.string(from: manifest.completedAt)),
-                "artifact_path": .string(manifest.artifactPath),
                 "citation_count": .number(Double(manifest.citationCount)),
                 "page_count": .number(Double(manifest.pageCount))
-            ])
+            ]
+
+            if let query = manifest.query {
+                obj["query"] = .string(query)
+            }
+
+            if let domainsUsed = manifest.domainsUsed, !domainsUsed.isEmpty {
+                obj["domains_used"] = .array(domainsUsed.map { .string($0) })
+            }
+
+            return .object(obj)
         }
 
         let summary: String

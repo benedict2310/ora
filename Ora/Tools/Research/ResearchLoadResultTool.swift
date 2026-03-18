@@ -75,14 +75,33 @@ struct ResearchLoadResultTool: Tool {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
 
-        let resultJSON: JSONValue = .object([
+        var resultObj: [String: JSONValue] = [
             "task_id": .string(taskID.uuidString),
             "label": artifact.manifest.label.map { .string($0) } ?? .null,
             "completed_at": .string(formatter.string(from: artifact.manifest.completedAt)),
             "summary": .string(cappedSummary),
-            "citations": .array(citationsJSON),
-            "artifact_path": .string(artifact.manifest.artifactPath)
-        ])
+            "citations": .array(citationsJSON)
+        ]
+
+        // Include query if available
+        if let query = artifact.result.query {
+            resultObj["query"] = .string(query)
+        }
+
+        // Include provenance if available
+        if let provenance = artifact.result.provenance {
+            if let searchQueries = provenance.searchQueries, !searchQueries.isEmpty {
+                resultObj["search_queries_used"] = .array(searchQueries.map { .string($0) })
+            }
+            if let rationale = provenance.discoveryRationale {
+                resultObj["discovery_rationale"] = .string(rationale)
+            }
+            if let domains = provenance.domainsUsed, !domains.isEmpty {
+                resultObj["domains_used"] = .array(domains.map { .string($0) })
+            }
+        }
+
+        let resultJSON: JSONValue = .object(resultObj)
 
         let label = artifact.manifest.label ?? taskID.uuidString.prefix(8).description
         let summary = "Loaded research result: \(label) (\(cappedCitations.count) citations)."

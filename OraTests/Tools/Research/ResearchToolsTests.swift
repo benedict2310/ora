@@ -18,13 +18,19 @@ final class ResearchToolsTests: XCTestCase {
         XCTAssertEqual(tool.kind, .mutate)
         XCTAssertEqual(tool.loadPolicy, .deferred)
         XCTAssertTrue(tool.schema.requiresConfirmation)
-        XCTAssertTrue(tool.schema.requiredParameters.contains("urls"))
+        // urls is no longer required — at least one of query or urls must be present
+        XCTAssertTrue(tool.schema.requiredParameters.isEmpty)
     }
 
-    func test_researchStart_validate_missingURLs() {
+    func test_researchStart_validate_missingBothQueryAndURLs() {
         let tool = ResearchStartTool()
         XCTAssertThrowsError(try tool.validate(args: [:])) { error in
-            XCTAssertTrue(error.localizedDescription.contains("urls"), "Error should mention 'urls': \(error)")
+            if let researchError = error as? ResearchToolError,
+               case .emptyInput = researchError {
+                // Expected
+            } else {
+                XCTFail("Expected emptyInput error, got: \(error)")
+            }
         }
     }
 
@@ -32,7 +38,12 @@ final class ResearchToolsTests: XCTestCase {
         let tool = ResearchStartTool()
         let args: [String: JSONValue] = ["urls": .array([])]
         XCTAssertThrowsError(try tool.validate(args: args)) { error in
-            XCTAssertTrue(error.localizedDescription.contains("URL"), "Error should mention URL: \(error)")
+            if let researchError = error as? ResearchToolError,
+               case .emptyInput = researchError {
+                // Expected — empty array with no query
+            } else {
+                XCTFail("Expected emptyInput error, got: \(error)")
+            }
         }
     }
 
@@ -136,6 +147,105 @@ final class ResearchToolsTests: XCTestCase {
         let urls = (0..<10).map { JSONValue.string("https://example.com/\($0)") }
         let args: [String: JSONValue] = ["urls": .array(urls)]
         XCTAssertNoThrow(try tool.validate(args: args))
+    }
+
+    // MARK: - Query Validation (BG.10)
+
+    func test_researchStart_acceptsQueryParameter() throws {
+        let tool = ResearchStartTool()
+        let args: [String: JSONValue] = ["query": .string("latest Nvidia Blackwell server rollout")]
+        XCTAssertNoThrow(try tool.validate(args: args))
+    }
+
+    func test_researchStart_acceptsQueryAndURLsTogether() throws {
+        let tool = ResearchStartTool()
+        let args: [String: JSONValue] = [
+            "query": .string("Nvidia Blackwell"),
+            "urls": .array([.string("https://nvidia.com/blackwell")])
+        ]
+        XCTAssertNoThrow(try tool.validate(args: args))
+    }
+
+    func test_researchStart_rejectsEmptyQueryAndNoURLs() {
+        let tool = ResearchStartTool()
+        let args: [String: JSONValue] = ["query": .string("   ")]
+        XCTAssertThrowsError(try tool.validate(args: args)) { error in
+            if let researchError = error as? ResearchToolError,
+               case .emptyInput = researchError {
+                // Expected
+            } else {
+                XCTFail("Expected emptyInput error, got: \(error)")
+            }
+        }
+    }
+
+    func test_researchStart_rejectsTooLongQuery() {
+        let tool = ResearchStartTool()
+        let longQuery = String(repeating: "a", count: 501)
+        let args: [String: JSONValue] = ["query": .string(longQuery)]
+        XCTAssertThrowsError(try tool.validate(args: args)) { error in
+            if let researchError = error as? ResearchToolError,
+               case .queryTooLong(let length, let limit) = researchError {
+                XCTAssertEqual(length, 501)
+                XCTAssertEqual(limit, 500)
+            } else {
+                XCTFail("Expected queryTooLong error, got: \(error)")
+            }
+        }
+    }
+
+    func test_researchStart_queryBoundary500Chars() throws {
+        let tool = ResearchStartTool()
+        let exactQuery = String(repeating: "a", count: 500)
+        let args: [String: JSONValue] = ["query": .string(exactQuery)]
+        XCTAssertNoThrow(try tool.validate(args: args))
+    }
+
+    // MARK: - Authorization Plan (BG.10)
+
+    func test_researchStart_confirmationPromptShowsTopicForQuery() async throws {
+        let tool = ResearchStartTool()
+        let args: [String: JSONValue] = [
+            "query": .string("Nvidia Blackwell server rollout")
+        ]
+        let plan = try await tool.authorizationPlan(args: args)
+        if case .userConfirmation(let prompt) = plan.requirement {
+            XCTAssertEqual(prompt.title, "Start Research Task")
+            XCTAssertTrue(prompt.summary.contains("Nvidia Blackwell"))
+            XCTAssertTrue(prompt.details?.contains("isolated container") ?? false)
+        } else {
+            XCTFail("Expected user confirmation requirement")
+        }
+    }
+
+    func test_researchStart_confirmationPromptShowsURLsForURLs() async throws {
+        let tool = ResearchStartTool()
+        let args: [String: JSONValue] = [
+            "urls": .array([.string("https://example.com")])
+        ]
+        let plan = try await tool.authorizationPlan(args: args)
+        if case .userConfirmation(let prompt) = plan.requirement {
+            XCTAssertEqual(prompt.title, "Start Research Task")
+            XCTAssertTrue(prompt.details?.contains("https://example.com") ?? false)
+        } else {
+            XCTFail("Expected user confirmation requirement")
+        }
+    }
+
+    func test_researchStart_confirmationPromptShowsBothForMixed() async throws {
+        let tool = ResearchStartTool()
+        let args: [String: JSONValue] = [
+            "query": .string("Nvidia Blackwell"),
+            "urls": .array([.string("https://nvidia.com")])
+        ]
+        let plan = try await tool.authorizationPlan(args: args)
+        if case .userConfirmation(let prompt) = plan.requirement {
+            XCTAssertTrue(prompt.summary.contains("Nvidia Blackwell"))
+            XCTAssertTrue(prompt.details?.contains("nvidia.com") ?? false)
+            XCTAssertTrue(prompt.details?.contains("isolated container") ?? false)
+        } else {
+            XCTFail("Expected user confirmation requirement")
+        }
     }
 
     func test_researchStart_authorizationPlan_requiresConfirmation() async throws {
@@ -257,6 +367,31 @@ final class ResearchToolsTests: XCTestCase {
         XCTAssertThrowsError(try ResearchStartTool.extractURLs(from: args))
     }
 
+    // MARK: - Query Extraction
+
+    func test_extractQuery_valid() {
+        let args: [String: JSONValue] = ["query": .string("test query")]
+        let query = ResearchStartTool.extractQuery(from: args)
+        XCTAssertEqual(query, "test query")
+    }
+
+    func test_extractQuery_nil() {
+        let query = ResearchStartTool.extractQuery(from: [:])
+        XCTAssertNil(query)
+    }
+
+    func test_extractQuery_trims() {
+        let args: [String: JSONValue] = ["query": .string("  test  ")]
+        let query = ResearchStartTool.extractQuery(from: args)
+        XCTAssertEqual(query, "test")
+    }
+
+    func test_extractQuery_emptyIsNil() {
+        let args: [String: JSONValue] = ["query": .string("   ")]
+        let query = ResearchStartTool.extractQuery(from: args)
+        XCTAssertNil(query)
+    }
+
     // MARK: - ResearchToolError Descriptions
 
     func test_researchToolError_tooManyURLs_description() {
@@ -278,6 +413,23 @@ final class ResearchToolsTests: XCTestCase {
     func test_researchToolError_sessionLimitExceeded_description() {
         let error = ResearchToolError.sessionLimitExceeded(limit: 5)
         XCTAssertTrue(error.errorDescription!.contains("5"))
+    }
+
+    func test_researchToolError_queryTooLong_description() {
+        let error = ResearchToolError.queryTooLong(length: 600, limit: 500)
+        XCTAssertTrue(error.errorDescription!.contains("600"))
+        XCTAssertTrue(error.errorDescription!.contains("500"))
+    }
+
+    func test_researchToolError_emptyInput_description() {
+        let error = ResearchToolError.emptyInput
+        XCTAssertTrue(error.errorDescription!.contains("query"))
+        XCTAssertTrue(error.errorDescription!.contains("URL"))
+    }
+
+    func test_researchToolError_containerRequired_description() {
+        let error = ResearchToolError.containerRequiredForQuery
+        XCTAssertTrue(error.errorDescription!.contains("container runtime"))
     }
 
     // MARK: - Registration
@@ -311,5 +463,17 @@ final class ResearchToolsTests: XCTestCase {
 
         // Cleanup
         await ToolRegistry.shared.clear()
+    }
+
+    // MARK: - Tool output hygiene (BG.10)
+
+    func test_researchToolsRemainDeferred() {
+        let startTool = ResearchStartTool()
+        let listTool = ResearchListResultsTool()
+        let loadTool = ResearchLoadResultTool()
+
+        XCTAssertEqual(startTool.loadPolicy, .deferred)
+        XCTAssertEqual(listTool.loadPolicy, .deferred)
+        XCTAssertEqual(loadTool.loadPolicy, .deferred)
     }
 }

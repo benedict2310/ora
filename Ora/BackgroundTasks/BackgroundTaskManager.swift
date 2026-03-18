@@ -43,14 +43,20 @@ struct BackgroundTaskObservation: Sendable {
 
 enum BackgroundTaskManagerError: LocalizedError, Equatable, Sendable {
     case emptyURLList
+    case emptyInput
     case queueFull(limit: Int)
+    case containerRequired
 
     var errorDescription: String? {
         switch self {
         case .emptyURLList:
             return "Background tasks require at least one URL."
+        case .emptyInput:
+            return "Background tasks require a query or at least one URL."
         case .queueFull(let limit):
             return "Background task queue is full (limit: \(limit))."
+        case .containerRequired:
+            return "This task requires the container runtime, which is not available."
         }
     }
 }
@@ -86,6 +92,8 @@ actor BackgroundTaskManager {
     private var nextEventSequenceNumber: UInt64 = 0
 
     private var worker: any BackgroundWorker = URLSessionWorker()
+    private var containerWorker: (any BackgroundWorker)?
+    private var containerRuntime: (any ContainerRuntime)?
     private var executorOverride: Executor?
     private var concurrencyLimit: Int = BackgroundTaskManager.defaultConcurrencyLimit
     private var queueDepthLimit: Int = BackgroundTaskManager.defaultQueueDepthLimit
@@ -97,6 +105,8 @@ actor BackgroundTaskManager {
 
     func configure(
         worker: any BackgroundWorker,
+        containerWorker: (any BackgroundWorker)? = nil,
+        containerRuntime: (any ContainerRuntime)? = nil,
         concurrencyLimit: Int = BackgroundTaskManager.defaultConcurrencyLimit,
         queueDepthLimit: Int = BackgroundTaskManager.defaultQueueDepthLimit,
         artifactStore: ArtifactStore? = nil,
@@ -104,6 +114,8 @@ actor BackgroundTaskManager {
         notificationService: (any TaskNotificationPosting)? = TaskNotificationService()
     ) {
         self.worker = worker
+        self.containerWorker = containerWorker
+        self.containerRuntime = containerRuntime
         self.executorOverride = nil
         self.concurrencyLimit = max(1, concurrencyLimit)
         self.queueDepthLimit = max(1, queueDepthLimit)
@@ -143,9 +155,9 @@ actor BackgroundTaskManager {
         policy: BackgroundTaskPolicy = BackgroundTaskPolicy(),
         sessionID: UUID? = nil
     ) async throws -> BackgroundTaskRecordSnapshot {
-        let normalizedInputs = BackgroundTaskInputs(urls: inputs.urls, label: inputs.label)
-        guard !normalizedInputs.urls.isEmpty else {
-            throw BackgroundTaskManagerError.emptyURLList
+        let normalizedInputs = BackgroundTaskInputs(urls: inputs.urls, label: inputs.label, query: inputs.query)
+        guard normalizedInputs.hasContent else {
+            throw BackgroundTaskManagerError.emptyInput
         }
 
         guard try self.unfinishedTaskCount() < self.queueDepthLimit else {
@@ -446,7 +458,8 @@ actor BackgroundTaskManager {
         let manifest = try await self.artifactStore.save(
             task: task,
             workerResult: artifactWorkerResult,
-            persistRawHTML: executionResult.persistRawHTML
+            persistRawHTML: executionResult.persistRawHTML,
+            provenance: executionResult.workerResult?.provenance
         )
         return BackgroundTaskExecutionResult(
             artifactWorkerResult: artifactWorkerResult,
@@ -496,6 +509,9 @@ actor BackgroundTaskManager {
     ) -> String {
         if let label = task.inputs.label?.trimmingCharacters(in: .whitespacesAndNewlines), !label.isEmpty {
             return label
+        }
+        if let query = task.inputs.query?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty {
+            return "Research: \(query)"
         }
         if let pageTitle = pages.lazy.compactMap(\.title).first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
             return pageTitle
@@ -685,12 +701,27 @@ actor BackgroundTaskManager {
             return try await executorOverride(request)
         }
 
-        let workerResult = try await self.worker.execute(
+        let selectedWorker = self.selectWorker(for: request.policy)
+        let workerResult = try await selectedWorker.execute(
             taskID: request.taskID,
             input: request.inputs,
             policy: request.policy
         )
         return BackgroundTaskExecutionResult(workerResult: workerResult)
+    }
+
+    private func selectWorker(for policy: BackgroundTaskPolicy) -> any BackgroundWorker {
+        switch policy.workerBackend {
+        case .auto:
+            if let containerWorker = self.containerWorker {
+                return containerWorker
+            }
+            return self.worker
+        case .container:
+            return self.containerWorker ?? self.worker
+        case .inProcess:
+            return self.worker
+        }
     }
 
     // MARK: - Summary State

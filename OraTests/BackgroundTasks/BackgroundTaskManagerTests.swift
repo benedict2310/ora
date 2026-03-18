@@ -41,7 +41,7 @@ final class BackgroundTaskManagerTests: XCTestCase {
                 try await manager.enqueue(inputs: BackgroundTaskInputs(urls: [], label: nil))
             },
             errorHandler: { error in
-            XCTAssertEqual(error as? BackgroundTaskManagerError, .emptyURLList)
+            XCTAssertEqual(error as? BackgroundTaskManagerError, .emptyInput)
             }
         )
     }

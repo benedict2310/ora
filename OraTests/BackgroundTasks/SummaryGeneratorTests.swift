@@ -302,25 +302,29 @@ final class SummaryGeneratorTests: XCTestCase {
             taskID: taskID,
             taskKind: "web_research",
             label: label,
+            query: nil,
             sourceURLs: pages.map(\.url),
             title: label ?? "Research",
             summary: "Test summary",
             markdown: "Test markdown",
             pages: pages,
             createdAt: now,
-            completedAt: now
+            completedAt: now,
+            provenance: nil
         )
         let manifest = ArtifactManifest(
             taskID: taskID,
             taskKind: "web_research",
             label: label,
+            query: nil,
             sourceURLs: pages.map(\.url),
             artifactPath: taskDirURL.path,
             createdAt: now,
             completedAt: now,
             citationCount: 0,
             pageCount: pages.count,
-            rawHTMLPageCount: 0
+            rawHTMLPageCount: 0,
+            domainsUsed: nil
         )
 
         let encoder = JSONEncoder()

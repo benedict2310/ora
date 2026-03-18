@@ -2,7 +2,7 @@
 //  ResearchStartTool.swift
 //  Ora
 //
-//  Enqueue a background research task for one or more URLs.
+//  Enqueue a background research task for topic-based or URL-based research.
 //
 
 import Foundation
@@ -16,6 +16,9 @@ enum ResearchToolError: LocalizedError, Equatable {
     case sessionLimitExceeded(limit: Int)
     case cooldownActive(remainingSeconds: Int)
     case managerUnavailable
+    case queryTooLong(length: Int, limit: Int)
+    case emptyInput
+    case containerRequiredForQuery
 
     var errorDescription: String? {
         switch self {
@@ -35,6 +38,12 @@ enum ResearchToolError: LocalizedError, Equatable {
             return "Please wait \(remainingSeconds) seconds before enqueuing another research task."
         case .managerUnavailable:
             return "Background task system is not available."
+        case .queryTooLong(let length, let limit):
+            return "Query too long (\(length) chars). Maximum is \(limit) characters."
+        case .emptyInput:
+            return "Either a research query or at least one URL is required."
+        case .containerRequiredForQuery:
+            return "Topic-based research requires the container runtime, which is not available on this system. You can still research specific URLs."
         }
     }
 }
@@ -45,6 +54,7 @@ struct ResearchStartTool: Tool {
 
     static let maxURLs = 10
     static let maxURLLength = 2048
+    static let maxQueryLength = 500
     static let sessionTaskLimit = 5
     static let cooldownSeconds: TimeInterval = 30
     static let forbiddenSchemes: Set<String> = ["data", "javascript", "file"]
@@ -63,50 +73,96 @@ struct ResearchStartTool: Tool {
     var schema: ToolSchema {
         ToolSchema(
             name: name,
-            description: "Start a background research task that fetches and summarizes one or more URLs. Requires confirmation.",
+            description: "Start a background research task. Provide a topic query for autonomous research, or specific URLs to fetch and summarize.",
             parameters: [
-                "urls": ParameterSchema(type: "array", description: "List of URLs to research (max \(Self.maxURLs))"),
+                "query": ParameterSchema(type: "string", description: "Research topic in natural language"),
+                "urls": ParameterSchema(type: "array", description: "List of URLs to research (max \(Self.maxURLs)). Optional if query is provided."),
                 "label": ParameterSchema(type: "string", description: "Optional label for the research task")
             ],
-            requiredParameters: ["urls"],
+            requiredParameters: [],
             requiresConfirmation: true
         )
     }
 
     func validate(args: [String: JSONValue]) throws {
-        let urls = try Self.extractURLs(from: args)
-        try Self.validateURLs(urls)
+        let query = Self.extractQuery(from: args)
+        let urls = try Self.extractURLsOptional(from: args)
+
+        // At least one of query or urls must be present
+        guard query != nil || !(urls?.isEmpty ?? true) else {
+            throw ResearchToolError.emptyInput
+        }
+
+        if let query = query {
+            try Self.validateQuery(query)
+        }
+
+        if let urls = urls, !urls.isEmpty {
+            try Self.validateURLs(urls)
+        }
     }
 
     func authorizationPlan(args: [String: JSONValue]) async throws -> ToolAuthorizationPlan {
-        let urls = try Self.extractURLs(from: args)
+        let query = Self.extractQuery(from: args)
+        let urls = try Self.extractURLsOptional(from: args)
         let label = args["label"]?.stringValue
-        let urlList = urls.map { "  - \($0)" }.joined(separator: "\n")
-        let summary = label != nil
-            ? "Research \(urls.count) URL(s) labeled \"\(label!)\""
-            : "Research \(urls.count) URL(s)"
+
+        let summary: String
+        let details: String?
+
+        if let query = query, let urls = urls, !urls.isEmpty {
+            // Mixed: query + explicit URLs
+            let urlList = urls.map { "  - \($0)" }.joined(separator: "\n")
+            summary = label ?? "Research: \(query)"
+            details = "This will search the public web, fetch sources in an isolated container, and include these specific URLs:\n\(urlList)"
+        } else if let query = query {
+            // Query-only
+            summary = label ?? "Research: \(query)"
+            details = "This will search the public web and fetch sources in an isolated container."
+        } else if let urls = urls, !urls.isEmpty {
+            // URL-only (backward-compatible)
+            let urlList = urls.map { "  - \($0)" }.joined(separator: "\n")
+            summary = label ?? "Research \(urls.count) URL(s)"
+            details = urlList
+        } else {
+            summary = "Start Research Task"
+            details = nil
+        }
 
         return ToolAuthorizationPlan(
             requirement: .userConfirmation(
                 prompt: ToolAuthorizationPrompt(
                     title: "Start Research Task",
                     summary: summary,
-                    details: urlList,
+                    details: details,
                     confirmLabel: "Start",
                     cancelLabel: "Cancel"
                 )
             ),
             auditMetadata: [
-                "url_count": "\(urls.count)",
+                "query": query ?? "",
+                "url_count": "\(urls?.count ?? 0)",
                 "label": label ?? ""
             ]
         )
     }
 
     func execute(args: [String: JSONValue]) async throws -> ToolResult {
-        let urls = try Self.extractURLs(from: args)
-        try Self.validateURLs(urls)
+        let query = Self.extractQuery(from: args)
+        let urls = try Self.extractURLsOptional(from: args)
         let label = args["label"]?.stringValue
+
+        // Validate at least one input
+        guard query != nil || !(urls?.isEmpty ?? true) else {
+            throw ResearchToolError.emptyInput
+        }
+
+        if let query = query {
+            try Self.validateQuery(query)
+        }
+        if let urls = urls, !urls.isEmpty {
+            try Self.validateURLs(urls)
+        }
 
         // Rate limiting using the real session ID
         let sessionID = await MainActor.run { PersistenceManager.shared.currentSession().id }
@@ -116,10 +172,14 @@ struct ResearchStartTool: Tool {
             throw ResearchToolError.managerUnavailable
         }
 
-        let inputs = BackgroundTaskInputs(urls: urls, label: label)
+        let inputs = BackgroundTaskInputs(urls: urls ?? [], label: label, query: query)
         let snapshot = try await manager.enqueue(inputs: inputs, sessionID: sessionID)
 
-        Self.logger.info("Enqueued research task \(snapshot.id) with \(urls.count) URL(s)")
+        if let query = query {
+            Self.logger.info("Enqueued research task \(snapshot.id) with query: \(query)")
+        } else {
+            Self.logger.info("Enqueued research task \(snapshot.id) with \(urls?.count ?? 0) URL(s)")
+        }
 
         let resultJSON: JSONValue = .object([
             "task_id": .string(snapshot.id.uuidString),
@@ -128,14 +188,52 @@ struct ResearchStartTool: Tool {
             "message": .string("Research task enqueued successfully.")
         ])
 
-        let summary = label != nil
-            ? "Enqueued research task \"\(label!)\" with \(urls.count) URL(s)."
-            : "Enqueued research task with \(urls.count) URL(s)."
+        let summary: String
+        if let query = query {
+            summary = "Enqueued research task for: \(query)."
+        } else {
+            let urlCount = urls?.count ?? 0
+            summary = label != nil
+                ? "Enqueued research task \"\(label!)\" with \(urlCount) URL(s)."
+                : "Enqueued research task with \(urlCount) URL(s)."
+        }
 
         return .success(resultJSON, summary: summary)
     }
 
     // MARK: - Validation Helpers
+
+    static func extractQuery(from args: [String: JSONValue]) -> String? {
+        guard let queryValue = args["query"]?.stringValue else {
+            return nil
+        }
+        let trimmed = queryValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    static func validateQuery(_ query: String) throws {
+        guard query.count <= maxQueryLength else {
+            throw ResearchToolError.queryTooLong(length: query.count, limit: maxQueryLength)
+        }
+    }
+
+    static func extractURLsOptional(from args: [String: JSONValue]) throws -> [String]? {
+        guard let urlsValue = args["urls"] else {
+            return nil
+        }
+
+        let urlStrings: [String]
+        switch urlsValue {
+        case .array(let values):
+            urlStrings = values.compactMap { $0.stringValue }
+        case .string(let single):
+            urlStrings = [single]
+        default:
+            throw ToolHostError.validationFailed("research.start", "Parameter 'urls' must be an array of strings.")
+        }
+
+        return urlStrings.isEmpty ? nil : urlStrings
+    }
 
     static func extractURLs(from args: [String: JSONValue]) throws -> [String] {
         guard let urlsValue = args["urls"] else {
