@@ -286,7 +286,10 @@ final class BackgroundTaskManagerTests: XCTestCase {
         XCTAssertTrue(tasks.allSatisfy { $0.errorMessage == BackgroundTaskManager.recoveryCancellationReason })
     }
 
-    func test_recoverPendingSummaries_reEnqueuesWithGenerator() async throws {
+    func test_recoverPendingSummaries_marksFailedEvenWithGenerator() async throws {
+        // Recovery always marks pending summaries as failed to prevent crash loops.
+        // If the previous summary attempt crashed the process (MLX SIGTRAP),
+        // re-enqueuing would crash again immediately on launch.
         let storeURL = try self.makeTemporaryStoreURL()
         let persistence = PersistenceManager.createForTesting(inMemory: false, storeURL: storeURL)
 
@@ -322,14 +325,13 @@ final class BackgroundTaskManagerTests: XCTestCase {
 
         await manager.recoverUnfinishedTasksOnLaunch()
 
-        // The summary generator should have received the re-enqueued job
+        // Should mark as failed, NOT re-enqueue (prevents crash loops)
         let jobCount = await summaryGenerator.pendingJobCount
-        XCTAssertEqual(jobCount, 1, "Pending summary should be re-enqueued in SummaryGenerator")
+        XCTAssertEqual(jobCount, 0, "Pending summary should NOT be re-enqueued (crash loop prevention)")
 
-        // The task should still be completed (not canceled/failed)
         let task = await manager.task(id: taskID)
         XCTAssertEqual(task?.state, .completed)
-        XCTAssertEqual(task?.summaryState, .pending)
+        XCTAssertEqual(task?.summaryState, .failed, "Pending summary should be marked failed on recovery")
     }
 
     func test_recoverPendingSummaries_marksFailedWithoutGenerator() async throws {

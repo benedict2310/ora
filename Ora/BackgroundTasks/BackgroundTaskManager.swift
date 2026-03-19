@@ -390,6 +390,10 @@ actor BackgroundTaskManager {
     }
 
     /// Re-enqueue or fail summary jobs for tasks left in completed+pending state after a crash.
+    /// Mark pending summaries as failed on launch recovery.
+    /// We intentionally do NOT re-enqueue for LLM generation because
+    /// if the previous attempt crashed the process (e.g., MLX SIGTRAP),
+    /// retrying immediately would crash again on launch — a crash loop.
     private func recoverPendingSummaries() async {
         let pendingRecords: [BackgroundTaskRecord]
         do {
@@ -403,30 +407,22 @@ actor BackgroundTaskManager {
             return
         }
 
-        if let summaryGenerator = self.summaryGenerator {
-            // Re-enqueue each pending summary into the generator
-            for record in pendingRecords {
-                await summaryGenerator.enqueueSummary(taskID: record.id)
-                self.logger.info("Re-enqueued pending summary for task \(record.id) after launch recovery")
-            }
-        } else {
-            // No summary generator — mark pending summaries as failed
-            for record in pendingRecords {
-                record.summaryStateRawValue = BackgroundTaskSummaryState.failed.rawValue
-                self.logger.info("Marked pending summary as failed (no generator) for task \(record.id)")
-            }
+        self.logger.info("Found \(pendingRecords.count) pending summary record(s) from previous session — marking as failed")
 
-            do {
-                try self.saveContext()
-            } catch {
-                self.logger.error("Failed to persist summary recovery: \(error.localizedDescription)")
-            }
+        for record in pendingRecords {
+            record.summaryStateRawValue = BackgroundTaskSummaryState.failed.rawValue
+        }
 
-            // Emit events after save so observers see consistent state
-            for record in pendingRecords {
-                if let snapshot = try? record.snapshot() {
-                    self.emitEvent(for: snapshot, from: .completed, at: Date())
-                }
+        do {
+            try self.saveContext()
+        } catch {
+            self.logger.error("Failed to persist summary recovery: \(error.localizedDescription)")
+        }
+
+        // Emit events after save so observers see consistent state
+        for record in pendingRecords {
+            if let snapshot = try? record.snapshot() {
+                self.emitEvent(for: snapshot, from: .completed, at: Date())
             }
         }
     }
