@@ -18,12 +18,27 @@ set -euo pipefail
 
 KEYCHAIN_NAME="ci-signing.keychain-db"
 KEYCHAIN_PASSWORD="ci-keychain-$(date +%s)"
-SIGNING_IDENTITY="Developer ID Application"
+SIGNING_IDENTITY_MATCH="Developer ID Application"
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 
 log() { echo "▸ $*"; }
 die() { echo "ERROR: $*" >&2; exit 1; }
+
+resolve_signing_identity() {
+    local identities
+    identities=$(security find-identity -v -p codesigning "$KEYCHAIN_NAME" 2>/dev/null || true)
+
+    local resolved
+    resolved=$(printf '%s\n' "$identities" | sed -n 's/.*"\([^"]*Developer ID Application[^"]*\)".*/\1/p' | head -n 1)
+
+    if [ -z "$resolved" ]; then
+        echo "$identities" >&2
+        die "No Developer ID Application signing identity found in keychain $KEYCHAIN_NAME"
+    fi
+
+    echo "$resolved"
+}
 
 # ── Keychain ─────────────────────────────────────────────────────────────
 
@@ -78,10 +93,13 @@ cmd_codesign() {
     # NOTE: This currently uses --deep for convenience. For long-term robustness,
     # migrate to explicit inside-out signing of nested frameworks/helpers first,
     # then sign the outer app bundle last.
-    log "Deep-signing $app_path"
+    local signing_identity
+    signing_identity=$(resolve_signing_identity)
+
+    log "Deep-signing $app_path with identity: $signing_identity"
     codesign --deep --force --options runtime \
         --entitlements "$entitlements_path" \
-        --sign "$SIGNING_IDENTITY" \
+        --sign "$signing_identity" \
         --keychain "$KEYCHAIN_NAME" \
         "$app_path"
 
@@ -96,8 +114,11 @@ cmd_codesign_dmg() {
 
     [ -f "$dmg_path" ] || die "DMG not found: $dmg_path"
 
-    log "Signing DMG: $dmg_path"
-    codesign --force --sign "$SIGNING_IDENTITY" \
+    local signing_identity
+    signing_identity=$(resolve_signing_identity)
+
+    log "Signing DMG: $dmg_path with identity: $signing_identity"
+    codesign --force --sign "$signing_identity" \
         --keychain "$KEYCHAIN_NAME" \
         "$dmg_path"
 
