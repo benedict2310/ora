@@ -74,15 +74,17 @@ jobs:
 
       - name: Build release
         run: |
+          # Build unsigned/ad-hoc first. Explicit Developer ID signing happens later
+          # after the certificate is imported, which also avoids requiring a
+          # development team for SwiftPM package targets during the build step.
           xcodebuild build \
             -project Ora.xcodeproj \
             -scheme "$SCHEME" \
             -configuration "$CONFIGURATION" \
             -derivedDataPath "$DERIVED_DATA" \
             -destination "platform=macOS,arch=$ARCH" \
-            CODE_SIGN_IDENTITY="Developer ID Application" \
-            ENABLE_HARDENED_RUNTIME=YES \
-            OTHER_CODE_SIGN_FLAGS="--options runtime" \
+            CODE_SIGN_IDENTITY="-" \
+            ENABLE_HARDENED_RUNTIME=NO \
             MARKETING_VERSION="${{ steps.version.outputs.version }}" \
             CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
             ONLY_ACTIVE_ARCH=YES

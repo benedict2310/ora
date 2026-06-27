@@ -15,7 +15,7 @@ packages:
     from: "0.21.0"
   mlx-swift-lm:
     url: https://github.com/ml-explore/mlx-swift-lm
-    branch: main
+    exactVersion: "2.31.3"
   swift-transformers:
     url: https://github.com/huggingface/swift-transformers
     from: "1.1.0"
