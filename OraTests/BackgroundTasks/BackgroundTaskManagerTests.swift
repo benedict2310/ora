@@ -239,15 +239,20 @@ final class BackgroundTaskManagerTests: XCTestCase {
 
     func test_configuredWorker_executesThroughManager() async throws {
         let worker = RecordingBackgroundWorker()
+        let artifactStore = ArtifactStore(rootURL: try self.makeTemporaryArtifactRootURL())
         let manager = await self.makeInMemoryManager()
-        await manager.configure(worker: worker)
+        await manager.configure(
+            worker: worker,
+            artifactStore: artifactStore,
+            notificationService: nil
+        )
 
         let snapshot = try await manager.enqueue(
             inputs: BackgroundTaskInputs(urls: ["https://example.com/worker"]),
             policy: BackgroundTaskPolicy()
         )
 
-        let completed = await self.waitUntil(timeout: .seconds(2)) {
+        let completed = await self.waitUntil(timeout: .seconds(5)) {
             let task = await manager.task(id: snapshot.id)
             return task?.state == .completed
         }

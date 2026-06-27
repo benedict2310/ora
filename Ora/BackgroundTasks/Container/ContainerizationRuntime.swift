@@ -121,9 +121,9 @@ final class ContainerizationRuntime: ContainerRuntime, @unchecked Sendable {
             let imageStore = try ImageStore(path: containerStateDir)
 
             // Create container manager with NAT networking for internet access
-            var network: ContainerManager.VmnetNetwork? = nil
+            var network: VmnetNetwork? = nil
             if configuration.networkPolicy != .noNetwork {
-                network = try ContainerManager.VmnetNetwork()
+                network = try VmnetNetwork()
             }
 
             var manager = try ContainerManager(
@@ -224,7 +224,7 @@ final class ContainerizationRuntime: ContainerRuntime, @unchecked Sendable {
 
         self.logger.info("Killing container \(handle.id)")
 
-        try await active.container.kill(SIGKILL)
+        try await active.container.kill(.kill)
         self.cleanupContainer(id: handle.id)
     }
 
