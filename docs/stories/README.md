@@ -16,21 +16,27 @@
 - ✅ Overlay UI with conversation display
 - ✅ Auto-listen for follow-up turns
 - ✅ Conversation Mode (silence detection)
+- ✅ Setup wizard polish and progress UX
 - ✅ Calendar tools (query, create, edit, delete events)
 - ✅ Multi-step agentic flows (query → delete with confirmation)
+- ✅ Background research queue, artifacts, notifications, and result loading
+- ✅ Memory system through retrieval, distillation, and memory management
+- ✅ Local multimodal message flow, runtime, attachments, and agent-loop integration
 
 **What's next:**
-- 🚧 Improve Ora.app test coverage to 85%+ (M.01, now 72.8%)
-- 🚧 Fix setup wizard UX (F.11)
+- 🚧 Validate and merge containerized autonomous research (BG.09-BG.10)
+- 🚧 Improve Ora.app test coverage to 85%+ (M.01, last measured 72.8%)
 - 🚧 Build confirmation flow polish (O.04)
 - 🚧 Implement Reminders, Contacts, System tools (X.03-X.05)
+- 🚧 Harden memory retrieval edge cases (MEM.19)
 
-**Current priority:** M.01 Test Coverage Improvements (raise Ora.app to 85%+; next tranche: ParakeetModelDownloader verification + remaining setup/download gating paths).
+**Current priority:** BG.09/BG.10 validation and merge, then MEM.19 retrieval hardening and M.01 test coverage.
 
-**Next actions (M.01):**
-- Exercise `Ora/ASR/ParakeetModelDownloader.swift` verification/error paths via helper extraction.
-- Expand setup/download gating coverage in `Ora/Setup/SetupCoordinator.swift`.
-- Re-run coverage and update `docs/stories/maintenance/M.01-TEST-COVERAGE-IMPROVEMENTS.md`.
+**Next actions:**
+- Verify BG.09/BG.10 against the full test suite and targeted background-task coverage.
+- Merge the containerized autonomous research branch once verification is clean.
+- Implement MEM.19 to cap semantic candidate fetches and add hybrid transcript fallback scoring.
+- Resume M.01 with ParakeetModelDownloader verification/error-path coverage.
 
 ---
 
@@ -56,8 +62,9 @@ Core application structure, UI, and state management.
 | F.08 | [Persistence Layer](foundations/F.08-PERSISTENCE-LAYER.md) | ✅ Complete |
 | F.09 | [Model Download Implementation](foundations/F.09-MODEL-DOWNLOAD-IMPLEMENTATION.md) | ✅ Complete |
 | F.10 | [Liquid Glass Overlay Refresh](foundations/F.10-LIQUID-GLASS-OVERLAY-REFRESH.md) | 📋 Deferred |
-| F.11 | [Setup Wizard Polish](foundations/F.11-SETUP-WIZARD-POLISH.md) | 🚧 To Do |
-| F.13 | [Sparkle Auto-Updates](foundations/F.13-SPARKLE-AUTO-UPDATES.md) | 🚧 To Do |
+| F.11 | [Setup Wizard Polish](foundations/F.11-SETUP-WIZARD-POLISH.md) | ✅ Complete |
+| F.12 | [Overlay Focus Recovery](foundations/F.12-OVERLAY-FOCUS-RECOVERY.md) | ✅ Complete |
+| F.13 | [Sparkle Auto-Updates](foundations/F.13-SPARKLE-AUTO-UPDATES.md) | ✅ Implemented |
 
 #### Bug Fixes
 
@@ -104,10 +111,10 @@ Local multimodal inference, image attachments, and screenshot understanding.
 
 | ID | Title | Status |
 |:---|:------|:-------|
-| V.01 | [Multimodal Message Model & Provider Capabilities](vision-integration/V.01-MULTIMODAL-MESSAGE-MODEL-AND-PROVIDER-CAPABILITIES.md) | 🚧 To Do |
-| V.02 | [Local VLM Runtime & Qwen 3.5 4B Vision Model](vision-integration/V.02-LOCAL-VLM-RUNTIME-AND-QWEN35-4B-VISION-MODEL.md) | 🚧 To Do |
-| V.03 | [Image Attachments & Screenshot Capture UX](vision-integration/V.03-IMAGE-ATTACHMENTS-AND-SCREENSHOT-CAPTURE-UX.md) | 🚧 To Do |
-| V.04 | [Multimodal Agent Loop & Session Integration](vision-integration/V.04-MULTIMODAL-AGENT-LOOP-AND-SESSION-INTEGRATION.md) | 🚧 To Do |
+| V.01 | [Multimodal Message Model & Provider Capabilities](vision-integration/V.01-MULTIMODAL-MESSAGE-MODEL-AND-PROVIDER-CAPABILITIES.md) | ✅ Complete |
+| V.02 | [Local VLM Runtime & Qwen 3.5 4B Vision Model](vision-integration/V.02-LOCAL-VLM-RUNTIME-AND-QWEN35-4B-VISION-MODEL.md) | ✅ Complete |
+| V.03 | [Image Attachments & Screenshot Capture UX](vision-integration/V.03-IMAGE-ATTACHMENTS-AND-SCREENSHOT-CAPTURE-UX.md) | ✅ Complete |
+| V.04 | [Multimodal Agent Loop & Session Integration](vision-integration/V.04-MULTIMODAL-AGENT-LOOP-AND-SESSION-INTEGRATION.md) | ✅ Complete |
 | V.05 | [Vision Model Size Variants and Qwen3 4B Retirement](vision-integration/V.05-VISION-MODEL-SIZE-VARIANTS-AND-QWEN3-RETIREMENT.md) | 🚧 To Do |
 
 ### ⌨️ Input (I)
@@ -175,23 +182,24 @@ Persistent conversation history, user-visible memory artifacts, and implicit ret
 
 | ID | Title | Status |
 |:---|:------|:-------|
-| MEM.01 | [Conversation Persistence Sink](memory/MEM.01-CONVERSATION-PERSISTENCE-SINK.md) | 🚧 Not Started |
-| MEM.02 | [AgentLoop Persistence Integration](memory/MEM.02-AGENTLOOP-PERSISTENCE-INTEGRATION.md) | 🚧 Not Started |
-| MEM.03 | [Tool Result Persistence](memory/MEM.03-TOOL-RESULT-PERSISTENCE.md) | 🚧 Not Started |
-| MEM.04 | [Debounced Save Scheduler](memory/MEM.04-DEBOUNCED-SAVE-SCHEDULER.md) | 🚧 Not Started |
-| MEM.05 | [Persistence Performance Guardrail](memory/MEM.05-PERSISTENCE-PERFORMANCE-GUARDRAIL.md) | 🚧 Not Started |
-| MEM.06 | [On-Disk Memory Folder](memory/MEM.06-ON-DISK-MEMORY-FOLDER.md) | 🚧 Not Started |
-| MEM.07 | [Summary Template](memory/MEM.07-SUMMARY-TEMPLATE.md) | 🚧 Not Started |
-| MEM.08 | [Memory Distiller Pipeline](memory/MEM.08-MEMORY-DISTILLER-PIPELINE.md) | 🚧 Not Started |
-| MEM.09 | [Memory Update Policy](memory/MEM.09-MEMORY-UPDATE-POLICY.md) | 🚧 Not Started |
-| MEM.10 | [Memory Trigger Detector](memory/MEM.10-MEMORY-TRIGGER-DETECTOR.md) | 🚧 Not Started |
-| MEM.11 | [Keyword Retrieval Index](memory/MEM.11-KEYWORD-RETRIEVAL-INDEX.md) | 🚧 Not Started |
-| MEM.12 | [Embedding Hybrid Retrieval](memory/MEM.12-EMBEDDING-HYBRID-RETRIEVAL.md) | 🚧 Not Started |
-| MEM.13 | [Transcript Fallback Retrieval](memory/MEM.13-TRANSCRIPT-FALLBACK-RETRIEVAL.md) | 🚧 Not Started |
-| MEM.14 | [MEMORY.md File Watcher](memory/MEM.14-MEMORY-FILE-WATCHER.md) | 🚧 Not Started |
-| MEM.15 | [Memory Manager Panel](memory/MEM.15-MEMORY-MANAGER-PANEL.md) | 🚧 Not Started |
-| MEM.16 | [Background Persistence ModelActor](memory/MEM.16-BACKGROUND-PERSISTENCE-MODELACTOR.md) | 📋 Future |
-| MEM.17 | [Transcript Storage Migration](memory/MEM.17-TRANSCRIPT-STORAGE-MIGRATION.md) | 📋 Future |
+| MEM.01 | [Conversation Persistence Sink](memory/MEM.01-CONVERSATION-PERSISTENCE-SINK.md) | ✅ Complete |
+| MEM.02 | [AgentLoop Persistence Integration](memory/MEM.02-AGENTLOOP-PERSISTENCE-INTEGRATION.md) | ✅ Complete |
+| MEM.03 | [Tool Result Persistence](memory/MEM.03-TOOL-RESULT-PERSISTENCE.md) | ✅ Complete |
+| MEM.04 | [Debounced Save Scheduler](memory/MEM.04-DEBOUNCED-SAVE-SCHEDULER.md) | ✅ Complete |
+| MEM.05 | [Persistence Performance Guardrail](memory/MEM.05-PERSISTENCE-PERFORMANCE-GUARDRAIL.md) | ✅ Complete |
+| MEM.06 | [On-Disk Memory Folder](memory/MEM.06-ON-DISK-MEMORY-FOLDER.md) | ✅ Complete |
+| MEM.07 | [Summary Template](memory/MEM.07-SUMMARY-TEMPLATE.md) | ✅ Complete |
+| MEM.08 | [Memory Distiller Pipeline](memory/MEM.08-MEMORY-DISTILLER-PIPELINE.md) | ✅ Complete |
+| MEM.09 | [Memory Update Policy](memory/MEM.09-MEMORY-UPDATE-POLICY.md) | ✅ Complete |
+| MEM.10 | [Memory Trigger Detector](memory/MEM.10-MEMORY-TRIGGER-DETECTOR.md) | ✅ Complete |
+| MEM.11 | [Keyword Retrieval Index](memory/MEM.11-KEYWORD-RETRIEVAL-INDEX.md) | ✅ Complete |
+| MEM.12 | [Embedding Hybrid Retrieval](memory/MEM.12-EMBEDDING-HYBRID-RETRIEVAL.md) | ✅ Complete |
+| MEM.13 | [Transcript Fallback Retrieval](memory/MEM.13-TRANSCRIPT-FALLBACK-RETRIEVAL.md) | ✅ Complete |
+| MEM.14 | [MEMORY.md File Watcher](memory/MEM.14-MEMORY-FILE-WATCHER.md) | ✅ Complete |
+| MEM.15 | [Memory Manager Panel](memory/MEM.15-MEMORY-MANAGER-PANEL.md) | ✅ Complete |
+| MEM.16 | [Background Persistence ModelActor](memory/MEM.16-BACKGROUND-PERSISTENCE-MODELACTOR.md) | ✅ Complete |
+| MEM.17 | [Transcript Storage Migration](memory/MEM.17-TRANSCRIPT-STORAGE-MIGRATION.md) | ✅ Complete |
+| MEM.18 | [Distiller Quality & Deduplication](memory/MEM.18-DISTILLER-QUALITY-AND-DEDUP.md) | ✅ Complete |
 | MEM.19 | [Memory Retrieval Hardening](memory/MEM.19-RETRIEVAL-HARDENING.md) | 🚧 Not Started |
 
 ### 📚 Skills (S)
@@ -199,12 +207,13 @@ Optional orchestration playbooks that layer on top of native tools.
 
 | ID | Title | Status |
 |:---|:------|:-------|
-| S.00 | [Context Budget](skills/S.00-CONTEXT-BUDGET.md) | 🚧 Not Started |
-| S.01 | [Skills Runtime](skills/S.01-SKILLS-RUNTIME.md) | 🚧 Not Started |
+| S.00 | [Context Budget](skills/S.00-CONTEXT-BUDGET.md) | ✅ Complete |
+| S.01 | [Skills Runtime](skills/S.01-SKILLS-RUNTIME.md) | ✅ Complete |
 | S.02 | [Skills Evaluation](skills/S.02-SKILLS-EVALUATION.md) | 🚧 Not Started |
-| S.03 | [Skill Scripts](skills/S.03-SKILL-SCRIPTS.md) | 🚧 Not Started |
+| S.03 | [Skill Scripts](skills/S.03-SKILL-SCRIPTS.md) | ✅ Implemented |
 | S.04 | [Skills Marketplace](skills/S.04-SKILLS-MARKETPLACE.md) | 📋 Distant Future |
-| S.05 | [Agent Skill Authoring](skills/S.05-AGENT-SKILL-AUTHORING.md) | 🚧 Not Started |
+| S.05 | [Agent Skill Authoring](skills/S.05-AGENT-SKILL-AUTHORING.md) | ✅ Complete |
+| S.06 | [Dynamic Tool Discovery](skills/S.06-TOOL-DISCOVERY.md) | ✅ Complete |
 
 ### ☁️ Cloud Integrations (C)
 Cloud LLM provider support (Anthropic, OpenAI) with secure credential management.
@@ -219,7 +228,7 @@ Cloud LLM provider support (Anthropic, OpenAI) with secure credential management
 | C.06 | [OpenAI Codex OAuth Support](integrations/C.06-CODEX-SUPPORT.md) | 🚧 To Do |
 
 ### 📦 Background Tasks (BG)
-Background execution for research (queue, fetch, summarization, and planned query-first follow-ons).
+Background execution for research (queue, fetch, summarization, and containerized autonomous follow-ons).
 
 | ID | Title | Status |
 |:---|:------|:-------|
@@ -232,8 +241,8 @@ Background execution for research (queue, fetch, summarization, and planned quer
 | BG.06 | [Local Notifications](container-execution/BG.06-NOTIFICATIONS.md) | ✅ Complete |
 | BG.07 | [Context Loading](container-execution/BG.07-CONTEXT-LOADING.md) | ✅ Complete |
 | BG.08 | [Task Progress UI](container-execution/BG.08-TASK-PROGRESS-UI.md) | ✅ Complete |
-| BG.09 | [Query-First Research Planning](container-execution/BG.09-QUERY-FIRST-RESEARCH-PLANNING.md) | 🚧 To Do |
-| BG.10 | [Research Autonomy Modes](container-execution/BG.10-RESEARCH-AUTONOMY-MODES.md) | 🚧 To Do |
+| BG.09 | [Container Runtime](container-execution/BG.09-CONTAINER-RUNTIME.md) | 🚧 In Progress |
+| BG.10 | [Autonomous Research](container-execution/BG.10-AUTONOMOUS-RESEARCH.md) | 🚧 In Progress |
 
 ---
 
@@ -275,7 +284,7 @@ AgentLoop is wired into the pipeline and calendar tools work end-to-end.
 | Priority | Story | Description | Status |
 |:---------|:------|:------------|:-------|
 | ✅ | **L.06** | **Qwen 3 Upgrade** - Replace Qwen 2.5 with Qwen 3 | ✅ Complete |
-| P1 | F.11 | Setup Wizard Polish - Fix broken-feeling download UI | 🚧 To Do |
+| ✅ | F.11 | Setup Wizard Polish - Fix broken-feeling download UI | ✅ Complete |
 | ✅ | O.07 | Conversation Mode - Silence detection, auto-submit | ✅ Complete |
 
 ### 🚧 Phase 6: Additional Tools
@@ -292,8 +301,8 @@ AgentLoop is wired into the pipeline and calendar tools work end-to-end.
 |:---------|:------|:------------|:-------|
 | P2 | F.10 | Liquid Glass Overlay Refresh | Nice-to-have visual polish |
 | P2 | L.05 | Additional LLM Models | Superseded by L.06 for now |
-| P2 | T.03 | Sentence Chunker | Optimization - batch TTS works fine |
-| P3 | S.* | Skills Epic | Future capability, not MVP |
+| P2 | V.05 | Vision Model Size Variants and Qwen3 4B Retirement | Follow-on multimodal expansion after the current 4B path |
+| P3 | S.02 / S.04 | Skills Evaluation / Marketplace | Follow-on capability, not core MVP |
 
 ---
 
