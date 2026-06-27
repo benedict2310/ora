@@ -21,6 +21,7 @@ actor SummaryGenerator {
     static let maxRequeueAttempts = 3
     static let maxLLMFailures = 3
     static let minimumIdleWindowSeconds: TimeInterval = 5
+    static let defaultGenerationTimeoutSeconds: TimeInterval = 60
     static let extractiveFallbackCharsPerPage = 500
     static let extractiveFallbackMaxPages = 5
 
@@ -37,6 +38,7 @@ actor SummaryGenerator {
     private let llmService: any LLMServicing
     private let artifactStore: ArtifactStore
     private let taskManagerProvider: @Sendable () async -> BackgroundTaskManager?
+    private let generationTimeoutSeconds: TimeInterval
     private let logger = Logger.ora(category: "summary")
 
     // MARK: - State
@@ -54,11 +56,13 @@ actor SummaryGenerator {
         artifactStore: ArtifactStore = .shared,
         taskManagerProvider: @escaping @Sendable () async -> BackgroundTaskManager? = {
             await BackgroundTaskManager.resolveShared()
-        }
+        },
+        generationTimeoutSeconds: TimeInterval = SummaryGenerator.defaultGenerationTimeoutSeconds
     ) {
         self.llmService = llmService
         self.artifactStore = artifactStore
         self.taskManagerProvider = taskManagerProvider
+        self.generationTimeoutSeconds = generationTimeoutSeconds
     }
 
     // MARK: - Public API
@@ -249,13 +253,13 @@ actor SummaryGenerator {
 
             let summaryText: String
             do {
-                summaryText = try await self.llmService.generateOneShot(prompt: prompt, maxTokens: 800)
+                summaryText = try await self.generateWithTimeout(prompt: prompt)
             } catch is CancellationError {
                 // Requeue on foreground interruption
                 await self.handleInterruption(job: job, pages: pages, artifactPath: artifact.manifest.artifactPath)
                 return
             } catch {
-                // LLM failure
+                // LLM failure (including timeout)
                 await self.handleLLMFailure(job: job, error: error, pages: pages, artifactPath: artifact.manifest.artifactPath)
                 return
             }
@@ -321,6 +325,35 @@ actor SummaryGenerator {
             }
         } else {
             self.pendingJobs.append(updatedJob)
+        }
+    }
+
+    // MARK: - Timeout-Protected Generation
+
+    private struct GenerationTimeoutError: Error, LocalizedError {
+        let timeoutSeconds: TimeInterval
+        var errorDescription: String? {
+            "Summary generation timed out after \(Int(timeoutSeconds))s"
+        }
+    }
+
+    private func generateWithTimeout(prompt: String) async throws -> String {
+        let timeout = self.generationTimeoutSeconds
+        return try await withThrowingTaskGroup(of: String.self) { group in
+            group.addTask {
+                return try await self.llmService.generateOneShot(prompt: prompt, maxTokens: 800)
+            }
+
+            group.addTask {
+                try await Task.sleep(for: .seconds(timeout))
+                throw GenerationTimeoutError(timeoutSeconds: timeout)
+            }
+
+            guard let result = try await group.next() else {
+                throw GenerationTimeoutError(timeoutSeconds: timeout)
+            }
+            group.cancelAll()
+            return result
         }
     }
 

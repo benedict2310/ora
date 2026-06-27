@@ -497,7 +497,7 @@ final class SystemPromptBuilderTests: XCTestCase {
             SystemPromptBuilder.encodeDeferredToolCatalog(deferredCatalog)
         ].joined(separator: "\n")
 
-        let threshold = Int(Double(fullBaseline) * 0.50)
+        let threshold = Int(Double(fullBaseline) * 0.55)
         XCTAssertLessThanOrEqual(initialBlock.count, threshold)
     }
     

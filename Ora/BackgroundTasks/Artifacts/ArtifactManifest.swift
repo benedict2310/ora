@@ -71,6 +71,7 @@ struct ArtifactManifest: Codable, Sendable, Equatable {
     let taskID: UUID
     let taskKind: String
     let label: String?
+    let query: String?
     let sourceURLs: [String]
     let artifactPath: String
     let createdAt: Date
@@ -78,6 +79,7 @@ struct ArtifactManifest: Codable, Sendable, Equatable {
     let citationCount: Int
     let pageCount: Int
     let rawHTMLPageCount: Int
+    let domainsUsed: [String]?
 }
 
 struct ArtifactStoredPage: Codable, Sendable, Equatable {
@@ -92,6 +94,7 @@ struct ArtifactResult: Codable, Sendable, Equatable {
     let taskID: UUID
     let taskKind: String
     let label: String?
+    let query: String?
     let sourceURLs: [String]
     let title: String
     let summary: String
@@ -99,6 +102,14 @@ struct ArtifactResult: Codable, Sendable, Equatable {
     let pages: [ArtifactStoredPage]
     let createdAt: Date
     let completedAt: Date
+    let provenance: ArtifactProvenance?
+}
+
+/// Full provenance detail stored in result.json.
+struct ArtifactProvenance: Codable, Sendable, Equatable {
+    let searchQueries: [String]?
+    let discoveryRationale: String?
+    let domainsUsed: [String]?
 }
 
 struct ArtifactRawHTMLPage: Sendable, Equatable {
