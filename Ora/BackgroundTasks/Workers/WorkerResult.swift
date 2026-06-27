@@ -11,6 +11,27 @@ struct WorkerResult: Codable, Sendable, Equatable {
     let pages: [PageResult]
     let metadata: WorkerMetadata
     let failedURLs: [FailedPage]
+    let provenance: WorkerProvenance?
+
+    init(
+        pages: [PageResult],
+        metadata: WorkerMetadata,
+        failedURLs: [FailedPage],
+        provenance: WorkerProvenance? = nil
+    ) {
+        self.pages = pages
+        self.metadata = metadata
+        self.failedURLs = failedURLs
+        self.provenance = provenance
+    }
+}
+
+/// Provenance data from research tasks (container-based or in-process web search).
+struct WorkerProvenance: Codable, Sendable, Equatable {
+    let query: String?
+    let searchQueries: [String]
+    let discoveryRationale: String?
+    let domainsUsed: [String]
 }
 
 struct PageResult: Codable, Sendable, Equatable {

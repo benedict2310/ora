@@ -43,14 +43,20 @@ struct BackgroundTaskObservation: Sendable {
 
 enum BackgroundTaskManagerError: LocalizedError, Equatable, Sendable {
     case emptyURLList
+    case emptyInput
     case queueFull(limit: Int)
+    case containerRequired
 
     var errorDescription: String? {
         switch self {
         case .emptyURLList:
             return "Background tasks require at least one URL."
+        case .emptyInput:
+            return "Background tasks require a query or at least one URL."
         case .queueFull(let limit):
             return "Background task queue is full (limit: \(limit))."
+        case .containerRequired:
+            return "This task requires the container runtime, which is not available."
         }
     }
 }
@@ -86,6 +92,8 @@ actor BackgroundTaskManager {
     private var nextEventSequenceNumber: UInt64 = 0
 
     private var worker: any BackgroundWorker = URLSessionWorker()
+    private var containerWorker: (any BackgroundWorker)?
+    private var containerRuntime: (any ContainerRuntime)?
     private var executorOverride: Executor?
     private var concurrencyLimit: Int = BackgroundTaskManager.defaultConcurrencyLimit
     private var queueDepthLimit: Int = BackgroundTaskManager.defaultQueueDepthLimit
@@ -97,6 +105,8 @@ actor BackgroundTaskManager {
 
     func configure(
         worker: any BackgroundWorker,
+        containerWorker: (any BackgroundWorker)? = nil,
+        containerRuntime: (any ContainerRuntime)? = nil,
         concurrencyLimit: Int = BackgroundTaskManager.defaultConcurrencyLimit,
         queueDepthLimit: Int = BackgroundTaskManager.defaultQueueDepthLimit,
         artifactStore: ArtifactStore? = nil,
@@ -104,6 +114,8 @@ actor BackgroundTaskManager {
         notificationService: (any TaskNotificationPosting)? = TaskNotificationService()
     ) {
         self.worker = worker
+        self.containerWorker = containerWorker
+        self.containerRuntime = containerRuntime
         self.executorOverride = nil
         self.concurrencyLimit = max(1, concurrencyLimit)
         self.queueDepthLimit = max(1, queueDepthLimit)
@@ -136,6 +148,22 @@ actor BackgroundTaskManager {
         self.notificationService = notificationService
     }
 
+    /// Test-only: adjust completedAt by the given offset for a specific task.
+    #if DEBUG
+    func backdateCompletedAt(taskID: UUID, seconds: TimeInterval) {
+        guard let record = try? self.fetchRecord(id: taskID) else {
+            return
+        }
+        if let completedAt = record.completedAt {
+            record.completedAt = completedAt.addingTimeInterval(seconds)
+        }
+        try? self.saveContext()
+        if let snapshot = try? record.snapshot() {
+            self.emitEvent(for: snapshot, from: record.state, at: Date())
+        }
+    }
+    #endif
+
     // MARK: - Public API
 
     func enqueue(
@@ -143,9 +171,9 @@ actor BackgroundTaskManager {
         policy: BackgroundTaskPolicy = BackgroundTaskPolicy(),
         sessionID: UUID? = nil
     ) async throws -> BackgroundTaskRecordSnapshot {
-        let normalizedInputs = BackgroundTaskInputs(urls: inputs.urls, label: inputs.label)
-        guard !normalizedInputs.urls.isEmpty else {
-            throw BackgroundTaskManagerError.emptyURLList
+        let normalizedInputs = BackgroundTaskInputs(urls: inputs.urls, label: inputs.label, query: inputs.query)
+        guard normalizedInputs.hasContent else {
+            throw BackgroundTaskManagerError.emptyInput
         }
 
         guard try self.unfinishedTaskCount() < self.queueDepthLimit else {
@@ -321,40 +349,81 @@ actor BackgroundTaskManager {
             staleRecords = try self.fetchActiveRecords()
         } catch {
             self.logger.error("Failed to recover unfinished background tasks: \(error.localizedDescription)")
+            // Still attempt summary recovery even if active record fetch fails
+            await self.recoverPendingSummaries()
             return
         }
 
-        guard !staleRecords.isEmpty else {
+        if !staleRecords.isEmpty {
+            let recoveredAt = Date()
+            var events: [(BackgroundTaskRecordSnapshot, BackgroundTaskState, Date)] = []
+
+            for record in staleRecords {
+                let previousState = record.state
+                guard previousState == .queued || previousState == .running else {
+                    continue
+                }
+
+                record.state = .canceled
+                record.errorMessage = Self.recoveryCancellationReason
+                record.completedAt = recoveredAt
+                record.artifactPath = nil
+
+                if let snapshot = try? record.snapshot() {
+                    events.append((snapshot, previousState, recoveredAt))
+                }
+            }
+
+            do {
+                try self.saveContext()
+            } catch {
+                self.logger.error("Failed to persist recovered background tasks: \(error.localizedDescription)")
+            }
+
+            for (snapshot, previousState, timestamp) in events {
+                self.emitEvent(for: snapshot, from: previousState, at: timestamp)
+            }
+        }
+
+        // Recover tasks that completed but whose summary generation was interrupted
+        await self.recoverPendingSummaries()
+    }
+
+    /// Re-enqueue or fail summary jobs for tasks left in completed+pending state after a crash.
+    /// Mark pending summaries as failed on launch recovery.
+    /// We intentionally do NOT re-enqueue for LLM generation because
+    /// if the previous attempt crashed the process (e.g., MLX SIGTRAP),
+    /// retrying immediately would crash again on launch — a crash loop.
+    private func recoverPendingSummaries() async {
+        let pendingRecords: [BackgroundTaskRecord]
+        do {
+            pendingRecords = try self.fetchPendingSummaryRecords()
+        } catch {
+            self.logger.error("Failed to fetch pending summary records: \(error.localizedDescription)")
             return
         }
 
-        let recoveredAt = Date()
-        var events: [(BackgroundTaskRecordSnapshot, BackgroundTaskState, Date)] = []
+        guard !pendingRecords.isEmpty else {
+            return
+        }
 
-        for record in staleRecords {
-            let previousState = record.state
-            guard previousState == .queued || previousState == .running else {
-                continue
-            }
+        self.logger.info("Found \(pendingRecords.count) pending summary record(s) from previous session — marking as failed")
 
-            record.state = .canceled
-            record.errorMessage = Self.recoveryCancellationReason
-            record.completedAt = recoveredAt
-            record.artifactPath = nil
-
-            if let snapshot = try? record.snapshot() {
-                events.append((snapshot, previousState, recoveredAt))
-            }
+        for record in pendingRecords {
+            record.summaryStateRawValue = BackgroundTaskSummaryState.failed.rawValue
         }
 
         do {
             try self.saveContext()
         } catch {
-            self.logger.error("Failed to persist recovered background tasks: \(error.localizedDescription)")
+            self.logger.error("Failed to persist summary recovery: \(error.localizedDescription)")
         }
 
-        for (snapshot, previousState, timestamp) in events {
-            self.emitEvent(for: snapshot, from: previousState, at: timestamp)
+        // Emit events after save so observers see consistent state
+        for record in pendingRecords {
+            if let snapshot = try? record.snapshot() {
+                self.emitEvent(for: snapshot, from: .completed, at: Date())
+            }
         }
     }
 
@@ -446,7 +515,8 @@ actor BackgroundTaskManager {
         let manifest = try await self.artifactStore.save(
             task: task,
             workerResult: artifactWorkerResult,
-            persistRawHTML: executionResult.persistRawHTML
+            persistRawHTML: executionResult.persistRawHTML,
+            provenance: executionResult.workerResult?.provenance
         )
         return BackgroundTaskExecutionResult(
             artifactWorkerResult: artifactWorkerResult,
@@ -496,6 +566,9 @@ actor BackgroundTaskManager {
     ) -> String {
         if let label = task.inputs.label?.trimmingCharacters(in: .whitespacesAndNewlines), !label.isEmpty {
             return label
+        }
+        if let query = task.inputs.query?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty {
+            return "Research: \(query)"
         }
         if let pageTitle = pages.lazy.compactMap(\.title).first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
             return pageTitle
@@ -685,12 +758,27 @@ actor BackgroundTaskManager {
             return try await executorOverride(request)
         }
 
-        let workerResult = try await self.worker.execute(
+        let selectedWorker = self.selectWorker(for: request.policy)
+        let workerResult = try await selectedWorker.execute(
             taskID: request.taskID,
             input: request.inputs,
             policy: request.policy
         )
         return BackgroundTaskExecutionResult(workerResult: workerResult)
+    }
+
+    private func selectWorker(for policy: BackgroundTaskPolicy) -> any BackgroundWorker {
+        switch policy.workerBackend {
+        case .auto:
+            if let containerWorker = self.containerWorker {
+                return containerWorker
+            }
+            return self.worker
+        case .container:
+            return self.containerWorker ?? self.worker
+        case .inProcess:
+            return self.worker
+        }
     }
 
     // MARK: - Summary State
@@ -732,6 +820,15 @@ actor BackgroundTaskManager {
         )
         return try self.modelContext.fetch(descriptor)
             .filter { $0.state == .queued || $0.state == .running }
+    }
+
+    private func fetchPendingSummaryRecords() throws -> [BackgroundTaskRecord] {
+        let descriptor = FetchDescriptor<BackgroundTaskRecord>(
+            predicate: #Predicate { $0.stateRawValue == "completed" },
+            sortBy: [SortDescriptor(\.createdAt, order: .forward)]
+        )
+        return try self.modelContext.fetch(descriptor)
+            .filter { $0.summaryState == .pending }
     }
 
     private func fetchNextQueuedRecord() throws -> BackgroundTaskRecord? {

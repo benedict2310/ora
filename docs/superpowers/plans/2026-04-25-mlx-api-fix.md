@@ -1,10 +1,10 @@
 # MLX API Break Fix Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `subagent-driven-development` (recommended) or `executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Status: Archived historical plan.** This release-unblock plan documents the dependency-drift fix that pinned `mlx-swift-lm` to `2.31.3`. It is retained as investigation history, not as an active implementation plan. Current `project.yml` already uses `exactVersion: "2.31.3"`; do not treat the pinning steps below as pending work.
 
 **Goal:** Restore a green build on `main` by fixing the `mlx-swift-lm` integration break in the lowest-risk way for release.
 
-**Architecture:** The current failure is a dependency drift problem, not a product-logic bug. Ora’s code is written against the `mlx-swift-lm` 2.x loading API, but `project.yml` tracks `mlx-swift-lm` on `branch: main`, which currently resolves to a 3.x checkout with breaking loader and embedder API changes. The fastest, safest release fix is to pin `mlx-swift-lm` to the latest compatible 2.x tag (`2.31.3`), verify the full build/test matrix, and defer a 3.x migration to a separate branch.
+**Architecture:** The failure was a dependency drift problem, not a product-logic bug. Ora’s code was written against the `mlx-swift-lm` 2.x loading API, but `project.yml` previously tracked `mlx-swift-lm` on `branch: main`, which resolved to a 3.x checkout with breaking loader and embedder API changes. The release fix was to pin `mlx-swift-lm` to the latest compatible 2.x tag (`2.31.3`), verify the full build/test matrix, and defer a 3.x migration to a separate branch.
 
 **Tech Stack:** XcodeGen, Swift 6, `mlx-swift`, `mlx-swift-lm`, `swift-transformers`, XCTest
 
@@ -12,9 +12,11 @@
 
 ## Investigation Summary
 
-- Current compile failure is reproducible with `./build.sh test`.
-- Current resolved `mlx-swift-lm` checkout is `7e2b710` (`3.31.3-3-g7e2b710`).
-- `project.yml` currently uses:
+Historical findings at the time this plan was written:
+
+- The compile failure was reproducible with `./build.sh test`.
+- The resolved `mlx-swift-lm` checkout was `7e2b710` (`3.31.3-3-g7e2b710`).
+- `project.yml` used:
 
 ```yaml
 mlx-swift-lm:
@@ -22,7 +24,9 @@ mlx-swift-lm:
   branch: main
 ```
 
-- Ora code still targets the older API:
+Current state: `project.yml` already pins `mlx-swift-lm` with `exactVersion: "2.31.3"`.
+
+- Ora code still targeted the older API:
 
 ```swift
 container = try await LLMModelFactory.shared.loadContainer(configuration: configuration)

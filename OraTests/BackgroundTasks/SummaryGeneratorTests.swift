@@ -249,6 +249,61 @@ final class SummaryGeneratorTests: XCTestCase {
         await manager.cancelAll()
     }
 
+    // MARK: - test_generationTimeout_fallsBackToExtractive
+
+    func test_generationTimeout_fallsBackToExtractive() async throws {
+        let rootDir = self.makeTemporaryDirectory()
+        let taskID = UUID()
+        let store = ArtifactStore(rootURL: rootDir)
+        let mockLLM = SummaryHangingLLMService()
+        let managerHolder = SummaryManagerHolder()
+
+        // Use a very short timeout (2s) so the test completes quickly.
+        // With maxLLMFailures=3, total time ≈ 3 × 2s = 6s + overhead.
+        let generator = SummaryGenerator(
+            llmService: mockLLM,
+            artifactStore: store,
+            taskManagerProvider: { await managerHolder.manager },
+            generationTimeoutSeconds: 2
+        )
+
+        let taskDirURL = try self.writeMinimalArtifact(
+            rootURL: rootDir,
+            taskID: taskID,
+            pages: [ArtifactStoredPage(
+                pageNumber: 1,
+                url: "https://example.com",
+                title: "Timeout Test",
+                extractedText: "Content that should appear in extractive fallback.",
+                rawHTMLFilename: nil
+            )],
+            label: nil
+        )
+
+        let manager = await self.makeInMemoryManager()
+        await managerHolder.set(manager)
+
+        await generator.start()
+        await generator.enqueueSummary(taskID: taskID)
+        NotificationCenter.default.post(name: .oraForegroundWorkIdle, object: nil)
+
+        // After 3 timeout failures (3 × 2s timeout + idle waits), the extractive fallback should be written
+        let summaryURL = taskDirURL.appendingPathComponent("summary.md")
+        let written = await self.waitUntil(timeout: .seconds(30)) {
+            FileManager.default.fileExists(atPath: summaryURL.path)
+        }
+
+        await generator.stop()
+
+        XCTAssertTrue(written, "Extractive fallback summary should be written after timeout exhaustion")
+        if written {
+            let content = try String(contentsOf: summaryURL, encoding: .utf8)
+            XCTAssertTrue(content.contains("Content that should appear"), "Extractive fallback should contain page content")
+        }
+
+        await manager.cancelAll()
+    }
+
     // MARK: - Helpers
 
     private func makeTemporaryDirectory() -> URL {
@@ -302,25 +357,29 @@ final class SummaryGeneratorTests: XCTestCase {
             taskID: taskID,
             taskKind: "web_research",
             label: label,
+            query: nil,
             sourceURLs: pages.map(\.url),
             title: label ?? "Research",
             summary: "Test summary",
             markdown: "Test markdown",
             pages: pages,
             createdAt: now,
-            completedAt: now
+            completedAt: now,
+            provenance: nil
         )
         let manifest = ArtifactManifest(
             taskID: taskID,
             taskKind: "web_research",
             label: label,
+            query: nil,
             sourceURLs: pages.map(\.url),
             artifactPath: taskDirURL.path,
             createdAt: now,
             completedAt: now,
             citationCount: 0,
             pageCount: pages.count,
-            rawHTMLPageCount: 0
+            rawHTMLPageCount: 0,
+            domainsUsed: nil
         )
 
         let encoder = JSONEncoder()
@@ -402,5 +461,25 @@ private actor SummaryManagerHolder {
 
     func set(_ manager: BackgroundTaskManager) {
         self.manager = manager
+    }
+}
+
+private actor SummaryHangingLLMService: LLMServicing {
+    func prepare() async throws {}
+    func warmup() async throws {}
+    func unload() async {}
+    func capabilities() async -> ProviderCapabilities { .textOnly }
+    func clearCache() async {}
+
+    func generate(messages: [LLMMessage], maxTokens: Int) async -> AsyncThrowingStream<LLMDelta, Error> {
+        return AsyncThrowingStream { continuation in
+            continuation.finish(throwing: LLMServiceError.generationFailed("Hanging"))
+        }
+    }
+
+    func generateOneShot(prompt: String, maxTokens: Int) async throws -> String {
+        // Simulate a hang — sleep indefinitely until cancelled
+        try await Task.sleep(for: .seconds(3600))
+        return "Should never return"
     }
 }

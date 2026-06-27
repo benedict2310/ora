@@ -67,7 +67,8 @@ actor ArtifactStore {
     func save(
         task: BackgroundTaskRecordSnapshot,
         workerResult: BackgroundTaskWorkerResult,
-        persistRawHTML: Bool = false
+        persistRawHTML: Bool = false,
+        provenance: WorkerProvenance? = nil
     ) async throws -> ArtifactManifest {
         let layout = try self.makeLayout()
         let taskDirectoryURL = try layout.taskDirectoryURL(for: task)
@@ -85,6 +86,7 @@ actor ArtifactStore {
             taskID: task.id,
             taskKind: task.taskKind,
             label: task.inputs.label,
+            query: task.inputs.query,
             sourceURLs: task.inputs.urls,
             title: workerResult.title,
             summary: workerResult.summary,
@@ -99,19 +101,28 @@ actor ArtifactStore {
                 )
             },
             createdAt: task.createdAt,
-            completedAt: completedAt
+            completedAt: completedAt,
+            provenance: provenance.map {
+                ArtifactProvenance(
+                    searchQueries: $0.searchQueries,
+                    discoveryRationale: $0.discoveryRationale,
+                    domainsUsed: $0.domainsUsed
+                )
+            }
         )
         let manifest = ArtifactManifest(
             taskID: task.id,
             taskKind: task.taskKind,
             label: task.inputs.label,
+            query: task.inputs.query,
             sourceURLs: task.inputs.urls,
             artifactPath: taskDirectoryURL.path,
             createdAt: task.createdAt,
             completedAt: completedAt,
             citationCount: workerResult.citations.count,
             pageCount: workerResult.pages.count,
-            rawHTMLPageCount: rawPages.count
+            rawHTMLPageCount: rawPages.count,
+            domainsUsed: provenance?.domainsUsed
         )
 
         let encoder = JSONEncoder()
@@ -299,13 +310,15 @@ actor ArtifactStore {
                     taskID: decodedManifest.taskID,
                     taskKind: decodedManifest.taskKind,
                     label: decodedManifest.label,
+                    query: decodedManifest.query,
                     sourceURLs: decodedManifest.sourceURLs,
                     artifactPath: canonicalDirectoryURL.path,
                     createdAt: decodedManifest.createdAt,
                     completedAt: decodedManifest.completedAt,
                     citationCount: decodedManifest.citationCount,
                     pageCount: decodedManifest.pageCount,
-                    rawHTMLPageCount: decodedManifest.rawHTMLPageCount
+                    rawHTMLPageCount: decodedManifest.rawHTMLPageCount,
+                    domainsUsed: decodedManifest.domainsUsed
                 )
                 entries.append(ArtifactScanEntry(manifest: manifest, directoryURL: canonicalDirectoryURL))
             }

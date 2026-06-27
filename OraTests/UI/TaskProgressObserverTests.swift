@@ -167,6 +167,46 @@ final class TaskProgressObserverTests: XCTestCase {
         XCTAssertTrue(cleared)
     }
 
+    func test_staleSummarizingTask_isHiddenAfterGracePeriod() async throws {
+        let manager = await self.makeTaskManager(
+            executor: { _ in
+                return BackgroundTaskExecutionResult()
+            }
+        )
+        let observer = TaskProgressObserver(
+            managerProvider: { manager },
+            menuPresenter: {}
+        )
+
+        let snapshot = try await manager.enqueue(
+            inputs: BackgroundTaskInputs(urls: ["https://example.com/stale"], label: "Stale Task")
+        )
+
+        // Wait for task to complete
+        let completed = await self.waitUntil {
+            let task = await manager.task(id: snapshot.id)
+            return task?.state == .completed
+        }
+        XCTAssertTrue(completed)
+
+        // Mark summary as pending — this should initially appear as summarizing
+        await manager.updateSummaryState(taskID: snapshot.id, state: .pending)
+
+        let summarizing = await self.waitUntil {
+            observer.primaryTask?.phase == .summarizing
+        }
+        XCTAssertTrue(summarizing, "Recent pending summary should show as summarizing")
+
+        // Backdate the completedAt to more than 5 minutes ago
+        await manager.backdateCompletedAt(taskID: snapshot.id, seconds: -400)
+
+        // After the grace period, the stale task should no longer appear in active tasks
+        let cleared = await self.waitUntil(timeout: .seconds(5)) {
+            observer.activeTasks.isEmpty
+        }
+        XCTAssertTrue(cleared, "Stale summarizing task should be hidden after grace period")
+    }
+
     private func makeTaskManager(
         executor: @escaping BackgroundTaskManager.Executor,
         concurrencyLimit: Int = BackgroundTaskManager.defaultConcurrencyLimit

@@ -246,9 +246,10 @@ private actor StubFetchClient: WorkerFetchClient {
         self.plans = plans
     }
 
-    func fetch(url: URL, policy: BackgroundTaskPolicy) async throws -> FetchedPageResponse {
+    func fetch(request: URLRequest, policy: BackgroundTaskPolicy) async throws -> FetchedPageResponse {
         _ = policy
-        guard let plan = self.plans[url.absoluteString] else {
+        guard let url = request.url,
+              let plan = self.plans[url.absoluteString] else {
             throw TestFetchError.offline
         }
 
@@ -273,8 +274,12 @@ private actor RecordingFetchClient: WorkerFetchClient {
         self.delay = delay
     }
 
-    func fetch(url: URL, policy: BackgroundTaskPolicy) async throws -> FetchedPageResponse {
+    func fetch(request: URLRequest, policy: BackgroundTaskPolicy) async throws -> FetchedPageResponse {
         _ = policy
+        guard let url = request.url else {
+            throw TestFetchError.offline
+        }
+
         self.recordedURLs.append(url.absoluteString)
         self.concurrentRequests += 1
         self.highestConcurrentRequests = max(self.highestConcurrentRequests, self.concurrentRequests)
@@ -308,8 +313,12 @@ private actor RecordingFetchClient: WorkerFetchClient {
 private actor CancelOnSleepFetchClient: WorkerFetchClient {
     private var recordedURLs: [String] = []
 
-    func fetch(url: URL, policy: BackgroundTaskPolicy) async throws -> FetchedPageResponse {
+    func fetch(request: URLRequest, policy: BackgroundTaskPolicy) async throws -> FetchedPageResponse {
         _ = policy
+        guard let url = request.url else {
+            throw TestFetchError.offline
+        }
+
         self.recordedURLs.append(url.absoluteString)
         try await Task.sleep(for: .seconds(5))
         return FetchedPageResponse(
