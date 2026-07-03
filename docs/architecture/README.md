@@ -5,6 +5,7 @@ This directory is the current architecture source of truth for Ora v2.
 ## Current architecture
 
 - [Overview](overview.md) — v2 system boundaries, data flow, and component responsibilities.
+- [Shape and migration plan](v2-shape-and-migration-plan.md) — target source layout, migration phases, test suite shape, and definition of done.
 
 ## Architecture decision records
 
