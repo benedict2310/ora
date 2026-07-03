@@ -545,7 +545,60 @@ Default test rules:
 - no tests for deprecated features,
 - target runtime under 60 seconds.
 
-## 7. Definition of done for v2 shape
+## 7. MacTalk PR 14 improvements to port
+
+MacTalk PR [benedict2310/MacTalk#14](https://github.com/benedict2310/MacTalk/pull/14) contains several fixes that should inform Ora v2 implementation.
+
+### ASR / Parakeet runtime
+
+Port these ideas into `ModelRuntime/LocalASRClient.swift` or the v2 wrapper around `Ora/ASR/ParakeetEngine.swift`:
+
+- Keep `TdtDecoderState` owned by each engine/session instead of resetting shared `AsrManager` decoder state.
+- Initialize decoder state from `manager.decoderLayerCount` before streaming transcription.
+- Reset local decoder state at the start of each user turn.
+- Use a fresh decoder state for final full-buffer transcription so partial streaming state cannot pollute the final result.
+- Keep chunk processing serialized if v2 ever processes chunks on background tasks; Parakeet streaming decoder state is order-dependent.
+
+Ora already uses the v3 Parakeet model identifier/path, but current `Ora/ASR/ParakeetEngine.swift` still uses the older `manager.transcribe(buffer, source: .microphone)` style and shared bootstrap reset behavior. That should be updated during the v2 ASR port.
+
+### Capture-before-prepare behavior
+
+MacTalk starts microphone capture before Parakeet preparation so the user does not lose the beginning of speech while the model warms. Ora currently preloads ASR on app launch, but the v2 voice loop should still be robust on cold start or failed preload:
+
+- start audio capture immediately when the user begins speaking,
+- buffer pre-roll samples while ASR prepares,
+- start transcription after preparation completes,
+- stop capture and drain/cancel pending work if preparation fails or the start is cancelled.
+
+This belongs in `Interaction/VoiceLoop.swift`, not in app startup.
+
+### Transcript cleanup
+
+Port a small, tested final-transcript cleaner before text reaches the assistant session:
+
+- strip leading punctuation/artifacts from ASR output,
+- normalize duplicate spaces and punctuation spacing,
+- remove common filler words such as `um`, `uh`, `erm`, `er`, `hm`, and `hmm` only as standalone words,
+- capitalize sentence starts after cleanup,
+- avoid removing filler substrings inside real words such as `summary`.
+
+This should be tested as a pure unit contract because ASR-imperfect text directly affects tool selection and fuzzy lookup.
+
+### Permission diagnostics
+
+MacTalk's stale Accessibility fix is less directly applicable because Ora v2 should not require Accessibility for its core flow unless a future feature reintroduces paste/automation. The useful principle is still worth keeping:
+
+- UI state should reflect current macOS trust, not only a stored preference.
+- Local ad-hoc/DerivedData builds can have stale TCC rows; diagnostics should explain bundle ID, signing mode, and executable path when permission state looks inconsistent.
+- Do not reset TCC permissions automatically in production-signed builds.
+
+If v2 keeps or reintroduces Accessibility-dependent features, add a tiny policy object and tests before wiring UI toggles.
+
+### Logging privacy
+
+MacTalk review removed transcript prefixes from logs and kept only character counts. Ora v2 should follow the same rule: production logs may include lengths, states, timings, and error categories, but should not log transcript content or clipboard/action payload text.
+
+## 8. Definition of done for v2 shape
 
 The new shape is real when all of these are true:
 
@@ -558,7 +611,7 @@ The new shape is real when all of these are true:
 - old platform features are deleted or unreachable without development-only flags.
 - the app supports one polished end-to-end happy path for each core use case.
 
-## 8. Immediate next step
+## 9. Immediate next step
 
 Before writing production code, implement Phase 1 as a dedicated TDD story:
 
