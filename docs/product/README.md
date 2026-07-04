@@ -11,6 +11,7 @@ This directory is the current product source of truth for Ora v2.
 - [PDR-0001: Ora v2 product scope](pdrs/0001-ora-v2-product-scope.md)
 - [PDR-0002: Deprecate platform features from v2 core](pdrs/0002-deprecate-platform-features-from-v2-core.md)
 - [PDR-0003: Prefer test value over coverage volume](pdrs/0003-test-value-over-coverage.md)
+- [PDR-0004: Make conversation observability a core requirement](pdrs/0004-make-conversation-observability-a-core-requirement.md)
 
 ## Rules
 
