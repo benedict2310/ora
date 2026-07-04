@@ -9,10 +9,6 @@ struct OraFeatureSet: Sendable, Equatable {
         actionCatalog: .v2Default
     )
 
-    var deprecatedDomains: Set<ActionDomain> {
-        self.enabledDomains.intersection(ActionDomain.deprecatedDomains)
-    }
-
     func isEnabled(_ domain: ActionDomain) -> Bool {
         self.enabledDomains.contains(domain)
     }

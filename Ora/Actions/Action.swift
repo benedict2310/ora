@@ -5,16 +5,6 @@ enum ActionDomain: String, CaseIterable, Sendable {
     case reminders
     case contacts
     case system
-    case memory
-    case skills
-    case research
-    case backgroundTasks
-    case mail
-    case messages
-    case notes
-    case cloud
-    case vision
-    case automation
 
     static let v2Domains: Set<ActionDomain> = [
         .calendar,
@@ -22,8 +12,6 @@ enum ActionDomain: String, CaseIterable, Sendable {
         .contacts,
         .system
     ]
-
-    static let deprecatedDomains: Set<ActionDomain> = Set(Self.allCases).subtracting(Self.v2Domains)
 }
 
 enum ActionKind: String, Sendable {

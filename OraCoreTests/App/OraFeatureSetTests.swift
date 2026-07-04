@@ -6,7 +6,6 @@ final class OraFeatureSetTests: XCTestCase {
         let featureSet = OraFeatureSet.v2Default
 
         XCTAssertEqual(featureSet.enabledDomains, [.calendar, .reminders, .contacts, .system])
-        XCTAssertTrue(featureSet.deprecatedDomains.isEmpty)
         XCTAssertTrue(featureSet.actionCatalog.actions.allSatisfy { featureSet.enabledDomains.contains($0.domain) })
     }
 
@@ -34,18 +33,17 @@ final class OraFeatureSetTests: XCTestCase {
         )
     }
 
-    func test_v2Default_excludesDeprecatedDomains() {
-        let featureSet = OraFeatureSet.v2Default
-
-        XCTAssertFalse(featureSet.isEnabled(.memory))
-        XCTAssertFalse(featureSet.isEnabled(.skills))
-        XCTAssertFalse(featureSet.isEnabled(.research))
-        XCTAssertFalse(featureSet.isEnabled(.backgroundTasks))
-        XCTAssertFalse(featureSet.isEnabled(.mail))
-        XCTAssertFalse(featureSet.isEnabled(.messages))
-        XCTAssertFalse(featureSet.isEnabled(.notes))
-        XCTAssertFalse(featureSet.isEnabled(.cloud))
-        XCTAssertFalse(featureSet.isEnabled(.vision))
-        XCTAssertFalse(featureSet.isEnabled(.automation))
+    func test_actionDomain_omitsDeprecatedRawValues() {
+        XCTAssertNil(ActionDomain(rawValue: "memory"))
+        XCTAssertNil(ActionDomain(rawValue: "skills"))
+        XCTAssertNil(ActionDomain(rawValue: "research"))
+        XCTAssertNil(ActionDomain(rawValue: "backgroundTasks"))
+        XCTAssertNil(ActionDomain(rawValue: "mail"))
+        XCTAssertNil(ActionDomain(rawValue: "messages"))
+        XCTAssertNil(ActionDomain(rawValue: "notes"))
+        XCTAssertNil(ActionDomain(rawValue: "cloud"))
+        XCTAssertNil(ActionDomain(rawValue: "vision"))
+        XCTAssertNil(ActionDomain(rawValue: "automation"))
     }
 }
+
