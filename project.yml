@@ -126,11 +126,6 @@ targets:
       - target: OraCore
 
 schemes:
-  Ora:
-    build:
-      targets:
-        Ora: all
-
   OraCore:
     build:
       targets:
@@ -139,13 +134,4 @@ schemes:
       gatherCoverageData: false
       targets:
         - OraCoreTests
-
-  OraLegacy:
-    build:
-      targets:
-        Ora: all
-    test:
-      gatherCoverageData: false
-      targets:
-        - OraTests
 

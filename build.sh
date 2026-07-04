@@ -27,7 +27,7 @@ cd "$PROJECT_DIR"
 CONFIGURATION="Release"
 SCHEME="Ora"
 SCHEME_CORE="OraCore"
-SCHEME_LEGACY="OraLegacy"
+SCHEME_LEGACY="Ora"
 ARCH="arm64"
 BUNDLE_ID="com.ora.app"
 
