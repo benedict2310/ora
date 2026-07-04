@@ -96,3 +96,40 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.ora.app.tests
     dependencies:
       - target: Ora
+
+  OraCoreTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: OraCoreTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.ora.app.coretests
+    dependencies:
+      - target: Ora
+
+schemes:
+  Ora:
+    build:
+      targets:
+        Ora: all
+
+  OraCore:
+    build:
+      targets:
+        Ora: all
+    test:
+      gatherCoverageData: false
+      targets:
+        - OraCoreTests
+
+  OraLegacy:
+    build:
+      targets:
+        Ora: all
+    test:
+      gatherCoverageData: false
+      targets:
+        - OraTests
+

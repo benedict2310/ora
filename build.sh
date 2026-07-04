@@ -10,8 +10,10 @@
 #   ./build.sh test-onboarding --keep-models  # Reset onboarding, keep existing model files
 #   ./build.sh clean        # Clean build
 #   ./build.sh reset-perms  # Reset TCC permissions (after rebuild)
-#   ./build.sh test         # Run tests with token-optimized output
-#   ./build.sh test-perms   # Run tests with permission prompts enabled
+#   ./build.sh test         # Run fast Ora v2 core tests
+#   ./build.sh test-core    # Run fast Ora v2 core tests
+#   ./build.sh test-legacy  # Run the legacy full OraTests suite
+#   ./build.sh test-perms   # Run legacy tests with permission prompts enabled
 #   ./build.sh test-tts     # Run on-demand TTS integration tests (audio)
 #   ./build.sh test-tsan    # Run tests with Thread Sanitizer
 #   ./build.sh logs         # Tail unified logs for Ora
@@ -24,7 +26,8 @@ cd "$PROJECT_DIR"
 
 CONFIGURATION="Release"
 SCHEME="Ora"
-SCHEME_TSAN="Ora-TSan"
+SCHEME_CORE="OraCore"
+SCHEME_LEGACY="OraLegacy"
 ARCH="arm64"
 BUNDLE_ID="com.ora.app"
 
@@ -265,19 +268,24 @@ case "${1:-build}" in
     "$0" run
     ;;
 
-  test)
+  test|test-core)
     rm -f "$HOME/Library/Application Support/Ora/run-tts-tests.flag"
-    run_tests "$SCHEME"
+    run_tests "$SCHEME_CORE"
+    ;;
+
+  test-legacy)
+    rm -f "$HOME/Library/Application Support/Ora/run-tts-tests.flag"
+    run_tests "$SCHEME_LEGACY"
     ;;
 
   test-perms|test-permissions)
     rm -f "$HOME/Library/Application Support/Ora/run-tts-tests.flag"
-    ORA_SKIP_PERMISSION_PROMPTS=0 run_tests "$SCHEME"
+    ORA_SKIP_PERMISSION_PROMPTS=0 run_tests "$SCHEME_LEGACY"
     ;;
 
   test-tsan)
     rm -f "$HOME/Library/Application Support/Ora/run-tts-tests.flag"
-    run_tests "$SCHEME_TSAN"
+    run_tests "$SCHEME_LEGACY" ENABLE_THREAD_SANITIZER=YES
     ;;
 
   test-tts)
@@ -383,7 +391,7 @@ case "${1:-build}" in
     ;;
 
   *)
-    echo "Usage: $0 {build|run|test-onboarding [--keep-models]|clean|reset-perms|test|test-perms|test-tsan|test-tts|logs|open-results|sign}"
+    echo "Usage: $0 {build|run|test-onboarding [--keep-models]|clean|reset-perms|test|test-core|test-legacy|test-perms|test-tsan|test-tts|logs|open-results|sign}"
     echo ""
     echo "Commands:"
     echo "  build         Build the app (default)"
@@ -392,8 +400,10 @@ case "${1:-build}" in
     echo "  test-onboarding --keep-models  Reset onboarding but keep local model files"
     echo "  clean         Remove build artifacts and generated project"
     echo "  reset-perms   Reset TCC permissions (use after rebuild)"
-    echo "  test          Run tests with token-optimized output"
-    echo "  test-perms    Run tests with permission prompts enabled"
+    echo "  test          Run fast Ora v2 core tests"
+    echo "  test-core     Run fast Ora v2 core tests"
+    echo "  test-legacy   Run the legacy full OraTests suite"
+    echo "  test-perms    Run legacy tests with permission prompts enabled"
     echo "  test-tsan     Run tests with Thread Sanitizer enabled"
     echo "  test-tts      Run on-demand TTS integration tests (audio)"
     echo "  logs          Tail unified logs (Ctrl+C to stop; --category <name> or --predicate <expr>)"
