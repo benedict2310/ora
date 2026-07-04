@@ -293,7 +293,7 @@ case "${1:-build}" in
     mkdir -p "$(dirname "$TTS_FLAG_PATH")"
     touch "$TTS_FLAG_PATH"
     trap 'rm -f "$TTS_FLAG_PATH"' EXIT
-    run_tests "$SCHEME" -only-testing:OraTests/TTSIntegrationTests
+    run_tests "$SCHEME_LEGACY" -only-testing:OraTests/TTSIntegrationTests
     ;;
 
   logs)

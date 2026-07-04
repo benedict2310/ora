@@ -1,5 +1,5 @@
 import XCTest
-@testable import Ora
+@testable import OraCore
 
 final class OraFeatureSetTests: XCTestCase {
     func test_v2Default_enablesOnlyCoreDomains() {
@@ -8,6 +8,30 @@ final class OraFeatureSetTests: XCTestCase {
         XCTAssertEqual(featureSet.enabledDomains, [.calendar, .reminders, .contacts, .system])
         XCTAssertTrue(featureSet.deprecatedDomains.isEmpty)
         XCTAssertTrue(featureSet.actionCatalog.actions.allSatisfy { featureSet.enabledDomains.contains($0.domain) })
+    }
+
+    func test_v2Default_pinsExactActionCatalogContents() {
+        let actionNames = OraFeatureSet.v2Default.actionCatalog.actions.map(\.name)
+
+        XCTAssertEqual(
+            actionNames,
+            [
+                "calendar.query",
+                "calendar.find_slots",
+                "calendar.create",
+                "calendar.update",
+                "calendar.delete",
+                "reminders.list",
+                "reminders.create",
+                "reminders.update",
+                "reminders.complete",
+                "reminders.delete",
+                "contacts.search",
+                "system.open_app",
+                "system.open_url",
+                "system.open_settings"
+            ]
+        )
     }
 
     func test_v2Default_excludesDeprecatedDomains() {

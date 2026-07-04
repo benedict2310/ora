@@ -1,5 +1,5 @@
 import XCTest
-@testable import Ora
+@testable import OraCore
 
 final class ActionContractTests: XCTestCase {
     func test_readActionsDoNotRequireConfirmation() async throws {

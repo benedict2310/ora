@@ -1,5 +1,5 @@
 import XCTest
-@testable import Ora
+@testable import OraCore
 
 final class AssistantStateTests: XCTestCase {
     func test_happyPathTransitions_areDeterministic() throws {
