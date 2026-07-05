@@ -33,6 +33,8 @@ extension AssistantState {
             return .responding
         case (.responding, .finishResponse):
             return .awaitingFollowUp
+        case (.awaitingFollowUp, .startListening):
+            return .listening
         case (.listening, .cancel):
             return .idle
         case (.idle, .fail(let message)), (.listening, .fail(let message)):

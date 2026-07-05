@@ -24,6 +24,10 @@ final class AssistantStateTests: XCTestCase {
         XCTAssertEqual(try AssistantState.listening.transition(on: .cancel), .idle)
     }
 
+    func test_awaitingFollowUpCanStartNextListeningTurn() throws {
+        XCTAssertEqual(try AssistantState.awaitingFollowUp.transition(on: .startListening), .listening)
+    }
+
     func test_invalidTransitionsThrow() {
         XCTAssertThrowsError(try AssistantState.idle.transition(on: .submitTranscript)) { error in
             XCTAssertEqual(

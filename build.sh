@@ -285,7 +285,7 @@ case "${1:-build}" in
 
   test-tsan)
     rm -f "$HOME/Library/Application Support/Ora/run-tts-tests.flag"
-    run_tests "$SCHEME_LEGACY" ENABLE_THREAD_SANITIZER=YES
+    run_tests "$SCHEME_LEGACY" -enableThreadSanitizer YES
     ;;
 
   test-tts)
