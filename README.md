@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/media/app-icon.png" alt="Ora" width="128" height="128">
+  <img src="docs/legacy/v1/media/app-icon.png" alt="Ora" width="128" height="128">
 
   # Ora
 
@@ -17,35 +17,44 @@
 
 ## ✨ What is Ora?
 
-Ora is a **local-first voice assistant** for macOS that puts your privacy first. By default, speech recognition, reasoning, and speech synthesis run on your Mac.
+Ora is a **local-first macOS voice assistant** that focuses on a small set of high-value workflows: Calendar, Reminders, Contacts, and minimal safe system actions.
 
-Ora can also use **optional cloud providers** (for example OpenAI or Anthropic) if you explicitly enable them in **Preferences > Providers**.
+The v2 direction is intentionally subtractive: keep the assistant fast, reliable, auditable, and private instead of growing into a broad automation platform. Legacy v1 planning material is archived under [`docs/legacy/v1/`](docs/legacy/v1/).
 
-```
-Voice → Parakeet ASR → MLX + Qwen 3.5 VL → Kokoro TTS → Voice/UI
-                     ↘ (Optional) Cloud LLM ↗
+```text
+Voice or text input
+    ↓
+Parakeet ASR / typed request
+    ↓
+Local MLX LLM structured output
+    ↓
+Core action host + confirmation gates
+    ↓
+Overlay answer + optional Kokoro TTS + audit record
 ```
 
 ### Demo
 
 https://github.com/benedict2310/ora/assets/demo.mp4
 
-> **Note:** Video shows Ora managing calendar events via voice commands
+> **Note:** Video shows Ora managing calendar events via voice commands.
 
 ---
 
-## 🎯 Features
+## 🎯 v2 Core Features
 
-- **🔒 Local-First** — On-device inference by default using Apple Silicon acceleration
-- **🎤 Push-to-Talk** — Hotkey activation (⌥Space) with menu bar control
-- **⚡ Streaming Pipeline** — Live transcription, streaming LLM tokens, early TTS start
-- **🤖 Agentic Tools** — Calendar, Reminders, Contacts, Mail, Messages, Notes, and System integrations
-- **🧩 Skills & Scripts** — Extend Ora with custom workflow playbooks and executable scripts
-- **🧠 Persistent Memory** — Remembers context and preferences across conversations
-- **👁️ Vision Model** — Qwen 3.5 VL with image understanding support
-- **📝 Audit Trail** — Every action logged for transparency
-- **☁️ Optional Cloud Providers** — OpenAI (API key or Codex OAuth) and Anthropic (API key)
-- **🔄 Auto-Updates** — Seamless updates via Sparkle
+- **🔒 Local-first by default** — Speech recognition, reasoning, and speech synthesis run on-device.
+- **🎤 Push-to-talk** — Hotkey activation (`⌥Space`) with menu bar control.
+- **⚡ Streaming voice loop** — Live transcription, structured reasoning, and optional spoken responses.
+- **🗓 Calendar actions** — Query schedules, find slots, and propose confirmed mutations.
+- **✅ Reminders actions** — List, create, update, complete, and delete reminders with guardrails.
+- **👥 Contacts lookup** — Resolve people for lookup and invitation workflows.
+- **🖥 Minimal system actions** — Open apps, URLs/searches, and relevant settings.
+- **📝 Audit trail** — Mutations answer what changed, when, why, and whether the user confirmed.
+- **📈 Local telemetry** — Conversation flow, latency, cancellation, TTS/STT, and barge-in behavior are observable without logging private content.
+- **🔄 Auto-updates** — Signed release builds update via Sparkle.
+
+Out of v2 core: mail, messages, notes, skills/scripts, semantic memory, research/background agents, vision, and cloud-provider routing. See [`docs/product/pdrs/`](docs/product/pdrs/) for accepted product decisions.
 
 ---
 
@@ -84,10 +93,8 @@ https://github.com/benedict2310/ora/assets/demo.mp4
    - **Calendar** — Event management
    - **Reminders** — Task management
    - **Contacts** — Contact lookup
-   - **Accessibility** — Global hotkey
-5. Press **⌥Space** and start talking!
-
-To use a cloud provider, open **Preferences > Providers** and connect OpenAI/Anthropic.
+   - **Accessibility** — Global hotkey if required by the current build
+5. Press **⌥Space** and start talking
 
 ### For Developers
 
@@ -109,9 +116,9 @@ cd ora
 |:--------|:------------|
 | `./build.sh` | Build only |
 | `./build.sh run` | Build and launch |
-| `./build.sh test-onboarding` | Reset local state and launch first-run onboarding flow |
-| `./build.sh test-onboarding --keep-models` | Reset onboarding flow but reuse already-downloaded local models |
-| `./build.sh test` | Run tests |
+| `./build.sh test` | Run the fast v2 contract gate |
+| `./build.sh test-legacy` | Run the legacy app test scheme |
+| `./build.sh test-tsan` | Run legacy tests with Thread Sanitizer enabled |
 | `./build.sh clean` | Clean build artifacts |
 | `./build.sh reset-perms` | Reset macOS permissions |
 
@@ -119,39 +126,45 @@ cd ora
 
 ## 🏗️ Architecture
 
-Ora uses a streaming pipeline architecture for maximum responsiveness:
+Ora v2 is organized around a small local assistant loop:
 
-1. **Audio Capture** → Real-time microphone input via AVAudioEngine
-2. **ASR** → FluidAudio Parakeet for streaming speech-to-text
-3. **LLM** → MLX Swift with Qwen 3.5 VL (on-device), or optional cloud providers (OpenAI/Anthropic)
-4. **Tools** → Native macOS integrations (EventKit, Contacts, Mail, Messages, Notes)
-5. **TTS** → Kokoro MLX for natural speech synthesis
+1. **Input** → push-to-talk or typed text
+2. **ASR** → FluidAudio Parakeet for speech-to-text
+3. **LLM** → MLX Swift local model with compact structured output
+4. **Actions** → Calendar, Reminders, Contacts, and minimal System adapters
+5. **Confirmation** → required before state-changing actions
+6. **TTS/UI** → Kokoro speech output and compact overlay
+7. **Audit + telemetry** → local mutation history and debuggable per-turn traces
 
 **Tech Stack:**
 - **Language:** Swift 6.0 with strict concurrency
-- **Frameworks:** AppKit, SwiftUI, EventKit, Contacts
+- **Frameworks:** AppKit, SwiftUI, AVFoundation, EventKit, Contacts, OSLog
 - **ML Runtime:** MLX Swift for on-device inference
 - **Build System:** XcodeGen for project generation
 
-See [docs/](docs/) for architecture docs and implementation stories.
+See [`docs/`](docs/) for current product and architecture docs.
 
 ---
 
 ## 📂 Project Structure
 
-```
+```text
 Ora/
 ├── Ora/                    # Main app source
-│   ├── Audio/              # Audio capture and VAD
-│   ├── ASR/                # Speech recognition (Parakeet)
-│   ├── LLM/                # Language model (Qwen 3.5 VL)
-│   ├── Tools/              # Calendar, Reminders, Contacts, Mail, Messages, Notes, Skills
-│   ├── TTS/                # Text-to-speech (Kokoro)
-│   ├── UI/                 # AppKit + SwiftUI interface
-│   └── Orchestration/      # Core app logic
-├── OraTests/               # Unit tests
-├── docs/                   # Documentation
-│   └── stories/            # Implementation stories
+│   ├── App/                # Composition and feature set
+│   ├── Interaction/        # Assistant turns and state transitions
+│   ├── Actions/            # Calendar, Reminders, Contacts, System contracts/adapters
+│   ├── Telemetry/          # Local event, logging, and signpost spine
+│   ├── ASR/                # Speech recognition adapters
+│   ├── LLM/                # Local language model runtime
+│   ├── TTS/                # Text-to-speech runtime
+│   └── UI/                 # Overlay, preferences, confirmation UI
+├── OraCoreTests/           # Fast v2 contract tests
+├── OraTests/               # Legacy/full app tests during migration
+├── docs/                   # Current v2 docs plus legacy archive
+│   ├── architecture/
+│   ├── product/
+│   └── legacy/v1/
 ├── scripts/                # Build and release scripts
 ├── project.yml             # XcodeGen configuration
 └── build.sh                # Build helper script
@@ -167,6 +180,8 @@ Ora/
 ./build.sh test
 ```
 
+The default gate is intentionally fast and high-signal. Use named commands for slower legacy, permission, model, audio, or Thread Sanitizer checks.
+
 ### Debugging
 
 View live logs:
@@ -174,10 +189,12 @@ View live logs:
 ./build.sh logs
 ```
 
-View specific category:
+View a specific category:
 ```bash
-./build.sh logs --category llm
+./build.sh logs --category telemetry
 ```
+
+Ora v2 telemetry should expose non-sensitive fields such as event names, turn IDs, durations, counts, action names, and result categories as visible/public log fields. Transcript text, prompts, audio, contact data, calendar/reminder content, URLs, and raw tool payloads must be omitted or private by default.
 
 ### Permissions
 
@@ -186,20 +203,19 @@ If permissions stop working after rebuild:
 ./build.sh reset-perms
 ```
 
-macOS TCC tracks permissions by bundle ID + code hash. Every rebuild changes the hash, so you need to reset and re-grant permissions.
+macOS TCC tracks permissions by bundle ID + code hash. Every rebuild changes the hash, so local development builds may need a reset and re-grant.
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTING.md) first.
+Contributions are welcome. Please keep changes aligned with the accepted v2 scope in [`docs/product/`](docs/product/) and [`docs/architecture/`](docs/architecture/).
 
 **Areas where we'd love help:**
 - 🐛 Bug fixes and performance improvements
 - 📝 Documentation and examples
-- 🌍 Internationalization and localization
-- 🎨 UI/UX improvements
-- 🧪 Additional test coverage
+- 🎨 Focused UI/UX improvements
+- 🧪 High-signal tests for core contracts and supported workflows
 
 ### Development Setup
 
@@ -230,7 +246,7 @@ Built with these amazing open-source projects:
 - [MLX Swift](https://github.com/ml-explore/mlx-swift) — Apple Silicon ML framework
 - [FluidAudio](https://github.com/FluidInference/FluidAudio) — Streaming ASR
 - [Sparkle](https://github.com/sparkle-project/Sparkle) — Auto-update framework
-- [Qwen 3.5 VL](https://huggingface.co/Qwen) — Vision-language model
+- [Qwen](https://huggingface.co/Qwen) — Local language models
 - [Kokoro TTS](https://huggingface.co/hexgrad/Kokoro-82M) — Text-to-speech
 
 ---

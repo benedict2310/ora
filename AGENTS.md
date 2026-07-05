@@ -16,13 +16,13 @@
 Voice → (FluidAudio Parakeet) → (MLX + Qwen 2.5) → (Kokoro TTS) → Voice/UI
 ```
 
-**Primary differentiator:** Fast, reliable, auditable actions (Calendar/Reminders/Contacts first), minimal cloud, and a UI that makes the assistant feel predictable and safe.
+**Primary differentiator:** Fast, reliable, auditable actions (Calendar/Reminders/Contacts first), local-first operation by default, and a UI that makes the assistant feel predictable and safe.
 
 ### Project Structure & Modules
 - `Ora/Ora`: Main macOS app source (Audio, ASR, LLM, Tools, TTS, UI). Keep changes small and reuse existing helpers.
 - `Ora/OraTests`: XCTest coverage for audio, transcription, LLM, tools; mirror new logic with focused tests.
 - `scripts/`: Build/sign helpers (`build.sh`, signing scripts).
-- `docs/`: Documentation (architecture, stories, design).
+- `docs/`: Current v2 documentation (`architecture/`, `product/`) plus archived legacy v1 material (`legacy/v1/`).
 - `Vendor/`: External inference engines (MLX, Parakeet, Kokoro TTS).
 - `project.yml`: XcodeGen configuration (generates `.xcodeproj`).
 
@@ -37,15 +37,18 @@ Voice → (FluidAudio Parakeet) → (MLX + Qwen 2.5) → (Kokoro TTS) → Voice/
 
 | Document Type | Location | Examples |
 |:--------------|:---------|:---------|
-| User stories | `docs/stories/` | Feature specs, PRD, implementation plans |
-| Reports & investigations | `docs/` (in appropriate subfolders) | Performance reports, bug investigations, audits |
-| Architecture docs | `docs/stories/` | System design, component diagrams |
-| Setup & guides | `docs/` | Environment setup, testing guides |
+| Product decisions | `docs/product/pdrs/` | Product scope, non-goals, telemetry requirements |
+| Architecture decisions | `docs/architecture/adrs/` | Structural choices and technical tradeoffs |
+| Current architecture | `docs/architecture/` | Overview, migration plan, telemetry plan |
+| Current product docs | `docs/product/` | Product overview and supported workflows |
+| Reports & investigations | `docs/` (appropriate subfolders) | Performance reports, bug investigations, audits |
+| Legacy v1 materials | `docs/legacy/v1/` | Historical stories, PRD, architecture, media |
 
-- **All user stories MUST be collected in `docs/stories/`**
-- **All reports, investigations, or other documents MUST be collected in appropriate folders under `docs/`**
-- Create subfolders as needed (e.g., `docs/reports/`, `docs/investigations/`)
-- Keep documentation up-to-date when implementation changes
+- **Do not create new v2 docs under `docs/stories/`; that tree is legacy-only under `docs/legacy/v1/`.**
+- **All durable product choices MUST use PDRs in `docs/product/pdrs/`.**
+- **All durable architecture choices MUST use ADRs in `docs/architecture/adrs/`.**
+- Create report/investigation subfolders under `docs/` only when needed (for example `docs/reports/` or `docs/investigations/`).
+- Keep documentation up-to-date when implementation changes.
 
 ### Build, Test, Run
 
@@ -369,7 +372,7 @@ For detailed triage workflows, load the `ora-testing` skill.
 - Use one branch per story/bug; include the story/bug ID in the branch name when possible.
 - Keep branches short-lived. If `main` moves significantly, **do not merge** an old branch; create a new branch from current `main` and cherry-pick the relevant commits (no rebase unless explicitly approved).
 - Before opening a PR, verify scope: `git log --oneline main..HEAD` and `git diff --stat main...HEAD`. If unrelated files show up, split into separate branches.
-- When multiple agents work in parallel, nominate a single owner per story/bug and record active branches in the story doc (or add a dated report in `docs/reports/` when a branch is abandoned).
+- When multiple agents work in parallel, nominate a single owner per story/bug and record active branches in the relevant PDR/ADR/plan note, todo, or a dated report under `docs/reports/` when a branch is abandoned.
 - If a stale branch is discovered, document it (story note or report), reopen the story if needed, and retire the branch.
 - After merge, delete local and remote branches to avoid stale branch drift.
 
@@ -405,13 +408,13 @@ git branch -a --no-merged main
 **If you discover orphan branches with completed work:**
 1. Check if the work is still needed (may have been reimplemented)
 2. If needed: cherry-pick or re-apply the fix to current main
-3. Document the orphan in `docs/stories/bugs/` if it contains valuable alternative approaches
+3. Document the orphan in the relevant todo, PDR/ADR/plan note, or a dated report under `docs/reports/` if it contains valuable alternative approaches
 4. Delete the orphan branch after preserving any valuable code/docs
 
 ### Bug Fixes (Non-Story Work)
 
 - Use the same branch hygiene as above even when not using the implement-story skill.
-- If a bug has a story/bug doc, update it with branch name, commit count, and verification notes before PR.
+- If a bug has an associated todo, PDR/ADR, plan, or report, update it with branch name, commit count, and verification notes before PR.
 ### Story Work (When Implementing Specs)
 
 - Prefer the implement-story skill for story work; if not used, still follow the same branch hygiene and doc updates.
@@ -649,27 +652,29 @@ AuditLog.record(
 
 ---
 
-## 10. Non-Goals (v1)
+## 10. Non-Goals (v2 core)
 
 - "Always listening" wake word by default
 - Fully general "do anything on my Mac" automation
 - Reading arbitrary Mail inbox locally
-- Cloud-based features (local-first only)
+- Cloud-based provider routing by default
+- Mail, messages, notes, skills/scripts, semantic memory, research/background agents, and vision as core v2 features
 
 ---
 
 ## 11. Future Phases
 
-**Phase 2:** Wake word (optional), better memory, mail via provider APIs
-**Phase 3:** On-device embeddings for local search ("what did I promise last week?")
+Current v2 phases are tracked in `docs/architecture/v2-shape-and-migration-plan.md` and file-based todos. Do not add future product scope unless a new PDR accepts it.
 
 ---
 
 ## 12. Documentation Index
 
 For deeper details, refer to the `docs/` folder:
-- `docs/stories/PRD.md`: Full product requirements document (target users, v1 features, UX principles, performance targets)
-- `docs/stories/ARCHITECTURE.md`: Detailed system design (component diagram, agentic loop, audio pipeline, model runtime, Swift 6 protocols, security)
-- `docs/SETUP.md`: Detailed environment setup
-- `docs/TESTING.md`: Test strategy
-- `docs/stories/`: Implementation stories
+- `docs/product/overview.md`: Current v2 product promise, supported workflows, non-goals, and success criteria
+- `docs/product/pdrs/`: Product decision records
+- `docs/architecture/overview.md`: Current v2 architecture overview
+- `docs/architecture/v2-shape-and-migration-plan.md`: Migration phases and target code shape
+- `docs/architecture/v2-telemetry-and-debuggability-plan.md`: Telemetry, logging privacy, signpost, and TDD requirements
+- `docs/architecture/adrs/`: Architecture decision records
+- `docs/legacy/v1/`: Historical v1 stories, PRD, architecture, and media
