@@ -116,9 +116,8 @@ cd ora
 |:--------|:------------|
 | `./build.sh` | Build only |
 | `./build.sh run` | Build and launch |
-| `./build.sh test` | Run the fast v2 contract gate |
-| `./build.sh test-legacy` | Run the legacy app test scheme |
-| `./build.sh test-tsan` | Run legacy tests with Thread Sanitizer enabled |
+| `./build.sh test` | Run the current test gate |
+| `./build.sh test-tsan` | Run tests with Thread Sanitizer enabled |
 | `./build.sh clean` | Clean build artifacts |
 | `./build.sh reset-perms` | Reset macOS permissions |
 
