@@ -147,19 +147,21 @@ See [`docs/`](docs/) for current product and architecture docs.
 
 ## 📂 Project Structure
 
+The repository is mid-migration. Current code still includes legacy directories until the v2 phases remove or quarantine them.
+
+Current tree highlights:
+
 ```text
 Ora/
-├── Ora/                    # Main app source
-│   ├── App/                # Composition and feature set
-│   ├── Interaction/        # Assistant turns and state transitions
-│   ├── Actions/            # Calendar, Reminders, Contacts, System contracts/adapters
-│   ├── Telemetry/          # Local event, logging, and signpost spine
-│   ├── ASR/                # Speech recognition adapters
+├── Ora/                    # Main app source during migration
+│   ├── ASR/                # Speech recognition
+│   ├── Audio/              # Audio capture and VAD
 │   ├── LLM/                # Local language model runtime
+│   ├── Orchestration/      # Existing app flow to be replaced by v2 Interaction
+│   ├── Tools/              # Existing tool implementations; v2 will register only core actions
 │   ├── TTS/                # Text-to-speech runtime
-│   └── UI/                 # Overlay, preferences, confirmation UI
-├── OraCoreTests/           # Fast v2 contract tests
-├── OraTests/               # Legacy/full app tests during migration
+│   └── UI/, Overlay/, Preferences/
+├── OraTests/               # Existing app tests during migration
 ├── docs/                   # Current v2 docs plus legacy archive
 │   ├── architecture/
 │   ├── product/
@@ -168,6 +170,8 @@ Ora/
 ├── project.yml             # XcodeGen configuration
 └── build.sh                # Build helper script
 ```
+
+The target v2 layout is documented in [`docs/architecture/v2-shape-and-migration-plan.md`](docs/architecture/v2-shape-and-migration-plan.md). New v2 code should move toward `App/`, `Interaction/`, `Actions/`, `Telemetry/`, `ModelRuntime/`, `Data/`, and focused `OraCoreTests/` as those phases land.
 
 ---
 
