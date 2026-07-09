@@ -3,7 +3,7 @@
 //  Ora
 //
 //  Serializes access to MLX Metal operations to prevent GPU race conditions.
-//  See docs/stories/bugs/BUG-002-MLX-Metal-Gate-Alternative.md for details.
+//  See docs/legacy/v1/stories/bugs/BUG-002-MLX-Metal-Gate-Alternative.md for details.
 //
 
 import Foundation
