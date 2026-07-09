@@ -35,9 +35,12 @@ extension AssistantState {
             return .awaitingFollowUp
         case (.awaitingFollowUp, .startListening):
             return .listening
-        case (.listening, .cancel):
+        case (.listening, .cancel), (.thinking, .cancel), (.responding, .cancel):
             return .idle
-        case (.idle, .fail(let message)), (.listening, .fail(let message)):
+        case (.idle, .fail(let message)),
+            (.listening, .fail(let message)),
+            (.thinking, .fail(let message)),
+            (.responding, .fail(let message)):
             return .error(message)
         default:
             throw AssistantStateTransitionError.invalidTransition(from: self, event: event)

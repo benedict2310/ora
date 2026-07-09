@@ -24,6 +24,16 @@ final class AssistantStateTests: XCTestCase {
         XCTAssertEqual(try AssistantState.listening.transition(on: .cancel), .idle)
     }
 
+    func test_activeTurnCancelReturnsIdle() throws {
+        XCTAssertEqual(try AssistantState.thinking.transition(on: .cancel), .idle)
+        XCTAssertEqual(try AssistantState.responding.transition(on: .cancel), .idle)
+    }
+
+    func test_activeTurnFailureTransitionsToError() throws {
+        XCTAssertEqual(try AssistantState.thinking.transition(on: .fail("model failed")), .error("model failed"))
+        XCTAssertEqual(try AssistantState.responding.transition(on: .fail("tts failed")), .error("tts failed"))
+    }
+
     func test_awaitingFollowUpCanStartNextListeningTurn() throws {
         XCTAssertEqual(try AssistantState.awaitingFollowUp.transition(on: .startListening), .listening)
     }
