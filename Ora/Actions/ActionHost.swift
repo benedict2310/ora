@@ -12,7 +12,7 @@ enum ActionHostError: LocalizedError, Sendable, Equatable {
 }
 
 enum ActionApproval: Sendable, Equatable {
-    case approved
+    case approved(ActionProposal)
 }
 
 struct ActionCatalog: Sendable, Equatable {
@@ -42,8 +42,12 @@ struct ActionHost: ActionHosting {
             throw ActionHostError.unsupportedAction(name)
         }
 
-        if action.requiresConfirmation, approval != .approved {
-            return .proposed(ActionProposal(action: action))
+        if action.requiresConfirmation {
+            let proposal = ActionProposal(action: action)
+            guard case .approved(let approvedProposal) = approval,
+                  approvedProposal.action == action else {
+                return .proposed(proposal)
+            }
         }
 
         return .executed(action: action, summary: "\(action.name) executed.")

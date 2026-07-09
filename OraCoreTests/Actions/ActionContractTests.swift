@@ -15,10 +15,22 @@ final class ActionContractTests: XCTestCase {
         let action = try XCTUnwrap(ActionCatalog.v2Default.action(named: "calendar.create"))
 
         let proposed = try await host.execute(actionNamed: action.name)
-        XCTAssertEqual(proposed, .proposed(ActionProposal(action: action)))
+        let proposal = ActionProposal(action: action)
+        XCTAssertEqual(proposed, .proposed(proposal))
 
-        let executed = try await host.execute(actionNamed: action.name, approval: .approved)
+        let executed = try await host.execute(actionNamed: action.name, approval: .approved(proposal))
         XCTAssertEqual(executed, .executed(action: action, summary: "calendar.create executed."))
+    }
+
+    func test_approvalForDifferentProposalDoesNotExecuteMutation() async throws {
+        let host = ActionHost(catalog: .v2Default)
+        let approvedAction = try XCTUnwrap(ActionCatalog.v2Default.action(named: "calendar.create"))
+        let requestedAction = try XCTUnwrap(ActionCatalog.v2Default.action(named: "calendar.delete"))
+        let approval = ActionApproval.approved(ActionProposal(action: approvedAction))
+
+        let result = try await host.execute(actionNamed: requestedAction.name, approval: approval)
+
+        XCTAssertEqual(result, .proposed(ActionProposal(action: requestedAction)))
     }
 
     func test_actionCatalogRejectsUnsupportedActionNames() async {
