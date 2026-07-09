@@ -85,6 +85,22 @@ targets:
       - package: containerization
         product: Containerization
 
+  OraCore:
+    type: framework
+    platform: macOS
+    sources:
+      - path: Ora/App/OraFeatureSet.swift
+      - path: Ora/Actions/Action.swift
+      - path: Ora/Actions/ActionHost.swift
+      - path: Ora/Actions/ActionProposal.swift
+      - path: Ora/Actions/ActionResult.swift
+      - path: Ora/Interaction/AssistantState.swift
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.ora.app.core
+        PRODUCT_NAME: OraCore
+
   OraTests:
     type: bundle.unit-test
     platform: macOS
@@ -96,3 +112,26 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.ora.app.tests
     dependencies:
       - target: Ora
+
+  OraCoreTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: OraCoreTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.ora.app.coretests
+    dependencies:
+      - target: OraCore
+
+schemes:
+  OraCore:
+    build:
+      targets:
+        OraCore: all
+    test:
+      gatherCoverageData: false
+      targets:
+        - OraCoreTests
+

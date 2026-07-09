@@ -69,17 +69,7 @@ jobs:
       - name: Test
         id: test
         continue-on-error: true
-        run: |
-          ORA_SKIP_PERMISSION_PROMPTS=1 xcodebuild test \
-            -project Ora.xcodeproj \
-            -scheme "$SCHEME" \
-            -derivedDataPath "$DERIVED_DATA" \
-            -resultBundlePath .artifacts/TestResults.xcresult \
-            -destination "platform=macOS,arch=$ARCH" \
-            -retry-tests-on-failure \
-            -test-iterations 3 \
-            CODE_SIGN_IDENTITY="-" \
-            ENABLE_HARDENED_RUNTIME=NO
+        run: ./build.sh test
 
       - name: Parse test results
         if: always()
