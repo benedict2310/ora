@@ -6,7 +6,7 @@
 
 **Architecture:** Use a subtractive migration: introduce a small v2 composition inside the existing app, port only the proven pieces that fit, make the default tests fast and high-signal, then remove deprecated subsystems. Keep the app buildable after every phase.
 
-**Tech Stack:** Swift 6, AppKit/SwiftUI, AVFoundation, EventKit, Contacts, SwiftData or a smaller local audit store, MLX Swift, FluidAudio Parakeet, Kokoro TTS.
+**Tech Stack:** Swift 6, AppKit/SwiftUI, AVFoundation, EventKit, Contacts, SwiftData or a smaller local audit store, MLX Swift, FluidAudio Parakeet, Kokoro TTS, OSLog `Logger`, `OSSignposter`, optional future MetricKit diagnostics.
 
 ---
 
@@ -65,6 +65,13 @@ Ora/
     AssistantState.swift
     VoiceLoop.swift
     TextInputLoop.swift
+
+  Telemetry/
+    TelemetryEvent.swift
+    TelemetryRecorder.swift
+    TelemetrySink.swift
+    TelemetryClock.swift
+    OSTelemetrySink.swift
 
   ModelRuntime/
     LocalASRClient.swift
@@ -238,6 +245,33 @@ Acceptance:
 - audit entries answer “what changed, when, why, and whether the user confirmed,”
 - session logging does not become retrieval memory.
 
+### `Telemetry/`
+
+Owns local-first observability for the conversation loop.
+
+Responsibilities:
+
+- emit typed events with turn IDs, sequence numbers, timestamps, durations, and privacy-classified fields,
+- write deterministic in-memory traces for tests,
+- write non-sensitive debug fields visibly to unified logs,
+- create signpost intervals for performance work in Instruments,
+- correlate input, ASR/STT, LLM, actions, TTS, playback, cancellation, and barge-in events.
+
+Non-responsibilities:
+
+- cloud analytics,
+- remote collection,
+- logging transcript, prompt, audio, contact, calendar, reminder, URL, or raw tool payload content by default.
+
+Acceptance:
+
+- every v2 behavior story defines telemetry acceptance criteria,
+- default tests assert event order and privacy classification without OSLog scraping,
+- non-sensitive fields such as IDs, phases, durations, counts, action names, categories, and reasons are public/visible in local logs,
+- sensitive content is omitted or private by contract.
+
+See `docs/architecture/v2-telemetry-and-debuggability-plan.md` and `docs/product/pdrs/0004-make-conversation-observability-a-core-requirement.md`.
+
 ## 4. Legacy cut list
 
 The following directories are deprecated from the default product and should be deleted, archived, or unreachable by default during the migration:
@@ -324,6 +358,33 @@ git add project.yml build.sh Ora/App Ora/Actions Ora/Interaction OraCoreTests
 git commit -m "test: add v2 core contracts"
 ```
 
+### Phase 1.5: Establish the v2 telemetry spine
+
+Goal: make observability part of the product contract before building the assistant loop on top of it.
+
+Tasks:
+
+1. Add typed telemetry events, fields, visibility classifications, and turn/sequence correlation.
+2. Add a deterministic recorder with test clock and in-memory sink.
+3. Add an OSLog sink that renders non-sensitive fields as public/visible and omits or protects sensitive fields.
+4. Add signpost interval helpers for turn, ASR/STT, LLM, action, TTS, playback, and barge-in spans.
+5. Add test helpers every later v2 test can reuse for event order and privacy assertions.
+
+Default tests:
+
+- events get deterministic sequence numbers,
+- spans close on success, failure, and cancellation,
+- public debug fields are marked visible,
+- transcript/prompt/user payload fields are absent or private,
+- no test depends on live OSLog, real timers, microphone, model loading, or speakers.
+
+Commit:
+
+```bash
+git add Ora/Telemetry OraCoreTests/Telemetry project.yml
+git commit -m "feat: add v2 telemetry spine"
+```
+
 ### Phase 2: Build the text-first assistant loop
 
 Goal: prove the assistant flow without audio/model complexity.
@@ -340,7 +401,9 @@ Default tests:
 - typed request → read-only action result,
 - typed request → mutation proposal,
 - confirmed proposal → executed action + audit record,
-- rejected proposal → no execution.
+- rejected proposal → no execution,
+- text turn emits turn/input/action/proposal/result/completion telemetry in order,
+- input telemetry exposes public character counts and turn IDs, not typed request content.
 
 Commit:
 
@@ -366,7 +429,8 @@ Default tests:
 - one happy path and one failure path per action family,
 - ASR-imperfect contact/reminder lookup fixtures,
 - mutation confirmation enforcement,
-- permission-denied summaries.
+- permission-denied summaries,
+- action telemetry records domain/name/kind, confirmation state, result category, duration, and audit correlation without raw user payloads.
 
 Commit:
 
@@ -391,7 +455,8 @@ Default tests:
 - prompt contains calendar/reminders/contacts/minimal system actions,
 - prompt does not contain memory, skills, research, mail, messages, notes, cloud, or vision policy,
 - structured output parser accepts response/action/proposal only,
-- invalid JSON gets bounded retry behavior.
+- invalid JSON gets bounded retry behavior,
+- prompt/output telemetry records sizes, token counts, retry counts, first-token timing, and parser categories without prompt or model-output content.
 
 Commit:
 
@@ -415,7 +480,8 @@ Default tests:
 
 - view models render listening/thinking/proposal/error states,
 - preferences tab list contains only v2 tabs,
-- proposal view model exposes action, target, date/time, and confirmation consequence.
+- proposal view model exposes action, target, date/time, and confirmation consequence,
+- UI telemetry records state transitions and confirmation/rejection choices with visible event names and no sensitive proposal payload content.
 
 Commit:
 
@@ -441,7 +507,9 @@ Default tests:
 - voice loop state transitions use fakes,
 - ASR text is treated as untrusted input,
 - final text response can trigger optional TTS,
-- cancellation stops current turn cleanly.
+- cancellation stops current turn cleanly,
+- voice telemetry reconstructs audio capture → ASR/STT → LLM → action/proposal/result → TTS/playback → completion/cancel in order,
+- barge-in telemetry records monitoring, detection, confirmation/rejection, and cancellation without transcript or audio content.
 
 Opt-in tests:
 
@@ -492,7 +560,8 @@ Tasks:
 2. Tighten failure copy for permission and ambiguity cases.
 3. Measure default test runtime.
 4. Measure prompt length and TTFT.
-5. Fix only issues in the v2 scope.
+5. Review local telemetry traces/signposts for each manual scenario.
+6. Fix only issues in the v2 scope.
 
 Verification:
 
@@ -519,6 +588,9 @@ OraCoreTests/
   Interaction/
     AssistantStateTests.swift
     AssistantSessionTests.swift
+  Telemetry/
+    TelemetryRecorderTests.swift
+    TelemetryPrivacyTests.swift
   ModelRuntime/
     StructuredOutputTests.swift
     SystemPromptContractTests.swift
@@ -537,6 +609,7 @@ OraCoreTests/
 
 Default test rules:
 
+- every behavior test that changes conversation flow asserts telemetry event order and privacy classification,
 - no real network,
 - no real model loading,
 - no real microphone/speaker dependency,
@@ -609,13 +682,15 @@ The new shape is real when all of these are true:
 - preferences expose only the v2 surface.
 - default tests are fast and focused on product contracts.
 - old platform features are deleted or unreachable without development-only flags.
-- the app supports one polished end-to-end happy path for each core use case.
+- the app supports one polished end-to-end happy path for each core use case,
+- every supported conversation path produces a local trace that shows I/O, ASR/STT, LLM, action, TTS/playback, cancellation, and barge-in timing without exposing private user content.
 
 ## 9. Immediate next step
 
-Before writing production code, implement Phase 1 as a dedicated TDD story:
+After Phase 1 is accepted, implement Phase 1.5 as a dedicated TDD story before Phase 2:
 
-1. create the v2 contract test target or fast subset,
-2. define `OraFeatureSet`, `Action`, `ActionHost`, and `AssistantState`,
-3. prove the default feature set excludes deprecated domains,
-4. make `./build.sh test` run the fast gate by default.
+1. create the typed telemetry event model and privacy field policy,
+2. add deterministic recorder/sink/clock test helpers,
+3. add OSLog rendering that marks non-sensitive fields public/visible and protects sensitive fields,
+4. add signpost interval helpers for major conversation spans,
+5. make telemetry assertions mandatory in every Phase 2+ execution plan and acceptance criteria.
