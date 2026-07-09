@@ -33,6 +33,20 @@ final class ActionContractTests: XCTestCase {
         XCTAssertEqual(result, .proposed(ActionProposal(action: requestedAction)))
     }
 
+    func test_approvalForSameActionButDifferentProposalDetailsDoesNotExecuteMutation() async throws {
+        let host = ActionHost(catalog: .v2Default)
+        let action = try XCTUnwrap(ActionCatalog.v2Default.action(named: "calendar.delete"))
+        let staleProposal = ActionProposal(
+            action: action,
+            summary: "Confirm deleting a different calendar event.",
+            confirmationLabel: "Delete old event"
+        )
+
+        let result = try await host.execute(actionNamed: action.name, approval: .approved(staleProposal))
+
+        XCTAssertEqual(result, .proposed(ActionProposal(action: action)))
+    }
+
     func test_actionCatalogRejectsUnsupportedActionNames() async {
         let host = ActionHost(catalog: .v2Default)
 

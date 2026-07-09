@@ -45,7 +45,7 @@ struct ActionHost: ActionHosting {
         if action.requiresConfirmation {
             let proposal = ActionProposal(action: action)
             guard case .approved(let approvedProposal) = approval,
-                  approvedProposal.action == action else {
+                  approvedProposal == proposal else {
                 return .proposed(proposal)
             }
         }
