@@ -18,6 +18,15 @@ struct ActionProposal: Sendable, Equatable {
         self.proposalID = proposalID
     }
 
+    func withProposalID(_ proposalID: String?) -> ActionProposal {
+        ActionProposal(
+            action: self.action,
+            summary: self.summary,
+            confirmationLabel: self.confirmationLabel,
+            proposalID: proposalID
+        )
+    }
+
     func hasSameConfirmationContent(as other: ActionProposal) -> Bool {
         self.action == other.action &&
             self.summary == other.summary &&

@@ -94,9 +94,12 @@ final class AssistantSessionTests: XCTestCase {
             .proposal(AssistantTurnProposal(turnID: turnID, proposal: proposal, message: proposal.summary))
         )
         XCTAssertEqual(proposal.action.name, "reminders.create")
+        XCTAssertEqual(proposal.summary, "Create reminder: Send the report?")
+        XCTAssertEqual(proposal.confirmationLabel, "Create reminder")
+        XCTAssertEqual(proposal.proposalID, "turn-proposal:reminders.create")
         XCTAssertEqual(approvedExecutionCount, 0)
         XCTAssertEqual(readExecutionCount, 0)
-        XCTAssertEqual(invocationCount, 0)
+        XCTAssertEqual(invocationCount, 1)
         XCTAssertEventNames(events, [.turnStarted, .inputTextReceived, .actionProposalCreated])
         XCTAssertTurnMetadata(events, turnID: turnID)
         XCTAssertNoVisibleRequestContent(request.text, in: events)
@@ -104,6 +107,39 @@ final class AssistantSessionTests: XCTestCase {
         XCTAssertEventField(events[2], key: "state", equals: .string("proposal_created"))
         XCTAssertEventField(events[2], key: "actionName", equals: .string("reminders.create"))
         XCTAssertEqual(openSpanCount, 1)
+    }
+
+    func test_submitText_failsIfMutationHostExecutesBeforeApproval() async throws {
+        let turnID = TelemetryTurnID("turn-unsafe-mutation-host")
+        let request = AssistantTextRequest(turnID: turnID, text: "Create a reminder unsafely.")
+        let generator = FakeStructuredOutputGenerator(output: .action(name: "reminders.create"))
+        let sink = InMemoryTelemetrySink()
+        let recorder = TelemetryRecorder(clock: TestTelemetryClock(start: 2_500, step: 10), sinks: [sink])
+        let session = AssistantSession(
+            generator: generator,
+            actionHost: UnsafeMutationActionHost(),
+            auditStore: InMemoryAuditStore(),
+            telemetryRecorder: recorder
+        )
+
+        let outcome = await session.submitText(request)
+        let pendingProposal = await session.pendingProposal()
+        let events = await sink.snapshot()
+
+        XCTAssertEqual(
+            outcome,
+            .failure(
+                AssistantTurnFailure(
+                    turnID: turnID,
+                    message: "Sorry, that action needs confirmation before I can run it."
+                )
+            )
+        )
+        XCTAssertNil(pendingProposal)
+        XCTAssertEventNames(events, [.turnStarted, .inputTextReceived, .turnFailed])
+        XCTAssertTurnMetadata(events, turnID: turnID)
+        XCTAssertNoVisibleRequestContent(request.text, in: events)
+        XCTAssertEventField(events[2], key: "resultCategory", equals: .string("mutation_executed_without_approval"))
     }
 
     func test_approve_executesPendingProposalExactlyOnceAndRecordsAuditEntry() async throws {
@@ -577,7 +613,7 @@ final class AssistantSessionTests: XCTestCase {
         )
         XCTAssertNil(pendingAfterRejection)
         XCTAssertEqual(approvedExecutionCount, 0)
-        XCTAssertEqual(invocationCount, 0)
+        XCTAssertEqual(invocationCount, 1)
         XCTAssertTrue(auditEntries.isEmpty)
         XCTAssertEventNames(
             events,
@@ -836,6 +872,17 @@ private actor FakeActionHost: ActionHosting {
 
 enum TestActionHostError: Error, Sendable, Equatable {
     case approvedExecutionFailed
+}
+
+private actor UnsafeMutationActionHost: ActionHosting {
+    let catalog: ActionCatalog = .v2Default
+
+    func execute(actionNamed name: String, approval: ActionApproval?) async throws -> ActionResult {
+        guard let action = self.catalog.action(named: name) else {
+            throw ActionHostError.unsupportedAction(name)
+        }
+        return .executed(action: action, summary: "Unsafe pre-approval execution.")
+    }
 }
 
 private actor ThrowingApprovedActionHost: ActionHosting {

@@ -75,26 +75,11 @@ actor AssistantSession {
                 }
 
                 if action.requiresConfirmation {
-                    let proposal = ActionProposal(
+                    return await self.prepareMutationProposal(
                         action: action,
-                        proposalID: self.proposalID(turnID: request.turnID, action: action)
-                    )
-                    self.pendingProposalState = PendingProposalState(
                         turnID: request.turnID,
                         turnSpan: turnSpan,
-                        proposal: proposal
-                    )
-                    _ = await self.telemetryRecorder.record(
-                        .actionProposalCreated,
-                        turnID: request.turnID,
-                        fields: self.actionFields(action, state: "proposal_created")
-                    )
-                    return .proposal(
-                        AssistantTurnProposal(
-                            turnID: request.turnID,
-                            proposal: proposal,
-                            message: proposal.summary
-                        )
+                        turnGeneration: turnGeneration
                     )
                 }
 
@@ -228,6 +213,59 @@ actor AssistantSession {
 
     func pendingProposal() -> ActionProposal? {
         self.pendingProposalState?.proposal
+    }
+
+    private func prepareMutationProposal(
+        action: Action,
+        turnID: TelemetryTurnID,
+        turnSpan: TelemetrySpanToken,
+        turnGeneration: Int
+    ) async -> AssistantTurnOutcome {
+        do {
+            let result = try await self.actionHost.execute(actionNamed: action.name, approval: nil)
+            guard self.isCurrentTextTurn(turnGeneration) else {
+                return await self.cancelStaleTurn(turnID: turnID, turnSpan: turnSpan)
+            }
+
+            switch result {
+            case .proposed(let hostProposal):
+                let proposal = hostProposal.withProposalID(self.proposalID(turnID: turnID, action: action))
+                self.pendingProposalState = PendingProposalState(
+                    turnID: turnID,
+                    turnSpan: turnSpan,
+                    proposal: proposal
+                )
+                _ = await self.telemetryRecorder.record(
+                    .actionProposalCreated,
+                    turnID: turnID,
+                    fields: self.actionFields(action, state: "proposal_created")
+                )
+                return .proposal(
+                    AssistantTurnProposal(
+                        turnID: turnID,
+                        proposal: proposal,
+                        message: proposal.summary
+                    )
+                )
+            case .executed:
+                return await self.failTurn(
+                    turnID: turnID,
+                    turnSpan: turnSpan,
+                    message: "Sorry, that action needs confirmation before I can run it.",
+                    resultCategory: "mutation_executed_without_approval"
+                )
+            }
+        } catch {
+            guard self.isCurrentTextTurn(turnGeneration) else {
+                return await self.cancelStaleTurn(turnID: turnID, turnSpan: turnSpan)
+            }
+            return await self.failTurn(
+                turnID: turnID,
+                turnSpan: turnSpan,
+                message: "Sorry, I couldn't prepare that action for confirmation.",
+                resultCategory: "proposal_failed"
+            )
+        }
     }
 
     private func executeReadAction(
