@@ -389,6 +389,45 @@ final class AssistantSessionTests: XCTestCase {
         XCTAssertEventField(events[5], key: "resultCategory", equals: .string("replaced"))
     }
 
+    func test_readPathProposalIsBoundToTurnAndRejectsStaleApproval() async throws {
+        let firstTurnID = TelemetryTurnID("turn-read-proposal-first")
+        let secondTurnID = TelemetryTurnID("turn-read-proposal-second")
+        let generator = SequencedStructuredOutputGenerator(outputs: [
+            .action(name: "calendar.query"),
+            .action(name: "calendar.query")
+        ])
+        let host = ReadProposalActionHost()
+        let sink = InMemoryTelemetrySink()
+        let recorder = TelemetryRecorder(clock: TestTelemetryClock(start: 3_550, step: 10), sinks: [sink])
+        let session = AssistantSession(
+            generator: generator,
+            actionHost: host,
+            auditStore: InMemoryAuditStore(),
+            telemetryRecorder: recorder
+        )
+
+        _ = await session.submitText(AssistantTextRequest(turnID: firstTurnID, text: "Show my calendar."))
+        let firstPendingProposal = await session.pendingProposal()
+        let firstProposal = try XCTUnwrap(firstPendingProposal)
+        XCTAssertEqual(firstProposal.proposalID, "turn-read-proposal-first:calendar.query")
+        _ = try await session.reject(proposal: firstProposal)
+
+        _ = await session.submitText(AssistantTextRequest(turnID: secondTurnID, text: "Show my calendar again."))
+        let secondPendingProposal = await session.pendingProposal()
+        let secondProposal = try XCTUnwrap(secondPendingProposal)
+        XCTAssertEqual(secondProposal.proposalID, "turn-read-proposal-second:calendar.query")
+        XCTAssertNotEqual(firstProposal, secondProposal)
+
+        await XCTAssertThrowsErrorAsync(try await session.approve(proposal: firstProposal)) { error in
+            XCTAssertEqual(
+                error as? AssistantSessionError,
+                .proposalMismatch(expected: secondProposal, received: firstProposal)
+            )
+        }
+        let approvedExecutionCount = await host.approvedExecutionCount()
+        XCTAssertEqual(approvedExecutionCount, 0)
+    }
+
     func test_overlappingReadActionDoesNotCompleteAfterNewerPendingProposal() async throws {
         let firstTurnID = TelemetryTurnID("turn-overlap-read-first")
         let secondTurnID = TelemetryTurnID("turn-overlap-read-second")
@@ -899,6 +938,30 @@ private actor ThrowingApprovedActionHost: ActionHosting {
             return .proposed(ActionProposal(action: action))
         }
         return .executed(action: action, summary: "\(action.name) executed.")
+    }
+}
+
+private actor ReadProposalActionHost: ActionHosting {
+    let catalog: ActionCatalog = .v2Default
+    private var approvedInvocations: Int = 0
+
+    func execute(actionNamed name: String, approval: ActionApproval?) async throws -> ActionResult {
+        guard let action = self.catalog.action(named: name) else {
+            throw ActionHostError.unsupportedAction(name)
+        }
+        if case .approved? = approval {
+            self.approvedInvocations += 1
+            return .executed(action: action, summary: "Approved read proposal.")
+        }
+        return .proposed(ActionProposal(
+            action: action,
+            summary: "Allow calendar lookup?",
+            confirmationLabel: "Allow"
+        ))
+    }
+
+    func approvedExecutionCount() -> Int {
+        self.approvedInvocations
     }
 }
 

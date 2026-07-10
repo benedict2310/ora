@@ -314,7 +314,8 @@ actor AssistantSession {
                     ]
                 )
                 return .result(AssistantTurnResult(turnID: turnID, message: summary))
-            case .proposed(let proposal):
+            case .proposed(let hostProposal):
+                let proposal = hostProposal.withProposalID(self.proposalID(turnID: turnID, action: hostProposal.action))
                 self.pendingProposalState = PendingProposalState(turnID: turnID, turnSpan: turnSpan, proposal: proposal)
                 _ = try? await self.telemetryRecorder.cancelSpan(actionSpan)
                 _ = await self.telemetryRecorder.record(
