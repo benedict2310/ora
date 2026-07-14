@@ -13,7 +13,7 @@
 #   ./build.sh test         # Run fast Ora v2 core tests
 #   ./build.sh test-core    # Run fast Ora v2 core tests
 #   ./build.sh test-legacy  # Run the legacy full OraTests suite
-#   ./build.sh test-perms   # Run legacy tests with permission prompts enabled
+#   ./build.sh test-perms   # Run live permission integration tests (prompts allowed)
 #   ./build.sh test-tts     # Run on-demand TTS integration tests (audio)
 #   ./build.sh test-models  # Run opt-in model integration tests
 #   ./build.sh test-tsan    # Run tests with Thread Sanitizer
@@ -289,7 +289,11 @@ case "${1:-build}" in
 
   test-perms|test-permissions)
     rm -f "$HOME/Library/Application Support/Ora/run-tts-tests.flag"
-    ORA_SKIP_PERMISSION_PROMPTS=0 run_tests "$SCHEME_LEGACY"
+    ORA_SKIP_PERMISSION_PROMPTS=0 run_tests "$SCHEME_LEGACY" \
+      -only-testing:OraTests/PermissionsManagerIntegrationTests \
+      -only-testing:OraTests/LivePermissionsClientTests \
+      -only-testing:OraTests/PermissionHelperTests \
+      -only-testing:OraTests/AudioPermissionIntegrationTests
     ;;
 
   test-tsan)
@@ -420,7 +424,7 @@ case "${1:-build}" in
     echo "  test          Run fast Ora v2 core tests"
     echo "  test-core     Run fast Ora v2 core tests"
     echo "  test-legacy   Run the legacy full OraTests suite"
-    echo "  test-perms    Run legacy tests with permission prompts enabled"
+    echo "  test-perms    Run live permission integration tests (prompts allowed)"
     echo "  test-tsan     Run tests with Thread Sanitizer enabled"
     echo "  test-tts      Run on-demand TTS integration tests (audio)"
     echo "  test-models   Run opt-in model integration tests"
