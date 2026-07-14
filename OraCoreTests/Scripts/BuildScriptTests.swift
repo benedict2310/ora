@@ -1,6 +1,27 @@
 import XCTest
 
 final class BuildScriptTests: XCTestCase {
+    func test_generateProjectRegeneratesWhenSourceFilesAreNewer() throws {
+        let buildScript = try Self.readBuildScript()
+        let generateProjectBody = try XCTUnwrap(
+            Self.functionBody(named: "generate_project", in: buildScript)
+        )
+
+        XCTAssertTrue(generateProjectBody.contains("-newer \"Ora.xcodeproj/project.pbxproj\""))
+        XCTAssertTrue(generateProjectBody.contains("OraTests"))
+        XCTAssertTrue(generateProjectBody.contains("OraCoreTests"))
+    }
+
+    func test_testModelsEnablesAndSelectsOnlyModelIntegrationSuites() throws {
+        let buildScript = try Self.readBuildScript()
+        let testModelsBody = try XCTUnwrap(Self.caseBody(named: "test-models", in: buildScript))
+
+        XCTAssertTrue(testModelsBody.contains("ORA_RUN_MODEL_INTEGRATION_TESTS=1"))
+        XCTAssertTrue(testModelsBody.contains("-only-testing:OraTests/LLMModelIntegrationTests"))
+        XCTAssertTrue(testModelsBody.contains("-only-testing:OraTests/ParakeetModelIntegrationTests"))
+        XCTAssertTrue(testModelsBody.contains("-only-testing:OraTests/EmbeddingModelIntegrationTests"))
+    }
+
     func test_testTsanUsesXcodebuildThreadSanitizerFlag() throws {
         let buildScript = try Self.readBuildScript()
         let testTsanBody = try XCTUnwrap(Self.caseBody(named: "test-tsan", in: buildScript))
@@ -23,6 +44,14 @@ final class BuildScriptTests: XCTestCase {
             .deletingLastPathComponent() // OraCoreTests -> repository root
         let buildScriptURL = repoRoot.appendingPathComponent("build.sh")
         return try String(contentsOf: buildScriptURL, encoding: .utf8)
+    }
+
+    private static func functionBody(named functionName: String, in script: String) -> String? {
+        let marker = "\(functionName)() {"
+        guard let startRange = script.range(of: marker) else { return nil }
+        let afterMarker = script[startRange.upperBound...]
+        guard let endRange = afterMarker.range(of: "\n}") else { return nil }
+        return String(afterMarker[..<endRange.lowerBound])
     }
 
     private static func caseBody(named caseName: String, in script: String) -> String? {
