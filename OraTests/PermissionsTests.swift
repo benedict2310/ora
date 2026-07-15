@@ -254,9 +254,13 @@ final class PermissionsStateTests: XCTestCase {
     }
 }
 
-// MARK: - Permissions Manager Tests
+// MARK: - Permissions Manager Integration Tests
 
-final class PermissionsManagerTests: XCTestCase {
+final class PermissionsManagerIntegrationTests: XCTestCase {
+
+    override func setUpWithError() throws {
+        try IntegrationTestGate.requirePermissionTestsEnabled()
+    }
 
     // MARK: - Singleton Tests
 
@@ -518,6 +522,10 @@ final class PermissionsManagerMockedTests: XCTestCase {
 
 final class LivePermissionsClientTests: XCTestCase {
 
+    override func setUpWithError() throws {
+        try IntegrationTestGate.requirePermissionTestsEnabled()
+    }
+
     let client = LivePermissionsClient()
 
     func test_checkStatus_returnsValidStatus() {
@@ -551,6 +559,10 @@ final class LivePermissionsClientTests: XCTestCase {
 // MARK: - Permission Helper Tests (Early Return Paths)
 
 final class PermissionHelperTests: XCTestCase {
+
+    override func setUpWithError() throws {
+        try IntegrationTestGate.requirePermissionTestsEnabled()
+    }
 
     /// Tests MicrophonePermission.request() early return when already determined
     func test_microphoneRequest_earlyReturn() async {

@@ -37,4 +37,29 @@ final class IntegrationTestGateTests: XCTestCase {
             )
         )
     }
+
+    func test_permissionTests_areDisabledByDefault() {
+        XCTAssertFalse(IntegrationTestGate.isPermissionEnabled(environment: [:]))
+        XCTAssertFalse(IntegrationTestGate.isPermissionEnabled(environment: ["ORA_SKIP_PERMISSION_PROMPTS": "1"]))
+    }
+
+    func test_permissionTests_areEnabledOnlyWhenPermissionPromptsAreAllowed() {
+        XCTAssertTrue(IntegrationTestGate.isPermissionEnabled(environment: ["ORA_SKIP_PERMISSION_PROMPTS": "0"]))
+        XCTAssertFalse(IntegrationTestGate.isPermissionEnabled(environment: ["ORA_SKIP_PERMISSION_PROMPTS": "true"]))
+        XCTAssertFalse(IntegrationTestGate.isPermissionEnabled(environment: ["ORA_SKIP_PERMISSION_PROMPTS": " 0 "]))
+    }
+
+    func test_requirePermissionTestsEnabled_skipsWhenPromptsAreDisabled() {
+        XCTAssertThrowsError(try IntegrationTestGate.requirePermissionTestsEnabled(environment: [:])) { error in
+            XCTAssertTrue(error is XCTSkip)
+        }
+    }
+
+    func test_requirePermissionTestsEnabled_doesNotThrowWhenPromptsAreAllowed() {
+        XCTAssertNoThrow(
+            try IntegrationTestGate.requirePermissionTestsEnabled(
+                environment: ["ORA_SKIP_PERMISSION_PROMPTS": "0"]
+            )
+        )
+    }
 }

@@ -22,6 +22,21 @@ final class BuildScriptTests: XCTestCase {
         XCTAssertTrue(testModelsBody.contains("-only-testing:OraTests/EmbeddingModelIntegrationTests"))
     }
 
+    func test_testPermsEnablesPermissionPromptsAndSelectsOnlyPermissionIntegrationSuites() throws {
+        let buildScript = try Self.readBuildScript()
+        let testPermsBody = try XCTUnwrap(Self.caseBody(named: "test-perms|test-permissions", in: buildScript))
+
+        XCTAssertTrue(testPermsBody.contains("ORA_SKIP_PERMISSION_PROMPTS=0"))
+        XCTAssertTrue(testPermsBody.contains("-only-testing:OraTests/PermissionsManagerIntegrationTests"))
+        XCTAssertTrue(testPermsBody.contains("-only-testing:OraTests/LivePermissionsClientTests"))
+        XCTAssertTrue(testPermsBody.contains("-only-testing:OraTests/PermissionHelperTests"))
+        XCTAssertTrue(testPermsBody.contains("-only-testing:OraTests/AudioPermissionIntegrationTests"))
+        XCTAssertFalse(
+            testPermsBody.contains("ORA_SKIP_PERMISSION_PROMPTS=0 run_tests \"$SCHEME_LEGACY\"\n"),
+            "test-perms must not run the entire legacy suite"
+        )
+    }
+
     func test_testTsanUsesXcodebuildThreadSanitizerFlag() throws {
         let buildScript = try Self.readBuildScript()
         let testTsanBody = try XCTUnwrap(Self.caseBody(named: "test-tsan", in: buildScript))
