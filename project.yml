@@ -94,7 +94,11 @@ targets:
       - path: Ora/Actions/ActionHost.swift
       - path: Ora/Actions/ActionProposal.swift
       - path: Ora/Actions/ActionResult.swift
+      - path: Ora/Data/AuditStore.swift
+      - path: Ora/Interaction/AssistantSession.swift
       - path: Ora/Interaction/AssistantState.swift
+      - path: Ora/Interaction/AssistantTurn.swift
+      - path: Ora/Interaction/StructuredOutputGenerator.swift
       - path: Ora/Telemetry/TelemetryEvent.swift
       - path: Ora/Telemetry/TelemetryClock.swift
       - path: Ora/Telemetry/TelemetrySink.swift
