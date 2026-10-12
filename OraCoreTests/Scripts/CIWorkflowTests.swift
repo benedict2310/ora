@@ -68,6 +68,23 @@ final class CIWorkflowTests: XCTestCase {
         XCTAssertEqual(result.status, 0, result.output)
     }
 
+    func test_localSetupConsumesAllVersionOutputBeforeRecordingDeveloperDirectory() throws {
+        let setup = try Self.readLocalSetupScript()
+        for bulkWrites in [64, 0] {
+            let result = try Self.runLocalSetup(setup, version: "26.0.1", bulkWrites: bulkWrites)
+            XCTAssertEqual(result.status, 0, result.output)
+            XCTAssertEqual(result.environment, "DEVELOPER_DIR=/Applications/Fixture Xcode.app/Contents/Developer\n")
+            XCTAssertTrue(result.output.contains("Using local Xcode 26.0.1 via DEVELOPER_DIR"))
+        }
+    }
+
+    func test_localSetupStillRejectsUnsupportedXcode() throws {
+        let result = try Self.runLocalSetup(Self.readLocalSetupScript(), version: "26.0.0", bulkWrites: 64)
+        XCTAssertNotEqual(result.status, 0, result.output)
+        XCTAssertEqual(result.environment, "")
+        XCTAssertFalse(result.output.contains("Using local Xcode"))
+    }
+
     func test_workflowIsValidYamlAndKeepsBuildTestStructure() throws {
         let result = try Self.runRuby("""
             require "yaml"
@@ -131,6 +148,61 @@ final class CIWorkflowTests: XCTestCase {
         let output = String(data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
         process.waitUntilExit()
         return (process.terminationStatus, output)
+    }
+
+    private static func readLocalSetupScript() throws -> String {
+        let result = try self.runRuby("""
+            require "yaml"
+            steps = YAML.safe_load(File.read(ARGV.fetch(0)), aliases: false).fetch("jobs").fetch("build-and-test").fetch("steps")
+            STDOUT.write(steps.find { |step| step["name"] == "Verify local XcodeGen and Xcode" }.fetch("run"))
+        """)
+        return try XCTUnwrap(result.status == 0 ? result.output : nil, result.output)
+    }
+
+    private static func runLocalSetup(_ script: String, version: String, bulkWrites: Int) throws -> (status: Int32, output: String, environment: String) {
+        let fixture = FileManager.default.temporaryDirectory.appendingPathComponent("OraLocalSetupTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: fixture, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: fixture) }
+        let stubs = [
+            "xcodegen": "#!/bin/bash\necho 'Fixture XcodeGen'\n",
+            "xcode-select": "#!/bin/bash\nprintf '%s\\n' \"$FAKE_DEVELOPER_DIR\"\n",
+            "xcodebuild": """
+                #!/usr/bin/ruby
+                abort "unexpected invocation" unless ARGV == ["-version"]
+                abort "developer directory not scoped" unless ENV.fetch("DEVELOPER_DIR") == ENV.fetch("FAKE_DEVELOPER_DIR")
+                STDOUT.sync = true
+                STDOUT.write("Xcode #{ENV.fetch('FAKE_XCODE_VERSION')}\\n")
+                STDOUT.write("Build version 17A400\\n")
+                # Exceed pipe capacity with separate writes, exposing an early consumer exit without sleeps.
+                chunk = "Build version " + "x" * 65_536 + "\\n"
+                Integer(ENV.fetch("FAKE_XCODE_WRITES")).times { STDOUT.write(chunk) }
+                """
+        ]
+        for (name, contents) in stubs {
+            let executable = fixture.appendingPathComponent(name)
+            try contents.write(to: executable, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+        }
+        let environmentFile = fixture.appendingPathComponent("github-env")
+        try "".write(to: environmentFile, atomically: true, encoding: .utf8)
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = ["-c", script]
+        process.currentDirectoryURL = fixture
+        process.environment = [
+            "PATH": fixture.path + ":/usr/bin:/bin",
+            "GITHUB_ENV": environmentFile.path,
+            "FAKE_DEVELOPER_DIR": "/Applications/Fixture Xcode.app/Contents/Developer",
+            "FAKE_XCODE_VERSION": version,
+            "FAKE_XCODE_WRITES": String(bulkWrites)
+        ]
+        process.standardOutput = output
+        process.standardError = output
+        try process.run()
+        let contents = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        process.waitUntilExit()
+        return (process.terminationStatus, contents, try String(contentsOf: environmentFile, encoding: .utf8))
     }
 
     private static var repoRoot: URL {
