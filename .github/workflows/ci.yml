@@ -49,7 +49,7 @@ jobs:
           xcodegen --version
           developer_dir="$(xcode-select -p)"
           test -n "$developer_dir"
-          version="$(DEVELOPER_DIR="$developer_dir" xcodebuild -version | awk '$1 == "Xcode" { print $2; exit }')"
+          version="$(DEVELOPER_DIR="$developer_dir" xcodebuild -version | awk '$1 == "Xcode" { print $2 }')"
           /usr/bin/ruby -e 'version = ARGV.fetch(0); abort unless Gem::Version.new(version) >= Gem::Version.new("26.0.1")' "$version"
           echo "DEVELOPER_DIR=$developer_dir" >> "$GITHUB_ENV"
           echo "Using local Xcode $version via DEVELOPER_DIR (hosted Xcode 26.2 is intentionally non-parity)."
