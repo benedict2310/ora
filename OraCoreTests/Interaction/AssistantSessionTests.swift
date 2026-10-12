@@ -306,6 +306,226 @@ final class AssistantSessionTests: XCTestCase {
         XCTAssertNoVisibleRequestContent("Private unsupported output.", in: events)
     }
 
+    func test_callingTaskCancellationAroundGenerationIsQuietAndPreservesLatestTurn() async throws {
+        for point in GeneratorCancellationPoint.allCases {
+            for replace in [false, true] {
+                let firstID = TelemetryTurnID("turn-generator-cancelled")
+                let latestID = TelemetryTurnID("turn-generator-latest")
+                let generator = CancellationFixtureGenerator(firstTurnID: firstID, point: point)
+                let host = FakeActionHost()
+                let store = InMemoryAuditStore()
+                let sink = GatedFirstTerminalTelemetrySink(gatedEvent: point == .input ? .inputTextReceived : .bargeDetected)
+                let recorder = TelemetryRecorder(clock: TestTelemetryClock(start: 1_950, step: 10), sinks: [sink])
+                let session = AssistantSession(generator: generator, actionHost: host, auditStore: store, telemetryRecorder: recorder)
+                let submit = Task { await session.submitText(AssistantTextRequest(turnID: firstID, text: "Private cancelled request.")) }
+                if point == .input { await sink.waitForFirstTerminal() } else { await generator.waitForFirstCall() }
+                submit.cancel()
+                XCTAssertTrue(submit.isCancelled)
+                if replace { _ = await session.submitText(AssistantTextRequest(turnID: latestID, text: "Private latest request.")) }
+                let expectedPending = await session.pendingProposal()
+                if point == .input { await sink.releaseFirstTerminal() } else { await generator.releaseFirstCall() }
+                let outcome = await submit.value
+                let calls = await generator.firstCallCount()
+                let hostCalls = await host.invocationCount()
+                XCTAssertEqual(calls, point == .input ? 0 : 1)
+                XCTAssertEqual(hostCalls, replace ? 1 : 0)
+                try await self.assertQuietCancelledTurn(
+                    outcome: outcome, turnID: firstID, session: session, store: store,
+                    recorder: recorder, events: await sink.snapshot(), expectedPending: replace ? expectedPending : nil,
+                    expectedNames: [.turnStarted, .inputTextReceived, .turnCancelled], replaced: replace
+                )
+            }
+        }
+    }
+
+    func test_callingTaskCancellationDuringUnapprovedHostWorkClosesSpansWithoutProposalGhosts() async throws {
+        for actionName in ["reminders.create", "calendar.query"] {
+            for cooperative in [false, true] {
+                for replace in [false, true] {
+                    let firstID = TelemetryTurnID("turn-host-cancelled")
+                    let latestID = TelemetryTurnID("turn-host-latest")
+                    let host = CancellationFixtureHost(cooperative: cooperative)
+                    let store = InMemoryAuditStore()
+                    let sink = InMemoryTelemetrySink()
+                    let recorder = TelemetryRecorder(clock: TestTelemetryClock(start: 1_960, step: 10), sinks: [sink])
+                    let session = AssistantSession(
+                        generator: SequencedStructuredOutputGenerator(outputs: [.action(name: actionName), .action(name: "reminders.create")]),
+                        actionHost: host, auditStore: store, telemetryRecorder: recorder
+                    )
+                    let submit = Task { await session.submitText(AssistantTextRequest(turnID: firstID, text: "Private cancelled request.")) }
+                    await host.waitForFirstCall()
+                    submit.cancel()
+                    XCTAssertTrue(submit.isCancelled)
+                    if replace { _ = await session.submitText(AssistantTextRequest(turnID: latestID, text: "Private latest request.")) }
+                    let expectedPending = await session.pendingProposal()
+                    await host.releaseFirstCall()
+                    let outcome = await submit.value
+                    var names: [TelemetryEventName] = [.turnStarted, .inputTextReceived]
+                    if actionName == "calendar.query" { names += [.actionExecutionStarted, .actionExecutionCancelled] }
+                    names.append(.turnCancelled)
+                    try await self.assertQuietCancelledTurn(
+                        outcome: outcome, turnID: firstID, session: session, store: store,
+                        recorder: recorder, events: await sink.snapshot(), expectedPending: replace ? expectedPending : nil,
+                        expectedNames: names, replaced: replace
+                    )
+                    let approvedCalls = await host.approvedCallCount()
+                    XCTAssertEqual(approvedCalls, 0)
+                }
+            }
+        }
+    }
+
+    func test_cancelledReadActionStartDoesNotReachUnapprovedHost() async throws {
+        let turnID = TelemetryTurnID("turn-read-start-cancelled")
+        let host = CancellationFixtureHost(cooperative: false, gateFirst: false)
+        let sink = GatedFirstTerminalTelemetrySink(gatedEvent: .actionExecutionStarted)
+        let recorder = TelemetryRecorder(clock: TestTelemetryClock(start: 1_970, step: 10), sinks: [sink])
+        let store = InMemoryAuditStore()
+        let session = AssistantSession(
+            generator: FakeStructuredOutputGenerator(output: .action(name: "calendar.query")),
+            actionHost: host, auditStore: store, telemetryRecorder: recorder
+        )
+        let submit = Task { await session.submitText(AssistantTextRequest(turnID: turnID, text: "Private cancelled request.")) }
+        await sink.waitForFirstTerminal()
+        submit.cancel()
+        await sink.releaseFirstTerminal()
+        let outcome = await submit.value
+        let hostCalls = await host.callCount()
+        XCTAssertEqual(hostCalls, 0)
+        try await self.assertQuietCancelledTurn(
+            outcome: outcome, turnID: turnID, session: session, store: store,
+            recorder: recorder, events: await sink.snapshot(), expectedPending: nil,
+            expectedNames: [.turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionCancelled, .turnCancelled], replaced: false
+        )
+    }
+
+    func test_cancelledProposalPublisherClearsOnlyItsOwnedPendingProposalAndSpan() async throws {
+        let cases: [(String, TelemetryEventName)] = [
+            ("reminders.create", .actionProposalCreated),
+            ("calendar.query", .actionProposalCreated),
+            ("calendar.query", .actionExecutionCancelled)
+        ]
+        for (actionName, gatedEvent) in cases {
+            for replace in [false, true] {
+                let firstID = TelemetryTurnID("turn-publisher-cancelled")
+                let host = ApprovalFixtureHost(fixture: .executed)
+                let store = InMemoryAuditStore()
+                let sink = GatedFirstTerminalTelemetrySink(gatedEvent: gatedEvent)
+                let recorder = TelemetryRecorder(clock: TestTelemetryClock(start: 1_980, step: 10), sinks: [sink])
+                let session = AssistantSession(
+                    generator: SequencedStructuredOutputGenerator(outputs: [.action(name: actionName), .action(name: "reminders.create")]),
+                    actionHost: host, auditStore: store, telemetryRecorder: recorder
+                )
+                let submit = Task { await session.submitText(AssistantTextRequest(turnID: firstID, text: "Private cancelled request.")) }
+                await sink.waitForFirstTerminal()
+                submit.cancel()
+                if replace { _ = await session.submitText(AssistantTextRequest(turnID: TelemetryTurnID("turn-publisher-latest"), text: "Private latest request.")) }
+                let expectedPending = await session.pendingProposal()
+                await sink.releaseFirstTerminal()
+                let outcome = await submit.value
+                var names: [TelemetryEventName] = [.turnStarted, .inputTextReceived]
+                if actionName == "calendar.query" { names += [.actionExecutionStarted, .actionExecutionCancelled] }
+                if gatedEvent == .actionProposalCreated { names.append(.actionProposalCreated) }
+                names.append(.turnCancelled)
+                try await self.assertQuietCancelledTurn(
+                    outcome: outcome, turnID: firstID, session: session, store: store,
+                    recorder: recorder, events: await sink.snapshot(), expectedPending: replace ? expectedPending : nil,
+                    expectedNames: names, replaced: replace
+                )
+                let executions = await host.executionCount()
+                XCTAssertEqual(executions, 0)
+            }
+        }
+    }
+
+    private func assertQuietCancelledTurn(
+        outcome: AssistantTurnOutcome, turnID: TelemetryTurnID, session: AssistantSession,
+        store: InMemoryAuditStore, recorder: TelemetryRecorder, events: [TelemetryEvent],
+        expectedPending: ActionProposal?, expectedNames: [TelemetryEventName], replaced: Bool
+    ) async throws {
+        guard case .cancelled(let cancellation) = outcome else {
+            return XCTFail("Cancelled task returned non-cancellation outcome")
+        }
+        XCTAssertEqual(cancellation.turnID, turnID)
+        if replaced { XCTAssertEqual(cancellation.message, "Okay, I moved on to the latest request.") }
+        let pending = await session.pendingProposal()
+        let entries = await store.entries()
+        let openSpans = await recorder.openSpanCount()
+        XCTAssertEqual(pending, expectedPending)
+        XCTAssertTrue(entries.isEmpty)
+        XCTAssertEqual(openSpans, replaced ? 1 : 0)
+        let firstEvents = events.filter { $0.turnID == turnID }
+        XCTAssertEventNames(firstEvents, expectedNames)
+        XCTAssertEventField(try XCTUnwrap(firstEvents.last), key: "resultCategory", equals: .string(replaced ? "replaced" : "task_cancelled"))
+        XCTAssertFalse(firstEvents.contains { $0.name == .turnFailed || $0.name == .actionExecutionFailed || $0.name == .auditEntryRecorded })
+        XCTAssertEqual(events.map(\.sequenceNumber), Array(1...events.count))
+        XCTAssertNoVisibleRequestContent("Private cancelled request.", in: events)
+        XCTAssertNoVisibleRequestContent("Private latest request.", in: events)
+        if let expectedPending {
+            _ = try await session.reject(proposal: expectedPending)
+            let finalOpenSpans = await recorder.openSpanCount()
+            XCTAssertEqual(finalOpenSpans, 0)
+        }
+    }
+
+    func test_cancelledPublisherDoesNotCloseSpanConsumedByAnAcceptedApproval() async throws {
+        let turnID = TelemetryTurnID("turn-consumed-publisher")
+        let host = ApprovalFixtureHost(fixture: .executed)
+        let store = InMemoryAuditStore()
+        let sink = GatedFirstTerminalTelemetrySink(gatedEvent: .actionProposalCreated)
+        let recorder = TelemetryRecorder(clock: TestTelemetryClock(start: 1_990, step: 10), sinks: [sink])
+        let session = AssistantSession(
+            generator: FakeStructuredOutputGenerator(output: .action(name: "reminders.create")),
+            actionHost: host, auditStore: store, telemetryRecorder: recorder
+        )
+        let submit = Task { await session.submitText(AssistantTextRequest(turnID: turnID, text: "Private cancelled request.")) }
+        await sink.waitForFirstTerminal()
+        let pending = await session.pendingProposal()
+        let proposal = try XCTUnwrap(pending)
+        submit.cancel()
+        let approvedOutcome = try await session.approve(proposal: proposal)
+        await sink.releaseFirstTerminal()
+        let submitOutcome = await submit.value
+        XCTAssertEqual(approvedOutcome, .result(AssistantTurnResult(turnID: turnID, message: "Private execution summary.")))
+        guard case .cancelled = submitOutcome else { return XCTFail("Consumed publisher should not return a proposal") }
+        let entries = await store.entries()
+        let executions = await host.executionCount()
+        let openSpans = await recorder.openSpanCount()
+        let events = await sink.snapshot()
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(executions, 1)
+        XCTAssertEqual(openSpans, 0)
+        XCTAssertEqual(events.filter { $0.name == .turnCompleted }.count, 1)
+        XCTAssertFalse(events.contains { $0.name == .turnCancelled })
+    }
+
+    func test_cancelledAcceptedApprovalStillExecutesAndAuditsUsingExistingPolicy() async throws {
+        let turnID = TelemetryTurnID("turn-accepted-task-cancelled")
+        let host = ApprovalFixtureHost(fixture: .executed)
+        let store = InMemoryAuditStore()
+        let sink = GatedFirstTerminalTelemetrySink(gatedEvent: .actionProposalApproved)
+        let recorder = TelemetryRecorder(clock: TestTelemetryClock(start: 1_995, step: 10), sinks: [sink])
+        let session = AssistantSession(
+            generator: FakeStructuredOutputGenerator(output: .action(name: "reminders.create")),
+            actionHost: host, auditStore: store, telemetryRecorder: recorder
+        )
+        _ = await session.submitText(AssistantTextRequest(turnID: turnID, text: "Private accepted request."))
+        let pending = await session.pendingProposal()
+        let proposal = try XCTUnwrap(pending)
+        let approval = Task { try await session.approve(proposal: proposal) }
+        await sink.waitForFirstTerminal()
+        approval.cancel()
+        await sink.releaseFirstTerminal()
+        let outcome = try await approval.value
+        let entries = await store.entries()
+        let executions = await host.executionCount()
+        let openSpans = await recorder.openSpanCount()
+        XCTAssertEqual(outcome, .result(AssistantTurnResult(turnID: turnID, message: "Private execution summary.")))
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(executions, 1)
+        XCTAssertEqual(openSpans, 0)
+    }
+
     func test_submitText_mutationReturnsProposalWithoutExecutingMutation() async throws {
         let turnID = TelemetryTurnID("turn-proposal")
         let request = AssistantTextRequest(turnID: turnID, text: "Create a reminder to submit expenses.")
@@ -1766,6 +1986,89 @@ final class AssistantSessionTests: XCTestCase {
         XCTAssertNoEventField(events[2], key: "actionName")
         XCTAssertEventField(events[2], key: "resultCategory", equals: .string("unsupported_action"))
     }
+}
+
+private enum GeneratorCancellationPoint: CaseIterable, Sendable {
+    case input, cooperativeGenerator, noncooperativeGenerator
+}
+
+private actor CancellationFixtureGenerator: StructuredOutputGenerating {
+    private let firstTurnID: TelemetryTurnID
+    private let point: GeneratorCancellationPoint
+    private var firstCalls = 0
+    private var startedContinuation: CheckedContinuation<Void, Never>?
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+    init(firstTurnID: TelemetryTurnID, point: GeneratorCancellationPoint) {
+        self.firstTurnID = firstTurnID
+        self.point = point
+    }
+
+    func generate(for request: AssistantTextRequest) async throws -> StructuredAssistantOutput {
+        if request.turnID == self.firstTurnID {
+            self.firstCalls += 1
+            if self.point != .input {
+                self.startedContinuation?.resume()
+                self.startedContinuation = nil
+                await withCheckedContinuation { self.releaseContinuation = $0 }
+            }
+            if self.point == .cooperativeGenerator { try Task.checkCancellation() }
+        }
+        return .action(name: "reminders.create")
+    }
+
+    func waitForFirstCall() async {
+        if self.firstCalls > 0 { return }
+        await withCheckedContinuation { self.startedContinuation = $0 }
+    }
+
+    func releaseFirstCall() {
+        self.releaseContinuation?.resume()
+        self.releaseContinuation = nil
+    }
+
+    func firstCallCount() -> Int { self.firstCalls }
+}
+
+private actor CancellationFixtureHost: ActionHosting {
+    let catalog: ActionCatalog = .v2Default
+    private let cooperative: Bool
+    private let gateFirst: Bool
+    private var calls = 0
+    private var approvedCalls = 0
+    private var startedContinuation: CheckedContinuation<Void, Never>?
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+    init(cooperative: Bool, gateFirst: Bool = true) {
+        self.cooperative = cooperative
+        self.gateFirst = gateFirst
+    }
+
+    func execute(actionNamed name: String, approval: ActionApproval?) async throws -> ActionResult {
+        self.calls += 1
+        if approval != nil { self.approvedCalls += 1 }
+        guard let action = self.catalog.action(named: name) else { throw ActionHostError.unsupportedAction(name) }
+        if self.calls == 1 && self.gateFirst {
+            self.startedContinuation?.resume()
+            self.startedContinuation = nil
+            await withCheckedContinuation { self.releaseContinuation = $0 }
+        }
+        if self.cooperative { try Task.checkCancellation() }
+        return .proposed(ActionProposal(action: action))
+    }
+
+    func waitForFirstCall() async {
+        if self.calls > 0 { return }
+        await withCheckedContinuation { self.startedContinuation = $0 }
+    }
+
+    func releaseFirstCall() {
+        self.releaseContinuation?.resume()
+        self.releaseContinuation = nil
+    }
+
+    func callCount() -> Int { self.calls }
+    func approvedCallCount() -> Int { self.approvedCalls }
 }
 
 private enum HostCallbackFixture: CaseIterable, Sendable {

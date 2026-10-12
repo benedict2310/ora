@@ -56,7 +56,9 @@ actor AssistantSession {
             return await self.cancelStaleTurn(turnID: request.turnID, turnSpan: turnSpan)
         }
         do {
+            try Task.checkCancellation()
             let output = try await self.generator.generate(for: request)
+            try Task.checkCancellation()
             guard self.isCurrentTextTurn(turnGeneration) else {
                 return await self.cancelStaleTurn(turnID: request.turnID, turnSpan: turnSpan)
             }
@@ -99,6 +101,13 @@ actor AssistantSession {
                     turnGeneration: turnGeneration
                 )
             }
+        } catch is CancellationError {
+            guard self.isCurrentTextTurn(turnGeneration) else {
+                return await self.cancelStaleTurn(turnID: request.turnID, turnSpan: turnSpan)
+            }
+            return await self.cancelUnapprovedTurn(
+                turnID: request.turnID, turnSpan: turnSpan, turnGeneration: turnGeneration
+            )
         } catch StructuredOutputGenerationError.validationFailed {
             guard self.isCurrentTextTurn(turnGeneration) else {
                 return await self.cancelStaleTurn(turnID: request.turnID, turnSpan: turnSpan)
@@ -260,6 +269,7 @@ actor AssistantSession {
         turnGeneration: Int
     ) async -> AssistantTurnOutcome {
         do {
+            try Task.checkCancellation()
             let result = try await self.actionHost.execute(actionNamed: action.name, approval: nil)
             guard self.isCurrentTextTurn(turnGeneration) else {
                 return await self.cancelStaleTurn(turnID: turnID, turnSpan: turnSpan)
@@ -267,6 +277,7 @@ actor AssistantSession {
 
             switch result {
             case .proposed(let hostProposal):
+                try Task.checkCancellation()
                 guard hostProposal.action == action else {
                     return await self.failTurn(
                         turnID: turnID, turnSpan: turnSpan,
@@ -293,6 +304,12 @@ actor AssistantSession {
                 ) else {
                     return self.staleTurnCancellation(turnID: turnID)
                 }
+                if Task.isCancelled {
+                    self.pendingProposalState = nil
+                    return await self.cancelUnapprovedTurn(
+                        turnID: turnID, turnSpan: turnSpan, turnGeneration: turnGeneration, action: action
+                    )
+                }
                 return .proposal(
                     AssistantTurnProposal(
                         turnID: turnID,
@@ -310,6 +327,13 @@ actor AssistantSession {
                     action: action
                 )
             }
+        } catch is CancellationError {
+            guard self.isCurrentTextTurn(turnGeneration) else {
+                return await self.cancelStaleTurn(turnID: turnID, turnSpan: turnSpan)
+            }
+            return await self.cancelUnapprovedTurn(
+                turnID: turnID, turnSpan: turnSpan, turnGeneration: turnGeneration, action: action
+            )
         } catch {
             guard self.isCurrentTextTurn(turnGeneration) else {
                 return await self.cancelStaleTurn(turnID: turnID, turnSpan: turnSpan)
@@ -347,6 +371,7 @@ actor AssistantSession {
         }
 
         do {
+            try Task.checkCancellation()
             let result = try await self.actionHost.execute(actionNamed: action.name, approval: nil)
             guard self.isCurrentTextTurn(turnGeneration) else {
                 return await self.cancelStaleActionTurn(
@@ -384,6 +409,7 @@ actor AssistantSession {
                 }
                 return .result(AssistantTurnResult(turnID: turnID, message: summary))
             case .proposed(let hostProposal):
+                try Task.checkCancellation()
                 guard hostProposal.action == action else {
                     return await self.failReadAction(
                         actionSpan: actionSpan, turnSpan: turnSpan, turnID: turnID,
@@ -399,6 +425,12 @@ actor AssistantSession {
                 ) else {
                     return self.staleTurnCancellation(turnID: turnID)
                 }
+                if Task.isCancelled {
+                    self.pendingProposalState = nil
+                    return await self.cancelUnapprovedTurn(
+                        turnID: turnID, turnSpan: turnSpan, turnGeneration: turnGeneration, action: action
+                    )
+                }
                 _ = await self.telemetryRecorder.record(
                     .actionProposalCreated,
                     turnID: turnID,
@@ -410,8 +442,24 @@ actor AssistantSession {
                 ) else {
                     return self.staleTurnCancellation(turnID: turnID)
                 }
+                if Task.isCancelled {
+                    self.pendingProposalState = nil
+                    return await self.cancelUnapprovedTurn(
+                        turnID: turnID, turnSpan: turnSpan, turnGeneration: turnGeneration, action: action
+                    )
+                }
                 return .proposal(AssistantTurnProposal(turnID: turnID, proposal: proposal, message: proposal.summary))
             }
+        } catch is CancellationError {
+            guard self.isCurrentTextTurn(turnGeneration) else {
+                return await self.cancelStaleActionTurn(
+                    actionSpan: actionSpan, turnSpan: turnSpan, action: action, turnID: turnID
+                )
+            }
+            return await self.cancelUnapprovedActionTurn(
+                actionSpan: actionSpan, turnSpan: turnSpan, turnID: turnID,
+                turnGeneration: turnGeneration, action: action
+            )
         } catch {
             guard self.isCurrentTextTurn(turnGeneration) else {
                 return await self.cancelStaleActionTurn(
@@ -426,6 +474,39 @@ actor AssistantSession {
                 action: action, resultCategory: "action_failed", turnGeneration: turnGeneration
             )
         }
+    }
+
+    private func cancelUnapprovedActionTurn(
+        actionSpan: TelemetrySpanToken,
+        turnSpan: TelemetrySpanToken,
+        turnID: TelemetryTurnID,
+        turnGeneration: Int,
+        action: Action
+    ) async -> AssistantTurnOutcome {
+        _ = try? await self.telemetryRecorder.cancelSpan(
+            actionSpan,
+            fields: self.actionFields(action, state: "cancelled") + [self.stringField("resultCategory", "task_cancelled")]
+        )
+        return await self.cancelUnapprovedTurn(
+            turnID: turnID, turnSpan: turnSpan, turnGeneration: turnGeneration, action: action
+        )
+    }
+
+    private func cancelUnapprovedTurn(
+        turnID: TelemetryTurnID,
+        turnSpan: TelemetrySpanToken,
+        turnGeneration: Int,
+        action: Action? = nil
+    ) async -> AssistantTurnOutcome {
+        var fields = self.baseFields(phase: "turn", state: "cancelled") + [
+            self.stringField("resultCategory", self.isCurrentTextTurn(turnGeneration) ? "task_cancelled" : "replaced")
+        ]
+        if let action { fields += self.actionIdentityFields(action) }
+        _ = try? await self.telemetryRecorder.cancelSpan(turnSpan, fields: fields)
+        guard self.isCurrentTextTurn(turnGeneration) else {
+            return self.staleTurnCancellation(turnID: turnID)
+        }
+        return .cancelled(AssistantTurnCancellation(turnID: turnID, message: "Okay, I cancelled that request."))
     }
 
     private func failReadAction(
