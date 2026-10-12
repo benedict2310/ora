@@ -240,6 +240,12 @@ actor AssistantSession {
                     turnID: turnID,
                     fields: self.actionFields(action, state: "proposal_created")
                 )
+                guard self.isPendingProposalStillCurrent(
+                    PendingProposalState(turnID: turnID, turnSpan: turnSpan, proposal: proposal),
+                    turnGeneration: turnGeneration
+                ) else {
+                    return self.staleTurnCancellation(turnID: turnID)
+                }
                 return .proposal(
                     AssistantTurnProposal(
                         turnID: turnID,
@@ -323,6 +329,12 @@ actor AssistantSession {
                     turnID: turnID,
                     fields: self.actionFields(proposal.action, state: "proposal_created")
                 )
+                guard self.isPendingProposalStillCurrent(
+                    PendingProposalState(turnID: turnID, turnSpan: turnSpan, proposal: proposal),
+                    turnGeneration: turnGeneration
+                ) else {
+                    return self.staleTurnCancellation(turnID: turnID)
+                }
                 return .proposal(AssistantTurnProposal(turnID: turnID, proposal: proposal, message: proposal.summary))
             }
         } catch {
@@ -374,6 +386,22 @@ actor AssistantSession {
         )
     }
 
+    private func isPendingProposalStillCurrent(
+        _ pending: PendingProposalState,
+        turnGeneration: Int
+    ) -> Bool {
+        self.isCurrentTextTurn(turnGeneration) && self.pendingProposalState == pending
+    }
+
+    private func staleTurnCancellation(turnID: TelemetryTurnID) -> AssistantTurnOutcome {
+        .cancelled(
+            AssistantTurnCancellation(
+                turnID: turnID,
+                message: "Okay, I moved on to the latest request."
+            )
+        )
+    }
+
     private func cancelStaleActionTurn(
         actionSpan: TelemetrySpanToken,
         turnSpan: TelemetrySpanToken,
@@ -399,12 +427,7 @@ actor AssistantSession {
                 self.stringField("resultCategory", "replaced")
             ]
         )
-        return .cancelled(
-            AssistantTurnCancellation(
-                turnID: turnID,
-                message: "Okay, I moved on to the latest request."
-            )
-        )
+        return self.staleTurnCancellation(turnID: turnID)
     }
 
     private func failApprovedAction(

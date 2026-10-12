@@ -389,6 +389,176 @@ final class AssistantSessionTests: XCTestCase {
         XCTAssertEventField(events[5], key: "resultCategory", equals: .string("replaced"))
     }
 
+    func test_submitTextReturnsCancellationIfProposalIsReplacedWhileTelemetryIsRecording() async throws {
+        let firstTurnID = TelemetryTurnID("turn-proposal-telemetry-first")
+        let secondTurnID = TelemetryTurnID("turn-proposal-telemetry-second")
+        let generator = SequencedStructuredOutputGenerator(outputs: [
+            .action(name: "reminders.create"),
+            .action(name: "reminders.create")
+        ])
+        let sink = GatedFirstProposalTelemetrySink()
+        let recorder = TelemetryRecorder(clock: TestTelemetryClock(start: 3_525, step: 10), sinks: [sink])
+        let session = AssistantSession(
+            generator: generator,
+            actionHost: FakeActionHost(),
+            auditStore: InMemoryAuditStore(),
+            telemetryRecorder: recorder
+        )
+
+        let firstTurn = Task {
+            await session.submitText(AssistantTextRequest(turnID: firstTurnID, text: "Create first reminder."))
+        }
+        await sink.waitForFirstProposalRecord()
+
+        _ = await session.submitText(AssistantTextRequest(turnID: secondTurnID, text: "Create second reminder."))
+        let secondPendingProposal = await session.pendingProposal()
+        let secondProposal = try XCTUnwrap(secondPendingProposal)
+
+        await sink.releaseFirstProposalRecord()
+        let firstOutcome = await firstTurn.value
+        let pendingAfterFirstCompletionValue = await session.pendingProposal()
+        let pendingAfterFirstCompletion = try XCTUnwrap(pendingAfterFirstCompletionValue)
+        let openSpanCount = await recorder.openSpanCount()
+
+        XCTAssertEqual(
+            firstOutcome,
+            .cancelled(
+                AssistantTurnCancellation(
+                    turnID: firstTurnID,
+                    message: "Okay, I moved on to the latest request."
+                )
+            )
+        )
+        XCTAssertEqual(pendingAfterFirstCompletion, secondProposal)
+        XCTAssertEqual(pendingAfterFirstCompletion.proposalID, "turn-proposal-telemetry-second:reminders.create")
+        XCTAssertEqual(openSpanCount, 1)
+        let events = await sink.snapshot()
+        let firstEvents = events.filter { $0.turnID == firstTurnID }
+        XCTAssertEventNames(firstEvents, [.turnStarted, .inputTextReceived, .actionProposalCreated, .turnCancelled])
+        XCTAssertEqual(events.map(\.sequenceNumber), Array(1...events.count))
+        XCTAssertEventField(firstEvents[3], key: "resultCategory", equals: .string("replaced"))
+        XCTAssertNoVisibleRequestContent("Create first reminder.", in: events)
+        XCTAssertNoVisibleRequestContent("Create second reminder.", in: events)
+
+        _ = try await session.reject(proposal: secondProposal)
+        let finalOpenSpanCount = await recorder.openSpanCount()
+        XCTAssertEqual(finalOpenSpanCount, 0)
+    }
+
+    func test_readPathReturnsCancellationIfProposalIsReplacedWhileTelemetryIsRecording() async throws {
+        let firstTurnID = TelemetryTurnID("turn-read-telemetry-first")
+        let secondTurnID = TelemetryTurnID("turn-read-telemetry-second")
+        let firstRequest = AssistantTextRequest(turnID: firstTurnID, text: "Show my private calendar.")
+        let secondRequest = AssistantTextRequest(turnID: secondTurnID, text: "Show my calendar again.")
+        let generator = SequencedStructuredOutputGenerator(outputs: [
+            .action(name: "calendar.query"),
+            .action(name: "calendar.query")
+        ])
+        let host = ReadProposalActionHost()
+        let auditStore = InMemoryAuditStore()
+        let sink = GatedFirstProposalTelemetrySink()
+        let recorder = TelemetryRecorder(clock: TestTelemetryClock(start: 3_540, step: 10), sinks: [sink])
+        let session = AssistantSession(
+            generator: generator,
+            actionHost: host,
+            auditStore: auditStore,
+            telemetryRecorder: recorder
+        )
+
+        let firstTurn = Task { await session.submitText(firstRequest) }
+        await sink.waitForFirstProposalRecord()
+        let secondOutcome = await session.submitText(secondRequest)
+        let secondPending = await session.pendingProposal()
+        let secondProposal = try XCTUnwrap(secondPending)
+
+        await sink.releaseFirstProposalRecord()
+        let firstOutcome = await firstTurn.value
+        let pendingAfterFirstCompletion = await session.pendingProposal()
+        let openSpanCount = await recorder.openSpanCount()
+        let events = await sink.snapshot()
+
+        XCTAssertEqual(
+            firstOutcome,
+            .cancelled(AssistantTurnCancellation(turnID: firstTurnID, message: "Okay, I moved on to the latest request."))
+        )
+        XCTAssertEqual(
+            secondOutcome,
+            .proposal(AssistantTurnProposal(turnID: secondTurnID, proposal: secondProposal, message: secondProposal.summary))
+        )
+        XCTAssertEqual(pendingAfterFirstCompletion, secondProposal)
+        XCTAssertEqual(secondProposal.proposalID, "turn-read-telemetry-second:calendar.query")
+        XCTAssertEqual(openSpanCount, 1)
+        let firstEvents = events.filter { $0.turnID == firstTurnID }
+        let secondEvents = events.filter { $0.turnID == secondTurnID }
+        XCTAssertEventNames(firstEvents, [
+            .turnStarted, .inputTextReceived, .actionExecutionStarted,
+            .actionExecutionCancelled, .actionProposalCreated, .turnCancelled
+        ])
+        XCTAssertEventNames(secondEvents, [
+            .turnStarted, .inputTextReceived, .actionExecutionStarted,
+            .actionExecutionCancelled, .actionProposalCreated
+        ])
+        XCTAssertEqual(events.map(\.sequenceNumber), Array(1...events.count))
+        XCTAssertEventField(firstEvents[5], key: "resultCategory", equals: .string("replaced"))
+        XCTAssertNoVisibleRequestContent(firstRequest.text, in: events)
+        XCTAssertNoVisibleRequestContent(secondRequest.text, in: events)
+
+        _ = try await session.reject(proposal: secondProposal)
+        let finalOpenSpanCount = await recorder.openSpanCount()
+        let approvedExecutionCount = await host.approvedExecutionCount()
+        let auditEntries = await auditStore.entries()
+        XCTAssertEqual(finalOpenSpanCount, 0)
+        XCTAssertEqual(approvedExecutionCount, 0)
+        XCTAssertTrue(auditEntries.isEmpty)
+    }
+
+    func test_mutationDoesNotReturnRejectedProposalAfterTelemetryResumes() async throws {
+        try await self.assertRejectedProposalIsNotReturned(actionName: "reminders.create", host: FakeActionHost())
+    }
+
+    func test_readPathDoesNotReturnRejectedProposalAfterTelemetryResumes() async throws {
+        try await self.assertRejectedProposalIsNotReturned(actionName: "calendar.query", host: ReadProposalActionHost())
+    }
+
+    private func assertRejectedProposalIsNotReturned(actionName: String, host: any ActionHosting) async throws {
+        let turnID = TelemetryTurnID("turn-rejected-during-telemetry")
+        let sink = GatedFirstProposalTelemetrySink()
+        let auditStore = InMemoryAuditStore()
+        let recorder = TelemetryRecorder(clock: TestTelemetryClock(start: 3_545, step: 10), sinks: [sink])
+        let session = AssistantSession(
+            generator: FakeStructuredOutputGenerator(output: .action(name: actionName)),
+            actionHost: host,
+            auditStore: auditStore,
+            telemetryRecorder: recorder
+        )
+        let submit = Task {
+            await session.submitText(AssistantTextRequest(turnID: turnID, text: "Private request to reject."))
+        }
+        await sink.waitForFirstProposalRecord()
+        let pending = await session.pendingProposal()
+        let proposal = try XCTUnwrap(pending)
+        _ = try await session.reject(proposal: proposal)
+        await sink.releaseFirstProposalRecord()
+
+        let outcome = await submit.value
+        let finalPending = await session.pendingProposal()
+        let openSpanCount = await recorder.openSpanCount()
+        let events = await sink.snapshot()
+        let auditEntries = await auditStore.entries()
+        XCTAssertEqual(
+            outcome,
+            .cancelled(AssistantTurnCancellation(turnID: turnID, message: "Okay, I moved on to the latest request."))
+        )
+        XCTAssertNil(finalPending)
+        XCTAssertEqual(openSpanCount, 0)
+        XCTAssertTrue(auditEntries.isEmpty)
+        XCTAssertEqual(events.suffix(2).map(\.name), [.actionProposalRejected, .turnCancelled])
+        XCTAssertEqual(events.filter { $0.name == .turnCancelled }.count, 1)
+        XCTAssertFalse(events.contains { $0.name == .actionProposalApproved || $0.name == .actionExecutionCompleted })
+        XCTAssertTurnMetadata(events, turnID: turnID)
+        XCTAssertNoVisibleRequestContent("Private request to reject.", in: events)
+    }
+
     func test_readPathProposalIsBoundToTurnAndRejectsStaleApproval() async throws {
         let firstTurnID = TelemetryTurnID("turn-read-proposal-first")
         let secondTurnID = TelemetryTurnID("turn-read-proposal-second")
@@ -938,6 +1108,43 @@ private actor ThrowingApprovedActionHost: ActionHosting {
             return .proposed(ActionProposal(action: action))
         }
         return .executed(action: action, summary: "\(action.name) executed.")
+    }
+}
+
+private actor GatedFirstProposalTelemetrySink: TelemetrySink {
+    private var events: [TelemetryEvent] = []
+    private var firstProposalRecordStarted = false
+    private var firstProposalRecordContinuation: CheckedContinuation<Void, Never>?
+    private var releaseFirstProposalContinuation: CheckedContinuation<Void, Never>?
+
+    func record(_ event: TelemetryEvent) async {
+        self.events.append(event)
+        if event.name == .actionProposalCreated, !self.firstProposalRecordStarted {
+            self.firstProposalRecordStarted = true
+            self.firstProposalRecordContinuation?.resume()
+            self.firstProposalRecordContinuation = nil
+            await withCheckedContinuation { continuation in
+                self.releaseFirstProposalContinuation = continuation
+            }
+        }
+    }
+
+    func waitForFirstProposalRecord() async {
+        if self.firstProposalRecordStarted {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            self.firstProposalRecordContinuation = continuation
+        }
+    }
+
+    func releaseFirstProposalRecord() {
+        self.releaseFirstProposalContinuation?.resume()
+        self.releaseFirstProposalContinuation = nil
+    }
+
+    func snapshot() -> [TelemetryEvent] {
+        self.events
     }
 }
 
