@@ -18,6 +18,7 @@ build/
 .build/
 Packages/
 Package.resolved
+!/Package.resolved
 *.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
 
 # CocoaPods (if used)

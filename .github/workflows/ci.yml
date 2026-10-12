@@ -1,7 +1,8 @@
 # CI — Build + Test on every PR and push to main
 #
-# Runner: macos-26 (Apple Silicon, macOS 26 Tahoe - beta)
-# No secrets required — uses ad-hoc code signing.
+# Hosted CI remains the default. A same-repository PR may opt into the
+# trusted, ephemeral local runner by setting ORA_LOCAL_CI_PR to its exact
+# decimal PR number for one run.
 
 name: CI
 
@@ -15,6 +16,9 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 env:
   SCHEME: Ora
   CONFIGURATION: Release
@@ -24,26 +28,50 @@ env:
 jobs:
   build-and-test:
     name: Build & Test
-    runs-on: macos-26
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && vars.ORA_LOCAL_CI_PR != '' && format('{0}', github.event.pull_request.number) == vars.ORA_LOCAL_CI_PR && '["self-hosted","macOS","ARM64","ora-local-ci"]' || '"macos-26"') }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install XcodeGen
+        if: ${{ runner.environment == 'github-hosted' }}
         run: brew install xcodegen
 
+      - name: Verify local XcodeGen and Xcode
+        if: ${{ runner.environment == 'self-hosted' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v xcodegen
+          xcodegen --version
+          developer_dir="$(xcode-select -p)"
+          test -n "$developer_dir"
+          version="$(DEVELOPER_DIR="$developer_dir" xcodebuild -version | awk '$1 == "Xcode" { print $2; exit }')"
+          /usr/bin/ruby -e 'version = ARGV.fetch(0); abort unless Gem::Version.new(version) >= Gem::Version.new("26.0.1")' "$version"
+          echo "DEVELOPER_DIR=$developer_dir" >> "$GITHUB_ENV"
+          echo "Using local Xcode $version via DEVELOPER_DIR (hosted Xcode 26.2 is intentionally non-parity)."
+
       - name: Select Xcode 26.2
+        if: ${{ runner.environment == 'github-hosted' }}
         run: sudo xcode-select -s /Applications/Xcode_26.2.app
 
       - name: Generate Xcode project
         run: xcodegen generate
 
+      - name: Copy tracked package resolution
+        run: |
+          test -f Package.resolved
+          mkdir -p Ora.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
+          cp Package.resolved Ora.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+
       - name: Cache SPM packages
         uses: actions/cache@v4
         with:
           path: build/SourcePackages
-          key: spm-${{ hashFiles('project.yml', 'Vendor/kokoro-ios/Package.swift', 'Vendor/MisakiSwift/Package.swift') }}
+          key: spm-${{ hashFiles('Package.resolved', 'project.yml', 'Vendor/kokoro-ios/Package.swift', 'Vendor/MisakiSwift/Package.swift') }}
           restore-keys: |
             spm-
 
@@ -52,7 +80,8 @@ jobs:
           xcodebuild -resolvePackageDependencies \
             -project Ora.xcodeproj \
             -scheme "$SCHEME" \
-            -clonedSourcePackagesDirPath "$DERIVED_DATA/SourcePackages"
+            -clonedSourcePackagesDirPath "$DERIVED_DATA/SourcePackages" \
+            -onlyUsePackageVersionsFromResolvedFile
 
       - name: Build
         run: |
@@ -62,6 +91,7 @@ jobs:
             -configuration "$CONFIGURATION" \
             -derivedDataPath "$DERIVED_DATA" \
             -destination "platform=macOS,arch=$ARCH" \
+            -onlyUsePackageVersionsFromResolvedFile \
             CODE_SIGN_IDENTITY="-" \
             ENABLE_HARDENED_RUNTIME=NO \
             ONLY_ACTIVE_ARCH=YES
