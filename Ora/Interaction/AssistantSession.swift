@@ -271,12 +271,11 @@ actor AssistantSession {
         do {
             try Task.checkCancellation()
             let result = try await self.actionHost.execute(actionNamed: action.name, approval: nil)
-            guard self.isCurrentTextTurn(turnGeneration) else {
-                return await self.cancelStaleTurn(turnID: turnID, turnSpan: turnSpan)
-            }
-
             switch result {
             case .proposed(let hostProposal):
+                guard self.isCurrentTextTurn(turnGeneration) else {
+                    return await self.cancelStaleTurn(turnID: turnID, turnSpan: turnSpan)
+                }
                 try Task.checkCancellation()
                 guard hostProposal.action == action else {
                     return await self.failTurn(
@@ -324,7 +323,8 @@ actor AssistantSession {
                     message: "Sorry, that action needs confirmation before I can run it.",
                     resultCategory: "mutation_executed_without_approval",
                     turnGeneration: turnGeneration,
-                    action: action
+                    action: action,
+                    recordSafetyViolation: true
                 )
             }
         } catch is CancellationError {
@@ -632,9 +632,10 @@ actor AssistantSession {
         message: String,
         resultCategory: String,
         turnGeneration: Int,
-        action: Action? = nil
+        action: Action? = nil,
+        recordSafetyViolation: Bool = false
     ) async -> AssistantTurnOutcome {
-        guard self.isCurrentTextTurn(turnGeneration) else {
+        guard recordSafetyViolation || self.isCurrentTextTurn(turnGeneration) else {
             return await self.cancelStaleTurn(turnID: turnID, turnSpan: turnSpan)
         }
         var fields = self.baseFields(phase: "turn", state: "failed") + [
@@ -646,6 +647,9 @@ actor AssistantSession {
         _ = try? await self.telemetryRecorder.failSpan(turnSpan, fields: fields)
         guard self.isCurrentTextTurn(turnGeneration) else {
             return self.staleTurnCancellation(turnID: turnID)
+        }
+        if recordSafetyViolation && Task.isCancelled {
+            return .cancelled(AssistantTurnCancellation(turnID: turnID, message: "Okay, I cancelled that request."))
         }
         return .failure(AssistantTurnFailure(turnID: turnID, message: message))
     }

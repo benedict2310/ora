@@ -569,6 +569,87 @@ final class AssistantSessionTests: XCTestCase {
         XCTAssertEqual(openSpanCount, 1)
     }
 
+    func test_slowUnapprovedMutationResultMatrixPreservesSafetyTraceAndLatestPendingState() async throws {
+        for reportsExecuted in [false, true] {
+            for replace in [false, true] {
+                for cancel in [false, true] {
+                    let firstID = TelemetryTurnID("turn-unapproved-slow")
+                    let latestID = TelemetryTurnID("turn-unapproved-latest")
+                    let host = GatedUnapprovedResultHost(reportsExecuted: reportsExecuted)
+                    let store = InMemoryAuditStore()
+                    let sink = InMemoryTelemetrySink()
+                    let recorder = TelemetryRecorder(clock: TestTelemetryClock(start: 2_450, step: 10), sinks: [sink])
+                    let session = AssistantSession(
+                        generator: FakeStructuredOutputGenerator(output: .action(name: "reminders.create")),
+                        actionHost: host, auditStore: store, telemetryRecorder: recorder
+                    )
+                    let submit = Task { await session.submitText(AssistantTextRequest(turnID: firstID, text: "Private unapproved request.")) }
+                    await host.waitForFirstCall()
+                    if cancel { submit.cancel(); XCTAssertTrue(submit.isCancelled) }
+                    var latestProposal: ActionProposal?
+                    if replace {
+                        let latestOutcome = await session.submitText(AssistantTextRequest(turnID: latestID, text: "Private latest request."))
+                        let pending = await session.pendingProposal()
+                        let proposal = try XCTUnwrap(pending)
+                        latestProposal = proposal
+                        XCTAssertEqual(latestOutcome, .proposal(AssistantTurnProposal(turnID: latestID, proposal: proposal, message: proposal.summary)))
+                    }
+                    await host.releaseFirstCall()
+                    let outcome = await submit.value
+                    let pending = await session.pendingProposal()
+                    let events = await sink.snapshot()
+                    let firstEvents = events.filter { $0.turnID == firstID }
+                    let entries = await store.entries()
+                    let approvedCalls = await host.approvedCallCount()
+                    let openSpans = await recorder.openSpanCount()
+                    if replace || cancel {
+                        guard case .cancelled(let cancellation) = outcome else {
+                            XCTFail("Stale/cancelled unsafe work returned visible outcome: executed=\(reportsExecuted), replace=\(replace), cancel=\(cancel)")
+                            continue
+                        }
+                        XCTAssertEqual(cancellation.turnID, firstID)
+                        if replace { XCTAssertEqual(cancellation.message, "Okay, I moved on to the latest request.") }
+                        XCTAssertEqual(pending, latestProposal)
+                    } else if reportsExecuted {
+                        XCTAssertEqual(outcome, .failure(AssistantTurnFailure(
+                            turnID: firstID, message: "Sorry, that action needs confirmation before I can run it."
+                        )))
+                        XCTAssertNil(pending)
+                    } else {
+                        let proposal = try XCTUnwrap(pending)
+                        XCTAssertEqual(outcome, .proposal(AssistantTurnProposal(turnID: firstID, proposal: proposal, message: proposal.summary)))
+                    }
+                    if reportsExecuted {
+                        XCTAssertEventNames(firstEvents, [.turnStarted, .inputTextReceived, .turnFailed])
+                        let violation = try XCTUnwrap(firstEvents.last)
+                        XCTAssertEventField(violation, key: "resultCategory", equals: .string("mutation_executed_without_approval"))
+                        XCTAssertEventField(violation, key: "actionName", equals: .string("reminders.create"))
+                        XCTAssertEventField(violation, key: "actionDomain", equals: .string("reminders"))
+                        XCTAssertEventField(violation, key: "actionKind", equals: .string("mutation"))
+                    } else if replace || cancel {
+                        XCTAssertEventNames(firstEvents, [.turnStarted, .inputTextReceived, .turnCancelled])
+                        XCTAssertFalse(firstEvents.contains { $0.name == .turnFailed })
+                    } else {
+                        XCTAssertEventNames(firstEvents, [.turnStarted, .inputTextReceived, .actionProposalCreated])
+                    }
+                    XCTAssertTrue(entries.isEmpty)
+                    XCTAssertEqual(approvedCalls, 0)
+                    XCTAssertEqual(openSpans, replace || (!cancel && !reportsExecuted) ? 1 : 0)
+                    XCTAssertEqual(events.map(\.sequenceNumber), Array(1...events.count))
+                    XCTAssertNoVisibleRequestContent("Private unapproved request.", in: events)
+                    XCTAssertNoVisibleRequestContent("Private latest request.", in: events)
+                    XCTAssertNoVisibleRequestContent("Private unexpected action.", in: events)
+                    XCTAssertNoVisibleRequestContent("Private execution payload.", in: events)
+                    if let pending {
+                        _ = try await session.reject(proposal: pending)
+                        let finalOpenSpans = await recorder.openSpanCount()
+                        XCTAssertEqual(finalOpenSpans, 0)
+                    }
+                }
+            }
+        }
+    }
+
     func test_submitText_failsIfMutationHostExecutesBeforeApproval() async throws {
         let turnID = TelemetryTurnID("turn-unsafe-mutation-host")
         let request = AssistantTextRequest(turnID: turnID, text: "Create a reminder unsafely.")
@@ -2452,6 +2533,47 @@ private actor FakeActionHost: ActionHosting {
 
 enum TestActionHostError: Error, Sendable, Equatable {
     case approvedExecutionFailed
+}
+
+private actor GatedUnapprovedResultHost: ActionHosting {
+    let catalog: ActionCatalog = .v2Default
+    private let reportsExecuted: Bool
+    private var calls = 0
+    private var approvedCalls = 0
+    private var startedContinuation: CheckedContinuation<Void, Never>?
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+    init(reportsExecuted: Bool) { self.reportsExecuted = reportsExecuted }
+
+    func execute(actionNamed name: String, approval: ActionApproval?) async throws -> ActionResult {
+        self.calls += 1
+        if approval != nil { self.approvedCalls += 1 }
+        guard let action = self.catalog.action(named: name) else { throw ActionHostError.unsupportedAction(name) }
+        if self.calls == 1 {
+            self.startedContinuation?.resume()
+            self.startedContinuation = nil
+            await withCheckedContinuation { self.releaseContinuation = $0 }
+            if self.reportsExecuted {
+                return .executed(
+                    action: Action(name: "Private unexpected action.", domain: .system, kind: .read),
+                    summary: "Private execution payload."
+                )
+            }
+        }
+        return .proposed(ActionProposal(action: action))
+    }
+
+    func waitForFirstCall() async {
+        if self.calls > 0 { return }
+        await withCheckedContinuation { self.startedContinuation = $0 }
+    }
+
+    func releaseFirstCall() {
+        self.releaseContinuation?.resume()
+        self.releaseContinuation = nil
+    }
+
+    func approvedCallCount() -> Int { self.approvedCalls }
 }
 
 private actor UnsafeMutationActionHost: ActionHosting {
