@@ -159,7 +159,7 @@ final class AssistantSessionTests: XCTestCase {
             .proposal(AssistantTurnProposal(turnID: secondTurnID, proposal: secondProposal, message: secondProposal.summary))
         )
         XCTAssertEqual(finalPending, secondProposal)
-        XCTAssertEqual(secondProposal.proposalID, "turn-terminal-second:reminders.create")
+        XCTAssertNotNil(secondProposal.proposalID)
         XCTAssertEventNames(events.filter { $0.turnID == firstTurnID }, expectedFirstEvents)
         XCTAssertEqual(events.map(\.sequenceNumber), Array(1...events.count))
         XCTAssertEqual(openSpanCount, 1)
@@ -336,7 +336,7 @@ final class AssistantSessionTests: XCTestCase {
         XCTAssertEqual(proposal.action.name, "reminders.create")
         XCTAssertEqual(proposal.summary, "Create reminder: Send the report?")
         XCTAssertEqual(proposal.confirmationLabel, "Create reminder")
-        XCTAssertEqual(proposal.proposalID, "turn-proposal:reminders.create")
+        XCTAssertNotNil(proposal.proposalID)
         XCTAssertEqual(approvedExecutionCount, 0)
         XCTAssertEqual(readExecutionCount, 0)
         XCTAssertEqual(invocationCount, 1)
@@ -823,7 +823,7 @@ final class AssistantSessionTests: XCTestCase {
         _ = await session.submitText(request)
         let pendingProposal = await session.pendingProposal()
         let proposal = try XCTUnwrap(pendingProposal)
-        XCTAssertEqual(proposal.proposalID, "turn-default-host-approve:calendar.create")
+        XCTAssertNotNil(proposal.proposalID)
 
         let outcome = try await session.approve(proposal: proposal)
         let auditEntries = await auditStore.entries()
@@ -959,7 +959,7 @@ final class AssistantSessionTests: XCTestCase {
             )
         )
         XCTAssertEqual(pendingAfterFirstCompletion, secondProposal)
-        XCTAssertEqual(pendingAfterFirstCompletion.proposalID, "turn-overlap-second:reminders.create")
+        XCTAssertNotNil(pendingAfterFirstCompletion.proposalID)
         XCTAssertEqual(openSpanCount, 1)
         XCTAssertEventNames(
             events,
@@ -1018,7 +1018,7 @@ final class AssistantSessionTests: XCTestCase {
             )
         )
         XCTAssertEqual(pendingAfterFirstCompletion, secondProposal)
-        XCTAssertEqual(pendingAfterFirstCompletion.proposalID, "turn-proposal-telemetry-second:reminders.create")
+        XCTAssertNotNil(pendingAfterFirstCompletion.proposalID)
         XCTAssertEqual(openSpanCount, 1)
         let events = await sink.snapshot()
         let firstEvents = events.filter { $0.turnID == firstTurnID }
@@ -1074,7 +1074,7 @@ final class AssistantSessionTests: XCTestCase {
             .proposal(AssistantTurnProposal(turnID: secondTurnID, proposal: secondProposal, message: secondProposal.summary))
         )
         XCTAssertEqual(pendingAfterFirstCompletion, secondProposal)
-        XCTAssertEqual(secondProposal.proposalID, "turn-read-telemetry-second:calendar.query")
+        XCTAssertNotNil(secondProposal.proposalID)
         XCTAssertEqual(openSpanCount, 1)
         let firstEvents = events.filter { $0.turnID == firstTurnID }
         let secondEvents = events.filter { $0.turnID == secondTurnID }
@@ -1141,7 +1141,7 @@ final class AssistantSessionTests: XCTestCase {
             .proposal(AssistantTurnProposal(turnID: secondTurnID, proposal: secondProposal, message: secondProposal.summary))
         )
         XCTAssertEqual(pendingAfterFirstCompletion, secondProposal)
-        XCTAssertEqual(secondProposal.proposalID, "turn-read-cancellation-second:calendar.query")
+        XCTAssertNotNil(secondProposal.proposalID)
         XCTAssertEqual(openSpanCount, 1)
         XCTAssertEventNames(firstEvents, [
             .turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionCancelled, .turnCancelled
@@ -1260,13 +1260,14 @@ final class AssistantSessionTests: XCTestCase {
         _ = await session.submitText(AssistantTextRequest(turnID: firstTurnID, text: "Show my calendar."))
         let firstPendingProposal = await session.pendingProposal()
         let firstProposal = try XCTUnwrap(firstPendingProposal)
-        XCTAssertEqual(firstProposal.proposalID, "turn-read-proposal-first:calendar.query")
+        XCTAssertNotNil(firstProposal.proposalID)
         _ = try await session.reject(proposal: firstProposal)
 
         _ = await session.submitText(AssistantTextRequest(turnID: secondTurnID, text: "Show my calendar again."))
         let secondPendingProposal = await session.pendingProposal()
         let secondProposal = try XCTUnwrap(secondPendingProposal)
-        XCTAssertEqual(secondProposal.proposalID, "turn-read-proposal-second:calendar.query")
+        XCTAssertNotNil(secondProposal.proposalID)
+        XCTAssertNotEqual(firstProposal.proposalID, secondProposal.proposalID)
         XCTAssertNotEqual(firstProposal, secondProposal)
 
         await XCTAssertThrowsErrorAsync(try await session.approve(proposal: firstProposal)) { error in
@@ -1386,6 +1387,87 @@ final class AssistantSessionTests: XCTestCase {
         XCTAssertEventField(events[3], key: "resultCategory", equals: .string("replaced"))
         XCTAssertEventField(events[3], key: "durationMilliseconds", equals: .integer(30))
         XCTAssertEqual(events[4].turnID, secondTurnID)
+    }
+
+    func test_mutationProposalRejectsReplayWithReusedCallerTurnID() async throws {
+        try await self.assertProposalReplayIsRejected(actionName: "reminders.create", crossSession: false)
+    }
+
+    func test_readProposalRejectsReplayWithReusedCallerTurnID() async throws {
+        try await self.assertProposalReplayIsRejected(actionName: "calendar.query", crossSession: false)
+    }
+
+    func test_mutationProposalRejectsReplayAcrossSessionsWithSameCallerTurnID() async throws {
+        try await self.assertProposalReplayIsRejected(actionName: "reminders.create", crossSession: true)
+    }
+
+    func test_readProposalRejectsReplayAcrossSessionsWithSameCallerTurnID() async throws {
+        try await self.assertProposalReplayIsRejected(actionName: "calendar.query", crossSession: true)
+    }
+
+    private func assertProposalReplayIsRejected(actionName: String, crossSession: Bool) async throws {
+        let request = AssistantTextRequest(turnID: TelemetryTurnID("caller-reused-turn"), text: "Identical private request.")
+        let firstHost = ApprovalFixtureHost(fixture: .executed)
+        let firstStore = InMemoryAuditStore()
+        let firstRecorder = TelemetryRecorder(clock: TestTelemetryClock(start: 3_950, step: 10))
+        let firstSession = AssistantSession(
+            generator: FakeStructuredOutputGenerator(output: .action(name: actionName)),
+            actionHost: firstHost, auditStore: firstStore, telemetryRecorder: firstRecorder
+        )
+        let firstOutcome = await firstSession.submitText(request)
+        let firstPending = await firstSession.pendingProposal()
+        let firstProposal = try XCTUnwrap(firstPending)
+        let targetHost = crossSession ? ApprovalFixtureHost(fixture: .executed) : firstHost
+        let targetStore = crossSession ? InMemoryAuditStore() : firstStore
+        let targetRecorder = crossSession ? TelemetryRecorder(clock: TestTelemetryClock(start: 3_960, step: 10)) : firstRecorder
+        let targetSession = crossSession ? AssistantSession(
+            generator: FakeStructuredOutputGenerator(output: .action(name: actionName)),
+            actionHost: targetHost, auditStore: targetStore, telemetryRecorder: targetRecorder
+        ) : firstSession
+        let latestOutcome = await targetSession.submitText(request)
+        let latestPending = await targetSession.pendingProposal()
+        let latestProposal = try XCTUnwrap(latestPending)
+        XCTAssertEqual(firstOutcome, .proposal(AssistantTurnProposal(
+            turnID: request.turnID, proposal: firstProposal, message: firstProposal.summary
+        )))
+        XCTAssertEqual(latestOutcome, .proposal(AssistantTurnProposal(
+            turnID: request.turnID, proposal: latestProposal, message: latestProposal.summary
+        )))
+        XCTAssertTrue(firstProposal.hasSameConfirmationContent(as: latestProposal))
+        let firstID = try XCTUnwrap(firstProposal.proposalID)
+        let latestID = try XCTUnwrap(latestProposal.proposalID)
+        XCTAssertFalse(firstID.isEmpty)
+        XCTAssertFalse(latestID.isEmpty)
+        XCTAssertNotEqual(firstID, latestID)
+        await XCTAssertThrowsErrorAsync(try await targetSession.approve(proposal: firstProposal)) { error in
+            XCTAssertEqual(error as? AssistantSessionError, .proposalMismatch(expected: latestProposal, received: firstProposal))
+        }
+        let pendingAfterReplay = await targetSession.pendingProposal()
+        let countAfterReplay = await targetHost.executionCount()
+        let entriesAfterReplay = await targetStore.entries()
+        XCTAssertEqual(pendingAfterReplay, latestProposal)
+        XCTAssertEqual(countAfterReplay, 0)
+        XCTAssertTrue(entriesAfterReplay.isEmpty)
+
+        if pendingAfterReplay != nil {
+            let outcome = try await targetSession.approve(proposal: latestProposal)
+            XCTAssertEqual(outcome, .result(AssistantTurnResult(turnID: request.turnID, message: "Private execution summary.")))
+            let executionCount = await targetHost.executionCount()
+            let entries = await targetStore.entries()
+            XCTAssertEqual(executionCount, 1)
+            XCTAssertEqual(entries.count, latestProposal.action.kind == .mutation ? 1 : 0)
+        }
+        let targetOpenSpanCount = await targetRecorder.openSpanCount()
+        XCTAssertEqual(targetOpenSpanCount, 0)
+        if crossSession {
+            _ = try await firstSession.reject(proposal: firstProposal)
+            let firstOpenSpanCount = await firstRecorder.openSpanCount()
+            let firstExecutionCount = await firstHost.executionCount()
+            let firstEntries = await firstStore.entries()
+            XCTAssertEqual(firstOpenSpanCount, 0)
+            XCTAssertEqual(firstExecutionCount, 0)
+            XCTAssertTrue(firstEntries.isEmpty)
+        }
     }
 
     func test_staleSameActionProposalCannotApproveLaterTurn() async throws {

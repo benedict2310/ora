@@ -275,7 +275,7 @@ actor AssistantSession {
                         turnGeneration: turnGeneration, action: action
                     )
                 }
-                let proposal = hostProposal.withProposalID(self.proposalID(turnID: turnID, action: action))
+                let proposal = hostProposal.withProposalID(UUID().uuidString)
                 self.pendingProposalState = PendingProposalState(
                     turnID: turnID,
                     turnSpan: turnSpan,
@@ -390,7 +390,7 @@ actor AssistantSession {
                         action: action, resultCategory: "proposal_action_mismatch", turnGeneration: turnGeneration
                     )
                 }
-                let proposal = hostProposal.withProposalID(self.proposalID(turnID: turnID, action: action))
+                let proposal = hostProposal.withProposalID(UUID().uuidString)
                 self.pendingProposalState = PendingProposalState(turnID: turnID, turnSpan: turnSpan, turnGeneration: turnGeneration, proposal: proposal)
                 _ = try? await self.telemetryRecorder.cancelSpan(actionSpan)
                 guard self.isPendingProposalStillCurrent(
@@ -589,10 +589,6 @@ actor AssistantSession {
 
     private func actionFields(_ action: Action, state: String) -> [TelemetryField] {
         self.baseFields(phase: "action", state: state) + self.actionIdentityFields(action)
-    }
-
-    private func proposalID(turnID: TelemetryTurnID, action: Action) -> String {
-        "\(turnID.rawValue):\(action.name)"
     }
 
     private func actionIdentityFields(_ action: Action) -> [TelemetryField] {
