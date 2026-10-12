@@ -154,21 +154,23 @@ actor AssistantSession {
                 ]
             )
 
-            let auditEntry = AuditEntry(
-                turnID: pending.turnID,
-                actionName: action.name,
-                actionDomain: action.domain,
-                actionKind: action.kind,
-                summary: summary
-            )
-            await self.auditStore.record(auditEntry)
-            _ = await self.telemetryRecorder.record(
-                .auditEntryRecorded,
-                turnID: pending.turnID,
-                fields: self.baseFields(phase: "audit", state: "recorded") + self.actionIdentityFields(action) + [
-                    self.intField("count", 1)
-                ]
-            )
+            if action.kind == .mutation {
+                let auditEntry = AuditEntry(
+                    turnID: pending.turnID,
+                    actionName: action.name,
+                    actionDomain: action.domain,
+                    actionKind: action.kind,
+                    summary: summary
+                )
+                await self.auditStore.record(auditEntry)
+                _ = await self.telemetryRecorder.record(
+                    .auditEntryRecorded,
+                    turnID: pending.turnID,
+                    fields: self.baseFields(phase: "audit", state: "recorded") + self.actionIdentityFields(action) + [
+                        self.intField("count", 1)
+                    ]
+                )
+            }
             _ = try? await self.telemetryRecorder.endSpan(
                 pending.turnSpan,
                 fields: self.baseFields(phase: "turn", state: "completed") + [
@@ -324,6 +326,12 @@ actor AssistantSession {
                 let proposal = hostProposal.withProposalID(self.proposalID(turnID: turnID, action: hostProposal.action))
                 self.pendingProposalState = PendingProposalState(turnID: turnID, turnSpan: turnSpan, proposal: proposal)
                 _ = try? await self.telemetryRecorder.cancelSpan(actionSpan)
+                guard self.isPendingProposalStillCurrent(
+                    PendingProposalState(turnID: turnID, turnSpan: turnSpan, proposal: proposal),
+                    turnGeneration: turnGeneration
+                ) else {
+                    return self.staleTurnCancellation(turnID: turnID)
+                }
                 _ = await self.telemetryRecorder.record(
                     .actionProposalCreated,
                     turnID: turnID,

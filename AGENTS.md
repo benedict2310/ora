@@ -578,7 +578,9 @@ protocol Tool {
 
 ### Audit Logging
 
-Every tool execution must be logged:
+V2 audit history records confirmed mutations that execute, not read-only actions (even when a read requires approval). All action attempts, results, failures, and cancellations remain observable through privacy-safe telemetry without public user payload content. See [PDR-0001 audit scope](docs/product/pdrs/0001-ora-v2-product-scope.md#audit-scope-clarification-2026-10-12).
+
+Existing legacy tools retain their current every-execution audit behavior during migration:
 ```swift
 AuditLog.record(
     tool: "calendar.create",
@@ -632,7 +634,7 @@ AuditLog.record(
 2. **Streaming everywhere:** Live partial transcription, streaming LLM tokens, early TTS
 3. **Predictability > Cleverness:** Explicit intent preview before actions
 4. **Confirmation gates:** Always ask before state-changing operations
-5. **Auditability:** Every action logged, accessible in Preferences
+5. **Auditability:** V2 mutation history records changes and approval; privacy-safe telemetry covers all actions. Legacy audit/history behavior remains unchanged during migration.
 6. **Private Mode:** Toggle to disable voice output, show text only
 7. **Model transparency:** User can view all models (LLM, ASR, TTS) in Preferences
 

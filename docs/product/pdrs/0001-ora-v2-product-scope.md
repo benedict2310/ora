@@ -25,6 +25,17 @@ The v2 core product supports only:
 7. permission recovery,
 8. local audit history for mutations.
 
+## Audit scope clarification (2026-10-12)
+
+The owner confirmed mutation-only audit history for v2:
+
+- User-visible audit history records confirmed mutations that execute.
+- Read-only actions do not create audit entries, even if an adapter requests approval for a read.
+- All action attempts, results, failures, and cancellations remain observable through privacy-safe telemetry; read content must not be exposed in public logs.
+- Audit explains what Ora changed and the user's approval; telemetry explains what ran and how it behaved.
+
+This clarifies the original v2 mutation-audit scope and supersedes blanket all-tool-executions audit requirements for v2. Existing legacy tool auditing remains unchanged during migration.
+
 ## User impact
 
 Users should experience Ora as narrower but more dependable. The assistant should be easier to explain, faster to use, and less surprising.
