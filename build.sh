@@ -56,6 +56,17 @@ check_xcodegen() {
   fi
 }
 
+# Keep generated Xcode state aligned with the required, tracked dependency graph.
+copy_package_resolution() {
+  local workspace_swiftpm="Ora.xcodeproj/project.xcworkspace/xcshareddata/swiftpm"
+  if [ ! -f Package.resolved ]; then
+    echo "Error: required root Package.resolved is missing." >&2
+    return 1
+  fi
+  mkdir -p "$workspace_swiftpm"
+  cp Package.resolved "$workspace_swiftpm/Package.resolved"
+}
+
 # Generate Xcode project if needed
 generate_project() {
   local project_file="Ora.xcodeproj/project.pbxproj"
@@ -70,6 +81,7 @@ generate_project() {
     echo -e "${BLUE}Generating Xcode project...${NC}"
     xcodegen generate
   fi
+  copy_package_resolution
 }
 
 # Reset local state so onboarding behaves like first launch
@@ -134,6 +146,7 @@ run_tests() {
     -derivedDataPath build \
     -resultBundlePath "$RESULT_BUNDLE" \
     -destination "platform=macOS,arch=${ARCH}" \
+    -onlyUsePackageVersionsFromResolvedFile \
     "${extra_args[@]}" \
     -quiet \
     test \
@@ -222,15 +235,17 @@ case "${1:-build}" in
     # Create build directory
     mkdir -p build
 
+    set +e
     xcodebuild -project Ora.xcodeproj \
       -scheme "$SCHEME" \
       -configuration "$CONFIGURATION" \
       -arch "$ARCH" \
       -derivedDataPath build \
+      -onlyUsePackageVersionsFromResolvedFile \
       ONLY_ACTIVE_ARCH=YES \
-      build 2>&1 | grep -E "(BUILD|error:|warning:.*error|Signing)" || true
-
+      build 2>&1 | grep -E "(BUILD|error:|warning:.*error|Signing)"
     BUILD_STATUS=${PIPESTATUS[0]}
+    set -e
 
     if [ $BUILD_STATUS -eq 0 ]; then
       echo -e "${GREEN}Build succeeded${NC}"
@@ -262,6 +277,7 @@ case "${1:-build}" in
         -configuration "$CONFIGURATION" \
         -arch "$ARCH" \
         -derivedDataPath build \
+        -onlyUsePackageVersionsFromResolvedFile \
         ONLY_ACTIVE_ARCH=YES \
         build 2>&1 | tail -50
       exit 1
@@ -370,16 +386,18 @@ case "${1:-build}" in
     generate_project
 
     echo -e "${BLUE}Building Release configuration...${NC}"
+    set +e
     xcodebuild -project Ora.xcodeproj \
       -scheme "$SCHEME" \
       -configuration "$CONFIGURATION" \
       -arch "$ARCH" \
       -derivedDataPath build \
+      -onlyUsePackageVersionsFromResolvedFile \
       ONLY_ACTIVE_ARCH=YES \
       CODE_SIGN_IDENTITY="-" \
-      build 2>&1 | grep -E "(BUILD|error:|warning:.*error)" || true
-
+      build 2>&1 | grep -E "(BUILD|error:|warning:.*error)"
     BUILD_STATUS=${PIPESTATUS[0]}
+    set -e
     [ $BUILD_STATUS -eq 0 ] || { echo -e "${RED}Build failed${NC}"; exit 1; }
 
     APP_PATH="build/Build/Products/${CONFIGURATION}/${SCHEME}.app"
