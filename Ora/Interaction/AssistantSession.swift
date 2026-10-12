@@ -3,12 +3,14 @@ import Foundation
 enum AssistantSessionError: Error, Sendable, Equatable {
     case noPendingProposal
     case proposalMismatch(expected: ActionProposal, received: ActionProposal)
+    case executedActionMismatch(expected: Action, received: Action)
 }
 
 actor AssistantSession {
     private struct PendingProposalState: Sendable, Equatable {
         let turnID: TelemetryTurnID
         let turnSpan: TelemetrySpanToken
+        let turnGeneration: Int
         let proposal: ActionProposal
     }
 
@@ -124,63 +126,77 @@ actor AssistantSession {
 
     func approve(proposal: ActionProposal) async throws -> AssistantTurnOutcome {
         let pending = try self.requirePendingProposal(matching: proposal)
+        let approvedAction = pending.proposal.action
         self.pendingProposalState = nil
 
         _ = await self.telemetryRecorder.record(
             .actionProposalApproved,
             turnID: pending.turnID,
-            fields: self.actionFields(proposal.action, state: "proposal_approved")
+            fields: self.actionFields(approvedAction, state: "proposal_approved")
         )
 
         let actionSpan = await self.telemetryRecorder.beginSpan(
             .actionExecution,
             turnID: pending.turnID,
-            fields: self.actionFields(proposal.action, state: "execution_started")
+            fields: self.actionFields(approvedAction, state: "execution_started")
         )
 
         let result: ActionResult
         do {
             result = try await self.actionHost.execute(
-                actionNamed: proposal.action.name,
+                actionNamed: approvedAction.name,
                 approval: .approved(proposal)
             )
         } catch {
             await self.failApprovedAction(
                 actionSpan: actionSpan,
                 turnSpan: pending.turnSpan,
-                action: proposal.action,
+                action: approvedAction,
                 resultCategory: "action_failed"
             )
+            guard self.isCurrentTextTurn(pending.turnGeneration) else {
+                return self.staleTurnCancellation(turnID: pending.turnID)
+            }
             throw error
         }
 
         switch result {
-        case .executed(let action, let summary):
-            if action.kind == .mutation {
+        case .executed(let returnedAction, let summary):
+            let metadataMatches = returnedAction == approvedAction
+            if approvedAction.kind == .mutation {
                 let auditEntry = AuditEntry(
                     turnID: pending.turnID,
-                    actionName: action.name,
-                    actionDomain: action.domain,
-                    actionKind: action.kind,
-                    summary: summary
+                    actionName: approvedAction.name,
+                    actionDomain: approvedAction.domain,
+                    actionKind: approvedAction.kind,
+                    summary: metadataMatches ? summary : "Approved mutation reported execution, but Ora could not verify the returned action metadata."
                 )
                 await self.auditStore.record(auditEntry)
             }
 
+            guard metadataMatches else {
+                if approvedAction.kind == .mutation {
+                    await self.recordAuditTelemetry(action: approvedAction, turnID: pending.turnID)
+                }
+                await self.failApprovedAction(
+                    actionSpan: actionSpan,
+                    turnSpan: pending.turnSpan,
+                    action: approvedAction,
+                    resultCategory: "action_mismatch"
+                )
+                guard self.isCurrentTextTurn(pending.turnGeneration) else {
+                    return self.staleTurnCancellation(turnID: pending.turnID)
+                }
+                throw AssistantSessionError.executedActionMismatch(expected: approvedAction, received: returnedAction)
+            }
             _ = try? await self.telemetryRecorder.endSpan(
                 actionSpan,
-                fields: self.actionFields(action, state: "completed") + [
+                fields: self.actionFields(approvedAction, state: "completed") + [
                     self.stringField("resultCategory", "executed")
                 ]
             )
-            if action.kind == .mutation {
-                _ = await self.telemetryRecorder.record(
-                    .auditEntryRecorded,
-                    turnID: pending.turnID,
-                    fields: self.baseFields(phase: "audit", state: "recorded") + self.actionIdentityFields(action) + [
-                        self.intField("count", 1)
-                    ]
-                )
+            if approvedAction.kind == .mutation {
+                await self.recordAuditTelemetry(action: approvedAction, turnID: pending.turnID)
             }
             _ = try? await self.telemetryRecorder.endSpan(
                 pending.turnSpan,
@@ -188,14 +204,20 @@ actor AssistantSession {
                     self.stringField("resultCategory", "executed")
                 ]
             )
+            guard self.isCurrentTextTurn(pending.turnGeneration) else {
+                return self.staleTurnCancellation(turnID: pending.turnID)
+            }
             return .result(AssistantTurnResult(turnID: pending.turnID, message: summary))
         case .proposed:
             await self.failApprovedAction(
                 actionSpan: actionSpan,
                 turnSpan: pending.turnSpan,
-                action: proposal.action,
+                action: approvedAction,
                 resultCategory: "unexpected_proposal"
             )
+            guard self.isCurrentTextTurn(pending.turnGeneration) else {
+                return self.staleTurnCancellation(turnID: pending.turnID)
+            }
             throw AssistantSessionError.proposalMismatch(expected: pending.proposal, received: proposal)
         }
     }
@@ -242,10 +264,19 @@ actor AssistantSession {
 
             switch result {
             case .proposed(let hostProposal):
+                guard hostProposal.action == action else {
+                    return await self.failTurn(
+                        turnID: turnID, turnSpan: turnSpan,
+                        message: "Sorry, I couldn't verify that action.",
+                        resultCategory: "proposal_action_mismatch",
+                        turnGeneration: turnGeneration, action: action
+                    )
+                }
                 let proposal = hostProposal.withProposalID(self.proposalID(turnID: turnID, action: action))
                 self.pendingProposalState = PendingProposalState(
                     turnID: turnID,
                     turnSpan: turnSpan,
+                    turnGeneration: turnGeneration,
                     proposal: proposal
                 )
                 _ = await self.telemetryRecorder.record(
@@ -254,7 +285,7 @@ actor AssistantSession {
                     fields: self.actionFields(action, state: "proposal_created")
                 )
                 guard self.isPendingProposalStillCurrent(
-                    PendingProposalState(turnID: turnID, turnSpan: turnSpan, proposal: proposal),
+                    PendingProposalState(turnID: turnID, turnSpan: turnSpan, turnGeneration: turnGeneration, proposal: proposal),
                     turnGeneration: turnGeneration
                 ) else {
                     return self.staleTurnCancellation(turnID: turnID)
@@ -323,7 +354,13 @@ actor AssistantSession {
                 )
             }
             switch result {
-            case .executed(_, let summary):
+            case .executed(let returnedAction, let summary):
+                guard returnedAction == action else {
+                    return await self.failReadAction(
+                        actionSpan: actionSpan, turnSpan: turnSpan, turnID: turnID,
+                        action: action, resultCategory: "action_mismatch", turnGeneration: turnGeneration
+                    )
+                }
                 _ = try? await self.telemetryRecorder.endSpan(
                     actionSpan,
                     fields: self.actionFields(action, state: "completed") + [
@@ -344,11 +381,17 @@ actor AssistantSession {
                 }
                 return .result(AssistantTurnResult(turnID: turnID, message: summary))
             case .proposed(let hostProposal):
-                let proposal = hostProposal.withProposalID(self.proposalID(turnID: turnID, action: hostProposal.action))
-                self.pendingProposalState = PendingProposalState(turnID: turnID, turnSpan: turnSpan, proposal: proposal)
+                guard hostProposal.action == action else {
+                    return await self.failReadAction(
+                        actionSpan: actionSpan, turnSpan: turnSpan, turnID: turnID,
+                        action: action, resultCategory: "proposal_action_mismatch", turnGeneration: turnGeneration
+                    )
+                }
+                let proposal = hostProposal.withProposalID(self.proposalID(turnID: turnID, action: action))
+                self.pendingProposalState = PendingProposalState(turnID: turnID, turnSpan: turnSpan, turnGeneration: turnGeneration, proposal: proposal)
                 _ = try? await self.telemetryRecorder.cancelSpan(actionSpan)
                 guard self.isPendingProposalStillCurrent(
-                    PendingProposalState(turnID: turnID, turnSpan: turnSpan, proposal: proposal),
+                    PendingProposalState(turnID: turnID, turnSpan: turnSpan, turnGeneration: turnGeneration, proposal: proposal),
                     turnGeneration: turnGeneration
                 ) else {
                     return self.staleTurnCancellation(turnID: turnID)
@@ -356,10 +399,10 @@ actor AssistantSession {
                 _ = await self.telemetryRecorder.record(
                     .actionProposalCreated,
                     turnID: turnID,
-                    fields: self.actionFields(proposal.action, state: "proposal_created")
+                    fields: self.actionFields(action, state: "proposal_created")
                 )
                 guard self.isPendingProposalStillCurrent(
-                    PendingProposalState(turnID: turnID, turnSpan: turnSpan, proposal: proposal),
+                    PendingProposalState(turnID: turnID, turnSpan: turnSpan, turnGeneration: turnGeneration, proposal: proposal),
                     turnGeneration: turnGeneration
                 ) else {
                     return self.staleTurnCancellation(turnID: turnID)
@@ -375,21 +418,40 @@ actor AssistantSession {
                     turnID: turnID
                 )
             }
-            _ = try? await self.telemetryRecorder.failSpan(
-                actionSpan,
-                fields: self.actionFields(action, state: "failed") + [
-                    self.stringField("resultCategory", "action_failed")
-                ]
-            )
-            return await self.failTurn(
-                turnID: turnID,
-                turnSpan: turnSpan,
-                message: "Sorry, I couldn't complete that request.",
-                resultCategory: "action_failed",
-                turnGeneration: turnGeneration,
-                action: action
+            return await self.failReadAction(
+                actionSpan: actionSpan, turnSpan: turnSpan, turnID: turnID,
+                action: action, resultCategory: "action_failed", turnGeneration: turnGeneration
             )
         }
+    }
+
+    private func failReadAction(
+        actionSpan: TelemetrySpanToken,
+        turnSpan: TelemetrySpanToken,
+        turnID: TelemetryTurnID,
+        action: Action,
+        resultCategory: String,
+        turnGeneration: Int
+    ) async -> AssistantTurnOutcome {
+        _ = try? await self.telemetryRecorder.failSpan(
+            actionSpan,
+            fields: self.actionFields(action, state: "failed") + [self.stringField("resultCategory", resultCategory)]
+        )
+        return await self.failTurn(
+            turnID: turnID, turnSpan: turnSpan,
+            message: "Sorry, I couldn't complete that request.", resultCategory: resultCategory,
+            turnGeneration: turnGeneration, action: action
+        )
+    }
+
+    private func recordAuditTelemetry(action: Action, turnID: TelemetryTurnID) async {
+        _ = await self.telemetryRecorder.record(
+            .auditEntryRecorded,
+            turnID: turnID,
+            fields: self.baseFields(phase: "audit", state: "recorded") + self.actionIdentityFields(action) + [
+                self.intField("count", 1)
+            ]
+        )
     }
 
     private func beginTextTurn() -> Int {

@@ -517,6 +517,246 @@ final class AssistantSessionTests: XCTestCase {
         XCTAssertNoVisibleRequestContent("Created reminder: Send the report.", in: events)
     }
 
+    func test_approvalSuccessReplacementMatrixContinuesExecutionButSuppressesOldResult() async throws {
+        for actionName in ["reminders.create", "calendar.query"] {
+            var gates: [ApprovalGate] = [
+                .event(.actionProposalApproved), .event(.actionExecutionStarted), .host,
+                .event(.actionExecutionCompleted), .event(.turnCompleted)
+            ]
+            if actionName == "reminders.create" {
+                gates += [.audit, .event(.auditEntryRecorded)]
+            }
+            for gate in gates {
+                try await self.assertApprovalReplacement(actionName: actionName, fixture: .executed, gate: gate)
+            }
+        }
+    }
+
+    func test_approvalFailureReplacementMatrixClosesSpansButSuppressesOldErrors() async throws {
+        for actionName in ["reminders.create", "calendar.query"] {
+            for fixture in [ApprovalResultFixture.thrown, .proposed, .wrongKind, .wrongName, .wrongDomain] {
+                var gates: [ApprovalGate] = [.event(.actionProposalApproved), .event(.actionExecutionStarted), .host]
+                gates += [.event(.actionExecutionFailed), .event(.turnFailed)]
+                if fixture.isMismatch && actionName == "reminders.create" {
+                    gates += [.audit, .event(.auditEntryRecorded)]
+                }
+                for gate in gates {
+                    try await self.assertApprovalReplacement(actionName: actionName, fixture: fixture, gate: gate)
+                }
+            }
+        }
+    }
+
+    private func assertApprovalReplacement(actionName: String, fixture: ApprovalResultFixture, gate: ApprovalGate) async throws {
+        let firstTurnID = TelemetryTurnID("turn-approved-first")
+        let secondTurnID = TelemetryTurnID("turn-approved-latest")
+        let approvedAction = try XCTUnwrap(ActionCatalog.v2Default.action(named: actionName))
+        let host = ApprovalFixtureHost(fixture: fixture, gateExecution: gate == .host)
+        let auditStore = GatedApprovalAuditStore(gateRecord: gate == .audit)
+        let sink = GatedFirstTerminalTelemetrySink(
+            gatedEvent: gate.eventName ?? .bargeDetected,
+            skipFirstMatches: actionName == "calendar.query" && gate.eventName == .actionExecutionStarted ? 1 : 0
+        )
+        let recorder = TelemetryRecorder(clock: TestTelemetryClock(start: 3_060, step: 10), sinks: [sink])
+        let session = AssistantSession(
+            generator: SequencedStructuredOutputGenerator(outputs: [.action(name: actionName), .action(name: "reminders.create")]),
+            actionHost: host, auditStore: auditStore, telemetryRecorder: recorder
+        )
+        _ = await session.submitText(AssistantTextRequest(turnID: firstTurnID, text: "Private approved request."))
+        let pending = await session.pendingProposal()
+        let firstProposal = try XCTUnwrap(pending)
+        let approval = Task { try await session.approve(proposal: firstProposal) }
+        switch gate {
+        case .host: await host.waitForExecution()
+        case .audit: await auditStore.waitForRecord()
+        case .event: await sink.waitForFirstTerminal()
+        }
+        let latestOutcome = await session.submitText(AssistantTextRequest(turnID: secondTurnID, text: "Private latest request."))
+        let latestPending = await session.pendingProposal()
+        let latestProposal = try XCTUnwrap(latestPending)
+        switch gate {
+        case .host: await host.releaseExecution()
+        case .audit: await auditStore.releaseRecord()
+        case .event: await sink.releaseFirstTerminal()
+        }
+        switch await approval.result {
+        case .success(let outcome):
+            XCTAssertEqual(outcome, .cancelled(AssistantTurnCancellation(
+                turnID: firstTurnID, message: "Okay, I moved on to the latest request."
+            )), "\(actionName), \(fixture), \(gate)")
+        case .failure:
+            XCTFail("Stale approval threw: \(actionName), \(fixture), \(gate)")
+        }
+        let finalPending = await session.pendingProposal()
+        let executionCount = await host.executionCount()
+        let entries = await auditStore.entries()
+        let events = await sink.snapshot()
+        let firstEvents = events.filter { $0.turnID == firstTurnID }
+        let openSpanCount = await recorder.openSpanCount()
+        XCTAssertEqual(latestOutcome, .proposal(AssistantTurnProposal(
+            turnID: secondTurnID, proposal: latestProposal, message: latestProposal.summary
+        )))
+        XCTAssertEqual(finalPending, latestProposal)
+        XCTAssertEqual(executionCount, 1)
+        XCTAssertEqual(openSpanCount, 1)
+        XCTAssertEventNames(firstEvents, fixture.eventNames(for: approvedAction))
+        XCTAssertEqual(entries.count, approvedAction.kind == .mutation && fixture.reportsExecution ? 1 : 0)
+        if let entry = entries.first {
+            XCTAssertEqual(entry.actionName, approvedAction.name)
+            XCTAssertEqual(entry.actionKind, approvedAction.kind)
+            XCTAssertEqual(entry.actionDomain, approvedAction.domain)
+        }
+        self.assertApprovedIdentityAndPrivacy(firstEvents, action: approvedAction)
+        XCTAssertEqual(events.map(\.sequenceNumber), Array(1...events.count))
+        _ = try await session.reject(proposal: latestProposal)
+        let finalOpenSpanCount = await recorder.openSpanCount()
+        XCTAssertEqual(finalOpenSpanCount, 0)
+    }
+
+    func test_currentApprovalFailuresRetainTypedErrorsWithoutAudit() async throws {
+        for actionName in ["reminders.create", "calendar.query"] {
+            for fixture in [ApprovalResultFixture.thrown, .proposed] {
+                let turnID = TelemetryTurnID("turn-current-approval-failure")
+                let store = InMemoryAuditStore()
+                let recorder = TelemetryRecorder(clock: TestTelemetryClock(start: 3_065, step: 10))
+                let session = AssistantSession(
+                    generator: FakeStructuredOutputGenerator(output: .action(name: actionName)),
+                    actionHost: ApprovalFixtureHost(fixture: fixture), auditStore: store, telemetryRecorder: recorder
+                )
+                _ = await session.submitText(AssistantTextRequest(turnID: turnID, text: "Current failing approval."))
+                let pending = await session.pendingProposal()
+                let proposal = try XCTUnwrap(pending)
+                await XCTAssertThrowsErrorAsync(try await session.approve(proposal: proposal)) { error in
+                    if fixture == .thrown {
+                        XCTAssertTrue(error is FailureFixtureError)
+                    } else {
+                        XCTAssertEqual(error as? AssistantSessionError, .proposalMismatch(expected: proposal, received: proposal))
+                    }
+                }
+                let entries = await store.entries()
+                let openSpanCount = await recorder.openSpanCount()
+                XCTAssertTrue(entries.isEmpty)
+                XCTAssertEqual(openSpanCount, 0)
+            }
+        }
+    }
+
+    func test_approvedExecutionMismatchUsesApprovedAuditScopeAndPrivateReturnedMetadata() async throws {
+        for actionName in ["reminders.create", "calendar.query"] {
+            for fixture in [ApprovalResultFixture.wrongKind, .wrongName, .wrongDomain] {
+                let turnID = TelemetryTurnID("turn-approved-mismatch")
+                let action = try XCTUnwrap(ActionCatalog.v2Default.action(named: actionName))
+                let host = ApprovalFixtureHost(fixture: fixture)
+                let auditStore = InMemoryAuditStore()
+                let sink = InMemoryTelemetrySink()
+                let recorder = TelemetryRecorder(clock: TestTelemetryClock(start: 3_070, step: 10), sinks: [sink])
+                let session = AssistantSession(
+                    generator: FakeStructuredOutputGenerator(output: .action(name: actionName)),
+                    actionHost: host, auditStore: auditStore, telemetryRecorder: recorder
+                )
+                _ = await session.submitText(AssistantTextRequest(turnID: turnID, text: "Private approved request."))
+                let pending = await session.pendingProposal()
+                let proposal = try XCTUnwrap(pending)
+                await XCTAssertThrowsErrorAsync(try await session.approve(proposal: proposal)) { error in
+                    guard case AssistantSessionError.executedActionMismatch(let expected, let received) = error else {
+                        return XCTFail("Expected typed executed-action mismatch")
+                    }
+                    XCTAssertEqual(expected, action)
+                    XCTAssertNotEqual(received, action)
+                }
+                let entries = await auditStore.entries()
+                let events = await sink.snapshot()
+                let executionCount = await host.executionCount()
+                let openSpanCount = await recorder.openSpanCount()
+                XCTAssertEqual(entries.count, action.kind == .mutation ? 1 : 0)
+                if let entry = entries.first {
+                    XCTAssertEqual(entry, AuditEntry(
+                        turnID: turnID, actionName: action.name, actionDomain: action.domain, actionKind: action.kind,
+                        summary: "Approved mutation reported execution, but Ora could not verify the returned action metadata."
+                    ))
+                }
+                XCTAssertEqual(executionCount, 1)
+                XCTAssertEqual(openSpanCount, 0)
+                XCTAssertEventNames(events, fixture.eventNames(for: action))
+                self.assertApprovedIdentityAndPrivacy(events, action: action)
+                XCTAssertTurnMetadata(events, turnID: turnID)
+            }
+        }
+    }
+
+    private func assertApprovedIdentityAndPrivacy(_ events: [TelemetryEvent], action: Action) {
+        for event in events {
+            if event.fields.contains(where: { $0.key == "actionName" }) {
+                XCTAssertEventField(event, key: "actionName", equals: .string(action.name))
+                XCTAssertEventField(event, key: "actionDomain", equals: .string(action.domain.rawValue))
+                XCTAssertEventField(event, key: "actionKind", equals: .string(action.kind.rawValue))
+            }
+        }
+        XCTAssertNoVisibleRequestContent("Private unvetted returned action.", in: events)
+        XCTAssertNoVisibleRequestContent("Private execution summary.", in: events)
+        XCTAssertNoVisibleRequestContent("Private fixture failure.", in: events)
+        XCTAssertNoVisibleRequestContent("Private approved request.", in: events)
+    }
+
+    func test_hostCallbackIdentityMismatchIsRejectedBeforeProposalOrReadSuccess() async throws {
+        for callback in HostCallbackFixture.allCases {
+            let turnID = TelemetryTurnID("turn-host-callback-mismatch")
+            let action = try XCTUnwrap(ActionCatalog.v2Default.action(named: callback.actionName))
+            let host = CallbackIdentityHost(callback: callback, mismatched: true)
+            let sink = InMemoryTelemetrySink()
+            let recorder = TelemetryRecorder(clock: TestTelemetryClock(start: 3_080, step: 10), sinks: [sink])
+            let auditStore = InMemoryAuditStore()
+            let session = AssistantSession(
+                generator: FakeStructuredOutputGenerator(output: .action(name: action.name)),
+                actionHost: host, auditStore: auditStore, telemetryRecorder: recorder
+            )
+            let outcome = await session.submitText(AssistantTextRequest(turnID: turnID, text: "Private callback request."))
+            guard case .failure = outcome else {
+                XCTFail("Unverified host callback accepted: \(callback)")
+                continue
+            }
+            let pending = await session.pendingProposal()
+            let entries = await auditStore.entries()
+            let events = await sink.snapshot()
+            let openSpanCount = await recorder.openSpanCount()
+            XCTAssertNil(pending)
+            XCTAssertTrue(entries.isEmpty)
+            XCTAssertEqual(openSpanCount, 0)
+            XCTAssertFalse(events.contains { $0.name == .actionProposalCreated || $0.name == .turnCompleted })
+            let failure = try XCTUnwrap(events.last)
+            XCTAssertEqual(failure.name, .turnFailed)
+            XCTAssertEventField(failure, key: "actionName", equals: .string(action.name))
+            XCTAssertEventField(failure, key: "actionDomain", equals: .string(action.domain.rawValue))
+            XCTAssertEventField(failure, key: "actionKind", equals: .string(action.kind.rawValue))
+            XCTAssertNoVisibleRequestContent("Private unvetted returned action.", in: events)
+            XCTAssertNoVisibleRequestContent("Private callback request.", in: events)
+            XCTAssertTurnMetadata(events, turnID: turnID)
+        }
+    }
+
+    func test_matchedHostCallbackIdentityRetainsNormalProposalAndReadOutcomes() async throws {
+        for callback in HostCallbackFixture.allCases {
+            let turnID = TelemetryTurnID("turn-host-callback-control")
+            let recorder = TelemetryRecorder(clock: TestTelemetryClock(start: 3_090, step: 10))
+            let session = AssistantSession(
+                generator: FakeStructuredOutputGenerator(output: .action(name: callback.actionName)),
+                actionHost: CallbackIdentityHost(callback: callback, mismatched: false),
+                auditStore: InMemoryAuditStore(), telemetryRecorder: recorder
+            )
+            let outcome = await session.submitText(AssistantTextRequest(turnID: turnID, text: "Matched request."))
+            if callback == .readExecuted {
+                XCTAssertEqual(outcome, .result(AssistantTurnResult(turnID: turnID, message: "Matched read result.")))
+            } else {
+                let pending = await session.pendingProposal()
+                let proposal = try XCTUnwrap(pending)
+                XCTAssertEqual(outcome, .proposal(AssistantTurnProposal(turnID: turnID, proposal: proposal, message: proposal.summary)))
+                _ = try await session.reject(proposal: proposal)
+            }
+            let openSpanCount = await recorder.openSpanCount()
+            XCTAssertEqual(openSpanCount, 0)
+        }
+    }
+
     func test_approveReadProposalExecutesOnceWithoutAuditEntryOrAuditTelemetry() async throws {
         let turnID = TelemetryTurnID("turn-approve-read")
         let request = AssistantTextRequest(turnID: turnID, text: "Look up my private calendar.")
@@ -1381,6 +1621,138 @@ final class AssistantSessionTests: XCTestCase {
     }
 }
 
+private enum HostCallbackFixture: CaseIterable, Sendable {
+    case mutationProposal, readProposal, readExecuted
+
+    var actionName: String { self == .mutationProposal ? "reminders.create" : "calendar.query" }
+}
+
+private struct CallbackIdentityHost: ActionHosting {
+    let catalog: ActionCatalog = .v2Default
+    let callback: HostCallbackFixture
+    let mismatched: Bool
+
+    func execute(actionNamed name: String, approval: ActionApproval?) async throws -> ActionResult {
+        guard let requested = self.catalog.action(named: name) else { throw ActionHostError.unsupportedAction(name) }
+        let returned = self.mismatched
+            ? Action(name: "Private unvetted returned action.", domain: .system, kind: requested.kind)
+            : requested
+        if self.callback == .readExecuted { return .executed(action: returned, summary: "Matched read result.") }
+        return .proposed(ActionProposal(action: returned))
+    }
+}
+
+private enum ApprovalGate: Equatable {
+    case event(TelemetryEventName)
+    case host
+    case audit
+
+    var eventName: TelemetryEventName? {
+        if case .event(let name) = self { return name }
+        return nil
+    }
+}
+
+private enum ApprovalResultFixture: Sendable {
+    case executed, thrown, proposed, wrongKind, wrongName, wrongDomain
+
+    var reportsExecution: Bool { self != .thrown && self != .proposed }
+    var isMismatch: Bool { self == .wrongKind || self == .wrongName || self == .wrongDomain }
+
+    func eventNames(for action: Action) -> [TelemetryEventName] {
+        var names: [TelemetryEventName] = [.turnStarted, .inputTextReceived]
+        if action.kind == .read { names += [.actionExecutionStarted, .actionExecutionCancelled] }
+        names += [.actionProposalCreated, .actionProposalApproved, .actionExecutionStarted]
+        if self == .executed {
+            names.append(.actionExecutionCompleted)
+            if action.kind == .mutation { names.append(.auditEntryRecorded) }
+            names.append(.turnCompleted)
+        } else {
+            if self.isMismatch && action.kind == .mutation { names.append(.auditEntryRecorded) }
+            names += [.actionExecutionFailed, .turnFailed]
+        }
+        return names
+    }
+}
+
+private actor ApprovalFixtureHost: ActionHosting {
+    let catalog: ActionCatalog = .v2Default
+    private let fixture: ApprovalResultFixture
+    private let gateExecution: Bool
+    private var count = 0
+    private var startedContinuation: CheckedContinuation<Void, Never>?
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+    init(fixture: ApprovalResultFixture, gateExecution: Bool = false) {
+        self.fixture = fixture
+        self.gateExecution = gateExecution
+    }
+
+    func execute(actionNamed name: String, approval: ActionApproval?) async throws -> ActionResult {
+        guard let action = self.catalog.action(named: name) else { throw ActionHostError.unsupportedAction(name) }
+        guard approval != nil else { return .proposed(ActionProposal(action: action)) }
+        self.count += 1
+        if self.gateExecution {
+            self.startedContinuation?.resume()
+            self.startedContinuation = nil
+            await withCheckedContinuation { self.releaseContinuation = $0 }
+        }
+        switch self.fixture {
+        case .thrown: throw FailureFixtureError.privateDetails
+        case .proposed: return .proposed(ActionProposal(action: action))
+        case .executed: return .executed(action: action, summary: "Private execution summary.")
+        case .wrongKind:
+            return .executed(action: Action(name: action.name, domain: action.domain, kind: action.kind == .mutation ? .read : .mutation), summary: "Private execution summary.")
+        case .wrongName:
+            return .executed(action: Action(name: "Private unvetted returned action.", domain: action.domain, kind: action.kind), summary: "Private execution summary.")
+        case .wrongDomain:
+            return .executed(action: Action(name: action.name, domain: .system, kind: action.kind), summary: "Private execution summary.")
+        }
+    }
+
+    func waitForExecution() async {
+        if self.count > 0 { return }
+        await withCheckedContinuation { self.startedContinuation = $0 }
+    }
+
+    func releaseExecution() {
+        self.releaseContinuation?.resume()
+        self.releaseContinuation = nil
+    }
+
+    func executionCount() -> Int { self.count }
+}
+
+private actor GatedApprovalAuditStore: AuditStoring {
+    private let gateRecord: Bool
+    private var storedEntries: [AuditEntry] = []
+    private var startedContinuation: CheckedContinuation<Void, Never>?
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+    init(gateRecord: Bool) { self.gateRecord = gateRecord }
+
+    func record(_ entry: AuditEntry) async {
+        self.storedEntries.append(entry)
+        if self.gateRecord {
+            self.startedContinuation?.resume()
+            self.startedContinuation = nil
+            await withCheckedContinuation { self.releaseContinuation = $0 }
+        }
+    }
+
+    func waitForRecord() async {
+        if !self.storedEntries.isEmpty { return }
+        await withCheckedContinuation { self.startedContinuation = $0 }
+    }
+
+    func releaseRecord() {
+        self.releaseContinuation?.resume()
+        self.releaseContinuation = nil
+    }
+
+    func entries() async -> [AuditEntry] { self.storedEntries }
+}
+
 private enum SubmitFailureFixture: String, CaseIterable {
     case validation = "validation_failed"
     case generation = "generation_failed"
@@ -1662,18 +2034,24 @@ private actor ThrowingApprovedActionHost: ActionHosting {
 
 private actor GatedFirstTerminalTelemetrySink: TelemetrySink {
     private let gatedEvent: TelemetryEventName
+    private var skipFirstMatches: Int
     private var events: [TelemetryEvent] = []
     private var firstTerminalStarted = false
     private var startedContinuation: CheckedContinuation<Void, Never>?
     private var releaseContinuation: CheckedContinuation<Void, Never>?
 
-    init(gatedEvent: TelemetryEventName) {
+    init(gatedEvent: TelemetryEventName, skipFirstMatches: Int = 0) {
         self.gatedEvent = gatedEvent
+        self.skipFirstMatches = skipFirstMatches
     }
 
     func record(_ event: TelemetryEvent) async {
         self.events.append(event)
         if event.name == self.gatedEvent, !self.firstTerminalStarted {
+            if self.skipFirstMatches > 0 {
+                self.skipFirstMatches -= 1
+                return
+            }
             self.firstTerminalStarted = true
             self.startedContinuation?.resume()
             self.startedContinuation = nil
