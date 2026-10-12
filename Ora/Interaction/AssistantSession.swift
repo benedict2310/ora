@@ -238,6 +238,9 @@ actor AssistantSession {
             ]
         )
 
+        guard self.isCurrentTextTurn(pending.turnGeneration) else {
+            return self.staleTurnCancellation(turnID: pending.turnID)
+        }
         return .cancelled(
             AssistantTurnCancellation(
                 turnID: pending.turnID,

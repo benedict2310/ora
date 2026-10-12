@@ -1471,6 +1471,71 @@ final class AssistantSessionTests: XCTestCase {
         XCTAssertEqual(openSpanCount, 0)
     }
 
+    func test_rejectionTelemetryReplacementMatrixFencesOutcomeAfterClosingOriginalSpan() async throws {
+        for actionName in ["reminders.create", "calendar.query"] {
+            for gatedEvent in [TelemetryEventName.actionProposalRejected, .turnCancelled] {
+                for replace in [false, true] {
+                    let firstTurnID = TelemetryTurnID("turn-rejection-first")
+                    let latestTurnID = TelemetryTurnID("turn-rejection-latest")
+                    let host = ApprovalFixtureHost(fixture: .executed)
+                    let auditStore = InMemoryAuditStore()
+                    let sink = GatedFirstTerminalTelemetrySink(gatedEvent: gatedEvent)
+                    let recorder = TelemetryRecorder(clock: TestTelemetryClock(start: 3_900, step: 10), sinks: [sink])
+                    let session = AssistantSession(
+                        generator: SequencedStructuredOutputGenerator(outputs: [.action(name: actionName), .action(name: "reminders.create")]),
+                        actionHost: host, auditStore: auditStore, telemetryRecorder: recorder
+                    )
+                    _ = await session.submitText(AssistantTextRequest(turnID: firstTurnID, text: "Private rejected request."))
+                    let pending = await session.pendingProposal()
+                    let proposal = try XCTUnwrap(pending)
+                    let rejection = Task { try await session.reject(proposal: proposal) }
+                    await sink.waitForFirstTerminal()
+                    var latestProposal: ActionProposal?
+                    if replace {
+                        let latestOutcome = await session.submitText(
+                            AssistantTextRequest(turnID: latestTurnID, text: "Private latest request.")
+                        )
+                        let latestPending = await session.pendingProposal()
+                        let replacement = try XCTUnwrap(latestPending)
+                        latestProposal = replacement
+                        XCTAssertEqual(latestOutcome, .proposal(AssistantTurnProposal(
+                            turnID: latestTurnID, proposal: replacement, message: replacement.summary
+                        )))
+                    }
+                    await sink.releaseFirstTerminal()
+                    let outcome = try await rejection.value
+                    let finalPending = await session.pendingProposal()
+                    let entries = await auditStore.entries()
+                    let executionCount = await host.executionCount()
+                    let openSpanCount = await recorder.openSpanCount()
+                    let events = await sink.snapshot()
+                    let firstEvents = events.filter { $0.turnID == firstTurnID }
+                    XCTAssertEqual(outcome, .cancelled(AssistantTurnCancellation(
+                        turnID: firstTurnID,
+                        message: replace ? "Okay, I moved on to the latest request." : "Okay, I won't do that."
+                    )), "\(actionName), \(gatedEvent), replace=\(replace)")
+                    XCTAssertEqual(finalPending, latestProposal)
+                    XCTAssertEqual(executionCount, 0)
+                    XCTAssertTrue(entries.isEmpty)
+                    XCTAssertEqual(openSpanCount, replace ? 1 : 0)
+                    var expectedEvents: [TelemetryEventName] = [.turnStarted, .inputTextReceived]
+                    if actionName == "calendar.query" { expectedEvents += [.actionExecutionStarted, .actionExecutionCancelled] }
+                    expectedEvents += [.actionProposalCreated, .actionProposalRejected, .turnCancelled]
+                    XCTAssertEventNames(firstEvents, expectedEvents)
+                    XCTAssertEventField(try XCTUnwrap(firstEvents.last), key: "resultCategory", equals: .string("rejected"))
+                    XCTAssertEqual(events.map(\.sequenceNumber), Array(1...events.count))
+                    XCTAssertNoVisibleRequestContent("Private rejected request.", in: events)
+                    XCTAssertNoVisibleRequestContent("Private latest request.", in: events)
+                    if let latestProposal {
+                        _ = try await session.reject(proposal: latestProposal)
+                        let finalOpenSpanCount = await recorder.openSpanCount()
+                        XCTAssertEqual(finalOpenSpanCount, 0)
+                    }
+                }
+            }
+        }
+    }
+
     func test_reject_clearsPendingProposalWithoutExecutingMutation() async throws {
         let turnID = TelemetryTurnID("turn-reject")
         let request = AssistantTextRequest(turnID: turnID, text: "Delete tomorrow's reminder.")
