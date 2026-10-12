@@ -249,35 +249,6 @@ final class AudioServiceTests: XCTestCase {
         XCTAssertEqual(state, .idle)
     }
 
-    // MARK: - Permission Tests (AC-4)
-
-    func test_start_requires_microphone_permission() async throws {
-        // Given: A fresh AudioService with a pipeline
-        let pipeline = AudioPipeline()
-        let service = AudioService(pipeline: pipeline)
-
-        // When: Checking permission status
-        let permStatus = pipeline.checkPermission()
-
-        // Then: If not authorized, start should throw
-        if permStatus == .notDetermined {
-            throw XCTSkip("Microphone permission not determined; skipping denied-permission assertion.")
-        }
-
-        if permStatus != .authorized {
-            do {
-                _ = try await service.start()
-                XCTFail("Should throw when microphone not authorized")
-            } catch {
-                XCTAssertTrue(error is AudioServiceError)
-                if let audioError = error as? AudioServiceError {
-                    XCTAssertEqual(audioError, .microphoneNotAuthorized)
-                }
-            }
-        }
-        // If authorized in test environment, the permission check works correctly
-    }
-
     // MARK: - State Transition Tests
 
     func test_state_transitions_are_correct() async {
@@ -347,12 +318,41 @@ final class AudioServiceTests: XCTestCase {
     }
 }
 
-// MARK: - Integration Tests
+// MARK: - Permission Integration Tests
+
+final class AudioPermissionIntegrationTests: XCTestCase {
+    override func setUpWithError() throws {
+        try IntegrationTestGate.requirePermissionTestsEnabled()
+    }
+
+    func test_start_requires_microphone_permission() async throws {
+        let pipeline = AudioPipeline()
+        let service = AudioService(pipeline: pipeline)
+        let permStatus = pipeline.checkPermission()
+
+        if permStatus == .notDetermined {
+            throw XCTSkip("Microphone permission not determined; skipping denied-permission assertion.")
+        }
+
+        if permStatus != .authorized {
+            do {
+                _ = try await service.start()
+                XCTFail("Should throw when microphone not authorized")
+            } catch {
+                XCTAssertTrue(error is AudioServiceError)
+                if let audioError = error as? AudioServiceError {
+                    XCTAssertEqual(audioError, .microphoneNotAuthorized)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Deterministic Integration Tests
 
 final class AudioServiceIntegrationTests: XCTestCase {
 
-    // These tests require microphone permission and real audio hardware
-    // They are conditional based on the test environment
+    // These tests exercise deterministic pipeline configuration and lifecycle behavior only.
 
     func test_pipeline_state_matches_service_lifecycle() {
         // Given: A pipeline

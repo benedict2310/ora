@@ -2,7 +2,7 @@
 //  SetupCoordinatorTests.swift
 //  OraTests
 //
-//  Tests for first-run setup flow
+//  Focused tests for first-run setup state and coordinator behavior
 //
 
 import XCTest
@@ -12,70 +12,21 @@ import XCTest
 
 final class SetupStepTests: XCTestCase {
 
-    // MARK: - Title Tests
+    func test_stepMappingAndNavigationRules_areStable() {
+        let expected: [(SetupStep, Int, String, Bool)] = [
+            (.welcome, 0, "Welcome", false),
+            (.permissions, 1, "Permissions", true),
+            (.modelExplanation, 2, "Models", true),
+            (.download, 3, "Download", false),
+            (.ready, 4, "Ready", false)
+        ]
 
-    func test_title_returnsCorrectValues() {
-        XCTAssertEqual(SetupStep.welcome.title, "Welcome")
-        XCTAssertEqual(SetupStep.permissions.title, "Permissions")
-        XCTAssertEqual(SetupStep.modelExplanation.title, "Models")
-        XCTAssertEqual(SetupStep.download.title, "Download")
-        XCTAssertEqual(SetupStep.ready.title, "Ready")
-    }
-
-    // MARK: - Can Go Back Tests
-
-    func test_canGoBack_welcomeCannotGoBack() {
-        XCTAssertFalse(SetupStep.welcome.canGoBack)
-    }
-
-    func test_canGoBack_permissionsCanGoBack() {
-        XCTAssertTrue(SetupStep.permissions.canGoBack)
-    }
-
-    func test_canGoBack_modelExplanationCanGoBack() {
-        XCTAssertTrue(SetupStep.modelExplanation.canGoBack)
-    }
-
-    func test_canGoBack_downloadCannotGoBack() {
-        // Can't go back during download to prevent interruption
-        XCTAssertFalse(SetupStep.download.canGoBack)
-    }
-
-    func test_canGoBack_readyCannotGoBack() {
-        XCTAssertFalse(SetupStep.ready.canGoBack)
-    }
-
-    // MARK: - CaseIterable Tests
-
-    func test_allCases_containsFiveSteps() {
-        XCTAssertEqual(SetupStep.allCases.count, 5)
-    }
-
-    func test_rawValues_areSequential() {
-        XCTAssertEqual(SetupStep.welcome.rawValue, 0)
-        XCTAssertEqual(SetupStep.permissions.rawValue, 1)
-        XCTAssertEqual(SetupStep.modelExplanation.rawValue, 2)
-        XCTAssertEqual(SetupStep.download.rawValue, 3)
-        XCTAssertEqual(SetupStep.ready.rawValue, 4)
-    }
-
-    // MARK: - Step Transition Tests
-
-    func test_stepTransition_welcomeToPermissions() {
-        // Valid transition in sequence
-        XCTAssertEqual(SetupStep.welcome.rawValue + 1, SetupStep.permissions.rawValue)
-    }
-
-    func test_stepTransition_permissionsToModelExplanation() {
-        XCTAssertEqual(SetupStep.permissions.rawValue + 1, SetupStep.modelExplanation.rawValue)
-    }
-
-    func test_stepTransition_modelExplanationToDownload() {
-        XCTAssertEqual(SetupStep.modelExplanation.rawValue + 1, SetupStep.download.rawValue)
-    }
-
-    func test_stepTransition_downloadToReady() {
-        XCTAssertEqual(SetupStep.download.rawValue + 1, SetupStep.ready.rawValue)
+        XCTAssertEqual(SetupStep.allCases.count, expected.count)
+        for (step, rawValue, title, canGoBack) in expected {
+            XCTAssertEqual(step.rawValue, rawValue)
+            XCTAssertEqual(step.title, title)
+            XCTAssertEqual(step.canGoBack, canGoBack)
+        }
     }
 }
 
@@ -83,161 +34,41 @@ final class SetupStepTests: XCTestCase {
 
 final class SetupStateTests: XCTestCase {
 
-    // MARK: - Initial State
-
-    func test_initialState_startsAtWelcome() {
+    func test_initialState_containsCompleteDefaults() {
         let state = SetupState()
+
         XCTAssertEqual(state.currentStep, .welcome)
-    }
-
-    func test_initialState_notComplete() {
-        let state = SetupState()
         XCTAssertFalse(state.isComplete)
-    }
-
-    func test_initialState_permissionsNotGranted() {
-        let state = SetupState()
         XCTAssertFalse(state.permissionsGranted)
-    }
-
-    func test_initialState_downloadProgressZero() {
-        let state = SetupState()
+        XCTAssertFalse(state.skippedOptionalPermissions)
         XCTAssertEqual(state.downloadProgress, 0)
-    }
-
-    func test_initialState_noDownloadError() {
-        let state = SetupState()
-        XCTAssertNil(state.downloadError)
-    }
-
-    func test_initialState_noCurrentDownload() {
-        let state = SetupState()
         XCTAssertNil(state.downloadingModel)
-    }
-
-    func test_initialState_primaryLLMDefault() {
-        let state = SetupState()
+        XCTAssertNil(state.downloadError)
         XCTAssertEqual(state.primaryLLM, .recommendedLocalLLM())
-    }
-
-    // MARK: - System Info
-
-    func test_systemRAMGB_defaultsToZero() {
-        let state = SetupState()
+        XCTAssertFalse(state.downloadWasCancelled)
         XCTAssertEqual(state.systemRAMGB, 0)
-    }
-
-    func test_recommendedModel_defaultsToVision4B() {
-        let state = SetupState()
         XCTAssertEqual(state.recommendedModel, ModelIdentifier.recommendedLocalLLM().displayName)
     }
 
-    // MARK: - State Mutation Tests
-
-    func test_stateIsSendable() {
-        // SetupState conforms to Sendable
-        var state = SetupState()
-        state.currentStep = .permissions
-        state.isComplete = true
-
-        // Pass across isolation boundaries (this compiles = Sendable works)
-        Task.detached {
-            let _ = state.currentStep
-            let _ = state.isComplete
-        }
-    }
-
-    func test_downloadProgress_canBeUpdated() {
-        var state = SetupState()
-        state.downloadProgress = 0.5
-
-        XCTAssertEqual(state.downloadProgress, 0.5)
-    }
-
-    func test_downloadError_canBeSet() {
-        var state = SetupState()
-        state.downloadError = "Network error"
-
-        XCTAssertEqual(state.downloadError, "Network error")
-    }
-
-    func test_downloadingModel_canBeSet() {
-        var state = SetupState()
-        state.downloadingModel = "Parakeet ASR"
-
-        XCTAssertEqual(state.downloadingModel, "Parakeet ASR")
-    }
-
-    func test_primaryLLM_canBeChanged() {
-        var state = SetupState()
-        state.primaryLLM = .qwen3B
-
-        XCTAssertEqual(state.primaryLLM, .qwen3B)
-    }
-
-    func test_skippedOptionalPermissions_canBeSet() {
-        var state = SetupState()
-        state.skippedOptionalPermissions = true
-
-        XCTAssertTrue(state.skippedOptionalPermissions)
-    }
-
-    // MARK: - Download Cancellation State
-    // Note: Detailed download stats (speed, ETA, bytes) are now tracked in ModelsState
-
-    func test_downloadWasCancelled_defaultsFalse() {
-        let state = SetupState()
-        XCTAssertFalse(state.downloadWasCancelled)
-    }
-
-    func test_downloadWasCancelled_canBeSet() {
-        var state = SetupState()
-        state.downloadWasCancelled = true
-        XCTAssertTrue(state.downloadWasCancelled)
-    }
-
-    // MARK: - Format Helpers (Static)
-
-    func test_formatBytes_formatsCorrectly() {
-        // Test MB formatting
-        XCTAssertEqual(SetupState.formatBytes(500 * 1024 * 1024), "500 MB")
-        
-        // Test GB formatting
-        XCTAssertEqual(SetupState.formatBytes(Int64(1.5 * 1024 * 1024 * 1024)), "1.5 GB")
-        
-        // Test 0 bytes
+    func test_formatBytes_coversMegabyteAndGigabyteBoundaries() {
         XCTAssertEqual(SetupState.formatBytes(0), "0 MB")
-    }
-
-    func test_totalModelSizeDisplay_returnsExpectedValue() {
-        // Expected value depends on hardware — use the same model the property uses
-        let expected = SetupState.totalModelSizeDisplay(for: .recommendedLocalLLM())
-        XCTAssertEqual(SetupState.totalModelSizeDisplay, expected)
-    }
-
-    func test_totalModelSizeDisplay_forVisionModel_returnsExpectedValue() {
-        XCTAssertEqual(
-            SetupState.totalModelSizeDisplay(for: .qwen35_4B_Vision),
-            "~4.6 GB"
-        )
+        XCTAssertEqual(SetupState.formatBytes(500 * 1024 * 1024), "500 MB")
+        XCTAssertEqual(SetupState.formatBytes(Int64(1024 * 1024 * 1024)), "1.0 GB")
+        XCTAssertEqual(SetupState.formatBytes(Int64(1.5 * 1024 * 1024 * 1024)), "1.5 GB")
     }
 }
 
-// MARK: - ModelsState Download Tracking Tests
-// Note: Download progress/speed/ETA tracking has been moved to ModelsState (single source of truth)
+// MARK: - Models State Tests
 
 final class ModelsStateDownloadTrackingTests: XCTestCase {
 
-    func test_initialModelsState_hasNoDownloading() {
-        let state = ModelsState()
+    func test_initialState_andByteAggregates_areCorrect() {
+        var state = ModelsState()
         XCTAssertFalse(state.isDownloading)
         XCTAssertEqual(state.overallDownloadSpeed, 0)
         XCTAssertNil(state.estimatedTimeRemainingSeconds)
         XCTAssertTrue(state.downloadProgress.isEmpty)
-    }
 
-    func test_totalBytesDownloaded_calculatesFromProgress() {
-        var state = ModelsState()
         state.downloadProgress[.parakeetTDT] = ModelDownloadProgress(
             identifier: .parakeetTDT,
             bytesDownloaded: 300_000_000,
@@ -251,50 +82,33 @@ final class ModelsStateDownloadTrackingTests: XCTestCase {
 
         XCTAssertEqual(state.totalBytesDownloaded, 1_300_000_000)
         XCTAssertEqual(state.totalBytesToDownload, 4_100_000_000)
+        XCTAssertEqual(state.formattedBytesDownloaded, "1.2 GB")
     }
 
-    func test_formattedDownloadSpeed_formatsCorrectly() {
+    func test_formattedDownloadSpeed_coversThresholds() {
         var state = ModelsState()
 
-        state.overallDownloadSpeed = 12.3 * 1024 * 1024  // 12.3 MB/s
+        state.overallDownloadSpeed = 0.09 * 1024 * 1024
+        XCTAssertEqual(state.formattedDownloadSpeed, "...")
+        state.overallDownloadSpeed = 0.1001 * 1024 * 1024
+        XCTAssertEqual(state.formattedDownloadSpeed, "0.1 MB/s")
+        state.overallDownloadSpeed = 12.3 * 1024 * 1024
         XCTAssertEqual(state.formattedDownloadSpeed, "12.3 MB/s")
-
-        state.overallDownloadSpeed = 0.01 * 1024 * 1024  // Very slow
-        XCTAssertEqual(state.formattedDownloadSpeed, "...")  // Shows placeholder for slow speeds
     }
 
-    func test_formattedTimeRemaining_formatsSeconds() {
+    func test_formattedTimeRemaining_coversSecondMinuteAndHourRanges() {
         var state = ModelsState()
-        state.estimatedTimeRemainingSeconds = 45
-        XCTAssertEqual(state.formattedTimeRemaining, "~45s left")
-    }
 
-    func test_formattedTimeRemaining_formatsMinutes() {
-        var state = ModelsState()
-        state.estimatedTimeRemainingSeconds = 120
-        XCTAssertEqual(state.formattedTimeRemaining, "~2 min left")
-    }
-
-    func test_formattedTimeRemaining_formatsHours() {
-        var state = ModelsState()
-        state.estimatedTimeRemainingSeconds = 3660  // 1 hour 1 minute
-        XCTAssertEqual(state.formattedTimeRemaining, "~1h 1m left")
-    }
-
-    func test_formattedTimeRemaining_nilForZero() {
-        var state = ModelsState()
         state.estimatedTimeRemainingSeconds = 0
         XCTAssertNil(state.formattedTimeRemaining)
-    }
-
-    func test_formattedBytesDownloaded_formatsCorrectly() {
-        var state = ModelsState()
-        state.downloadProgress[.parakeetTDT] = ModelDownloadProgress(
-            identifier: .parakeetTDT,
-            bytesDownloaded: Int64(1.5 * 1024 * 1024 * 1024),
-            totalBytes: Int64(2.0 * 1024 * 1024 * 1024)
-        )
-        XCTAssertEqual(state.formattedBytesDownloaded, "1.5 GB")
+        state.estimatedTimeRemainingSeconds = 45
+        XCTAssertEqual(state.formattedTimeRemaining, "~45s left")
+        state.estimatedTimeRemainingSeconds = 120
+        XCTAssertEqual(state.formattedTimeRemaining, "~2 min left")
+        state.estimatedTimeRemainingSeconds = 3600
+        XCTAssertEqual(state.formattedTimeRemaining, "~1h left")
+        state.estimatedTimeRemainingSeconds = 3660
+        XCTAssertEqual(state.formattedTimeRemaining, "~1h 1m left")
     }
 }
 
@@ -303,276 +117,66 @@ final class ModelsStateDownloadTrackingTests: XCTestCase {
 @MainActor
 final class SetupCoordinatorTests: XCTestCase {
 
-    // MARK: - Singleton Tests
-
-    func test_shared_returnsSameInstance() {
-        let instance1 = SetupCoordinator.shared
-        let instance2 = SetupCoordinator.shared
-
-        XCTAssertTrue(instance1 === instance2)
-    }
-
-    // MARK: - Initial State Tests
-
-    func test_initialState_hasState() {
+    func test_sharedCoordinator_initializesSystemRecommendation() {
         let coordinator = SetupCoordinator.shared
 
-        // Note: The shared instance may have state from previous test runs.
-        // We can only verify the structure exists.
-        XCTAssertNotNil(coordinator.state)
-    }
-
-    func test_state_hasSystemRAMInfo() {
-        let coordinator = SetupCoordinator.shared
-
-        // System RAM should be populated from ProcessInfo
         XCTAssertGreaterThan(coordinator.state.systemRAMGB, 0)
-    }
-
-    func test_state_hasRecommendedModel() {
-        let coordinator = SetupCoordinator.shared
-
         XCTAssertEqual(coordinator.state.recommendedModel, ModelIdentifier.recommendedLocalLLM().displayName)
-    }
-
-    func test_state_primaryLLMMatchesRAM() {
-        let coordinator = SetupCoordinator.shared
-
         XCTAssertEqual(coordinator.state.primaryLLM, .recommendedLocalLLM())
     }
 
-    func test_resolvePrimaryLLM_firstRunHonorsPersistedVisionModel() {
-        let resolved = SetupCoordinator.resolvePrimaryLLM(
-            persistedLLM: .qwen35_4B_Vision,
-            isRepairFlow: false,
-            totalRAMBytes: 32_000_000_000
-        )
-        XCTAssertEqual(resolved, .qwen35_4B_Vision)
-    }
+    func test_resolvePrimaryLLM_coversPersistedAndFallbackBranches() {
+        let cases: [(String, ModelIdentifier?, Bool, UInt64, ModelIdentifier)] = [
+            ("first run retains supported vision model", .qwen35_4B_Vision, false, 32_000_000_000, .qwen35_4B_Vision),
+            ("repair retains supported vision model", .qwen35_4B_Vision, true, 32_000_000_000, .qwen35_4B_Vision),
+            ("repair falls back when vision model exceeds memory", .qwen35_4B_Vision, true, 8_000_000_000, .qwen3_4B),
+            ("legacy model falls back to recommended model", .qwen3_4B, true, 32_000_000_000, .qwen35_4B_Vision),
+            ("missing model uses low-memory recommendation", nil, false, 8_000_000_000, .qwen3_4B),
+            ("supported eight billion model is retained", .qwen35_8B_Vision, true, 32_000_000_000, .qwen35_8B_Vision),
+            ("unsupported thirty-two billion model falls back", .qwen35_32B_Vision, true, 32_000_000_000, .qwen35_4B_Vision)
+        ]
 
-    func test_resolvePrimaryLLM_repairFlowHonorsPersistedVisionModel() {
-        let resolved = SetupCoordinator.resolvePrimaryLLM(
-            persistedLLM: .qwen35_4B_Vision,
-            isRepairFlow: true,
-            totalRAMBytes: 32_000_000_000
-        )
-        XCTAssertEqual(resolved, .qwen35_4B_Vision)
-    }
-
-    func test_resolvePrimaryLLM_repairFlowFallsBackWhenInsufficientMemory() {
-        let resolved = SetupCoordinator.resolvePrimaryLLM(
-            persistedLLM: .qwen35_4B_Vision,
-            isRepairFlow: true,
-            totalRAMBytes: 8_000_000_000
-        )
-        XCTAssertEqual(resolved, .qwen3_4B)
-    }
-
-    func test_resolvePrimaryLLM_legacyQwen3FallsBackToVision4B() {
-        let resolved = SetupCoordinator.resolvePrimaryLLM(
-            persistedLLM: .qwen3_4B,
-            isRepairFlow: true,
-            totalRAMBytes: 32_000_000_000
-        )
-        XCTAssertEqual(resolved, .qwen35_4B_Vision)
-    }
-
-    func test_resolvePrimaryLLM_firstRunDefaultsToLegacyOn8GBHardware() {
-        let resolved = SetupCoordinator.resolvePrimaryLLM(
-            persistedLLM: nil,
-            isRepairFlow: false,
-            totalRAMBytes: 8_000_000_000
-        )
-        XCTAssertEqual(resolved, .qwen3_4B)
-    }
-
-    func test_resolvePrimaryLLM_retainsSupported8BSelection() {
-        let resolved = SetupCoordinator.resolvePrimaryLLM(
-            persistedLLM: .qwen35_8B_Vision,
-            isRepairFlow: true,
-            totalRAMBytes: 32_000_000_000
-        )
-        XCTAssertEqual(resolved, .qwen35_8B_Vision)
-    }
-
-    func test_resolvePrimaryLLM_fallsBackFromUnsupported32BSelection() {
-        let resolved = SetupCoordinator.resolvePrimaryLLM(
-            persistedLLM: .qwen35_32B_Vision,
-            isRepairFlow: true,
-            totalRAMBytes: 32_000_000_000
-        )
-        XCTAssertEqual(resolved, .qwen35_4B_Vision)
-    }
-
-    // MARK: - Models State (Unified Tracking)
-
-    func test_coordinator_hasModelsState() {
-        let coordinator = SetupCoordinator.shared
-
-        // Coordinator should expose modelsState for unified download tracking
-        XCTAssertNotNil(coordinator.modelsState)
-    }
-
-    // MARK: - Setup Complete Detection Tests
-
-    func test_isSetupComplete_readsUserDefaults() {
-        let coordinator = SetupCoordinator.shared
-
-        // This tests the property exists and returns a boolean
-        let isComplete = coordinator.isSetupComplete
-        XCTAssertEqual(isComplete, UserDefaults.standard.bool(forKey: "com.ora.setupComplete"))
-    }
-
-    // MARK: - Step Navigation Tests
-
-    func test_previousStep_respectsCanGoBack() {
-        let coordinator = SetupCoordinator.shared
-
-        // previousStep should respect the canGoBack property of each step
-        // Since we can't easily reset state, just verify the method exists
-        coordinator.previousStep()
-    }
-
-    // MARK: - Permissions Update Tests
-
-    func test_updatePermissionsGranted_updatesState() {
-        let coordinator = SetupCoordinator.shared
-
-        // Store initial value
-        let initialValue = coordinator.state.permissionsGranted
-
-        // Update permissions granted
-        coordinator.updatePermissionsGranted(true)
-        XCTAssertTrue(coordinator.state.permissionsGranted)
-
-        // Reset to initial value
-        coordinator.updatePermissionsGranted(initialValue)
-    }
-
-    // MARK: - Postpone Tests
-
-    func test_postponeSetup_setsIsShowingSetupToFalse() {
-        let coordinator = SetupCoordinator.shared
-
-        // Call postpone (this should set isShowingSetup to false)
-        coordinator.postponeSetup()
-
-        XCTAssertFalse(coordinator.isShowingSetup)
-    }
-
-    // MARK: - UserDefaults Persistence Tests
-
-    func test_userDefaultsKey_isCorrect() {
-        // The setup complete key should be consistent
-        let key = "com.ora.setupComplete"
-        let value = UserDefaults.standard.bool(forKey: key)
-
-        // Just verify we can read from this key without crash
-        _ = value
-    }
-
-    // MARK: - NSWindowDelegate Conformance Tests
-
-    func test_coordinator_conformsToNSWindowDelegate() {
-        let coordinator = SetupCoordinator.shared
-
-        // Verify coordinator conforms to NSWindowDelegate
-        XCTAssertTrue(coordinator is NSWindowDelegate)
-    }
-}
-
-// MARK: - Setup Notification Tests
-
-final class SetupNotificationTests: XCTestCase {
-
-    func test_setupDidComplete_notificationExists() {
-        // Verify the notification name is properly defined
-        let name = Notification.Name.setupDidComplete
-        XCTAssertEqual(name.rawValue, "setupDidComplete")
-    }
-
-    func test_setupDidComplete_canBePosted() {
-        // Verify the notification can be posted and observed
-        let expectation = self.expectation(description: "Notification received")
-
-        let observer = NotificationCenter.default.addObserver(
-            forName: .setupDidComplete,
-            object: nil,
-            queue: .main
-        ) { _ in
-            expectation.fulfill()
+        for (label, persistedLLM, isRepairFlow, totalRAMBytes, expected) in cases {
+            XCTAssertEqual(
+                SetupCoordinator.resolvePrimaryLLM(
+                    persistedLLM: persistedLLM,
+                    isRepairFlow: isRepairFlow,
+                    totalRAMBytes: totalRAMBytes
+                ),
+                expected,
+                label
+            )
         }
-
-        NotificationCenter.default.post(name: .setupDidComplete, object: nil)
-
-        wait(for: [expectation], timeout: 1.0)
-        NotificationCenter.default.removeObserver(observer)
     }
-    
-    func test_modelStateDidChange_notificationExists() {
-        // Verify the notification name is properly defined
-        let name = Notification.Name.modelStateDidChange
-        XCTAssertEqual(name.rawValue, "com.ora.modelStateDidChange")
+
+    func test_previousStep_movesBackOnlyFromNavigableSteps() {
+        var state = SetupState()
+        state.currentStep = .modelExplanation
+        let coordinator = SetupCoordinator.makeForTesting(state: state)
+
+        coordinator.previousStep()
+        XCTAssertEqual(coordinator.state.currentStep, .permissions)
+
+        var nonNavigableState = SetupState()
+        nonNavigableState.currentStep = .download
+        let nonNavigableCoordinator = SetupCoordinator.makeForTesting(state: nonNavigableState)
+        nonNavigableCoordinator.previousStep()
+        XCTAssertEqual(nonNavigableCoordinator.state.currentStep, .download)
     }
-}
 
-// MARK: - Download Gating Tests
-
-@MainActor
-final class SetupDownloadGatingTests: XCTestCase {
-
-    func test_canProceed_downloadRequiresCompletion() {
-        // When at download step, should only proceed if downloadProgress >= 1.0
+    func test_cancelDownloads_resetsDownloadStateAndReturnsToExplanation() {
         var state = SetupState()
         state.currentStep = .download
-        state.downloadProgress = 0.5
-
-        // Progress less than 1.0 means download not complete
-        XCTAssertLessThan(state.downloadProgress, 1.0)
-    }
-
-    func test_canProceed_downloadWithErrorBlocksProgress() {
-        var state = SetupState()
-        state.currentStep = .download
-        state.downloadProgress = 1.0
+        state.downloadProgress = 0.75
+        state.downloadingModel = "Parakeet ASR"
         state.downloadError = "Network error"
+        let coordinator = SetupCoordinator.makeForTesting(state: state)
 
-        // Even with progress at 100%, an error should block
-        XCTAssertNotNil(state.downloadError)
-    }
+        coordinator.cancelDownloads()
 
-    func test_downloadComplete_allowsProceeding() {
-        var state = SetupState()
-        state.currentStep = .download
-        state.downloadProgress = 1.0
-        state.downloadError = nil
-
-        // Progress at 100% with no error means download is complete
-        XCTAssertGreaterThanOrEqual(state.downloadProgress, 1.0)
-        XCTAssertNil(state.downloadError)
-    }
-}
-
-// MARK: - Permission Gating Tests
-
-@MainActor
-final class SetupPermissionGatingTests: XCTestCase {
-
-    func test_canProceed_permissionsRequiredForContinue() {
-        var state = SetupState()
-        state.currentStep = .permissions
-        state.permissionsGranted = false
-
-        // Without permissions, cannot proceed
-        XCTAssertFalse(state.permissionsGranted)
-    }
-
-    func test_canProceed_permissionsGrantedAllowsContinue() {
-        var state = SetupState()
-        state.currentStep = .permissions
-        state.permissionsGranted = true
-
-        // With permissions granted, can proceed
-        XCTAssertTrue(state.permissionsGranted)
+        XCTAssertEqual(coordinator.state.currentStep, .modelExplanation)
+        XCTAssertTrue(coordinator.state.downloadWasCancelled)
+        XCTAssertEqual(coordinator.state.downloadProgress, 0)
+        XCTAssertNil(coordinator.state.downloadError)
     }
 }

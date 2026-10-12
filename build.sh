@@ -13,8 +13,9 @@
 #   ./build.sh test         # Run fast Ora v2 core tests
 #   ./build.sh test-core    # Run fast Ora v2 core tests
 #   ./build.sh test-legacy  # Run the legacy full OraTests suite
-#   ./build.sh test-perms   # Run legacy tests with permission prompts enabled
+#   ./build.sh test-perms   # Run live permission integration tests (prompts allowed)
 #   ./build.sh test-tts     # Run on-demand TTS integration tests (audio)
+#   ./build.sh test-models  # Run opt-in model integration tests
 #   ./build.sh test-tsan    # Run tests with Thread Sanitizer
 #   ./build.sh logs         # Tail unified logs for Ora
 #
@@ -57,7 +58,15 @@ check_xcodegen() {
 
 # Generate Xcode project if needed
 generate_project() {
-  if [ ! -f "Ora.xcodeproj/project.pbxproj" ] || [ "project.yml" -nt "Ora.xcodeproj/project.pbxproj" ]; then
+  local project_file="Ora.xcodeproj/project.pbxproj"
+  local sources_changed=0
+
+  if [ -f "$project_file" ] && find Ora OraTests OraCoreTests \
+      -type f -newer "Ora.xcodeproj/project.pbxproj" -print -quit | grep -q .; then
+    sources_changed=1
+  fi
+
+  if [ ! -f "$project_file" ] || [ "project.yml" -nt "$project_file" ] || [ "$sources_changed" -eq 1 ]; then
     echo -e "${BLUE}Generating Xcode project...${NC}"
     xcodegen generate
   fi
@@ -280,7 +289,11 @@ case "${1:-build}" in
 
   test-perms|test-permissions)
     rm -f "$HOME/Library/Application Support/Ora/run-tts-tests.flag"
-    ORA_SKIP_PERMISSION_PROMPTS=0 run_tests "$SCHEME_LEGACY"
+    ORA_SKIP_PERMISSION_PROMPTS=0 run_tests "$SCHEME_LEGACY" \
+      -only-testing:OraTests/PermissionsManagerIntegrationTests \
+      -only-testing:OraTests/LivePermissionsClientTests \
+      -only-testing:OraTests/PermissionHelperTests \
+      -only-testing:OraTests/AudioPermissionIntegrationTests
     ;;
 
   test-tsan)
@@ -294,6 +307,14 @@ case "${1:-build}" in
     touch "$TTS_FLAG_PATH"
     trap 'rm -f "$TTS_FLAG_PATH"' EXIT
     run_tests "$SCHEME_LEGACY" -only-testing:OraTests/TTSIntegrationTests
+    ;;
+
+  test-models)
+    rm -f "$HOME/Library/Application Support/Ora/run-tts-tests.flag"
+    ORA_RUN_MODEL_INTEGRATION_TESTS=1 run_tests "$SCHEME_LEGACY" \
+      -only-testing:OraTests/LLMModelIntegrationTests \
+      -only-testing:OraTests/ParakeetModelIntegrationTests \
+      -only-testing:OraTests/EmbeddingModelIntegrationTests
     ;;
 
   logs)
@@ -391,7 +412,7 @@ case "${1:-build}" in
     ;;
 
   *)
-    echo "Usage: $0 {build|run|test-onboarding [--keep-models]|clean|reset-perms|test|test-core|test-legacy|test-perms|test-tsan|test-tts|logs|open-results|sign}"
+    echo "Usage: $0 {build|run|test-onboarding [--keep-models]|clean|reset-perms|test|test-core|test-legacy|test-perms|test-tsan|test-tts|test-models|logs|open-results|sign}"
     echo ""
     echo "Commands:"
     echo "  build         Build the app (default)"
@@ -403,9 +424,10 @@ case "${1:-build}" in
     echo "  test          Run fast Ora v2 core tests"
     echo "  test-core     Run fast Ora v2 core tests"
     echo "  test-legacy   Run the legacy full OraTests suite"
-    echo "  test-perms    Run legacy tests with permission prompts enabled"
+    echo "  test-perms    Run live permission integration tests (prompts allowed)"
     echo "  test-tsan     Run tests with Thread Sanitizer enabled"
     echo "  test-tts      Run on-demand TTS integration tests (audio)"
+    echo "  test-models   Run opt-in model integration tests"
     echo "  logs          Tail unified logs (Ctrl+C to stop; --category <name> or --predicate <expr>)"
     echo "  open-results  Open the .xcresult bundle in Xcode"
     echo "  sign          Build, sign with Developer ID, notarize, and optionally create DMG"

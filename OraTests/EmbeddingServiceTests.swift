@@ -77,28 +77,6 @@ final class EmbeddingServiceTests: XCTestCase {
         }
     }
 
-    private static var isCI: Bool {
-        let env = ProcessInfo.processInfo.environment
-        return env["CI"] != nil
-            || env["GITHUB_ACTIONS"] != nil
-            || NSHomeDirectory().contains("/Users/runner")
-    }
-
-    private static func isModelAvailabilityError(_ error: Error) -> Bool {
-        let description = String(describing: error).lowercased()
-        return description.contains("no such file")
-            || description.contains("not found")
-            || description.contains("doesn't exist")
-            || description.contains("can't connect")
-            || description.contains("connection")
-            || description.contains("resolve host")
-            || description.contains("network")
-            || description.contains("timed out")
-            || description.contains("offline")
-            || description.contains("download")
-            || description.contains("keynotfound")
-    }
-
     func test_embed_sampleText_returnsNonZeroVectorWithExpectedDimension() async throws {
         // Given
         let service = EmbeddingService(
@@ -168,14 +146,38 @@ final class EmbeddingServiceTests: XCTestCase {
         XCTAssertEqual(limitCounter.currentValue(), 1)
         XCTAssertEqual(clearCounter.currentValue(), 2)
     }
+}
+
+final class EmbeddingModelIntegrationTests: XCTestCase {
+    private static var isCI: Bool {
+        let env = ProcessInfo.processInfo.environment
+        return env["CI"] != nil
+            || env["GITHUB_ACTIONS"] != nil
+            || NSHomeDirectory().contains("/Users/runner")
+    }
+
+    private static func isModelAvailabilityError(_ error: Error) -> Bool {
+        let description = String(describing: error).lowercased()
+        return description.contains("no such file")
+            || description.contains("not found")
+            || description.contains("doesn't exist")
+            || description.contains("can't connect")
+            || description.contains("connection")
+            || description.contains("resolve host")
+            || description.contains("network")
+            || description.contains("timed out")
+            || description.contains("offline")
+            || description.contains("download")
+            || description.contains("keynotfound")
+    }
 
     func test_embed_realModelPath_generatesVectorWhenModelAvailable() async throws {
+        try IntegrationTestGate.requireModelTestsEnabled()
         try XCTSkipIf(
             Self.isCI,
             "MLXEmbedders crashes on CI runners without Metal GPU support"
         )
 
-        // Given
         let service = EmbeddingService(
             configuration: .init(
                 vectorDimension: 384,
@@ -185,7 +187,6 @@ final class EmbeddingServiceTests: XCTestCase {
             )
         )
 
-        // When
         let vectors: [[Float]]
         do {
             vectors = try await service.embed(
@@ -201,7 +202,6 @@ final class EmbeddingServiceTests: XCTestCase {
             throw error
         }
 
-        // Then
         XCTAssertEqual(vectors.count, 2)
         XCTAssertEqual(vectors[0].count, 384)
         XCTAssertEqual(vectors[1].count, 384)
