@@ -63,6 +63,9 @@ actor AssistantSession {
                         self.stringField("resultCategory", "response")
                     ]
                 )
+                guard self.isCurrentTextTurn(turnGeneration) else {
+                    return self.staleTurnCancellation(turnID: request.turnID)
+                }
                 return .result(AssistantTurnResult(turnID: request.turnID, message: message))
             case .action(let name):
                 guard let action = self.actionHost.catalog.action(named: name) else {
@@ -260,7 +263,8 @@ actor AssistantSession {
                     turnID: turnID,
                     turnSpan: turnSpan,
                     message: "Sorry, that action needs confirmation before I can run it.",
-                    resultCategory: "mutation_executed_without_approval"
+                    resultCategory: "mutation_executed_without_approval",
+                    action: action
                 )
             }
         } catch {
@@ -315,12 +319,18 @@ actor AssistantSession {
                         self.stringField("resultCategory", "executed")
                     ]
                 )
+                guard self.isCurrentTextTurn(turnGeneration) else {
+                    return await self.cancelStaleTurn(turnID: turnID, turnSpan: turnSpan)
+                }
                 _ = try? await self.telemetryRecorder.endSpan(
                     turnSpan,
                     fields: self.baseFields(phase: "turn", state: "completed") + [
                         self.stringField("resultCategory", "executed")
                     ]
                 )
+                guard self.isCurrentTextTurn(turnGeneration) else {
+                    return self.staleTurnCancellation(turnID: turnID)
+                }
                 return .result(AssistantTurnResult(turnID: turnID, message: summary))
             case .proposed(let hostProposal):
                 let proposal = hostProposal.withProposalID(self.proposalID(turnID: turnID, action: hostProposal.action))
@@ -365,7 +375,7 @@ actor AssistantSession {
                 turnSpan: turnSpan,
                 message: "Sorry, I couldn't complete that request.",
                 resultCategory: "action_failed",
-                actionName: action.name
+                action: action
             )
         }
     }
@@ -463,13 +473,13 @@ actor AssistantSession {
         turnSpan: TelemetrySpanToken,
         message: String,
         resultCategory: String,
-        actionName: String? = nil
+        action: Action? = nil
     ) async -> AssistantTurnOutcome {
         var fields = self.baseFields(phase: "turn", state: "failed") + [
             self.stringField("resultCategory", resultCategory)
         ]
-        if let actionName {
-            fields.append(self.stringField("actionName", actionName))
+        if let action {
+            fields += self.actionIdentityFields(action)
         }
         _ = try? await self.telemetryRecorder.failSpan(turnSpan, fields: fields)
         return .failure(AssistantTurnFailure(turnID: turnID, message: message))

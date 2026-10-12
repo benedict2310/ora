@@ -66,6 +66,115 @@ final class AssistantSessionTests: XCTestCase {
         XCTAssertEventField(events[4], key: "durationMilliseconds", equals: .integer(40))
     }
 
+    func test_submitText_responseReturnsResultAndClosesTurnNormally() async throws {
+        let turnID = TelemetryTurnID("turn-response-control")
+        let sink = InMemoryTelemetrySink()
+        let recorder = TelemetryRecorder(clock: TestTelemetryClock(start: 1_500, step: 10), sinks: [sink])
+        let session = AssistantSession(
+            generator: FakeStructuredOutputGenerator(output: .response(message: "Private response.")),
+            actionHost: FakeActionHost(),
+            auditStore: InMemoryAuditStore(),
+            telemetryRecorder: recorder
+        )
+        let outcome = await session.submitText(AssistantTextRequest(turnID: turnID, text: "Private request."))
+        let events = await sink.snapshot()
+        let openSpanCount = await recorder.openSpanCount()
+        XCTAssertEqual(outcome, .result(AssistantTurnResult(turnID: turnID, message: "Private response.")))
+        XCTAssertEventNames(events, [.turnStarted, .inputTextReceived, .turnCompleted])
+        XCTAssertTurnMetadata(events, turnID: turnID)
+        XCTAssertEventField(events[2], key: "resultCategory", equals: .string("response"))
+        XCTAssertEqual(openSpanCount, 0)
+        XCTAssertNoVisibleRequestContent("Private request.", in: events)
+        XCTAssertNoVisibleRequestContent("Private response.", in: events)
+    }
+
+    func test_responseReplacedDuringTurnCompletionDoesNotReturnStaleResultOrDuplicateTerminal() async throws {
+        try await self.assertResultReplacedDuringTerminalTelemetry(
+            output: .response(message: "Private response."),
+            gatedEvent: .turnCompleted,
+            expectedFirstEvents: [.turnStarted, .inputTextReceived, .turnCompleted]
+        )
+    }
+
+    func test_readResultReplacedDuringTurnCompletionDoesNotReturnStaleResultOrDuplicateTerminal() async throws {
+        try await self.assertResultReplacedDuringTerminalTelemetry(
+            output: .action(name: "calendar.query"),
+            gatedEvent: .turnCompleted,
+            expectedFirstEvents: [
+                .turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionCompleted, .turnCompleted
+            ]
+        )
+    }
+
+    func test_readResultReplacedDuringActionCompletionCancelsOnlyOpenTurnSpan() async throws {
+        try await self.assertResultReplacedDuringTerminalTelemetry(
+            output: .action(name: "calendar.query"),
+            gatedEvent: .actionExecutionCompleted,
+            expectedFirstEvents: [
+                .turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionCompleted, .turnCancelled
+            ]
+        )
+    }
+
+    private func assertResultReplacedDuringTerminalTelemetry(
+        output: StructuredAssistantOutput,
+        gatedEvent: TelemetryEventName,
+        expectedFirstEvents: [TelemetryEventName]
+    ) async throws {
+        let firstTurnID = TelemetryTurnID("turn-terminal-first")
+        let secondTurnID = TelemetryTurnID("turn-terminal-second")
+        let sink = GatedFirstTerminalTelemetrySink(gatedEvent: gatedEvent)
+        let host = FakeActionHost()
+        let auditStore = InMemoryAuditStore()
+        let recorder = TelemetryRecorder(clock: TestTelemetryClock(start: 1_600, step: 10), sinks: [sink])
+        let session = AssistantSession(
+            generator: SequencedStructuredOutputGenerator(outputs: [output, .action(name: "reminders.create")]),
+            actionHost: host,
+            auditStore: auditStore,
+            telemetryRecorder: recorder
+        )
+        let firstSubmit = Task {
+            await session.submitText(AssistantTextRequest(turnID: firstTurnID, text: "Private first request."))
+        }
+        await sink.waitForFirstTerminal()
+        let secondOutcome = await session.submitText(
+            AssistantTextRequest(turnID: secondTurnID, text: "Private replacement request.")
+        )
+        let pending = await session.pendingProposal()
+        let secondProposal = try XCTUnwrap(pending)
+        await sink.releaseFirstTerminal()
+
+        let firstOutcome = await firstSubmit.value
+        let finalPending = await session.pendingProposal()
+        let events = await sink.snapshot()
+        let openSpanCount = await recorder.openSpanCount()
+        let approvedExecutionCount = await host.approvedExecutionCount()
+        let auditEntries = await auditStore.entries()
+        XCTAssertEqual(
+            firstOutcome,
+            .cancelled(AssistantTurnCancellation(turnID: firstTurnID, message: "Okay, I moved on to the latest request."))
+        )
+        XCTAssertEqual(
+            secondOutcome,
+            .proposal(AssistantTurnProposal(turnID: secondTurnID, proposal: secondProposal, message: secondProposal.summary))
+        )
+        XCTAssertEqual(finalPending, secondProposal)
+        XCTAssertEqual(secondProposal.proposalID, "turn-terminal-second:reminders.create")
+        XCTAssertEventNames(events.filter { $0.turnID == firstTurnID }, expectedFirstEvents)
+        XCTAssertEqual(events.map(\.sequenceNumber), Array(1...events.count))
+        XCTAssertEqual(openSpanCount, 1)
+        XCTAssertEqual(approvedExecutionCount, 0)
+        XCTAssertTrue(auditEntries.isEmpty)
+        XCTAssertNoVisibleRequestContent("Private first request.", in: events)
+        XCTAssertNoVisibleRequestContent("Private replacement request.", in: events)
+        XCTAssertNoVisibleRequestContent("Private response.", in: events)
+        XCTAssertNoVisibleRequestContent("Found 3 events for today.", in: events)
+
+        _ = try await session.reject(proposal: secondProposal)
+        let finalOpenSpanCount = await recorder.openSpanCount()
+        XCTAssertEqual(finalOpenSpanCount, 0)
+    }
+
     func test_submitText_mutationReturnsProposalWithoutExecutingMutation() async throws {
         let turnID = TelemetryTurnID("turn-proposal")
         let request = AssistantTextRequest(turnID: turnID, text: "Create a reminder to submit expenses.")
@@ -140,6 +249,12 @@ final class AssistantSessionTests: XCTestCase {
         XCTAssertTurnMetadata(events, turnID: turnID)
         XCTAssertNoVisibleRequestContent(request.text, in: events)
         XCTAssertEventField(events[2], key: "resultCategory", equals: .string("mutation_executed_without_approval"))
+        XCTAssertEventField(events[2], key: "actionName", equals: .string("reminders.create"))
+        XCTAssertEventField(events[2], key: "actionDomain", equals: .string("reminders"))
+        XCTAssertEventField(events[2], key: "actionKind", equals: .string("mutation"))
+        XCTAssertNoVisibleRequestContent("Unsafe pre-approval execution.", in: events)
+        let openSpanCount = await recorder.openSpanCount()
+        XCTAssertEqual(openSpanCount, 0)
     }
 
     func test_approve_executesPendingProposalExactlyOnceAndRecordsAuditEntry() async throws {
@@ -1250,6 +1365,48 @@ private actor ThrowingApprovedActionHost: ActionHosting {
             return .proposed(ActionProposal(action: action))
         }
         return .executed(action: action, summary: "\(action.name) executed.")
+    }
+}
+
+private actor GatedFirstTerminalTelemetrySink: TelemetrySink {
+    private let gatedEvent: TelemetryEventName
+    private var events: [TelemetryEvent] = []
+    private var firstTerminalStarted = false
+    private var startedContinuation: CheckedContinuation<Void, Never>?
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+    init(gatedEvent: TelemetryEventName) {
+        self.gatedEvent = gatedEvent
+    }
+
+    func record(_ event: TelemetryEvent) async {
+        self.events.append(event)
+        if event.name == self.gatedEvent, !self.firstTerminalStarted {
+            self.firstTerminalStarted = true
+            self.startedContinuation?.resume()
+            self.startedContinuation = nil
+            await withCheckedContinuation { continuation in
+                self.releaseContinuation = continuation
+            }
+        }
+    }
+
+    func waitForFirstTerminal() async {
+        if self.firstTerminalStarted {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            self.startedContinuation = continuation
+        }
+    }
+
+    func releaseFirstTerminal() {
+        self.releaseContinuation?.resume()
+        self.releaseContinuation = nil
+    }
+
+    func snapshot() -> [TelemetryEvent] {
+        self.events
     }
 }
 
