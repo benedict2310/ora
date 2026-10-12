@@ -464,6 +464,59 @@ final class AssistantSessionTests: XCTestCase {
         XCTAssertEventField(events[7], key: "durationMilliseconds", equals: .integer(70))
     }
 
+    func test_approvedMutationIsAuditedBeforeCompletionTelemetryCanBlock() async throws {
+        let turnID = TelemetryTurnID("turn-audit-before-telemetry")
+        let request = AssistantTextRequest(turnID: turnID, text: "Create a private reminder.")
+        let host = FakeActionHost()
+        let auditStore = InMemoryAuditStore()
+        let sink = GatedFirstTerminalTelemetrySink(gatedEvent: .actionExecutionCompleted)
+        let recorder = TelemetryRecorder(clock: TestTelemetryClock(start: 3_050, step: 10), sinks: [sink])
+        let session = AssistantSession(
+            generator: FakeStructuredOutputGenerator(output: .action(name: "reminders.create")),
+            actionHost: host, auditStore: auditStore, telemetryRecorder: recorder
+        )
+        _ = await session.submitText(request)
+        let pending = await session.pendingProposal()
+        let proposal = try XCTUnwrap(pending)
+        let approval = Task { try await session.approve(proposal: proposal) }
+        await sink.waitForFirstTerminal()
+
+        let entriesWhileBlocked = await auditStore.entries()
+        let executionsWhileBlocked = await host.approvedExecutionCount()
+        let eventsWhileBlocked = await sink.snapshot()
+        XCTAssertEqual(entriesWhileBlocked, [AuditEntry(
+            turnID: turnID, actionName: "reminders.create", actionDomain: .reminders,
+            actionKind: .mutation, summary: "Created reminder: Send the report."
+        )])
+        XCTAssertEqual(executionsWhileBlocked, 1)
+        XCTAssertEventNames(eventsWhileBlocked, [
+            .turnStarted, .inputTextReceived, .actionProposalCreated,
+            .actionProposalApproved, .actionExecutionStarted, .actionExecutionCompleted
+        ])
+        await XCTAssertThrowsErrorAsync(try await session.approve(proposal: proposal)) { error in
+            XCTAssertEqual(error as? AssistantSessionError, .noPendingProposal)
+        }
+        await sink.releaseFirstTerminal()
+
+        let outcome = try await approval.value
+        let finalEntries = await auditStore.entries()
+        let finalExecutionCount = await host.approvedExecutionCount()
+        let openSpanCount = await recorder.openSpanCount()
+        let events = await sink.snapshot()
+        XCTAssertEqual(outcome, .result(AssistantTurnResult(turnID: turnID, message: "Created reminder: Send the report.")))
+        XCTAssertEqual(finalEntries, entriesWhileBlocked)
+        XCTAssertEqual(finalExecutionCount, 1)
+        XCTAssertEqual(openSpanCount, 0)
+        XCTAssertEventNames(events, [
+            .turnStarted, .inputTextReceived, .actionProposalCreated, .actionProposalApproved,
+            .actionExecutionStarted, .actionExecutionCompleted, .auditEntryRecorded, .turnCompleted
+        ])
+        XCTAssertTurnMetadata(events, turnID: turnID)
+        XCTAssertEventField(events[6], key: "count", equals: .integer(1))
+        XCTAssertNoVisibleRequestContent(request.text, in: events)
+        XCTAssertNoVisibleRequestContent("Created reminder: Send the report.", in: events)
+    }
+
     func test_approveReadProposalExecutesOnceWithoutAuditEntryOrAuditTelemetry() async throws {
         let turnID = TelemetryTurnID("turn-approve-read")
         let request = AssistantTextRequest(turnID: turnID, text: "Look up my private calendar.")

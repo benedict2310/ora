@@ -156,13 +156,6 @@ actor AssistantSession {
 
         switch result {
         case .executed(let action, let summary):
-            _ = try? await self.telemetryRecorder.endSpan(
-                actionSpan,
-                fields: self.actionFields(action, state: "completed") + [
-                    self.stringField("resultCategory", "executed")
-                ]
-            )
-
             if action.kind == .mutation {
                 let auditEntry = AuditEntry(
                     turnID: pending.turnID,
@@ -172,6 +165,15 @@ actor AssistantSession {
                     summary: summary
                 )
                 await self.auditStore.record(auditEntry)
+            }
+
+            _ = try? await self.telemetryRecorder.endSpan(
+                actionSpan,
+                fields: self.actionFields(action, state: "completed") + [
+                    self.stringField("resultCategory", "executed")
+                ]
+            )
+            if action.kind == .mutation {
                 _ = await self.telemetryRecorder.record(
                     .auditEntryRecorded,
                     turnID: pending.turnID,
