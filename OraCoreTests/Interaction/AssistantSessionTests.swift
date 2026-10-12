@@ -175,6 +175,137 @@ final class AssistantSessionTests: XCTestCase {
         XCTAssertEqual(finalOpenSpanCount, 0)
     }
 
+    func test_startupTelemetryReplacementSkipsStaleGeneratorAndRunsLatest() async throws {
+        for gatedEvent in [TelemetryEventName.turnStarted, .inputTextReceived] {
+            let firstTurnID = TelemetryTurnID("turn-startup-first")
+            let secondTurnID = TelemetryTurnID("turn-startup-latest")
+            let generator = CountingResponseGenerator()
+            let sink = GatedFirstTerminalTelemetrySink(gatedEvent: gatedEvent)
+            let recorder = TelemetryRecorder(clock: TestTelemetryClock(start: 1_700, step: 10), sinks: [sink])
+            let session = AssistantSession(
+                generator: generator, actionHost: FakeActionHost(),
+                auditStore: InMemoryAuditStore(), telemetryRecorder: recorder
+            )
+            let firstSubmit = Task {
+                await session.submitText(AssistantTextRequest(turnID: firstTurnID, text: "Private stale input."))
+            }
+            await sink.waitForFirstTerminal()
+            let latestOutcome = await session.submitText(
+                AssistantTextRequest(turnID: secondTurnID, text: "Private latest input.")
+            )
+            await sink.releaseFirstTerminal()
+            let firstOutcome = await firstSubmit.value
+            let staleCallCount = await generator.callCount(for: firstTurnID)
+            let latestCallCount = await generator.callCount(for: secondTurnID)
+            let openSpanCount = await recorder.openSpanCount()
+            let events = await sink.snapshot()
+            XCTAssertEqual(staleCallCount, 0, "gate: \(gatedEvent)")
+            XCTAssertEqual(latestCallCount, 1)
+            XCTAssertEqual(firstOutcome, .cancelled(AssistantTurnCancellation(
+                turnID: firstTurnID, message: "Okay, I moved on to the latest request."
+            )))
+            XCTAssertEqual(latestOutcome, .result(AssistantTurnResult(turnID: secondTurnID, message: "Latest response.")))
+            XCTAssertEventNames(events.filter { $0.turnID == firstTurnID }, [.turnStarted, .inputTextReceived, .turnCancelled])
+            XCTAssertEqual(events.map(\.sequenceNumber), Array(1...events.count))
+            XCTAssertEqual(openSpanCount, 0)
+            XCTAssertNoVisibleRequestContent("Private stale input.", in: events)
+            XCTAssertNoVisibleRequestContent("Private latest input.", in: events)
+        }
+    }
+
+    func test_failureFixtureMatrixReportsCurrentFailuresWithVettedMetadata() async throws {
+        for fixture in SubmitFailureFixture.allCases {
+            let turnID = TelemetryTurnID("turn-current-\(fixture.rawValue)")
+            let sink = InMemoryTelemetrySink()
+            let auditStore = InMemoryAuditStore()
+            let recorder = TelemetryRecorder(clock: TestTelemetryClock(start: 1_800, step: 10), sinks: [sink])
+            let session = AssistantSession(
+                generator: FailureFixtureGenerator(fixture: fixture, failingTurnID: turnID),
+                actionHost: fixture.host, auditStore: auditStore, telemetryRecorder: recorder
+            )
+            let outcome = await session.submitText(AssistantTextRequest(turnID: turnID, text: "Private failed request."))
+            let events = await sink.snapshot()
+            let openSpanCount = await recorder.openSpanCount()
+            let pending = await session.pendingProposal()
+            let auditEntries = await auditStore.entries()
+            XCTAssertEqual(outcome, .failure(AssistantTurnFailure(turnID: turnID, message: fixture.message)))
+            XCTAssertEventNames(events, fixture.eventNames)
+            XCTAssertTurnMetadata(events, turnID: turnID)
+            let failureEvent = try XCTUnwrap(events.last)
+            XCTAssertEventField(failureEvent, key: "resultCategory", equals: .string(fixture.rawValue))
+            if let action = fixture.action {
+                XCTAssertEventField(failureEvent, key: "actionName", equals: .string(action.name))
+                XCTAssertEventField(failureEvent, key: "actionDomain", equals: .string(action.domain.rawValue))
+                XCTAssertEventField(failureEvent, key: "actionKind", equals: .string(action.kind.rawValue))
+            } else {
+                for key in ["actionName", "actionDomain", "actionKind"] {
+                    XCTAssertNoEventField(failureEvent, key: key)
+                }
+            }
+            XCTAssertEqual(openSpanCount, 0)
+            XCTAssertNil(pending)
+            XCTAssertTrue(auditEntries.isEmpty)
+            XCTAssertNoVisibleRequestContent("Private failed request.", in: events)
+            XCTAssertNoVisibleRequestContent("Private fixture failure.", in: events)
+            XCTAssertNoVisibleRequestContent("Private unsupported output.", in: events)
+        }
+    }
+
+    func test_failureFixtureMatrixReplacementSuppressesStaleFailureWithoutDuplicateTerminal() async throws {
+        for fixture in SubmitFailureFixture.allCases {
+            try await self.assertFailureReplacement(fixture: fixture, gatedEvent: .turnFailed, expectedFirstEvents: fixture.eventNames)
+        }
+    }
+
+    func test_readFailureReplacementDuringActionFailureCancelsOnlyOpenTurnSpan() async throws {
+        try await self.assertFailureReplacement(
+            fixture: .action, gatedEvent: .actionExecutionFailed,
+            expectedFirstEvents: [.turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionFailed, .turnCancelled]
+        )
+    }
+
+    private func assertFailureReplacement(
+        fixture: SubmitFailureFixture,
+        gatedEvent: TelemetryEventName,
+        expectedFirstEvents: [TelemetryEventName]
+    ) async throws {
+        let firstTurnID = TelemetryTurnID("turn-failure-\(fixture.rawValue)")
+        let secondTurnID = TelemetryTurnID("turn-failure-latest")
+        let sink = GatedFirstTerminalTelemetrySink(gatedEvent: gatedEvent)
+        let auditStore = InMemoryAuditStore()
+        let recorder = TelemetryRecorder(clock: TestTelemetryClock(start: 1_900, step: 10), sinks: [sink])
+        let session = AssistantSession(
+            generator: FailureFixtureGenerator(fixture: fixture, failingTurnID: firstTurnID),
+            actionHost: fixture.host, auditStore: auditStore, telemetryRecorder: recorder
+        )
+        let firstSubmit = Task {
+            await session.submitText(AssistantTextRequest(turnID: firstTurnID, text: "Private failed request."))
+        }
+        await sink.waitForFirstTerminal()
+        let latestOutcome = await session.submitText(
+            AssistantTextRequest(turnID: secondTurnID, text: "Private latest request.")
+        )
+        await sink.releaseFirstTerminal()
+        let firstOutcome = await firstSubmit.value
+        let events = await sink.snapshot()
+        let openSpanCount = await recorder.openSpanCount()
+        let pending = await session.pendingProposal()
+        let auditEntries = await auditStore.entries()
+        XCTAssertEqual(firstOutcome, .cancelled(AssistantTurnCancellation(
+            turnID: firstTurnID, message: "Okay, I moved on to the latest request."
+        )), "fixture: \(fixture.rawValue), gate: \(gatedEvent)")
+        XCTAssertEqual(latestOutcome, .result(AssistantTurnResult(turnID: secondTurnID, message: "Latest response.")))
+        XCTAssertEventNames(events.filter { $0.turnID == firstTurnID }, expectedFirstEvents)
+        XCTAssertEqual(events.map(\.sequenceNumber), Array(1...events.count))
+        XCTAssertEqual(openSpanCount, 0)
+        XCTAssertNil(pending)
+        XCTAssertTrue(auditEntries.isEmpty)
+        XCTAssertNoVisibleRequestContent("Private failed request.", in: events)
+        XCTAssertNoVisibleRequestContent("Private latest request.", in: events)
+        XCTAssertNoVisibleRequestContent("Private fixture failure.", in: events)
+        XCTAssertNoVisibleRequestContent("Private unsupported output.", in: events)
+    }
+
     func test_submitText_mutationReturnsProposalWithoutExecutingMutation() async throws {
         let turnID = TelemetryTurnID("turn-proposal")
         let request = AssistantTextRequest(turnID: turnID, text: "Create a reminder to submit expenses.")
@@ -1194,6 +1325,114 @@ final class AssistantSessionTests: XCTestCase {
         XCTAssertNoVisibleRequestContent(request.text, in: events)
         XCTAssertNoEventField(events[2], key: "actionName")
         XCTAssertEventField(events[2], key: "resultCategory", equals: .string("unsupported_action"))
+    }
+}
+
+private enum SubmitFailureFixture: String, CaseIterable {
+    case validation = "validation_failed"
+    case generation = "generation_failed"
+    case unsupported = "unsupported_action"
+    case action = "action_failed"
+    case proposal = "proposal_failed"
+    case unsafeMutation = "mutation_executed_without_approval"
+
+    var action: Action? {
+        switch self {
+        case .action:
+            return ActionCatalog.v2Default.action(named: "calendar.query")
+        case .proposal, .unsafeMutation:
+            return ActionCatalog.v2Default.action(named: "reminders.create")
+        default:
+            return nil
+        }
+    }
+
+    var host: any ActionHosting {
+        switch self {
+        case .action, .proposal:
+            return ThrowingUnapprovedActionHost()
+        case .unsafeMutation:
+            return UnsafeMutationActionHost()
+        default:
+            return FakeActionHost()
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .validation:
+            return "Sorry, I couldn't understand that request."
+        case .generation, .action:
+            return "Sorry, I couldn't complete that request."
+        case .unsupported:
+            return "Sorry, Ora v2 does not support that action."
+        case .proposal:
+            return "Sorry, I couldn't prepare that action for confirmation."
+        case .unsafeMutation:
+            return "Sorry, that action needs confirmation before I can run it."
+        }
+    }
+
+    var eventNames: [TelemetryEventName] {
+        if self == .action {
+            return [.turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionFailed, .turnFailed]
+        }
+        return [.turnStarted, .inputTextReceived, .turnFailed]
+    }
+}
+
+private enum FailureFixtureError: LocalizedError, Sendable {
+    case privateDetails
+
+    var errorDescription: String? { "Private fixture failure." }
+}
+
+private actor FailureFixtureGenerator: StructuredOutputGenerating {
+    private let fixture: SubmitFailureFixture
+    private let failingTurnID: TelemetryTurnID
+
+    init(fixture: SubmitFailureFixture, failingTurnID: TelemetryTurnID) {
+        self.fixture = fixture
+        self.failingTurnID = failingTurnID
+    }
+
+    func generate(for request: AssistantTextRequest) async throws -> StructuredAssistantOutput {
+        guard request.turnID == self.failingTurnID else {
+            return .response(message: "Latest response.")
+        }
+        switch self.fixture {
+        case .validation:
+            throw StructuredOutputGenerationError.validationFailed
+        case .generation:
+            throw FailureFixtureError.privateDetails
+        case .unsupported:
+            return .action(name: "Private unsupported output.")
+        case .action:
+            return .action(name: "calendar.query")
+        case .proposal, .unsafeMutation:
+            return .action(name: "reminders.create")
+        }
+    }
+}
+
+private struct ThrowingUnapprovedActionHost: ActionHosting {
+    let catalog: ActionCatalog = .v2Default
+
+    func execute(actionNamed name: String, approval: ActionApproval?) async throws -> ActionResult {
+        throw FailureFixtureError.privateDetails
+    }
+}
+
+private actor CountingResponseGenerator: StructuredOutputGenerating {
+    private var calls: [TelemetryTurnID] = []
+
+    func generate(for request: AssistantTextRequest) async throws -> StructuredAssistantOutput {
+        self.calls.append(request.turnID)
+        return .response(message: "Latest response.")
+    }
+
+    func callCount(for turnID: TelemetryTurnID) -> Int {
+        self.calls.filter { $0 == turnID }.count
     }
 }
 

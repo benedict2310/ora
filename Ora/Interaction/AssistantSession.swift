@@ -50,6 +50,9 @@ actor AssistantSession {
             ]
         )
 
+        guard self.isCurrentTextTurn(turnGeneration) else {
+            return await self.cancelStaleTurn(turnID: request.turnID, turnSpan: turnSpan)
+        }
         do {
             let output = try await self.generator.generate(for: request)
             guard self.isCurrentTextTurn(turnGeneration) else {
@@ -73,7 +76,8 @@ actor AssistantSession {
                         turnID: request.turnID,
                         turnSpan: turnSpan,
                         message: "Sorry, Ora v2 does not support that action.",
-                        resultCategory: "unsupported_action"
+                        resultCategory: "unsupported_action",
+                        turnGeneration: turnGeneration
                     )
                 }
 
@@ -101,7 +105,8 @@ actor AssistantSession {
                 turnID: request.turnID,
                 turnSpan: turnSpan,
                 message: "Sorry, I couldn't understand that request.",
-                resultCategory: "validation_failed"
+                resultCategory: "validation_failed",
+                turnGeneration: turnGeneration
             )
         } catch {
             guard self.isCurrentTextTurn(turnGeneration) else {
@@ -111,7 +116,8 @@ actor AssistantSession {
                 turnID: request.turnID,
                 turnSpan: turnSpan,
                 message: "Sorry, I couldn't complete that request.",
-                resultCategory: "generation_failed"
+                resultCategory: "generation_failed",
+                turnGeneration: turnGeneration
             )
         }
     }
@@ -264,6 +270,7 @@ actor AssistantSession {
                     turnSpan: turnSpan,
                     message: "Sorry, that action needs confirmation before I can run it.",
                     resultCategory: "mutation_executed_without_approval",
+                    turnGeneration: turnGeneration,
                     action: action
                 )
             }
@@ -275,7 +282,9 @@ actor AssistantSession {
                 turnID: turnID,
                 turnSpan: turnSpan,
                 message: "Sorry, I couldn't prepare that action for confirmation.",
-                resultCategory: "proposal_failed"
+                resultCategory: "proposal_failed",
+                turnGeneration: turnGeneration,
+                action: action
             )
         }
     }
@@ -375,6 +384,7 @@ actor AssistantSession {
                 turnSpan: turnSpan,
                 message: "Sorry, I couldn't complete that request.",
                 resultCategory: "action_failed",
+                turnGeneration: turnGeneration,
                 action: action
             )
         }
@@ -473,8 +483,12 @@ actor AssistantSession {
         turnSpan: TelemetrySpanToken,
         message: String,
         resultCategory: String,
+        turnGeneration: Int,
         action: Action? = nil
     ) async -> AssistantTurnOutcome {
+        guard self.isCurrentTextTurn(turnGeneration) else {
+            return await self.cancelStaleTurn(turnID: turnID, turnSpan: turnSpan)
+        }
         var fields = self.baseFields(phase: "turn", state: "failed") + [
             self.stringField("resultCategory", resultCategory)
         ]
@@ -482,6 +496,9 @@ actor AssistantSession {
             fields += self.actionIdentityFields(action)
         }
         _ = try? await self.telemetryRecorder.failSpan(turnSpan, fields: fields)
+        guard self.isCurrentTextTurn(turnGeneration) else {
+            return self.staleTurnCancellation(turnID: turnID)
+        }
         return .failure(AssistantTurnFailure(turnID: turnID, message: message))
     }
 
