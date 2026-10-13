@@ -186,7 +186,7 @@ actor AssistantSession {
                 return self.staleTurnCancellation(turnID: pending.turnID)
             }
             return .result(AssistantTurnResult(turnID: pending.turnID, message: summary))
-        case .proposed:
+        case .proposed(let returnedProposal):
             await self.failApprovedAction(
                 actionSpan: actionSpan,
                 turnSpan: pending.turnSpan,
@@ -196,7 +196,7 @@ actor AssistantSession {
             guard self.isCurrentTextTurn(pending.turnGeneration) else {
                 return self.staleTurnCancellation(turnID: pending.turnID)
             }
-            throw AssistantSessionError.proposalMismatch(expected: pending.proposal, received: proposal)
+            throw AssistantSessionError.proposalMismatch(expected: pending.proposal, received: returnedProposal)
         }
     }
 

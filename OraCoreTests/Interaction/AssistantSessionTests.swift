@@ -921,13 +921,73 @@ final class AssistantSessionTests: XCTestCase {
                     if fixture == .thrown {
                         XCTAssertTrue(error is FailureFixtureError)
                     } else {
-                        XCTAssertEqual(error as? AssistantSessionError, .proposalMismatch(expected: proposal, received: proposal))
+                        XCTAssertEqual(error as? AssistantSessionError, .proposalMismatch(
+                            expected: proposal, received: ActionProposal(action: proposal.action)
+                        ))
                     }
                 }
                 let entries = await store.entries()
                 let openSpanCount = await recorder.openSpanCount()
                 XCTAssertTrue(entries.isEmpty)
                 XCTAssertEqual(openSpanCount, 0)
+            }
+        }
+    }
+
+    func test_approvedUnexpectedProposalRetainsCompleteReturnedPayloadWithoutExecutionOrAudit() async throws {
+        for actionName in ["reminders.create", "calendar.query"] {
+            for cancelApproval in [false, true] {
+                let turnID = TelemetryTurnID("turn-approved-unexpected-proposal")
+                let action = try XCTUnwrap(ActionCatalog.v2Default.action(named: actionName))
+                let returnedProposal = ActionProposal(
+                    action: Action(name: "Private unvetted returned action.", domain: .system, kind: action.kind == .mutation ? .read : .mutation),
+                    summary: "Private returned proposal summary.",
+                    confirmationLabel: "Private returned confirmation label.",
+                    proposalID: "00000000-0000-4000-8000-000000000001"
+                )
+                let host = ApprovalFixtureHost(fixture: .proposed, gateExecution: true, returnedProposal: returnedProposal)
+                let store = InMemoryAuditStore()
+                let sink = InMemoryTelemetrySink()
+                let recorder = TelemetryRecorder(clock: TestTelemetryClock(start: 3_068, step: 10), sinks: [sink])
+                let session = AssistantSession(
+                    generator: FakeStructuredOutputGenerator(output: .action(name: actionName)),
+                    actionHost: host, auditStore: store, telemetryRecorder: recorder
+                )
+                _ = await session.submitText(AssistantTextRequest(turnID: turnID, text: "Private approved request."))
+                let pending = await session.pendingProposal()
+                let proposal = try XCTUnwrap(pending)
+                XCTAssertNotNil(proposal.proposalID)
+                XCTAssertNotEqual(proposal.action, returnedProposal.action)
+                XCTAssertNotEqual(proposal.summary, returnedProposal.summary)
+                XCTAssertNotEqual(proposal.confirmationLabel, returnedProposal.confirmationLabel)
+                XCTAssertNotEqual(proposal.proposalID, returnedProposal.proposalID)
+                let approval = Task { try await session.approve(proposal: proposal) }
+                await host.waitForExecution()
+                if cancelApproval { approval.cancel() }
+                await host.releaseExecution()
+                switch await approval.result {
+                case .failure(let error):
+                    XCTAssertEqual(error as? AssistantSessionError, .proposalMismatch(expected: proposal, received: returnedProposal))
+                case .success:
+                    XCTFail("Current approval must retain its typed error, including when its task is cancelled")
+                }
+                let entries = await store.entries()
+                let events = await sink.snapshot()
+                let attempts = await host.executionCount()
+                let finalPending = await session.pendingProposal()
+                let openSpanCount = await recorder.openSpanCount()
+                XCTAssertEqual(attempts, 1)
+                XCTAssertTrue(entries.isEmpty)
+                XCTAssertNil(finalPending)
+                XCTAssertEqual(openSpanCount, 0)
+                XCTAssertEventNames(events, ApprovalResultFixture.proposed.eventNames(for: action))
+                XCTAssertEventField(events[7], key: "resultCategory", equals: .string("unexpected_proposal"))
+                self.assertApprovedIdentityAndPrivacy(events, action: action)
+                XCTAssertNoVisibleRequestContent(returnedProposal.summary, in: events)
+                XCTAssertNoVisibleRequestContent(returnedProposal.confirmationLabel, in: events)
+                XCTAssertNoVisibleRequestContent(try XCTUnwrap(returnedProposal.proposalID), in: events)
+                XCTAssertTurnMetadata(events, turnID: turnID)
+                XCTAssertEqual(events.map(\.sequenceNumber), Array(1...events.count))
             }
         }
     }
@@ -2138,13 +2198,15 @@ private actor ApprovalFixtureHost: ActionHosting {
     let catalog: ActionCatalog = .v2Default
     private let fixture: ApprovalResultFixture
     private let gateExecution: Bool
+    private let returnedProposal: ActionProposal?
     private var count = 0
     private var startedContinuation: CheckedContinuation<Void, Never>?
     private var releaseContinuation: CheckedContinuation<Void, Never>?
 
-    init(fixture: ApprovalResultFixture, gateExecution: Bool = false) {
+    init(fixture: ApprovalResultFixture, gateExecution: Bool = false, returnedProposal: ActionProposal? = nil) {
         self.fixture = fixture
         self.gateExecution = gateExecution
+        self.returnedProposal = returnedProposal
     }
 
     func execute(actionNamed name: String, approval: ActionApproval?) async throws -> ActionResult {
@@ -2158,7 +2220,7 @@ private actor ApprovalFixtureHost: ActionHosting {
         }
         switch self.fixture {
         case .thrown: throw FailureFixtureError.privateDetails
-        case .proposed: return .proposed(ActionProposal(action: action))
+        case .proposed: return .proposed(self.returnedProposal ?? ActionProposal(action: action))
         case .executed: return .executed(action: action, summary: "Private execution summary.")
         case .wrongKind:
             return .executed(action: Action(name: action.name, domain: action.domain, kind: action.kind == .mutation ? .read : .mutation), summary: "Private execution summary.")
