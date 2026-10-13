@@ -51,26 +51,83 @@ extension SimplePipelineController {
             return
         }
 
+        self.ttsTask?.cancel()
         self.transition(to: .speaking)
         self.setOverlayActivity(.speaking)
 
+        let latencyContext: LegacyVoiceLatencyContext?
+        if let turn = self.currentVoiceLatencyTurn {
+            let attempt = self.legacyVoiceLatencyObserver.beginAttempt(for: turn)
+            self.currentVoiceLatencyAttempt = attempt
+            latencyContext = LegacyVoiceLatencyContext(
+                attempt: attempt,
+                observer: self.legacyVoiceLatencyObserver
+            )
+        } else {
+            latencyContext = nil
+        }
+
         self.ttsTask = Task {
             do {
+                try Task.checkCancellation()
                 // Get audio stream from TTS
-                let audioStream = self.ttsService.speak(text)
+                let audioStream = self.ttsService.speak(text, latencyContext: latencyContext)
 
                 // Play through AudioPlaybackService
-                try await AudioPlaybackService.shared.play(chunks: audioStream)
+                try await self.playbackService.play(
+                    chunks: audioStream,
+                    latencyContext: latencyContext
+                )
 
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled else {
+                    if let latencyContext {
+                        latencyContext.attempt.complete(
+                            by: latencyContext.observer,
+                            outcome: .cancelled,
+                            reason: "task_cancelled"
+                        )
+                    }
+                    return
+                }
 
-                // TTS complete, transition to awaiting follow-up
+                guard self.currentVoiceLatencyAttempt == latencyContext?.attempt else { return }
+                self.currentVoiceLatencyAttempt = nil
+                // Only the still-current attempt may transition controller state.
                 self.finishSpeaking()
 
+            } catch is CancellationError {
+                if let latencyContext {
+                    latencyContext.attempt.complete(
+                        by: latencyContext.observer,
+                        outcome: .cancelled,
+                        reason: "cancelled"
+                    )
+                }
+            } catch is AudioPlaybackError {
+                if let latencyContext {
+                    latencyContext.attempt.complete(
+                        by: latencyContext.observer,
+                        outcome: .error,
+                        reason: "playback_error"
+                    )
+                }
+                guard !Task.isCancelled,
+                      self.currentVoiceLatencyAttempt == latencyContext?.attempt else { return }
+                self.currentVoiceLatencyAttempt = nil
+                self.logger.error("TTS playback failed")
+                self.finishSpeaking()
             } catch {
-                guard !Task.isCancelled else { return }
-
-                self.logger.error("TTS playback failed: \(error.localizedDescription)")
+                if let latencyContext {
+                    latencyContext.attempt.complete(
+                        by: latencyContext.observer,
+                        outcome: .error,
+                        reason: "synthesis_error"
+                    )
+                }
+                guard !Task.isCancelled,
+                      self.currentVoiceLatencyAttempt == latencyContext?.attempt else { return }
+                self.currentVoiceLatencyAttempt = nil
+                self.logger.error("TTS playback failed")
                 // Still complete - user saw the text
                 self.finishSpeaking()
             }

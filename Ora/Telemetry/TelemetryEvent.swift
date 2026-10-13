@@ -54,6 +54,10 @@ enum TelemetryEventName: String, Sendable {
     case ttsPlaybackFailed = "tts.playback.failed"
     case ttsPlaybackCancelled = "tts.playback.cancelled"
     case bargeDetected = "barge.detected"
+    case voiceLatencyAttemptStarted = "voice.latency.attempt.started"
+    case voiceLatencyFirstPCMReceived = "voice.latency.pcm.first_received"
+    case voiceLatencyBoundaryObserved = "voice.latency.boundary.observed"
+    case voiceLatencyAttemptCompleted = "voice.latency.attempt.completed"
 }
 
 enum TelemetryFieldVisibility: Equatable, Sendable {
