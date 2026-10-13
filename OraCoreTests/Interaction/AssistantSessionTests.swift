@@ -360,8 +360,7 @@ final class AssistantSessionTests: XCTestCase {
                     let expectedPending = await session.pendingProposal()
                     await host.releaseFirstCall()
                     let outcome = await submit.value
-                    var names: [TelemetryEventName] = [.turnStarted, .inputTextReceived]
-                    if actionName == "calendar.query" { names += [.actionExecutionStarted, .actionExecutionCancelled] }
+                    var names: [TelemetryEventName] = [.turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionCancelled]
                     names.append(.turnCancelled)
                     try await self.assertQuietCancelledTurn(
                         outcome: outcome, turnID: firstID, session: session, store: store,
@@ -423,8 +422,7 @@ final class AssistantSessionTests: XCTestCase {
                 let expectedPending = await session.pendingProposal()
                 await sink.releaseFirstTerminal()
                 let outcome = await submit.value
-                var names: [TelemetryEventName] = [.turnStarted, .inputTextReceived]
-                if actionName == "calendar.query" { names += [.actionExecutionStarted, .actionExecutionCancelled] }
+                var names: [TelemetryEventName] = [.turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionCancelled]
                 if gatedEvent == .actionProposalCreated { names.append(.actionProposalCreated) }
                 names.append(.turnCancelled)
                 try await self.assertQuietCancelledTurn(
@@ -560,12 +558,12 @@ final class AssistantSessionTests: XCTestCase {
         XCTAssertEqual(approvedExecutionCount, 0)
         XCTAssertEqual(readExecutionCount, 0)
         XCTAssertEqual(invocationCount, 1)
-        XCTAssertEventNames(events, [.turnStarted, .inputTextReceived, .actionProposalCreated])
+        XCTAssertEventNames(events, [.turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionCancelled, .actionProposalCreated])
         XCTAssertTurnMetadata(events, turnID: turnID)
         XCTAssertNoVisibleRequestContent(request.text, in: events)
-        XCTAssertEventField(events[2], key: "phase", equals: .string("action"))
-        XCTAssertEventField(events[2], key: "state", equals: .string("proposal_created"))
-        XCTAssertEventField(events[2], key: "actionName", equals: .string("reminders.create"))
+        XCTAssertEventField(events[4], key: "phase", equals: .string("action"))
+        XCTAssertEventField(events[4], key: "state", equals: .string("proposal_created"))
+        XCTAssertEventField(events[4], key: "actionName", equals: .string("reminders.create"))
         XCTAssertEqual(openSpanCount, 1)
     }
 
@@ -620,17 +618,17 @@ final class AssistantSessionTests: XCTestCase {
                         XCTAssertEqual(outcome, .proposal(AssistantTurnProposal(turnID: firstID, proposal: proposal, message: proposal.summary)))
                     }
                     if reportsExecuted {
-                        XCTAssertEventNames(firstEvents, [.turnStarted, .inputTextReceived, .turnFailed])
-                        let violation = try XCTUnwrap(firstEvents.last)
+                        XCTAssertEventNames(firstEvents, [.turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionFailed, replace || cancel ? .turnCancelled : .turnFailed])
+                        let violation = firstEvents[3]
                         XCTAssertEventField(violation, key: "resultCategory", equals: .string("mutation_executed_without_approval"))
                         XCTAssertEventField(violation, key: "actionName", equals: .string("reminders.create"))
                         XCTAssertEventField(violation, key: "actionDomain", equals: .string("reminders"))
                         XCTAssertEventField(violation, key: "actionKind", equals: .string("mutation"))
                     } else if replace || cancel {
-                        XCTAssertEventNames(firstEvents, [.turnStarted, .inputTextReceived, .turnCancelled])
+                        XCTAssertEventNames(firstEvents, [.turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionCancelled, .turnCancelled])
                         XCTAssertFalse(firstEvents.contains { $0.name == .turnFailed })
                     } else {
-                        XCTAssertEventNames(firstEvents, [.turnStarted, .inputTextReceived, .actionProposalCreated])
+                        XCTAssertEventNames(firstEvents, [.turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionCancelled, .actionProposalCreated])
                     }
                     XCTAssertTrue(entries.isEmpty)
                     XCTAssertEqual(approvedCalls, 0)
@@ -677,13 +675,14 @@ final class AssistantSessionTests: XCTestCase {
             )
         )
         XCTAssertNil(pendingProposal)
-        XCTAssertEventNames(events, [.turnStarted, .inputTextReceived, .turnFailed])
+        XCTAssertEventNames(events, [.turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionCompleted, .turnFailed])
         XCTAssertTurnMetadata(events, turnID: turnID)
         XCTAssertNoVisibleRequestContent(request.text, in: events)
-        XCTAssertEventField(events[2], key: "resultCategory", equals: .string("mutation_executed_without_approval"))
-        XCTAssertEventField(events[2], key: "actionName", equals: .string("reminders.create"))
-        XCTAssertEventField(events[2], key: "actionDomain", equals: .string("reminders"))
-        XCTAssertEventField(events[2], key: "actionKind", equals: .string("mutation"))
+        XCTAssertEventField(events[3], key: "resultCategory", equals: .string("mutation_executed_without_approval"))
+        XCTAssertEventField(events[4], key: "resultCategory", equals: .string("mutation_executed_without_approval"))
+        XCTAssertEventField(events[4], key: "actionName", equals: .string("reminders.create"))
+        XCTAssertEventField(events[4], key: "actionDomain", equals: .string("reminders"))
+        XCTAssertEventField(events[4], key: "actionKind", equals: .string("mutation"))
         XCTAssertNoVisibleRequestContent("Unsafe pre-approval execution.", in: events)
         let openSpanCount = await recorder.openSpanCount()
         XCTAssertEqual(openSpanCount, 0)
@@ -740,29 +739,20 @@ final class AssistantSessionTests: XCTestCase {
                 )
             ]
         )
-        XCTAssertEventNames(
-            events,
-            [
-                .turnStarted,
-                .inputTextReceived,
-                .actionProposalCreated,
-                .actionProposalApproved,
-                .actionExecutionStarted,
-                .actionExecutionCompleted,
-                .auditEntryRecorded,
-                .turnCompleted
-            ]
-        )
+        XCTAssertEventNames(events, [
+            .turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionCancelled, .actionProposalCreated,
+            .actionProposalApproved, .actionExecutionStarted, .actionExecutionCompleted, .auditEntryRecorded, .turnCompleted
+        ])
         XCTAssertTurnMetadata(events, turnID: turnID)
         XCTAssertNoVisibleRequestContent(request.text, in: events)
-        XCTAssertEventField(events[3], key: "state", equals: .string("proposal_approved"))
-        XCTAssertEventField(events[4], key: "actionKind", equals: .string("mutation"))
-        XCTAssertEventField(events[5], key: "resultCategory", equals: .string("executed"))
-        XCTAssertEventField(events[5], key: "durationMilliseconds", equals: .integer(10))
-        XCTAssertEventField(events[6], key: "phase", equals: .string("audit"))
-        XCTAssertEventField(events[6], key: "count", equals: .integer(1))
+        XCTAssertEventField(events[5], key: "state", equals: .string("proposal_approved"))
+        XCTAssertEventField(events[6], key: "actionKind", equals: .string("mutation"))
         XCTAssertEventField(events[7], key: "resultCategory", equals: .string("executed"))
-        XCTAssertEventField(events[7], key: "durationMilliseconds", equals: .integer(70))
+        XCTAssertEventField(events[7], key: "durationMilliseconds", equals: .integer(10))
+        XCTAssertEventField(events[8], key: "phase", equals: .string("audit"))
+        XCTAssertEventField(events[8], key: "count", equals: .integer(1))
+        XCTAssertEventField(events[9], key: "resultCategory", equals: .string("executed"))
+        XCTAssertEventField(events[9], key: "durationMilliseconds", equals: .integer(90))
     }
 
     func test_approvedMutationIsAuditedBeforeCompletionTelemetryCanBlock() async throws {
@@ -791,7 +781,7 @@ final class AssistantSessionTests: XCTestCase {
         )])
         XCTAssertEqual(executionsWhileBlocked, 1)
         XCTAssertEventNames(eventsWhileBlocked, [
-            .turnStarted, .inputTextReceived, .actionProposalCreated,
+            .turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionCancelled, .actionProposalCreated,
             .actionProposalApproved, .actionExecutionStarted, .actionExecutionCompleted
         ])
         await XCTAssertThrowsErrorAsync(try await session.approve(proposal: proposal)) { error in
@@ -809,11 +799,11 @@ final class AssistantSessionTests: XCTestCase {
         XCTAssertEqual(finalExecutionCount, 1)
         XCTAssertEqual(openSpanCount, 0)
         XCTAssertEventNames(events, [
-            .turnStarted, .inputTextReceived, .actionProposalCreated, .actionProposalApproved,
+            .turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionCancelled, .actionProposalCreated, .actionProposalApproved,
             .actionExecutionStarted, .actionExecutionCompleted, .auditEntryRecorded, .turnCompleted
         ])
         XCTAssertTurnMetadata(events, turnID: turnID)
-        XCTAssertEventField(events[6], key: "count", equals: .integer(1))
+        XCTAssertEventField(events[8], key: "count", equals: .integer(1))
         XCTAssertNoVisibleRequestContent(request.text, in: events)
         XCTAssertNoVisibleRequestContent("Created reminder: Send the report.", in: events)
     }
@@ -856,7 +846,7 @@ final class AssistantSessionTests: XCTestCase {
         let auditStore = GatedApprovalAuditStore(gateRecord: gate == .audit)
         let sink = GatedFirstTerminalTelemetrySink(
             gatedEvent: gate.eventName ?? .bargeDetected,
-            skipFirstMatches: actionName == "calendar.query" && gate.eventName == .actionExecutionStarted ? 1 : 0
+            skipFirstMatches: gate.eventName == .actionExecutionStarted ? 1 : 0
         )
         let recorder = TelemetryRecorder(clock: TestTelemetryClock(start: 3_060, step: 10), sinks: [sink])
         let session = AssistantSession(
@@ -1146,19 +1136,10 @@ final class AssistantSessionTests: XCTestCase {
                 )
             ]
         )
-        XCTAssertEventNames(
-            events,
-            [
-                .turnStarted,
-                .inputTextReceived,
-                .actionProposalCreated,
-                .actionProposalApproved,
-                .actionExecutionStarted,
-                .actionExecutionCompleted,
-                .auditEntryRecorded,
-                .turnCompleted
-            ]
-        )
+        XCTAssertEventNames(events, [
+            .turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionCancelled, .actionProposalCreated,
+            .actionProposalApproved, .actionExecutionStarted, .actionExecutionCompleted, .auditEntryRecorded, .turnCompleted
+        ])
     }
 
     func test_concurrentApprovalAttemptsExecutePendingMutationExactlyOnce() async throws {
@@ -1204,19 +1185,10 @@ final class AssistantSessionTests: XCTestCase {
         )
         XCTAssertEqual(approvedExecutionCount, 1)
         XCTAssertEqual(auditEntries.count, 1)
-        XCTAssertEventNames(
-            events,
-            [
-                .turnStarted,
-                .inputTextReceived,
-                .actionProposalCreated,
-                .actionProposalApproved,
-                .actionExecutionStarted,
-                .actionExecutionCompleted,
-                .auditEntryRecorded,
-                .turnCompleted
-            ]
-        )
+        XCTAssertEventNames(events, [
+            .turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionCancelled, .actionProposalCreated,
+            .actionProposalApproved, .actionExecutionStarted, .actionExecutionCompleted, .auditEntryRecorded, .turnCompleted
+        ])
     }
 
     func test_overlappingSubmitTextDoesNotLetStaleGenerationOverwriteNewerPendingProposal() async throws {
@@ -1264,18 +1236,11 @@ final class AssistantSessionTests: XCTestCase {
         XCTAssertEqual(openSpanCount, 1)
         XCTAssertEventNames(
             events,
-            [
-                .turnStarted,
-                .inputTextReceived,
-                .turnStarted,
-                .inputTextReceived,
-                .actionProposalCreated,
-                .turnCancelled
-            ]
+            [.turnStarted, .inputTextReceived, .turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionCancelled, .actionProposalCreated, .turnCancelled]
         )
-        XCTAssertEqual(events[4].turnID, secondTurnID)
-        XCTAssertEqual(events[5].turnID, firstTurnID)
-        XCTAssertEventField(events[5], key: "resultCategory", equals: .string("replaced"))
+        XCTAssertEqual(events[6].turnID, secondTurnID)
+        XCTAssertEqual(events[7].turnID, firstTurnID)
+        XCTAssertEventField(events[7], key: "resultCategory", equals: .string("replaced"))
     }
 
     func test_submitTextReturnsCancellationIfProposalIsReplacedWhileTelemetryIsRecording() async throws {
@@ -1323,9 +1288,9 @@ final class AssistantSessionTests: XCTestCase {
         XCTAssertEqual(openSpanCount, 1)
         let events = await sink.snapshot()
         let firstEvents = events.filter { $0.turnID == firstTurnID }
-        XCTAssertEventNames(firstEvents, [.turnStarted, .inputTextReceived, .actionProposalCreated, .turnCancelled])
+        XCTAssertEventNames(firstEvents, [.turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionCancelled, .actionProposalCreated, .turnCancelled])
         XCTAssertEqual(events.map(\.sequenceNumber), Array(1...events.count))
-        XCTAssertEventField(firstEvents[3], key: "resultCategory", equals: .string("replaced"))
+        XCTAssertEventField(firstEvents[5], key: "resultCategory", equals: .string("replaced"))
         XCTAssertNoVisibleRequestContent("Create first reminder.", in: events)
         XCTAssertNoVisibleRequestContent("Create second reminder.", in: events)
 
@@ -1457,7 +1422,7 @@ final class AssistantSessionTests: XCTestCase {
         XCTAssertEqual(finalOpenSpanCount, 0)
     }
 
-    func test_readPathDoesNotCreateRejectedProposalAfterActionCancellationTelemetryResumes() async throws {
+    func test_readProposalIsNotPublishedBeforeActionTerminalAndCancelledPublisherLeavesNoPending() async throws {
         let turnID = TelemetryTurnID("turn-read-cancellation-rejected")
         let sink = GatedFirstActionCancellationTelemetrySink()
         let recorder = TelemetryRecorder(clock: TestTelemetryClock(start: 3_543, step: 10), sinks: [sink])
@@ -1472,8 +1437,8 @@ final class AssistantSessionTests: XCTestCase {
         }
         await sink.waitForFirstActionCancellation()
         let pending = await session.pendingProposal()
-        let proposal = try XCTUnwrap(pending)
-        _ = try await session.reject(proposal: proposal)
+        XCTAssertNil(pending)
+        submit.cancel()
         await sink.releaseFirstActionCancellation()
 
         let outcome = await submit.value
@@ -1482,13 +1447,12 @@ final class AssistantSessionTests: XCTestCase {
         let events = await sink.snapshot()
         XCTAssertEqual(
             outcome,
-            .cancelled(AssistantTurnCancellation(turnID: turnID, message: "Okay, I moved on to the latest request."))
+            .cancelled(AssistantTurnCancellation(turnID: turnID, message: "Okay, I cancelled that request."))
         )
         XCTAssertNil(finalPending)
         XCTAssertEqual(openSpanCount, 0)
         XCTAssertEventNames(events, [
-            .turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionCancelled,
-            .actionProposalRejected, .turnCancelled
+            .turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionCancelled, .turnCancelled
         ])
         XCTAssertTurnMetadata(events, turnID: turnID)
         XCTAssertNoVisibleRequestContent("Private lookup to reject.", in: events)
@@ -1581,7 +1545,7 @@ final class AssistantSessionTests: XCTestCase {
         XCTAssertEqual(approvedExecutionCount, 0)
     }
 
-    func test_overlappingReadActionDoesNotCompleteAfterNewerPendingProposal() async throws {
+    func test_overlappingReadActionPreservesCompletedFactAndCancelsOldUI() async throws {
         let firstTurnID = TelemetryTurnID("turn-overlap-read-first")
         let secondTurnID = TelemetryTurnID("turn-overlap-read-second")
         let generator = SequencedStructuredOutputGenerator(outputs: [
@@ -1625,23 +1589,11 @@ final class AssistantSessionTests: XCTestCase {
         )
         XCTAssertEqual(pendingAfterFirstCompletion, secondProposal)
         XCTAssertEqual(openSpanCount, 1)
-        XCTAssertEventNames(
-            events,
-            [
-                .turnStarted,
-                .inputTextReceived,
-                .actionExecutionStarted,
-                .turnStarted,
-                .inputTextReceived,
-                .actionProposalCreated,
-                .actionExecutionCancelled,
-                .turnCancelled
-            ]
-        )
-        XCTAssertEqual(events[6].turnID, firstTurnID)
-        XCTAssertEventField(events[6], key: "resultCategory", equals: .string("replaced"))
-        XCTAssertEqual(events[7].turnID, firstTurnID)
-        XCTAssertEventField(events[7], key: "resultCategory", equals: .string("replaced"))
+        let firstEvents = events.filter { $0.turnID == firstTurnID }
+        XCTAssertEventNames(firstEvents, [.turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionCompleted, .turnCancelled])
+        XCTAssertEventField(firstEvents[3], key: "resultCategory", equals: .string("executed"))
+        XCTAssertEventField(firstEvents[4], key: "resultCategory", equals: .string("replaced"))
+        XCTAssertEqual(events.map(\.sequenceNumber), Array(1...events.count))
     }
 
     func test_submitText_replacesPendingProposalByCancellingPreviousTurnSpan() async throws {
@@ -1674,20 +1626,13 @@ final class AssistantSessionTests: XCTestCase {
         XCTAssertEqual(openSpanCount, 1)
         XCTAssertEventNames(
             events,
-            [
-                .turnStarted,
-                .inputTextReceived,
-                .actionProposalCreated,
-                .turnCancelled,
-                .turnStarted,
-                .inputTextReceived,
-                .actionProposalCreated
-            ]
+            [.turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionCancelled, .actionProposalCreated, .turnCancelled,
+             .turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionCancelled, .actionProposalCreated]
         )
-        XCTAssertEqual(events[3].turnID, firstTurnID)
-        XCTAssertEventField(events[3], key: "resultCategory", equals: .string("replaced"))
-        XCTAssertEventField(events[3], key: "durationMilliseconds", equals: .integer(30))
-        XCTAssertEqual(events[4].turnID, secondTurnID)
+        XCTAssertEqual(events[5].turnID, firstTurnID)
+        XCTAssertEventField(events[5], key: "resultCategory", equals: .string("replaced"))
+        XCTAssertEventField(events[5], key: "durationMilliseconds", equals: .integer(50))
+        XCTAssertEqual(events[6].turnID, secondTurnID)
     }
 
     func test_mutationProposalRejectsReplayWithReusedCallerTurnID() async throws {
@@ -1833,24 +1778,16 @@ final class AssistantSessionTests: XCTestCase {
         let events = await sink.snapshot()
         let openSpanCount = await recorder.openSpanCount()
 
-        XCTAssertEventNames(
-            events,
-            [
-                .turnStarted,
-                .inputTextReceived,
-                .actionProposalCreated,
-                .actionProposalApproved,
-                .actionExecutionStarted,
-                .actionExecutionFailed,
-                .turnFailed
-            ]
-        )
+        XCTAssertEventNames(events, [
+            .turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionCancelled, .actionProposalCreated,
+            .actionProposalApproved, .actionExecutionStarted, .actionExecutionFailed, .turnFailed
+        ])
         XCTAssertTurnMetadata(events, turnID: turnID)
         XCTAssertNoVisibleRequestContent(request.text, in: events)
-        XCTAssertEventField(events[5], key: "resultCategory", equals: .string("action_failed"))
-        XCTAssertEventField(events[5], key: "durationMilliseconds", equals: .integer(10))
-        XCTAssertEventField(events[6], key: "resultCategory", equals: .string("action_failed"))
-        XCTAssertEventField(events[6], key: "durationMilliseconds", equals: .integer(60))
+        XCTAssertEventField(events[7], key: "resultCategory", equals: .string("action_failed"))
+        XCTAssertEventField(events[7], key: "durationMilliseconds", equals: .integer(10))
+        XCTAssertEventField(events[8], key: "resultCategory", equals: .string("action_failed"))
+        XCTAssertEventField(events[8], key: "durationMilliseconds", equals: .integer(80))
         XCTAssertEqual(openSpanCount, 0)
     }
 
@@ -1901,8 +1838,7 @@ final class AssistantSessionTests: XCTestCase {
                     XCTAssertEqual(executionCount, 0)
                     XCTAssertTrue(entries.isEmpty)
                     XCTAssertEqual(openSpanCount, replace ? 1 : 0)
-                    var expectedEvents: [TelemetryEventName] = [.turnStarted, .inputTextReceived]
-                    if actionName == "calendar.query" { expectedEvents += [.actionExecutionStarted, .actionExecutionCancelled] }
+                    var expectedEvents: [TelemetryEventName] = [.turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionCancelled]
                     expectedEvents += [.actionProposalCreated, .actionProposalRejected, .turnCancelled]
                     XCTAssertEventNames(firstEvents, expectedEvents)
                     XCTAssertEventField(try XCTUnwrap(firstEvents.last), key: "resultCategory", equals: .string("rejected"))
@@ -1953,21 +1889,14 @@ final class AssistantSessionTests: XCTestCase {
         XCTAssertEqual(approvedExecutionCount, 0)
         XCTAssertEqual(invocationCount, 1)
         XCTAssertTrue(auditEntries.isEmpty)
-        XCTAssertEventNames(
-            events,
-            [
-                .turnStarted,
-                .inputTextReceived,
-                .actionProposalCreated,
-                .actionProposalRejected,
-                .turnCancelled
-            ]
-        )
+        XCTAssertEventNames(events, [
+            .turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionCancelled, .actionProposalCreated, .actionProposalRejected, .turnCancelled
+        ])
         XCTAssertTurnMetadata(events, turnID: turnID)
         XCTAssertNoVisibleRequestContent(request.text, in: events)
-        XCTAssertEventField(events[3], key: "state", equals: .string("proposal_rejected"))
-        XCTAssertEventField(events[4], key: "resultCategory", equals: .string("rejected"))
-        XCTAssertEventField(events[4], key: "durationMilliseconds", equals: .integer(40))
+        XCTAssertEventField(events[5], key: "state", equals: .string("proposal_rejected"))
+        XCTAssertEventField(events[6], key: "resultCategory", equals: .string("rejected"))
+        XCTAssertEventField(events[6], key: "durationMilliseconds", equals: .integer(60))
     }
 
     func test_submitText_withStructuredOutputValidationFailureProducesClearErrorState() async throws {
@@ -2191,8 +2120,7 @@ private enum ApprovalResultFixture: Sendable {
     var isMismatch: Bool { self == .wrongKind || self == .wrongName || self == .wrongDomain }
 
     func eventNames(for action: Action) -> [TelemetryEventName] {
-        var names: [TelemetryEventName] = [.turnStarted, .inputTextReceived]
-        if action.kind == .read { names += [.actionExecutionStarted, .actionExecutionCancelled] }
+        var names: [TelemetryEventName] = [.turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionCancelled]
         names += [.actionProposalCreated, .actionProposalApproved, .actionExecutionStarted]
         if self == .executed {
             names.append(.actionExecutionCompleted)
@@ -2330,10 +2258,14 @@ private enum SubmitFailureFixture: String, CaseIterable {
     }
 
     var eventNames: [TelemetryEventName] {
-        if self == .action {
+        switch self {
+        case .action, .proposal:
             return [.turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionFailed, .turnFailed]
+        case .unsafeMutation:
+            return [.turnStarted, .inputTextReceived, .actionExecutionStarted, .actionExecutionCompleted, .turnFailed]
+        default:
+            return [.turnStarted, .inputTextReceived, .turnFailed]
         }
-        return [.turnStarted, .inputTextReceived, .turnFailed]
     }
 }
 
