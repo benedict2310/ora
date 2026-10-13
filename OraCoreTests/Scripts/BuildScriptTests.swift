@@ -62,14 +62,14 @@ final class BuildScriptTests: XCTestCase {
 
         let checksum = try Self.run("/usr/bin/shasum", arguments: ["-a", "256", "Package.resolved"], in: Self.repoRoot)
         XCTAssertEqual(checksum.status, 0, checksum.output)
-        XCTAssertTrue(checksum.output.hasPrefix("169d4aa302996c692e4a5003d85099a14c8169bdc00db71d62949d45bd2abb43 "), "Preserve the complete approved snapshot, not a single transitive pin.")
+        XCTAssertTrue(checksum.output.hasPrefix("a1c6fd609f516b677c25f2b5bdc78063757f0d20056688b2362d41b241ad86a5 "), "Preserve the complete approved snapshot, not a single transitive pin.")
         let rootIgnored = try Self.run("/usr/bin/git", arguments: ["check-ignore", "--no-index", "Package.resolved"], in: Self.repoRoot)
         XCTAssertEqual(rootIgnored.status, 1, "The root lock must be eligible for tracking: \(rootIgnored.output)")
         let nestedIgnored = try Self.run("/usr/bin/git", arguments: ["check-ignore", "--no-index", "Vendor/example/Package.resolved"], in: Self.repoRoot)
         XCTAssertEqual(nestedIgnored.status, 0, "Only the root lock may be unignored.")
     }
 
-    func test_packageResolutionUsesSparkle2100AndPreservesEveryOtherPin() throws {
+    func test_packageResolutionUsesApprovedSparkleAndEventSourceAndPreservesOtherPins() throws {
         let data = try Data(contentsOf: Self.repoRoot.appendingPathComponent("Package.resolved"))
         let document = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
         let pins = try XCTUnwrap(document["pins"] as? [[String: Any]])
@@ -86,9 +86,13 @@ final class BuildScriptTests: XCTestCase {
             ["sparkle|2.10.0|eef1a539a373c1f1a320624b1130fc5de7b2e100"]
         )
         XCTAssertEqual(
-            summaries.filter { !$0.hasPrefix("sparkle|") },
-            Self.approvedNonSparklePins.sorted(),
-            "Only Sparkle may change in the approved dependency graph."
+            summaries.filter { $0.hasPrefix("eventsource|") },
+            ["eventsource|1.5.1|86b5096ac59ab46e66bd1f6377c604bc1dab0bc2"]
+        )
+        XCTAssertEqual(
+            summaries.filter { !$0.hasPrefix("sparkle|") && !$0.hasPrefix("eventsource|") },
+            Self.approvedUnchangedPins.sorted(),
+            "Only Sparkle and EventSource may change in the approved dependency graph."
         )
     }
 
@@ -125,10 +129,9 @@ final class BuildScriptTests: XCTestCase {
         XCTAssertFalse(result.output.contains("Build succeeded"))
     }
 
-    private static let approvedNonSparklePins = [
+    private static let approvedUnchangedPins = [
         "async-http-client|1.35.0|4603a8036d921ea999fadb742931546c341f4bd7",
         "containerization|0.37.0|1d5641ff962456df021283505eaa6a701d828192",
-        "eventsource|1.4.1|a3a85a85214caf642abaa96ae664e4c772a59f6e",
         "fluidaudio|0.10.0|a1582f0c476864b6609f75459312037390089044",
         "grpc-swift-2|2.4.2|28cdd63ef88583ddc67d7bb179eab46fab465ce9",
         "grpc-swift-nio-transport|2.9.0|2ca31f06658ed288a2560e23ad649acbb3d6b3a3",
