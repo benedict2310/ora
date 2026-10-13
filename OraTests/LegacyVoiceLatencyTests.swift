@@ -198,6 +198,69 @@ final class LegacyVoiceSourceTests: XCTestCase {
         XCTAssertEqual(terminals(events).map { string($0, "outcome") }, ["cancelled", "success"])
     }
 
+    @MainActor
+    func test_attemptReplacementDuringFallbackFactoryHopRejectsOldSourceBeforeNewStart() async throws {
+        let fixture = VoiceLatencyFixture()
+        let turn = fixture.observer.beginTurn()
+        let a = LegacyVoiceLatencyContext(attempt: fixture.observer.beginAttempt(for: turn), observer: fixture.observer)
+        let staleDriver = VoiceFallbackDriver()
+        staleDriver.immediateCompletion = .finished // Bound the unfenced RED path.
+        let freshDriver = VoiceFallbackDriver()
+        freshDriver.immediateCompletion = .finished
+        var b: LegacyVoiceLatencyContext?
+        var factoryCalls = 0
+        let tts = TTSService(kokoroEngine: nil, fallbackFactory: {
+            factoryCalls += 1
+            if factoryCalls == 1 {
+                // Synthesis is suspended awaiting this MainActor factory. Close
+                // A here, without starting/registering B on the TTS actor yet.
+                XCTAssertTrue(fixture.observer.isActive(a.attempt))
+                b = LegacyVoiceLatencyContext(attempt: fixture.observer.beginAttempt(for: turn), observer: fixture.observer)
+                return staleDriver
+            }
+            return freshDriver
+        })
+        do {
+            for try await _ in tts.speak("A", latencyContext: a) {}
+            XCTFail("closed A resumed startup after its factory hop")
+        } catch { XCTAssertTrue(error is CancellationError) }
+        XCTAssertEqual(staleDriver.speakCount, 0)
+        let current = try XCTUnwrap(b)
+        XCTAssertTrue(fixture.observer.isActive(current.attempt))
+        XCTAssertEqual(factoryCalls, 1)
+
+        let playback = AudioPlaybackService(driver: VoicePlaybackDriver())
+        try await playback.play(chunks: tts.speak("B", latencyContext: current), latencyContext: current)
+        XCTAssertEqual(freshDriver.speakCount, 1)
+        let events = await fixture.events()
+        XCTAssertEqual(terminals(events).map { string($0, "outcome") }, ["cancelled", "success"])
+        XCTAssertEqual(string(try XCTUnwrap(terminals(events).first), "reason"), "attempt_replaced")
+        XCTAssertEqual(events.filter { $0.name == .voiceLatencyBoundaryObserved }.count, 0)
+    }
+
+    @MainActor
+    func test_fallbackSpeakEntryRejectsAttemptClosedAfterHolderCreation() async throws {
+        let fixture = VoiceLatencyFixture()
+        let turn = fixture.observer.beginTurn()
+        let a = LegacyVoiceLatencyContext(attempt: fixture.observer.beginAttempt(for: turn), observer: fixture.observer)
+        let driver = VoiceFallbackDriver()
+        driver.immediateCompletion = .finished // Bound the unfenced RED path.
+        let holder = FallbackSpeechSession(driver: driver, latencyContext: a)
+        let b = fixture.observer.beginAttempt(for: turn)
+        // Equivalent to A's holder.speak waiting in the MainActor queue while
+        // the controller replaces its attempt, before the actual source call.
+        holder.speak(text: "A")
+        XCTAssertEqual(driver.speakCount, 0)
+        if case .finished = await holder.waitForCompletion() {
+            XCTFail("closed A completed speech instead of cancelling")
+        }
+        XCTAssertTrue(fixture.observer.isActive(b))
+        fixture.observer.complete(.cancelled, for: b, reason: "test_cleanup")
+        let events = await fixture.events()
+        XCTAssertEqual(terminals(events).map { string($0, "outcome") }, ["cancelled", "cancelled"])
+        XCTAssertEqual(events.filter { $0.name == .voiceLatencyBoundaryObserved }.count, 0)
+    }
+
     func test_timeoutAndStreamErrorAreNotSuccess() async throws {
         let fixture = VoiceLatencyFixture()
         let service = AudioPlaybackService(driver: VoicePlaybackDriver(), timeoutSleep: { _ in })

@@ -356,6 +356,10 @@ public actor TTSService: TTSServicing {
             continuation.finish(throwing: CancellationError())
             return
         }
+        if let latencyContext, !latencyContext.observer.isActive(latencyContext.attempt) {
+            continuation.finish(throwing: CancellationError())
+            return
+        }
         let holder = FallbackSpeechSession(driver: driver, latencyContext: latencyContext)
         self.fallbackSynthesizerHolder = holder
         if Task.isCancelled { holder.cancel() }
@@ -421,6 +425,11 @@ final class FallbackSpeechSession: @unchecked Sendable {
 
     @MainActor func speak(text: String) {
         guard self.lock.withLock({ self.result == nil }) else { return }
+        // The attempt may close while this source call waits for MainActor.
+        if let context = self.context, !context.observer.isActive(context.attempt) {
+            self.cancel()
+            return
+        }
         self.driver.speak(text: text, onStart: { [weak self] in self?.started() },
                           onCompletion: { [weak self] in self?.finish($0) })
     }
