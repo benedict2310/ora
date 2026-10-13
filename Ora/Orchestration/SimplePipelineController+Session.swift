@@ -37,7 +37,27 @@ extension SimplePipelineController {
 
     // MARK: - Private - Session Management
 
+    /// Receipt is correlated with the turn captured when listening began, not
+    /// mutable controller state after an asynchronous ASR event arrives.
+    func receiveASREvent(_ event: ASREvent, for turn: LegacyVoiceLatencyTurn?) {
+        guard self.inputMode == .voice, self.currentVoiceLatencyTurn == turn else { return }
+        switch event {
+        case .partial(let text, _):
+            self.currentTranscript = text
+            self.overlayPresenter.model.addUserMessage(text, isPartial: true)
+            self.silenceDetector?.onPartialReceived(text: text)
+            self.cancelTypingHintForVoiceActivity()
+        case .final(let text):
+            if let turn { self.legacyVoiceLatencyObserver.asrFinalReceived(for: turn) }
+            self.currentTranscript = text
+            let thumbnails = self.pendingImageAttachments.compactMap(\.thumbnailFileURL)
+            self.overlayPresenter.model.addUserMessage(text, isPartial: false, thumbnailURLs: thumbnails)
+            self.cancelTypingHintForVoiceActivity()
+        }
+    }
+
     func runListeningSession() async {
+        let latencyTurn = self.currentVoiceLatencyTurn
         do {
             guard self.inputMode == .voice else {
                 self.logger.debug("Skipping audio listening session while in text input mode")
@@ -96,29 +116,16 @@ extension SimplePipelineController {
 
             // Process ASR events
             for try await event in asrStream {
-                guard !Task.isCancelled else {
+                guard !Task.isCancelled, self.currentVoiceLatencyTurn == latencyTurn else {
                     self.logger.debug("Session cancelled during ASR")
                     return
                 }
 
-                switch event {
-                case .partial(let text, _):
-                    self.currentTranscript = text
-                    self.overlayPresenter.model.addUserMessage(text, isPartial: true)
-                    // Notify silence detector of new partial (AC-7)
-                    self.silenceDetector?.onPartialReceived(text: text)
-                    self.cancelTypingHintForVoiceActivity()
-
-                case .final(let text):
-                    self.currentTranscript = text
-                    let thumbnails = self.pendingImageAttachments.compactMap(\.thumbnailFileURL)
-                    self.overlayPresenter.model.addUserMessage(text, isPartial: false, thumbnailURLs: thumbnails)
-                    self.cancelTypingHintForVoiceActivity()
-                }
+                self.receiveASREvent(event, for: latencyTurn)
             }
             
             // ASR stream ended - check if we have a transcript to process
-            guard !Task.isCancelled else {
+            guard !Task.isCancelled, self.currentVoiceLatencyTurn == latencyTurn else {
                 self.logger.debug("Session cancelled after ASR")
                 return
             }
@@ -132,7 +139,11 @@ extension SimplePipelineController {
                 return
             }
             
-            // Process the transcript with AgentLoop
+            // For stream-end submission without a manual submit, acceptance is
+            // here. The observer preserves the earlier manual timestamp if any.
+            if let turn = latencyTurn {
+                self.legacyVoiceLatencyObserver.acceptedTranscript(for: turn)
+            }
             await self.processTranscript()
             
         } catch {

@@ -25,20 +25,26 @@ public actor TTSService: TTSServicing {
     private var isSpeaking = false
     private var currentTask: Task<Void, Never>?
     private var currentSessionID: UUID?
+    private var currentLatencyContext: LegacyVoiceLatencyContext?
     
     /// Keep fallback synthesizer alive during playback
-    private var fallbackSynthesizerHolder: FallbackSynthesizerHolder?
+    private var fallbackSynthesizerHolder: FallbackSpeechSession?
+    private let fallbackFactory: @MainActor @Sendable () -> any FallbackSpeechDriving
 
     /// Sample rate for Kokoro TTS output
     public static let kokoroSampleRate = 24000
 
     // MARK: - Initialization
 
-    private init() {}
+    private init() {
+        self.fallbackFactory = { SystemFallbackSpeechDriver() }
+    }
 
     /// Create with custom Kokoro engine (for testing)
     /// - Note: This initializer is internal for testing via @testable import
-    init(kokoroEngine: KokoroEngining?) {
+    init(kokoroEngine: KokoroEngining?,
+         fallbackFactory: @escaping @MainActor @Sendable () -> any FallbackSpeechDriving = { SystemFallbackSpeechDriver() }) {
+        self.fallbackFactory = fallbackFactory
         self.kokoroEngine = kokoroEngine
         self.isKokoroReady = kokoroEngine != nil
     }
@@ -73,15 +79,15 @@ public actor TTSService: TTSServicing {
     /// - Parameter text: Text to synthesize
     /// - Returns: Async stream of audio chunks
     nonisolated public func speak(_ text: String) -> AsyncThrowingStream<AudioChunk, Error> {
+        self.speak(text, latencyContext: nil)
+    }
+
+    nonisolated public func speak(_ text: String, latencyContext: LegacyVoiceLatencyContext?) -> AsyncThrowingStream<AudioChunk, Error> {
         let sessionID = UUID()
         return AsyncThrowingStream { continuation in
             Task {
-                // Store reference to this task for cancellation support
-                let synthesisTask = Task {
-                    await self.runSynthesis(text: text, continuation: continuation, sessionID: sessionID)
-                }
-                await self.setCurrentTask(synthesisTask, sessionID: sessionID)
-                await synthesisTask.value
+                await self.startSynthesis(text: text, continuation: continuation,
+                                          sessionID: sessionID, latencyContext: latencyContext)
             }
 
             continuation.onTermination = { @Sendable _ in
@@ -121,18 +127,28 @@ public actor TTSService: TTSServicing {
         await self.stop(sessionID: nil)
     }
 
+    public func stop(latencyAttempt: LegacyVoiceLatencyAttempt?) async {
+        guard self.currentLatencyContext?.attempt == latencyAttempt else { return }
+        await self.stop(sessionID: self.currentSessionID)
+    }
+
     public func stop(sessionID: UUID? = nil) async {
         if let sessionID, sessionID != self.currentSessionID {
             return
         }
+        if let context = self.currentLatencyContext {
+            context.observer.complete(.cancelled, for: context.attempt, reason: "synthesis_stop")
+        }
+        self.currentLatencyContext = nil
         self.currentTask?.cancel()
         self.currentTask = nil
         self.currentSessionID = nil
         self.isSpeaking = false
         
         // Stop any fallback synthesizer
-        await self.fallbackSynthesizerHolder?.stop()
+        let holder = self.fallbackSynthesizerHolder
         self.fallbackSynthesizerHolder = nil
+        await holder?.stop()
         
         self.logger.debug("TTS stopped")
     }
@@ -149,6 +165,22 @@ public actor TTSService: TTSServicing {
 
     // MARK: - Private
     
+    private func startSynthesis(text: String,
+                                continuation: AsyncThrowingStream<AudioChunk, Error>.Continuation,
+                                sessionID: UUID, latencyContext: LegacyVoiceLatencyContext?) {
+        if let latencyContext, !latencyContext.observer.isActive(latencyContext.attempt) {
+            continuation.finish(throwing: CancellationError())
+            return
+        }
+        self.currentTask?.cancel()
+        self.currentLatencyContext = latencyContext
+        self.currentSessionID = sessionID
+        self.currentTask = Task {
+            await self.runSynthesis(text: text, continuation: continuation,
+                                    sessionID: sessionID, latencyContext: latencyContext)
+        }
+    }
+
     private func setCurrentTask(_ task: Task<Void, Never>?, sessionID: UUID) {
         self.currentTask = task
         self.currentSessionID = sessionID
@@ -156,6 +188,7 @@ public actor TTSService: TTSServicing {
 
     private func clearCurrentTask(sessionID: UUID) {
         guard self.currentSessionID == sessionID else { return }
+        self.currentLatencyContext = nil
         self.currentTask = nil
         self.currentSessionID = nil
     }
@@ -163,12 +196,19 @@ public actor TTSService: TTSServicing {
     private func runSynthesis(
         text: String,
         continuation: AsyncThrowingStream<AudioChunk, Error>.Continuation,
-        sessionID: UUID
+        sessionID: UUID,
+        latencyContext: LegacyVoiceLatencyContext?
     ) async {
+        guard self.currentSessionID == sessionID, !Task.isCancelled else {
+            continuation.finish(throwing: CancellationError())
+            return
+        }
         self.isSpeaking = true
-        defer { 
-            self.isSpeaking = false
-            self.clearCurrentTask(sessionID: sessionID)
+        defer {
+            if self.currentSessionID == sessionID {
+                self.isSpeaking = false
+                self.clearCurrentTask(sessionID: sessionID)
+            }
         }
 
         // Capture current state for synthesis decision
@@ -181,10 +221,11 @@ public actor TTSService: TTSServicing {
                 chunks: chunks,
                 engine: engine,
                 originalText: text,
-                continuation: continuation
+                continuation: continuation,
+                latencyContext: latencyContext
             )
         } else {
-            await self.runFallbackSynthesis(text: text, continuation: continuation)
+            await self.runFallbackSynthesis(text: text, continuation: continuation, latencyContext: latencyContext)
         }
     }
 
@@ -195,8 +236,10 @@ public actor TTSService: TTSServicing {
     ) async {
         self.isSpeaking = true
         defer {
-            self.isSpeaking = false
-            self.clearCurrentTask(sessionID: sessionID)
+            if self.currentSessionID == sessionID {
+                self.isSpeaking = false
+                self.clearCurrentTask(sessionID: sessionID)
+            }
         }
 
         let useKokoro = self.isKokoroReady
@@ -240,7 +283,7 @@ public actor TTSService: TTSServicing {
                 continuation.finish()
                 return
             }
-            await self.runFallbackSynthesis(text: trimmed, continuation: continuation)
+            await self.runFallbackSynthesis(text: trimmed, continuation: continuation, latencyContext: nil)
         }
     }
 
@@ -248,28 +291,39 @@ public actor TTSService: TTSServicing {
         chunks: [String],
         engine: KokoroEngining,
         originalText: String,
-        continuation: AsyncThrowingStream<AudioChunk, Error>.Continuation
+        continuation: AsyncThrowingStream<AudioChunk, Error>.Continuation,
+        latencyContext: LegacyVoiceLatencyContext?
     ) async {
         do {
             try await self.synthesizeKokoroChunks(
                 chunks: chunks,
                 engine: engine,
-                continuation: continuation
+                continuation: continuation,
+                latencyContext: latencyContext
             )
+            try Task.checkCancellation()
+            if let latencyContext {
+                latencyContext.observer.streamFinished(for: latencyContext.attempt)
+            }
             continuation.finish()
         } catch is CancellationError {
-            continuation.finish()
+            continuation.finish(throwing: CancellationError())
         } catch {
             self.logger.error("Kokoro synthesis failed: \(error.localizedDescription)")
             // Fall back to system TTS
-            await self.runFallbackSynthesis(text: originalText, continuation: continuation)
+            guard !Task.isCancelled else {
+                continuation.finish(throwing: CancellationError())
+                return
+            }
+            await self.runFallbackSynthesis(text: originalText, continuation: continuation, latencyContext: latencyContext)
         }
     }
 
     private func synthesizeKokoroChunks(
         chunks: [String],
         engine: KokoroEngining,
-        continuation: AsyncThrowingStream<AudioChunk, Error>.Continuation
+        continuation: AsyncThrowingStream<AudioChunk, Error>.Continuation,
+        latencyContext: LegacyVoiceLatencyContext? = nil
     ) async throws {
         for chunk in chunks {
             let stream = await engine.synthesize(text: chunk)
@@ -277,6 +331,9 @@ public actor TTSService: TTSServicing {
                 try Task.checkCancellation()
 
                 let audioChunk = AudioChunk(samples: samples, sampleRate: Self.kokoroSampleRate)
+                if !audioChunk.isEmpty, let latencyContext {
+                    latencyContext.observer.firstPCMChunkReceived(for: latencyContext.attempt)
+                }
                 continuation.yield(audioChunk)
             }
         }
@@ -284,32 +341,48 @@ public actor TTSService: TTSServicing {
 
     private func runFallbackSynthesis(
         text: String,
-        continuation: AsyncThrowingStream<AudioChunk, Error>.Continuation
+        continuation: AsyncThrowingStream<AudioChunk, Error>.Continuation,
+        latencyContext: LegacyVoiceLatencyContext? = nil
     ) async {
         self.logger.info("Using AVSpeechSynthesizer fallback")
 
-        // Create holder that manages synthesizer lifecycle
-        let holder = FallbackSynthesizerHolder()
+        guard !Task.isCancelled else {
+            continuation.finish(throwing: CancellationError())
+            return
+        }
+        let sessionID = self.currentSessionID
+        let driver = await self.fallbackFactory()
+        guard self.currentSessionID == sessionID, !Task.isCancelled else {
+            continuation.finish(throwing: CancellationError())
+            return
+        }
+        if let latencyContext, !latencyContext.observer.isActive(latencyContext.attempt) {
+            continuation.finish(throwing: CancellationError())
+            return
+        }
+        let holder = FallbackSpeechSession(driver: driver, latencyContext: latencyContext)
         self.fallbackSynthesizerHolder = holder
+        if Task.isCancelled { holder.cancel() }
+        await holder.speak(text: SentenceChunker.normalizeText(text))
 
-        // Start synthesis on main actor
-        let normalizedText = SentenceChunker.normalizeText(text)
-        await holder.speak(text: normalizedText)
-
-        // Yield empty chunk to signal playback has started
+        // Compatibility marker only: not evidence that speech has started.
         continuation.yield(AudioChunk.empty(sampleRate: Self.kokoroSampleRate))
-
-        // Wait for completion or cancellation
-        await withTaskCancellationHandler {
+        let result = await withTaskCancellationHandler {
             await holder.waitForCompletion()
         } onCancel: {
-            Task { @MainActor in
-                holder.stop()
-            }
+            holder.cancel()
+            Task { await holder.stopDriver() }
+        }
+        if self.fallbackSynthesizerHolder === holder {
+            self.fallbackSynthesizerHolder = nil
+        }
+        switch result {
+        case .finished:
+            continuation.finish()
+        case .cancelled:
+            continuation.finish(throwing: CancellationError())
         }
 
-        self.fallbackSynthesizerHolder = nil
-        continuation.finish()
     }
 
     private func joinTextSegments(_ left: String, _ right: String) -> String {
@@ -323,84 +396,128 @@ public actor TTSService: TTSServicing {
     }
 }
 
-// MARK: - Fallback Synthesizer Holder
+// MARK: - Fallback callback seam
 
-/// Holds AVSpeechSynthesizer and delegate to prevent premature deallocation
-/// Must be accessed from MainActor for AVFoundation compatibility
+enum FallbackSpeechResult: Sendable {
+    case finished, cancelled
+}
+
 @MainActor
-private final class FallbackSynthesizerHolder: Sendable {
-    private var synthesizer: AVSpeechSynthesizer?
-    private var delegate: FallbackSynthesizerDelegate?
-    private var completionContinuation: CheckedContinuation<Void, Never>?
+protocol FallbackSpeechDriving: Sendable {
+    func speak(text: String, onStart: @escaping @Sendable () -> Void,
+               onCompletion: @escaping @Sendable (FallbackSpeechResult) -> Void)
+    func stop()
+}
 
-    nonisolated init() {}
+/// Delegate outcomes are retained even when they arrive before a waiter. The
+/// source lock also fences start callbacks after finish/cancel, before any hop.
+final class FallbackSpeechSession: @unchecked Sendable {
+    private let driver: any FallbackSpeechDriving
+    private let context: LegacyVoiceLatencyContext?
+    private let lock = NSLock()
+    private var result: FallbackSpeechResult?
+    private var waiter: CheckedContinuation<FallbackSpeechResult, Never>?
 
-    func speak(text: String) {
-        let synthesizer = AVSpeechSynthesizer()
-        let delegate = FallbackSynthesizerDelegate { [weak self] in
-            self?.handleCompletion()
-        }
-        
-        synthesizer.delegate = delegate
-        self.synthesizer = synthesizer
-        self.delegate = delegate
-
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-
-        synthesizer.speak(utterance)
+    init(driver: any FallbackSpeechDriving, latencyContext: LegacyVoiceLatencyContext?) {
+        self.driver = driver
+        self.context = latencyContext
     }
 
-    func waitForCompletion() async {
-        // If already finished, return immediately
-        guard self.synthesizer?.isSpeaking == true else { return }
-        
+    @MainActor func speak(text: String) {
+        guard self.lock.withLock({ self.result == nil }) else { return }
+        // The attempt may close while this source call waits for MainActor.
+        if let context = self.context, !context.observer.isActive(context.attempt) {
+            self.cancel()
+            return
+        }
+        self.driver.speak(text: text, onStart: { [weak self] in self?.started() },
+                          onCompletion: { [weak self] in self?.finish($0) })
+    }
+
+    private func started() {
+        self.lock.withLock {
+            guard self.result == nil, let context = self.context else { return }
+            context.observer.playbackBoundary(for: context.attempt, backend: .avSpeech, boundary: .utteranceStarted)
+        }
+    }
+
+    private func finish(_ result: FallbackSpeechResult) {
+        self.lock.withLock {
+            guard self.result == nil else { return }
+            self.result = result
+            if let context = self.context {
+                switch result {
+                case .finished: context.observer.fallbackFinished(for: context.attempt)
+                case .cancelled: context.observer.complete(.cancelled, for: context.attempt, reason: "fallback_cancelled")
+                }
+            }
+            self.waiter?.resume(returning: result)
+            self.waiter = nil
+        }
+    }
+
+    func waitForCompletion() async -> FallbackSpeechResult {
         await withCheckedContinuation { continuation in
-            self.completionContinuation = continuation
+            self.lock.withLock {
+                if let result = self.result { continuation.resume(returning: result) }
+                else { self.waiter = continuation }
+            }
         }
     }
 
-    func stop() {
-        self.synthesizer?.stopSpeaking(at: .immediate)
-        self.handleCompletion()
-    }
-
-    private func handleCompletion() {
-        self.completionContinuation?.resume()
-        self.completionContinuation = nil
-        self.synthesizer = nil
-        self.delegate = nil
+    func cancel() { self.finish(.cancelled) }
+    @MainActor func stopDriver() { self.driver.stop() }
+    @MainActor func stop() {
+        self.cancel()
+        self.driver.stop()
     }
 }
 
-// MARK: - Fallback Synthesizer Delegate
-
-/// Delegate for AVSpeechSynthesizer completion callbacks
 @MainActor
-private final class FallbackSynthesizerDelegate: NSObject, AVSpeechSynthesizerDelegate {
-    private let onCompletion: @MainActor () -> Void
+final class SystemFallbackSpeechDriver: FallbackSpeechDriving {
+    private var synthesizer: AVSpeechSynthesizer?
+    private var delegate: FallbackSynthesizerDelegate?
 
-    nonisolated init(onCompletion: @escaping @MainActor () -> Void) {
+    func speak(text: String, onStart: @escaping @Sendable () -> Void,
+               onCompletion: @escaping @Sendable (FallbackSpeechResult) -> Void) {
+        let synthesizer = AVSpeechSynthesizer()
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+        let delegate = FallbackSynthesizerDelegate(utterance: utterance, onDidStart: onStart, onCompletion: onCompletion)
+        synthesizer.delegate = delegate
+        self.synthesizer = synthesizer
+        self.delegate = delegate
+        synthesizer.speak(utterance)
+    }
+
+    func stop() { self.synthesizer?.stopSpeaking(at: .immediate) }
+}
+
+/// Identity matching is immutable; no actor hop precedes timestamp capture.
+final class FallbackSynthesizerDelegate: NSObject, AVSpeechSynthesizerDelegate, @unchecked Sendable {
+    private let utterance: AVSpeechUtterance
+    private let onDidStart: @Sendable () -> Void
+    private let onCompletion: @Sendable (FallbackSpeechResult) -> Void
+
+    init(utterance: AVSpeechUtterance, onDidStart: @escaping @Sendable () -> Void,
+         onCompletion: @escaping @Sendable (FallbackSpeechResult) -> Void) {
+        self.utterance = utterance
+        self.onDidStart = onDidStart
         self.onCompletion = onCompletion
         super.init()
     }
 
-    nonisolated func speechSynthesizer(
-        _ synthesizer: AVSpeechSynthesizer,
-        didFinish utterance: AVSpeechUtterance
-    ) {
-        Task { @MainActor in
-            self.onCompletion()
-        }
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
+        guard utterance === self.utterance else { return }
+        self.onDidStart()
     }
-
-    nonisolated func speechSynthesizer(
-        _ synthesizer: AVSpeechSynthesizer,
-        didCancel utterance: AVSpeechUtterance
-    ) {
-        Task { @MainActor in
-            self.onCompletion()
-        }
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        guard utterance === self.utterance else { return }
+        self.onCompletion(.finished)
+    }
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        guard utterance === self.utterance else { return }
+        self.onCompletion(.cancelled)
     }
 }

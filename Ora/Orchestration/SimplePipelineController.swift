@@ -68,6 +68,10 @@ final class SimplePipelineController: ObservableObject {
     let overlayPresenter: any OverlayPresenting
     let audioService: any AudioServicing
     let ttsService: any TTSServicing
+    let playbackService: AudioPlaybackService
+    let legacyVoiceLatencyObserver: LegacyVoiceLatencyObserver
+    var currentVoiceLatencyTurn: LegacyVoiceLatencyTurn?
+    var currentVoiceLatencyAttempt: LegacyVoiceLatencyAttempt?
     let persistenceService: any PersistenceServicing
     let attachmentStore: any AttachmentStoring
     let screenshotCaptureService: any ScreenshotCapturing
@@ -111,6 +115,8 @@ final class SimplePipelineController: ObservableObject {
         overlayPresenter: any OverlayPresenting = OverlayWindowController.shared,
         audioService: any AudioServicing = AudioService.shared,
         ttsService: any TTSServicing = TTSService.shared,
+        playbackService: AudioPlaybackService = .shared,
+        legacyVoiceLatencyObserver: LegacyVoiceLatencyObserver = LegacyVoiceLatencyObserver(),
         persistenceService: any PersistenceServicing = PersistenceManager.shared,
         attachmentStore: any AttachmentStoring = AttachmentStore.shared,
         screenshotCaptureService: any ScreenshotCapturing = ScreenshotCaptureService.shared,
@@ -124,6 +130,8 @@ final class SimplePipelineController: ObservableObject {
         self.overlayPresenter = overlayPresenter
         self.audioService = audioService
         self.ttsService = ttsService
+        self.playbackService = playbackService
+        self.legacyVoiceLatencyObserver = legacyVoiceLatencyObserver
         self.persistenceService = persistenceService
         self.attachmentStore = attachmentStore
         self.screenshotCaptureService = screenshotCaptureService
@@ -188,6 +196,8 @@ final class SimplePipelineController: ObservableObject {
         overlayPresenter: (any OverlayPresenting)? = nil,
         audioService: (any AudioServicing)? = nil,
         ttsService: (any TTSServicing)? = nil,
+        playbackService: AudioPlaybackService? = nil,
+        legacyVoiceLatencyObserver: LegacyVoiceLatencyObserver? = nil,
         persistenceService: (any PersistenceServicing)? = nil,
         attachmentStore: (any AttachmentStoring)? = nil,
         screenshotCaptureService: (any ScreenshotCapturing)? = nil,
@@ -202,6 +212,8 @@ final class SimplePipelineController: ObservableObject {
             overlayPresenter: overlayPresenter ?? OverlayWindowController.shared,
             audioService: audioService ?? AudioService.shared,
             ttsService: ttsService ?? TTSService.shared,
+            playbackService: playbackService ?? .shared,
+            legacyVoiceLatencyObserver: legacyVoiceLatencyObserver ?? LegacyVoiceLatencyObserver(),
             persistenceService: persistenceService ?? PersistenceManager.shared,
             attachmentStore: attachmentStore ?? AttachmentStore.shared,
             screenshotCaptureService: screenshotCaptureService ?? ScreenshotCaptureService.shared,
@@ -233,6 +245,7 @@ final class SimplePipelineController: ObservableObject {
         // Reset state for new session
         self.currentTranscript = ""
         self.currentResponse = ""
+        self.currentVoiceLatencyTurn = self.legacyVoiceLatencyObserver.beginTurn()
         self.inputMode = .voice
         self.resetStreamingResponse()
         self.cancelTypingHintTimer()
@@ -272,6 +285,9 @@ final class SimplePipelineController: ObservableObject {
         }
 
         self.logger.debug("Submitting transcript")
+        if let turn = self.currentVoiceLatencyTurn {
+            self.legacyVoiceLatencyObserver.acceptedTranscript(for: turn)
+        }
 
         // Cancel silence detector to prevent double-submit (AC-9)
         self.silenceDetector?.cancel()
@@ -302,6 +318,7 @@ final class SimplePipelineController: ObservableObject {
         
         // Reset current transcript for new turn
         self.currentTranscript = ""
+        self.currentVoiceLatencyTurn = self.legacyVoiceLatencyObserver.beginTurn()
         
         // Start listening again (keeping conversation history via agent loop session)
         self.sessionTask = Task {
@@ -315,6 +332,9 @@ final class SimplePipelineController: ObservableObject {
         }
 
         self.logger.info("Switching to text input mode")
+        self.legacyVoiceLatencyObserver.reset(reason: "text_mode")
+        self.currentVoiceLatencyTurn = nil
+        self.currentVoiceLatencyAttempt = nil
         self.inputMode = .text
         self.overlayPresenter.model.inputMode = .text
         self.overlayPresenter.model.typingHintVisible = false
@@ -375,6 +395,8 @@ final class SimplePipelineController: ObservableObject {
         }
 
         self.logger.info("Re-enabling voice input mode")
+        self.currentVoiceLatencyTurn = self.legacyVoiceLatencyObserver.beginTurn()
+        self.currentVoiceLatencyAttempt = nil
         self.inputMode = .voice
         self.overlayPresenter.model.inputMode = .voice
         self.overlayPresenter.model.isTextInputVisible = false
@@ -428,6 +450,10 @@ final class SimplePipelineController: ObservableObject {
         self.autoDismissTask = nil
         self.ttsTask?.cancel()
         self.ttsTask = nil
+        let cancelledAttempt = self.currentVoiceLatencyAttempt
+        self.legacyVoiceLatencyObserver.reset(reason: "cancelled")
+        self.currentVoiceLatencyAttempt = nil
+        self.currentVoiceLatencyTurn = nil
         self.confirmationTask?.cancel()
         self.confirmationTask = nil
         self.typingHintTask?.cancel()
@@ -436,8 +462,8 @@ final class SimplePipelineController: ObservableObject {
 
         // Stop audio capture and TTS playback
         Task {
-            await self.ttsService.stop()
-            await AudioPlaybackService.shared.stop()
+            await self.ttsService.stop(latencyAttempt: cancelledAttempt)
+            await self.playbackService.stop(latencyAttempt: cancelledAttempt)
             await self.audioService.cancel()
             await self.agentLoop.endSession()
             await self.agentLoop.clearPendingAuthorization()
@@ -511,13 +537,18 @@ final class SimplePipelineController: ObservableObject {
         }
 
         self.logger.info("Interrupting TTS playback")
+        let interruptedAttempt = self.currentVoiceLatencyAttempt
+        if let attempt = interruptedAttempt {
+            self.legacyVoiceLatencyObserver.complete(.cancelled, for: attempt, reason: "interrupted")
+            self.currentVoiceLatencyAttempt = nil
+        }
 
         self.ttsTask?.cancel()
         self.ttsTask = nil
 
         Task {
-            await self.ttsService.stop()
-            await AudioPlaybackService.shared.stop()
+            await self.ttsService.stop(latencyAttempt: interruptedAttempt)
+            await self.playbackService.stop(latencyAttempt: interruptedAttempt)
         }
 
         self.transitionToAwaitingFollowUp(autoListen: self.isConversationModeEnabled)

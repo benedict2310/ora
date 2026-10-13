@@ -13,9 +13,24 @@ public protocol TTSServicing: Sendable {
     /// - Parameter text: Text to synthesize
     /// - Returns: Async stream of audio chunks
     func speak(_ text: String) -> AsyncThrowingStream<AudioChunk, Error>
+
+    /// Generate speech while reporting legacy voice latency observations. The
+    /// default keeps test and alternate TTS providers source-compatible.
+    func speak(_ text: String, latencyContext: LegacyVoiceLatencyContext?) -> AsyncThrowingStream<AudioChunk, Error>
     
     /// Stop current speech synthesis
     func stop() async
+    func stop(latencyAttempt: LegacyVoiceLatencyAttempt?) async
+}
+
+public extension TTSServicing {
+    func stop(latencyAttempt: LegacyVoiceLatencyAttempt?) async {
+        await self.stop()
+    }
+
+    func speak(_ text: String, latencyContext: LegacyVoiceLatencyContext?) -> AsyncThrowingStream<AudioChunk, Error> {
+        self.speak(text)
+    }
 }
 
 /// Errors that can occur during TTS operations
