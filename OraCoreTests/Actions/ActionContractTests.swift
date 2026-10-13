@@ -22,6 +22,16 @@ final class ActionContractTests: XCTestCase {
         XCTAssertEqual(executed, .executed(action: action, summary: "calendar.create executed."))
     }
 
+    func test_mutationApprovalIgnoresSessionBindingProposalIDWhenConfirmationContentMatches() async throws {
+        let host = ActionHost(catalog: .v2Default)
+        let action = try XCTUnwrap(ActionCatalog.v2Default.action(named: "calendar.create"))
+        let proposal = ActionProposal(action: action, proposalID: "turn-123:calendar.create")
+
+        let executed = try await host.execute(actionNamed: action.name, approval: .approved(proposal))
+
+        XCTAssertEqual(executed, .executed(action: action, summary: "calendar.create executed."))
+    }
+
     func test_approvalForDifferentProposalDoesNotExecuteMutation() async throws {
         let host = ActionHost(catalog: .v2Default)
         let approvedAction = try XCTUnwrap(ActionCatalog.v2Default.action(named: "calendar.create"))

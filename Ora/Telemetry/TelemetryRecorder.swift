@@ -5,11 +5,16 @@ enum TelemetryRecorderError: Error, Sendable, Equatable {
 }
 
 actor TelemetryRecorder {
+    private struct OpenSpan: Sendable, Equatable {
+        let token: TelemetrySpanToken
+        let startedAt: TelemetryTime
+    }
+
     private let clock: any TelemetryClock
     private let sinks: [any TelemetrySink]
     private var nextSequenceNumber: Int = 1
     private var nextSpanIdentifier: Int = 1
-    private var openSpans: [Int: TelemetrySpanToken] = [:]
+    private var openSpans: [Int: OpenSpan] = [:]
 
     init(
         clock: any TelemetryClock = SystemTelemetryClock(),
@@ -25,8 +30,7 @@ actor TelemetryRecorder {
         level: TelemetryLevel = .info,
         fields: [TelemetryField] = []
     ) async -> TelemetryEvent {
-        let sequenceNumber = self.nextSequenceNumber
-        self.nextSequenceNumber += 1
+        let sequenceNumber = self.reserveSequenceNumber()
 
         let event = TelemetryEvent(
             name: name,
@@ -52,14 +56,14 @@ actor TelemetryRecorder {
     ) async -> TelemetrySpanToken {
         let token = TelemetrySpanToken(id: self.nextSpanIdentifier, kind: kind, turnID: turnID)
         self.nextSpanIdentifier += 1
-        self.openSpans[token.id] = token
 
-        _ = await self.record(
+        let startEvent = await self.record(
             kind.startedEventName,
             turnID: turnID,
             level: level,
             fields: self.fieldsWithSpanID(fields, token: token)
         )
+        self.openSpans[token.id] = OpenSpan(token: token, startedAt: startEvent.time)
 
         return token
     }
@@ -69,12 +73,12 @@ actor TelemetryRecorder {
         level: TelemetryLevel = .info,
         fields: [TelemetryField] = []
     ) async throws -> TelemetryEvent {
-        try self.closeSpan(token)
-        return await self.record(
+        let openSpan = try self.closeSpan(token)
+        return await self.recordTerminalSpanEvent(
             token.kind.completedEventName,
-            turnID: token.turnID,
+            openSpan: openSpan,
             level: level,
-            fields: self.fieldsWithSpanID(fields, token: token)
+            fields: fields
         )
     }
 
@@ -83,12 +87,12 @@ actor TelemetryRecorder {
         level: TelemetryLevel = .error,
         fields: [TelemetryField] = []
     ) async throws -> TelemetryEvent {
-        try self.closeSpan(token)
-        return await self.record(
+        let openSpan = try self.closeSpan(token)
+        return await self.recordTerminalSpanEvent(
             token.kind.failedEventName,
-            turnID: token.turnID,
+            openSpan: openSpan,
             level: level,
-            fields: self.fieldsWithSpanID(fields, token: token)
+            fields: fields
         )
     }
 
@@ -97,12 +101,12 @@ actor TelemetryRecorder {
         level: TelemetryLevel = .notice,
         fields: [TelemetryField] = []
     ) async throws -> TelemetryEvent {
-        try self.closeSpan(token)
-        return await self.record(
+        let openSpan = try self.closeSpan(token)
+        return await self.recordTerminalSpanEvent(
             token.kind.cancelledEventName,
-            turnID: token.turnID,
+            openSpan: openSpan,
             level: level,
-            fields: self.fieldsWithSpanID(fields, token: token)
+            fields: fields
         )
     }
 
@@ -110,11 +114,56 @@ actor TelemetryRecorder {
         self.openSpans.count
     }
 
-    private func closeSpan(_ token: TelemetrySpanToken) throws {
-        guard self.openSpans[token.id] == token else {
+    private func closeSpan(_ token: TelemetrySpanToken) throws -> OpenSpan {
+        guard let openSpan = self.openSpans[token.id], openSpan.token == token else {
             throw TelemetryRecorderError.spanAlreadyClosed(token)
         }
         self.openSpans.removeValue(forKey: token.id)
+        return openSpan
+    }
+
+    private func recordTerminalSpanEvent(
+        _ name: TelemetryEventName,
+        openSpan: OpenSpan,
+        level: TelemetryLevel,
+        fields: [TelemetryField]
+    ) async -> TelemetryEvent {
+        let sequenceNumber = self.reserveSequenceNumber()
+        let time = await self.clock.now()
+        let event = TelemetryEvent(
+            name: name,
+            turnID: openSpan.token.turnID,
+            sequenceNumber: sequenceNumber,
+            time: time,
+            level: level,
+            fields: self.fieldsWithSpanID(fields, token: openSpan.token) + [
+                TelemetryField(
+                    key: "durationMilliseconds",
+                    value: .integer(self.durationMilliseconds(from: openSpan.startedAt, to: time)),
+                    visibility: .publicDebug
+                )
+            ]
+        )
+
+        for sink in self.sinks {
+            await sink.record(event)
+        }
+
+        return event
+    }
+
+    private func reserveSequenceNumber() -> Int {
+        let sequenceNumber = self.nextSequenceNumber
+        self.nextSequenceNumber += 1
+        return sequenceNumber
+    }
+
+    private func durationMilliseconds(from start: TelemetryTime, to end: TelemetryTime) -> Int {
+        guard end.rawValue >= start.rawValue else {
+            return 0
+        }
+        let duration = end.rawValue - start.rawValue
+        return Int(min(duration, UInt64(Int.max)))
     }
 
     private func fieldsWithSpanID(
