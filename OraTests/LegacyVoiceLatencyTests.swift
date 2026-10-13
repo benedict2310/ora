@@ -175,16 +175,22 @@ final class LegacyVoiceSourceTests: XCTestCase {
         let b = fixture.context()
         let requested = expectation(description: "B requested")
         let driver = VoiceFallbackDriver(onSpeak: { requested.fulfill() })
-        let tts = TTSService(kokoroEngine: nil, fallbackFactory: { driver })
+        let lateDriver = VoiceFallbackDriver()
+        lateDriver.immediateCompletion = .cancelled // Bound the unfenced old A path.
+        var factoryCalls = 0
+        let tts = TTSService(kokoroEngine: nil, fallbackFactory: {
+            factoryCalls += 1
+            return factoryCalls == 1 ? driver : lateDriver
+        })
         let playback = AudioPlaybackService(driver: VoicePlaybackDriver())
         let bTask = Task { try await playback.play(chunks: tts.speak("B", latencyContext: b), latencyContext: b) }
         await fulfillment(of: [requested], timeout: 2)
         let finishB = driver.finishCallback
-        driver.immediateCompletion = .cancelled // Bound the regression's old A path.
         do {
             for try await _ in tts.speak("A", latencyContext: a) {}
             XCTFail("closed A startup succeeded")
         } catch { XCTAssertTrue(error is CancellationError) }
+        XCTAssertEqual(factoryCalls, 1)
         XCTAssertEqual(driver.speakCount, 1)
         finishB?(.finished)
         try await bTask.value
@@ -370,6 +376,25 @@ final class LegacyVoiceControllerTests: XCTestCase {
         XCTAssertEqual(terminals(events).map { string($0, "outcome") }, ["cancelled"])
         XCTAssertEqual(string(try XCTUnwrap(events.last), "reason"), "interrupted")
         controller.cancel()
+    }
+
+    func test_sourceFallbackCancellationReturnsToFollowUpWithoutSuccess() async throws {
+        let fixture = VoiceLatencyFixture()
+        let requested = expectation(description: "fallback requested")
+        let driver = VoiceFallbackDriver(onSpeak: { requested.fulfill() })
+        let tts = TTSService(kokoroEngine: nil, fallbackFactory: { driver })
+        let controller = makeController(fixture, playback: AudioPlaybackService(driver: VoicePlaybackDriver()), tts: tts)
+        controller.currentVoiceLatencyTurn = fixture.observer.beginTurn()
+        controller.state = .responding
+        controller.speakResponse("Test")
+        let task = try XCTUnwrap(controller.ttsTask)
+        await fulfillment(of: [requested], timeout: 2)
+        driver.finishCallback?(.cancelled) // Not controller.cancel or Task.cancel.
+        await task.value
+        XCTAssertEqual(controller.state, .awaitingFollowUp)
+        XCTAssertNil(controller.currentVoiceLatencyAttempt)
+        let events = await fixture.events()
+        XCTAssertEqual(terminals(events).map { string($0, "outcome") }, ["cancelled"])
     }
 
     func test_repeatedSpeechACompletionCannotTransitionBOrStopItsPlayback() async throws {

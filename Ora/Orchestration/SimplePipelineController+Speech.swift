@@ -103,6 +103,13 @@ extension SimplePipelineController {
                         reason: "cancelled"
                     )
                 }
+                // Source cancellation can arrive without a controller/task
+                // cancellation. Preserve the ordinary follow-up transition,
+                // while never allowing stale A to change B's state.
+                guard !Task.isCancelled,
+                      self.currentVoiceLatencyAttempt == latencyContext?.attempt else { return }
+                self.currentVoiceLatencyAttempt = nil
+                self.finishSpeaking()
             } catch is AudioPlaybackError {
                 if let latencyContext {
                     latencyContext.attempt.complete(

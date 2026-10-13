@@ -104,6 +104,11 @@ public final class LegacyVoiceLatencyObserver: @unchecked Sendable {
         }
     }
 
+    /// A queued source startup must check eligibility before replacing output.
+    func isActive(_ attempt: LegacyVoiceLatencyAttempt) -> Bool {
+        self.lock.withLock { self.trace?.attempt == attempt }
+    }
+
     func acceptedTranscript(for turn: LegacyVoiceLatencyTurn) {
         self.lock.withLock {
             guard self.turn == turn, self.acceptedAt == nil else { return }

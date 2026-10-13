@@ -140,8 +140,9 @@ The legacy voice pipeline emits `voice.latency.*` events with a public turn UUID
 Kokoro boundary is `scheduled`: the first valid PCM buffer accepted by
 `AVAudioPlayerNode`, not rendered or physically audible audio. AVSpeech fallback
 uses the matching `utteranceStarted` delegate callback; fallback-only attempts
-have no PCM latency field. `voice.latency.pcm.first_received` records the first nonempty Kokoro PCM
-receipt at the synthesis source, independently of a buffer's validity or scheduling.
+have no PCM latency field. `voice.latency.pcm.first_received` records the first
+nonempty Kokoro PCM receipt at the synthesis source, independently of a buffer's
+validity or scheduling.
 The boundary event separately reports request-to-boundary, accepted-transcript-to-
 boundary, and ASR-final-receipt-to-boundary durations. A missing ASR final is
 unavailable (the duration field is omitted), never zero.
@@ -153,9 +154,10 @@ labels evidence: `dataConsumed` for AVAudioPlayerNode's default buffer callbacks
 is established. Successful completion uses captured source evidence (PCM stream
 end and buffer consumption, or fallback finish), not a delayed actor bookkeeping
 timestamp. Fallback-only completion uses didFinish. None means physically audible
-or device-drained playback. Stops,
-cancellation, timeout, replacements and reset cannot become success; late events
-cannot reopen a terminal attempt. Event delivery preserves captured source order.
+or device-drained playback. Stops, cancellation, timeout, replacements and reset
+cannot become success; late events cannot reopen a terminal attempt. Queued
+source startups reject closed attempts before replacing synthesis or playback.
+Event delivery preserves captured source order.
 Query with `./build.sh logs --category telemetry` and correlate `turnID` plus
 `speechAttemptID`. These observations concern only the legacy pipeline, not v2
 voice runtime integration.

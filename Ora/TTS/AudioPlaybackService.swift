@@ -191,6 +191,10 @@ public actor AudioPlaybackService {
             throw AudioPlaybackError.notPrepared
         }
 
+        try Task.checkCancellation()
+        if let latencyContext, !latencyContext.observer.isActive(latencyContext.attempt) {
+            throw CancellationError()
+        }
         self.stop()
         isPlaying = true
         playbackGeneration += 1

@@ -168,6 +168,10 @@ public actor TTSService: TTSServicing {
     private func startSynthesis(text: String,
                                 continuation: AsyncThrowingStream<AudioChunk, Error>.Continuation,
                                 sessionID: UUID, latencyContext: LegacyVoiceLatencyContext?) {
+        if let latencyContext, !latencyContext.observer.isActive(latencyContext.attempt) {
+            continuation.finish(throwing: CancellationError())
+            return
+        }
         self.currentTask?.cancel()
         self.currentLatencyContext = latencyContext
         self.currentSessionID = sessionID
