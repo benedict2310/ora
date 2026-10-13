@@ -62,11 +62,34 @@ final class BuildScriptTests: XCTestCase {
 
         let checksum = try Self.run("/usr/bin/shasum", arguments: ["-a", "256", "Package.resolved"], in: Self.repoRoot)
         XCTAssertEqual(checksum.status, 0, checksum.output)
-        XCTAssertTrue(checksum.output.hasPrefix("8516bec8d35c3f9bec2c6d79ac6559d4cfeeac9d18ad4e26df1afaf6b95897f6 "), "Preserve the complete approved snapshot, not a single transitive pin.")
+        XCTAssertTrue(checksum.output.hasPrefix("169d4aa302996c692e4a5003d85099a14c8169bdc00db71d62949d45bd2abb43 "), "Preserve the complete approved snapshot, not a single transitive pin.")
         let rootIgnored = try Self.run("/usr/bin/git", arguments: ["check-ignore", "--no-index", "Package.resolved"], in: Self.repoRoot)
         XCTAssertEqual(rootIgnored.status, 1, "The root lock must be eligible for tracking: \(rootIgnored.output)")
         let nestedIgnored = try Self.run("/usr/bin/git", arguments: ["check-ignore", "--no-index", "Vendor/example/Package.resolved"], in: Self.repoRoot)
         XCTAssertEqual(nestedIgnored.status, 0, "Only the root lock may be unignored.")
+    }
+
+    func test_packageResolutionUsesSparkle2100AndPreservesEveryOtherPin() throws {
+        let data = try Data(contentsOf: Self.repoRoot.appendingPathComponent("Package.resolved"))
+        let document = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let pins = try XCTUnwrap(document["pins"] as? [[String: Any]])
+        let summaries = try pins.map { pin -> String in
+            let identity = try XCTUnwrap(pin["identity"] as? String)
+            let state = try XCTUnwrap(pin["state"] as? [String: Any])
+            let version = try XCTUnwrap(state["version"] as? String)
+            let revision = try XCTUnwrap(state["revision"] as? String)
+            return "\(identity)|\(version)|\(revision)"
+        }.sorted()
+
+        XCTAssertEqual(
+            summaries.filter { $0.hasPrefix("sparkle|") },
+            ["sparkle|2.10.0|eef1a539a373c1f1a320624b1130fc5de7b2e100"]
+        )
+        XCTAssertEqual(
+            summaries.filter { !$0.hasPrefix("sparkle|") },
+            Self.approvedNonSparklePins.sorted(),
+            "Only Sparkle may change in the approved dependency graph."
+        )
     }
 
     func test_buildScriptCopiesResolutionWhenProjectAlreadyExists() throws {
@@ -101,6 +124,48 @@ final class BuildScriptTests: XCTestCase {
         XCTAssertNotEqual(result.status, 0, "A rejected locked graph must not be reported as a successful build: \(result.output)")
         XCTAssertFalse(result.output.contains("Build succeeded"))
     }
+
+    private static let approvedNonSparklePins = [
+        "async-http-client|1.35.0|4603a8036d921ea999fadb742931546c341f4bd7",
+        "containerization|0.37.0|1d5641ff962456df021283505eaa6a701d828192",
+        "eventsource|1.4.1|a3a85a85214caf642abaa96ae664e4c772a59f6e",
+        "fluidaudio|0.10.0|a1582f0c476864b6609f75459312037390089044",
+        "grpc-swift-2|2.4.2|28cdd63ef88583ddc67d7bb179eab46fab465ce9",
+        "grpc-swift-nio-transport|2.9.0|2ca31f06658ed288a2560e23ad649acbb3d6b3a3",
+        "grpc-swift-protobuf|2.4.1|176c5a434fd76f6f479848d1a8f7d44967534168",
+        "mlx-swift|0.31.4|dc43e62d7055353c7f99fa071a4e71d29dfddc44",
+        "mlx-swift-lm|2.31.3|25b00d4e22e61ec9c41efda47990cd2084ec87ff",
+        "mlxutilslibrary|0.0.7|66f7cd58026f335c46699f0f8030cb3bda495c54",
+        "swift-algorithms|1.2.1|87e50f483c54e6efd60e885f7f5aa946cee68023",
+        "swift-argument-parser|1.8.2|6a52f3251125d74daf04fcbd5e6f08a75d074382",
+        "swift-asn1|1.7.1|a9a5efd40eaf558a2bcd48d64b1d1646be686008",
+        "swift-async-algorithms|1.1.5|3da39bbc4e687d4192af7c9cf4eab805745a0b9c",
+        "swift-atomics|1.3.1|0442cb5a3f98ab802acb777929fdb446bda11a34",
+        "swift-certificates|1.19.3|89fbc3714264cce8db8e4ec51b64e01c3e28c6c5",
+        "swift-collections|1.6.0|a0cb0954ecb21e4e31b0070e6ed5674e8556685a",
+        "swift-configuration|1.2.0|be76c4ad929eb6c4bcaf3351799f2adf9e6848a9",
+        "swift-crypto|3.15.1|95ba0316a9b733e92bb6b071255ff46263bbe7dc",
+        "swift-distributed-tracing|1.4.1|dc4030184203ffafbb2ec614352487235d747fe0",
+        "swift-http-structured-headers|1.7.0|933538faa42c432d385f02e07df0ace7c5ecfc47",
+        "swift-http-types|1.6.0|db774a277f60063a32d854f2980299caf06da041",
+        "swift-huggingface|0.9.0|b721959445b617d0bf03910b2b4aced345fd93bf",
+        "swift-jinja|2.3.6|0b67ecb79139f6addef8699eff3622808aa6c7dc",
+        "swift-log|1.14.0|a878e7f8f46cfc0e1125e565b5c08e7d5272dc9a",
+        "swift-nio|2.101.2|cd3e1152083706d77b223fb29110e590efcc70c0",
+        "swift-nio-extras|1.34.3|88a51340f59cf181ebde888bd1b749296b3ec029",
+        "swift-nio-http2|1.44.0|61d1b44f6e4e118792be1cff88ee2bc0267c6f9a",
+        "swift-nio-ssl|2.37.1|407d82d5b6cc00e1c3fb83a81b1539b70c788c5e",
+        "swift-nio-transport-services|1.28.0|67787bb645a5e67d2edcdfbe48a216cc549222d5",
+        "swift-numerics|1.1.1|0c0290ff6b24942dadb83a929ffaaa1481df04a2",
+        "swift-protobuf|1.38.1|55d7a1cc5666b85c13464aea1c4b4a90feccb4c8",
+        "swift-service-context|1.3.0|d0997351b0c7779017f88e7a93bc30a1878d7f29",
+        "swift-service-lifecycle|2.11.0|9829955b385e5bb88128b73f1b8389e9b9c3191a",
+        "swift-system|1.7.4|b5544ba79a70a0cb3563e75bf26dc198d6b40ed3",
+        "swift-transformers|1.2.1|58c4bc11963a140358d791f678a60a2745a23146",
+        "yyjson|0.12.0|8b4a38dc994a110abaec8a400615567bd996105f",
+        "zipfoundation|0.9.20|22787ffb59de99e5dc1fbfe80b19c97a904ad48d",
+        "zstd|1.5.7|f8745da6ff1ad1e7bab384bd1f9d742439278e99"
+    ]
 
     private static var repoRoot: URL {
         URL(fileURLWithPath: #filePath)
