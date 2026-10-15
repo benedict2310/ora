@@ -215,6 +215,7 @@ public enum LLMServiceError: LocalizedError {
     case generationFailed(String)
     case insufficientMemory
     case unsupportedInput(String)
+    case preparationInvalidated
     
     public var errorDescription: String? {
         switch self {
@@ -228,6 +229,8 @@ public enum LLMServiceError: LocalizedError {
             return "Insufficient memory to load the requested model."
         case .unsupportedInput(let reason):
             return reason
+        case .preparationInvalidated:
+            return "LLM preparation was superseded by a model or provider change."
         }
     }
 }

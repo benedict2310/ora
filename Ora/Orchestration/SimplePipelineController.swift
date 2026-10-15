@@ -56,6 +56,7 @@ final class SimplePipelineController: ObservableObject {
     @Published var inputMode: InputMode = .voice
     
     var sessionTask: Task<Void, Never>?
+    var earlyPreparationTask: Task<Void, Never>?
     var autoDismissTask: Task<Void, Never>?
     var ttsTask: Task<Void, Never>?
     var confirmationTask: Task<Void, Never>?
@@ -77,6 +78,10 @@ final class SimplePipelineController: ObservableObject {
     let screenshotCaptureService: any ScreenshotCapturing
     let providerPreflight: @Sendable () async -> ProviderPreflightStatus
     let prepareLLM: @Sendable () async throws -> Void
+    let prepareLocalLLM: @Sendable () async -> Void
+    let startAgentSession: @Sendable () async -> Void
+    let endAgentSession: @Sendable () async -> Void
+    let microphoneStatus: @Sendable () async -> PermissionStatus
     let agentProcessor: @Sendable (String, [LLMImageAttachmentReference]) async throws -> AgentResult
     let stateMachine = PipelineStateMachine()
     let confirmationHandler: ConfirmationHandler
@@ -123,6 +128,10 @@ final class SimplePipelineController: ObservableObject {
         typingHintDelay: TimeInterval = 3.0,
         providerPreflight: (@Sendable () async -> ProviderPreflightStatus)? = nil,
         prepareLLM: (@Sendable () async throws -> Void)? = nil,
+        prepareLocalLLM: (@Sendable () async -> Void)? = nil,
+        startAgentSession: (@Sendable () async -> Void)? = nil,
+        endAgentSession: (@Sendable () async -> Void)? = nil,
+        microphoneStatus: (@Sendable () async -> PermissionStatus)? = nil,
         agentProcessor: (@Sendable (String, [LLMImageAttachmentReference]) async throws -> AgentResult)? = nil
     ) {
         self.agentLoop = agentLoop
@@ -142,6 +151,12 @@ final class SimplePipelineController: ObservableObject {
         self.prepareLLM = prepareLLM ?? {
             try await LLMProviderManager.shared.prepare()
         }
+        self.prepareLocalLLM = prepareLocalLLM ?? {
+            await LLMProviderManager.shared.prepareLocalIfEligible()
+        }
+        self.startAgentSession = startAgentSession ?? { await agentLoop.startSession() }
+        self.endAgentSession = endAgentSession ?? { await agentLoop.endSession() }
+        self.microphoneStatus = microphoneStatus ?? { await PermissionsManager.shared.check(.microphone) }
         self.agentProcessor = agentProcessor ?? { text, imageAttachments in
             return try await agentLoop.process(userText: text, imageAttachments: imageAttachments)
         }
@@ -204,6 +219,7 @@ final class SimplePipelineController: ObservableObject {
         typingHintDelay: TimeInterval = 3.0,
         providerPreflight: (@Sendable () async -> ProviderPreflightStatus)? = nil,
         prepareLLM: (@Sendable () async throws -> Void)? = nil,
+        prepareLocalLLM: (@Sendable () async -> Void)? = nil,
         agentProcessor: (@Sendable (String, [LLMImageAttachmentReference]) async throws -> AgentResult)? = nil
     ) -> SimplePipelineController {
         return SimplePipelineController(
@@ -220,11 +236,28 @@ final class SimplePipelineController: ObservableObject {
             typingHintDelay: typingHintDelay,
             providerPreflight: providerPreflight,
             prepareLLM: prepareLLM,
+            prepareLocalLLM: prepareLocalLLM ?? {},
+            startAgentSession: {},
+            endAgentSession: {},
+            microphoneStatus: { .authorized },
             agentProcessor: agentProcessor
         )
     }
     
     // MARK: - Public API
+
+    /// Own only the speculative waiter, never LLMService's shared physical load.
+    /// Check the captured turn before launch; no UI mutation occurs after awaiting.
+    private func beginEarlyLocalPreparation() {
+        self.earlyPreparationTask?.cancel()
+        let prepare = self.prepareLocalLLM
+        let turn = self.currentVoiceLatencyTurn
+        self.earlyPreparationTask = Task(priority: .utility) { [weak self] in
+            guard !Task.isCancelled, self?.state == .listening,
+                  self?.inputMode == .voice, self?.currentVoiceLatencyTurn == turn else { return }
+            await prepare()
+        }
+    }
     
     /// Start listening or toggle (hotkey pressed)
     func startListening() {
@@ -261,6 +294,7 @@ final class SimplePipelineController: ObservableObject {
         self.refreshSkillsHint()
         
         self.transition(to: .listening)
+        self.beginEarlyLocalPreparation()
 
         // Show overlay in listening mode with activity
         self.overlayPresenter.mode = .listening
@@ -270,7 +304,7 @@ final class SimplePipelineController: ObservableObject {
         // Start the session task
         self.sessionTask = Task {
             // Initialize agent session (with tool definitions)
-            await self.agentLoop.startSession()
+            await self.startAgentSession()
             await self.runListeningSession()
         }
         
@@ -319,7 +353,8 @@ final class SimplePipelineController: ObservableObject {
         // Reset current transcript for new turn
         self.currentTranscript = ""
         self.currentVoiceLatencyTurn = self.legacyVoiceLatencyObserver.beginTurn()
-        
+        self.beginEarlyLocalPreparation()
+
         // Start listening again (keeping conversation history via agent loop session)
         self.sessionTask = Task {
             await self.runListeningSession()
@@ -332,6 +367,8 @@ final class SimplePipelineController: ObservableObject {
         }
 
         self.logger.info("Switching to text input mode")
+        self.earlyPreparationTask?.cancel()
+        self.earlyPreparationTask = nil
         self.legacyVoiceLatencyObserver.reset(reason: "text_mode")
         self.currentVoiceLatencyTurn = nil
         self.currentVoiceLatencyAttempt = nil
@@ -418,6 +455,7 @@ final class SimplePipelineController: ObservableObject {
             return
         }
 
+        self.beginEarlyLocalPreparation()
         self.sessionTask = Task {
             await self.runListeningSession()
         }
@@ -444,6 +482,8 @@ final class SimplePipelineController: ObservableObject {
         self.overlayPresenter.model.isTextInputVisible = false
 
         // Cancel all tasks
+        self.earlyPreparationTask?.cancel()
+        self.earlyPreparationTask = nil
         self.sessionTask?.cancel()
         self.sessionTask = nil
         self.autoDismissTask?.cancel()
@@ -465,7 +505,7 @@ final class SimplePipelineController: ObservableObject {
             await self.ttsService.stop(latencyAttempt: cancelledAttempt)
             await self.playbackService.stop(latencyAttempt: cancelledAttempt)
             await self.audioService.cancel()
-            await self.agentLoop.endSession()
+            await self.endAgentSession()
             await self.agentLoop.clearPendingAuthorization()
         }
 

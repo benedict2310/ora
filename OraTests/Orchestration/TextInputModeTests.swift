@@ -123,7 +123,9 @@ final class TextInputModeTests: XCTestCase {
     func test_inputMode_resetsToVoice_onCancelAndNewSessionStart() async throws {
         let overlay = MockOverlayPresenter()
         let controller = SimplePipelineController.makeTestInstance(
+            asrService: MockASRService(),
             overlayPresenter: overlay,
+            audioService: MockAudioService(),
             ttsService: MockTTSService(),
             persistenceService: MockPersistenceService(conversationModeEnabled: false)
         )
