@@ -182,14 +182,13 @@ public protocol LLMServicing: Sendable {
     func unload() async
     func capabilities() async -> ProviderCapabilities
     
-    /// Clear the KV cache to free memory and start fresh for a new session
+    /// Release provider-specific transient generation resources, if any.
+    /// Local MLX clears GPU buffers; cloud providers may implement this as a no-op.
     func clearCache() async
 
-    /// Generate a one-shot completion with an isolated KV cache.
-    ///
-    /// Unlike `generate(messages:maxTokens:)`, this method creates a fresh KV cache,
-    /// runs generation, and discards the cache afterward. This prevents background
-    /// summarization from corrupting the foreground conversation's persistent cache.
+    /// Generate an independent completion without foreground conversation state.
+    /// Local MLX uses an isolated request-local KV cache; other providers may
+    /// delegate to generate with a single user message.
     func generateOneShot(prompt: String, maxTokens: Int) async throws -> String
 }
 
