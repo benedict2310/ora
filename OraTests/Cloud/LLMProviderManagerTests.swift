@@ -194,6 +194,147 @@ final class LLMProviderManagerTests: XCTestCase {
     }
 }
 
+/// Preparation-only tests never use application preferences or credential providers.
+final class LLMPreparationProviderTests: XCTestCase {
+    func test_earlyPreparation_skipsEveryCloudSelectionWithoutCredentialsOrLoad() async {
+        for type in [LLMProviderType.anthropic, .openai] {
+            let loader = PreparationTestLoader(suspendFirst: false)
+            let local = LLMService(modelLoader: { try await loader.load($0) })
+            let credentials = PreparationCredentialProbe()
+            let manager = LLMProviderManager(
+                credentialStore: credentials, codexOAuthManager: MockCodexOAuthManager(),
+                localProvider: local, selectedProviderType: type, persistSelection: { _ in XCTFail("Unexpected preference write") }
+            )
+            await manager.prepareLocalIfEligible()
+            let loads = await loader.count
+            let lookups = await credentials.lookups
+            XCTAssertEqual(loads, 0)
+            XCTAssertEqual(lookups, 0)
+        }
+    }
+
+    func test_earlyFailure_isIgnoredAndForegroundRetries() async throws {
+        let loader = PreparationTestLoader(suspendFirst: false, failFirst: true)
+        let local = LLMService(modelLoader: { try await loader.load($0) })
+        let credentials = PreparationCredentialProbe()
+        let manager = LLMProviderManager(
+            credentialStore: credentials, codexOAuthManager: MockCodexOAuthManager(),
+            localProvider: local, selectedProviderType: .local, persistSelection: { _ in XCTFail("Unexpected preference write") }
+        )
+        await manager.prepareLocalIfEligible()
+        try await manager.prepare()
+        let loads = await loader.count
+        let lookups = await credentials.lookups
+        XCTAssertEqual(loads, 2)
+        XCTAssertEqual(lookups, 0)
+    }
+
+    func test_providerSwitchDuringModelRetirementCannotRestartSpeculativePreparation() async throws {
+        let cleanupStarted = PreparationTestSignal()
+        let finishCleanup = PreparationTestSignal()
+        let runtime = PreparationTestRuntime(cleanupStarted: cleanupStarted, finishCleanup: finishCleanup)
+        let models = ProviderPreparationModels()
+        let local = LLMService(modelLoader: { _ in await models.load(runtime) }, modelSource: { await models.read() })
+        let manager = LLMProviderManager(
+            credentialStore: PreparationCredentialProbe(), codexOAuthManager: MockCodexOAuthManager(),
+            localProvider: local, selectedProviderType: .local, persistSelection: { _ in },
+            providerResolver: { _ in MockCloudProvider(apiKey: "fake") }
+        )
+        try await local.prepare()
+        await models.select(.qwen35_4B_Vision)
+        let early = Task { await manager.prepareLocalIfEligible() }
+        await cleanupStarted.wait()
+        try await manager.switchProvider(to: .anthropic)
+        await finishCleanup.signal()
+        await early.value
+        let loads = await models.loads
+        XCTAssertEqual(loads, 1, "A retirement hop must not restart an obsolete speculative request")
+        do {
+            for try await _ in await local.generate(messages: [], maxTokens: 1) {}
+            XCTFail("A model-retirement retry must retain its original eligibility")
+        } catch LLMServiceError.notReady {}
+    }
+
+    func test_providerSwitchBeforeDelayedServiceEntryDoesNotResurrectLocal() async throws {
+        let loader = PreparationTestLoader(suspendFirst: false)
+        let local = LLMService(modelLoader: { try await loader.load($0) })
+        let queued = PreparationTestSignal()
+        let enter = PreparationTestSignal()
+        let manager = LLMProviderManager(
+            credentialStore: PreparationCredentialProbe(), codexOAuthManager: MockCodexOAuthManager(),
+            localProvider: local, selectedProviderType: .local, persistSelection: { _ in },
+            providerResolver: { _ in MockCloudProvider(apiKey: "fake") },
+            beforeLocalPreparation: {
+                await queued.signal()
+                await enter.wait()
+            }
+        )
+        let early = Task { await manager.prepareLocalIfEligible() }
+        await queued.wait()
+        try await manager.switchProvider(to: .anthropic)
+        await enter.signal()
+        await early.value
+        let loads = await loader.count
+        XCTAssertEqual(loads, 0, "The captured eligibility must be rechecked at service entry after unload")
+        do {
+            for try await _ in await local.generate(messages: [], maxTokens: 1) {}
+            XCTFail("Delayed early call must not publish local readiness after cloud commit")
+        } catch LLMServiceError.notReady {}
+    }
+
+    func test_providerSwitch_blocksEarlyResurrectionWhileResolutionIsSuspended() async throws {
+        let loader = PreparationTestLoader()
+        let local = LLMService(modelLoader: { try await loader.load($0) })
+        let resolving = PreparationTestSignal()
+        let resolve = PreparationTestSignal()
+        let manager = LLMProviderManager(
+            credentialStore: PreparationCredentialProbe(), codexOAuthManager: MockCodexOAuthManager(),
+            localProvider: local, selectedProviderType: .local, persistSelection: { _ in },
+            providerResolver: { _ in
+                await resolving.signal()
+                await resolve.wait()
+                return MockCloudProvider(apiKey: "fake")
+            }
+        )
+        let early = Task { await manager.prepareLocalIfEligible() }
+        await loader.started.wait()
+        let switching = Task { try await manager.switchProvider(to: .anthropic) }
+        await resolving.wait()
+        await manager.prepareLocalIfEligible()
+        let count = await loader.count
+        XCTAssertEqual(count, 1, "Transition must not permit a new speculative local flight")
+        await loader.release.signal()
+        await early.value
+        await resolve.signal()
+        try await switching.value
+        let type = await manager.getSelectedProviderType()
+        XCTAssertEqual(type, .anthropic)
+        do {
+            for try await _ in await local.generate(messages: [], maxTokens: 1) {}
+            XCTFail("Switched-away local service must not become ready")
+        } catch LLMServiceError.notReady {}
+    }
+}
+
+private actor ProviderPreparationModels {
+    private var model: ModelIdentifier = .qwen3_4B
+    private(set) var loads = 0
+    func read() -> ModelIdentifier { self.model }
+    func select(_ model: ModelIdentifier) { self.model = model }
+    func load(_ runtime: PreparationTestRuntime) -> LLMPreparedModel {
+        self.loads += 1
+        return LLMPreparedModel(runtime: runtime, backend: .mlxLLM)
+    }
+}
+
+private actor PreparationCredentialProbe: CredentialStore {
+    private(set) var lookups = 0
+    func retrieve(provider: CloudProvider) throws -> String? { self.lookups += 1; return nil }
+    func save(provider: CloudProvider, apiKey: String) throws { XCTFail("Unexpected credential write") }
+    func delete(provider: CloudProvider) throws { XCTFail("Unexpected credential deletion") }
+    func hasCredential(for provider: CloudProvider) -> Bool { self.lookups += 1; return false }
+}
+
 // MARK: - Mocks
 
 actor MockCredentialStore: CredentialStore {

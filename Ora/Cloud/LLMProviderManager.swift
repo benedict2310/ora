@@ -22,29 +22,44 @@ actor LLMProviderManager: LLMServicing {
     private let logger = Logger.ora(category: "providers")
     private let credentialStore: CredentialStore
     private let codexOAuthManager: CodexOAuthManaging
+    private let localProvider: LLMService
+    private let persistSelection: @Sendable (LLMProviderType) -> Void
+    private let injectedProviderResolver: (@Sendable (LLMProviderType) async throws -> any LLMServicing)?
+    private let beforeLocalPreparation: @Sendable () async -> Void
 
     /// Currently active provider
     private var activeProvider: LLMServicing
 
     /// Provider configuration
     private var selectedProviderType: LLMProviderType
+    private var preparationEpoch: UInt64 = 0
+    private var providerTransitions = 0
 
     /// Available provider factories
     private var factories: [LLMProviderType: LLMProviderFactory] = [:]
 
     init(
         credentialStore: CredentialStore = KeychainCredentialStore(),
-        codexOAuthManager: CodexOAuthManaging = CodexOAuthManager.shared
+        codexOAuthManager: CodexOAuthManaging = CodexOAuthManager.shared,
+        localProvider: LLMService = .shared,
+        selectedProviderType: LLMProviderType? = nil,
+        persistSelection: @escaping @Sendable (LLMProviderType) -> Void = { UserDefaults.standard.selectedLLMProvider = $0 },
+        providerResolver: (@Sendable (LLMProviderType) async throws -> any LLMServicing)? = nil,
+        beforeLocalPreparation: @escaping @Sendable () async -> Void = {}
     ) {
         self.credentialStore = credentialStore
         self.codexOAuthManager = codexOAuthManager
-        
-        // Load preference
-        let savedType = UserDefaults.standard.selectedLLMProvider
+        self.localProvider = localProvider
+        self.persistSelection = persistSelection
+        self.injectedProviderResolver = providerResolver
+        self.beforeLocalPreparation = beforeLocalPreparation
+
+        // Explicit selections let model-free tests avoid reading application preferences.
+        let savedType = selectedProviderType ?? UserDefaults.standard.selectedLLMProvider
         self.selectedProviderType = savedType
         
         // Default to local initially
-        self.activeProvider = LLMService.shared
+        self.activeProvider = localProvider
     }
 
     func restoreSelectedProviderIfNeeded() async {
@@ -69,10 +84,59 @@ actor LLMProviderManager: LLMServicing {
     }
 
     func prepare() async throws {
-        try await activeProvider.prepare()
+        let type = self.selectedProviderType
+        let provider = self.activeProvider
+        let epoch = self.preparationEpoch
+        guard type != .local || self.providerTransitions == 0 else { throw LLMServiceError.preparationInvalidated }
+        self.logger.notice("LLM_PREPARE_FOREGROUND_REQUESTED provider=\(type.rawValue, privacy: .public)")
+        do {
+            if type == .local, let local = provider as? LLMService {
+                try await local.prepareIfEligible { [weak self] in
+                    await self?.isLocalPreparationCurrent(epoch: epoch) ?? false
+                }
+            } else {
+                try await provider.prepare()
+            }
+            guard type != .local || epoch == self.preparationEpoch else { throw LLMServiceError.preparationInvalidated }
+            self.logger.notice("LLM_PREPARE_FOREGROUND_COMPLETED provider=\(type.rawValue, privacy: .public)")
+        } catch {
+            self.logger.notice("LLM_PREPARE_FOREGROUND_FAILED provider=\(type.rawValue, privacy: .public)")
+            throw error
+        }
+    }
+
+    /// Best-effort preparation used while voice capture is active. It is deliberately
+    /// local-only: cloud credentials and provider preflight remain foreground-only.
+    func prepareLocalIfEligible() async {
+        guard self.providerTransitions == 0, self.selectedProviderType == .local,
+              let provider = self.activeProvider as? LLMService else {
+            self.logger.notice("LLM_PREPARE_EARLY_SKIPPED provider=\(self.selectedProviderType.rawValue, privacy: .public) reason=ineligible")
+            return
+        }
+        let epoch = self.preparationEpoch
+        self.logger.notice("LLM_PREPARE_EARLY_REQUESTED provider=local")
+        // The scheduling seam lets tests delay the actual actor entry, not a fake policy.
+        await self.beforeLocalPreparation()
+        do {
+            try await provider.prepareIfEligible { [weak self] in
+                await self?.isLocalPreparationCurrent(epoch: epoch) ?? false
+            }
+            guard epoch == self.preparationEpoch else {
+                self.logger.notice("LLM_PREPARE_EARLY_INVALIDATED provider=local")
+                return
+            }
+            self.logger.notice("LLM_PREPARE_EARLY_COMPLETED provider=local")
+        } catch {
+            self.logger.notice("LLM_PREPARE_EARLY_FAILED provider=local")
+        }
+    }
+
+    private func isLocalPreparationCurrent(epoch: UInt64) -> Bool {
+        epoch == self.preparationEpoch && self.providerTransitions == 0 && self.selectedProviderType == .local
     }
 
     func unload() async {
+        self.preparationEpoch &+= 1
         await activeProvider.unload()
     }
 
@@ -197,6 +261,11 @@ actor LLMProviderManager: LLMServicing {
             return
         }
 
+        // Fence preparation only; retain the existing provider-switch ordering.
+        self.preparationEpoch &+= 1
+        self.providerTransitions += 1
+        defer { self.providerTransitions -= 1 }
+
         // Unload current if it's local (cloud providers don't need unload)
         if self.selectedProviderType == .local {
             await self.activeProvider.unload()
@@ -208,7 +277,7 @@ actor LLMProviderManager: LLMServicing {
         // Update state
         self.activeProvider = provider
         self.selectedProviderType = type
-        UserDefaults.standard.selectedLLMProvider = type
+        self.persistSelection(type)
 
         // Prepare the new provider
         try await provider.prepare()
@@ -227,9 +296,10 @@ actor LLMProviderManager: LLMServicing {
     }
 
     private func resolveProvider(_ type: LLMProviderType) async throws -> LLMServicing {
+        if let injectedProviderResolver { return try await injectedProviderResolver(type) }
         switch type {
         case .local:
-            return LLMService.shared
+            return self.localProvider
         case .anthropic:
             return try await self.resolveAPIKeyProvider(for: .anthropic)
         case .openai:
@@ -297,8 +367,8 @@ actor LLMProviderManager: LLMServicing {
     ) async -> ProviderPreflightStatus {
         self.logger.error("Provider fallback to local: \(reason)")
         self.selectedProviderType = .local
-        self.activeProvider = LLMService.shared
-        UserDefaults.standard.selectedLLMProvider = .local
+        self.activeProvider = self.localProvider
+        self.persistSelection(.local)
 
         await MainActor.run {
             NotificationCenter.default.post(

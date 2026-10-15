@@ -78,7 +78,7 @@ extension SimplePipelineController {
             // Pre-emptively track permission prompt if microphone permission is not determined
             // This prevents a race condition where the system permission dialog appears
             // before PermissionsManager has a chance to set up the tracker
-            let micStatus = await PermissionsManager.shared.check(.microphone)
+            let micStatus = await self.microphoneStatus()
             let needsMicPermission = micStatus == .notDetermined
             if needsMicPermission {
                 await PermissionPromptTracker.shared.beginPrompt(for: .microphone)

@@ -19,6 +19,10 @@ extension SimplePipelineController {
         self.logger.error("Pipeline error: \(message)")
         self.logger.notice("PIPELINE_TURN_PROCESSING_FAILED")
         
+        // Cancel speculative waiting, not the service-owned shared load.
+        self.earlyPreparationTask?.cancel()
+        self.earlyPreparationTask = nil
+
         // Cancel any running session task
         self.sessionTask?.cancel()
         self.sessionTask = nil

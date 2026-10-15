@@ -19,6 +19,9 @@ actor ModelManager {
 
     private let logger = Logger.ora(category: "ModelManager")
     private let downloader: ModelDownloader
+    private let invalidateLLMPreparation: @Sendable () async -> Void
+    private let metadataFile: URL?
+    private let prepareMetadataDirectory: @Sendable () throws -> Void
     private var _state = ModelsState()
     private var downloadTasks: [ModelIdentifier: Task<Void, Error>] = [:]
     private var hasLoadedMetadata = false
@@ -43,6 +46,9 @@ actor ModelManager {
 
     private init() {
         self.downloader = DefaultModelDownloader.shared
+        self.invalidateLLMPreparation = { await LLMService.shared.invalidatePreparation() }
+        self.metadataFile = ModelPaths.metadataFile
+        self.prepareMetadataDirectory = { try ModelPaths.ensureDirectoriesExist() }
         // Kick off async initialization
         Task {
             await self.performInitialLoad()
@@ -53,8 +59,22 @@ actor ModelManager {
     /// - Parameters:
     ///   - downloader: Custom model downloader
     ///   - totalRAMBytes: Override RAM for hardware-independent default model selection
-    init(downloader: ModelDownloader, totalRAMBytes: UInt64 = ProcessInfo.processInfo.physicalMemory) {
+    ///   - metadataFile: Isolated metadata fixture; nil disables persistence for tests
+    ///   - invalidateLLMPreparation: Controlled invalidation; never the global service by default
+    init(
+        downloader: ModelDownloader,
+        totalRAMBytes: UInt64 = ProcessInfo.processInfo.physicalMemory,
+        metadataFile: URL? = nil,
+        invalidateLLMPreparation: @escaping @Sendable () async -> Void = {}
+    ) {
         self.downloader = downloader
+        self.invalidateLLMPreparation = invalidateLLMPreparation
+        self.metadataFile = metadataFile
+        self.prepareMetadataDirectory = {
+            if let metadataFile {
+                try FileManager.default.createDirectory(at: metadataFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+            }
+        }
         _state.primaryLLM = .recommendedLocalLLM(for: totalRAMBytes)
         // Test instances don't need async initialization
     }
@@ -169,6 +189,7 @@ actor ModelManager {
             self.logger.warning("Cannot set \(model.displayName, privacy: .public) as primary on this hardware")
             return
         }
+        // Publish the selection and its persisted flags without suspension.
         _state.primaryLLM = model
 
         // Update metadata for all LLM models
@@ -179,6 +200,7 @@ actor ModelManager {
             }
         }
 
+        await self.invalidateLLMPreparation()
         await self.saveMetadata()
         await self.postStateChange()
         self.logger.info("Primary LLM set to: \(model.displayName)")
@@ -500,7 +522,7 @@ actor ModelManager {
     // MARK: - Private: Metadata Persistence
 
     private func loadMetadata() {
-        let path = ModelPaths.metadataFile
+        guard let path = self.metadataFile else { return }
         guard FileManager.default.fileExists(atPath: path.path) else { return }
 
         do {
@@ -536,11 +558,11 @@ actor ModelManager {
     }
 
     private func saveMetadata() async {
-        let path = ModelPaths.metadataFile
+        guard let path = self.metadataFile else { return }
         let metadata = Array(_state.metadata.values)
 
         do {
-            try ModelPaths.ensureDirectoriesExist()
+            try self.prepareMetadataDirectory()
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

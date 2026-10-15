@@ -52,6 +52,32 @@ struct LLMGenerationParameters: Sendable {
     let topP: Float
 }
 
+struct LLMPreparedModel: Sendable {
+    let runtime: any LLMGenerationRuntime
+    let backend: LocalRuntimeBackend
+}
+
+struct LLMPreparationEvent: Sendable {
+    enum Phase: String, Sendable { case requested, joined, completed, failed }
+    let phase: Phase
+    let flightID: UUID
+    let model: ModelIdentifier
+    let durationMilliseconds: Int
+    let joined: Bool
+}
+
+/// Sole ownership transfers here before suspension; release happens under the gate.
+private final class LLMRuntimeRetirement: @unchecked Sendable {
+    private var runtime: (any LLMGenerationRuntime)?
+
+    init(_ runtime: (any LLMGenerationRuntime)?) { self.runtime = runtime }
+
+    func dispose() async {
+        await self.runtime?.cleanup()
+        self.runtime = nil
+    }
+}
+
 protocol LLMGenerationRuntime: Sendable {
     func makeCache(parameters: LLMGenerationParameters) async -> LLMRequestCache
     /// Nonthrowing cleanup, called under the Metal gate after request state is released.
@@ -171,11 +197,26 @@ actor LLMService: LLMServicing {
     
     private let logger = Logger.ora(category: "LLMService")
     
-    private var modelContainer: ModelContainer?
     private var isReady = false
+    private var readyModel: ModelIdentifier?
     private var isWarmedUp = false
     private var runtimeBackend: LocalRuntimeBackend = .mlxLLM
     private var generationRuntime: (any LLMGenerationRuntime)?
+    private var modelContainer: ModelContainer? {
+        (self.generationRuntime as? ModelContainerGenerationRuntime)?.container
+    }
+    private struct PreparationFlight {
+        let id: UUID
+        let model: ModelIdentifier
+        let generation: UInt64
+        let task: Task<Void, Error>
+    }
+    private var preparationFlight: PreparationFlight?
+    private var lifecycleGeneration: UInt64 = 0
+    private let injectedModelLoader: (@Sendable (ModelIdentifier) async throws -> LLMPreparedModel)?
+    private let monotonicNow: @Sendable () -> Double
+    private let modelSource: @Sendable () async -> ModelIdentifier
+    private let preparationObserver: @Sendable (LLMPreparationEvent) -> Void
     
     // Configuration
     private let temperature: Float = 0.7
@@ -183,70 +224,175 @@ actor LLMService: LLMServicing {
     
     // MARK: - Initialization
 
-    private init() {}
+    private init() {
+        self.injectedModelLoader = nil
+        self.monotonicNow = { ProcessInfo.processInfo.systemUptime }
+        self.modelSource = { await ModelManager.shared.state.primaryLLM }
+        self.preparationObserver = { _ in }
+    }
 
     init(runtime: any LLMGenerationRuntime, isReady: Bool = true, backend: LocalRuntimeBackend = .mlxLLM) {
         self.generationRuntime = runtime
         self.isReady = isReady
         self.runtimeBackend = backend
+        self.injectedModelLoader = nil
+        self.monotonicNow = { ProcessInfo.processInfo.systemUptime }
+        self.modelSource = { .qwen3_4B }
+        self.readyModel = isReady ? .qwen3_4B : nil
+        self.preparationObserver = { _ in }
+    }
+
+    /// Test seam for exercising preparation lifecycle without loading a real model.
+    init(
+        modelLoader: @escaping @Sendable (ModelIdentifier) async throws -> LLMPreparedModel,
+        modelSource: @escaping @Sendable () async -> ModelIdentifier = { .qwen3_4B },
+        monotonicNow: @escaping @Sendable () -> Double = { ProcessInfo.processInfo.systemUptime },
+        preparationObserver: @escaping @Sendable (LLMPreparationEvent) -> Void = { _ in }
+    ) {
+        self.injectedModelLoader = modelLoader
+        self.modelSource = modelSource
+        self.monotonicNow = monotonicNow
+        self.preparationObserver = preparationObserver
     }
     
     // MARK: - Public API
     
-    /// Load the LLM model
-    func prepare() async throws {
-        guard !isReady else { return }
-        
-        // Get model first to check requirements
-        let modelManager = ModelManager.shared
-        let modelState = await modelManager.state
-        let primaryLLM = modelState.primaryLLM
-        
-        guard self.checkMemoryAvailable(for: primaryLLM) else {
-            throw LLMServiceError.insufficientMemory
+    /// Speculative requests carry manager eligibility into the service actor.
+    /// Capture our epoch before checking it: unload may run during the callback.
+    func prepareIfEligible(_ eligibility: @Sendable () async -> Bool) async throws {
+        let generation = self.lifecycleGeneration
+        let eligible = await eligibility()
+        guard eligible, !Task.isCancelled, generation == self.lifecycleGeneration else {
+            throw LLMServiceError.preparationInvalidated
         }
-        
-        logger.info("Loading LLM model...")
-        
-        guard let modelPath = await modelManager.pathForModel(primaryLLM) else {
-            throw LLMServiceError.modelNotFound
-        }
-        
-        // Attempt to create configuration pointing to local directory
-        let configuration = ModelConfiguration(directory: modelPath)
+        try await self.prepare()
+    }
 
-        guard primaryLLM.isRuntimeSupported else {
+    /// Load the LLM model. Concurrent callers share one physical load.
+    func prepare() async throws {
+        let start = self.monotonicNow()
+        let generation = self.lifecycleGeneration
+        let model = await self.modelSource()
+        // The source is another actor: recheck every decision after this suspension.
+        guard generation == self.lifecycleGeneration else {
+            throw LLMServiceError.preparationInvalidated
+        }
+        if self.isReady, self.readyModel == model { return }
+        if self.isReady {
+            await self.invalidatePreparation()
+            // Retirement is a suspension too. Only our own invalidation may have
+            // advanced the epoch; an unload/switch must invalidate this caller.
+            guard self.lifecycleGeneration == generation &+ 1 else {
+                throw LLMServiceError.preparationInvalidated
+            }
+            return try await self.prepare()
+        }
+
+        let flight: PreparationFlight
+        let joined: Bool
+        if let existing = self.preparationFlight,
+           existing.model == model, existing.generation == generation {
+            flight = existing
+            joined = true
+            self.recordPreparation(.joined, flight: flight, start: start, joined: joined)
+        } else {
+            let id = UUID()
+            let task = Task { [self] in
+                try await self.performPreparation(for: model, generation: generation, id: id)
+            }
+            flight = PreparationFlight(id: id, model: model, generation: generation, task: task)
+            self.preparationFlight = flight
+            joined = false
+            self.recordPreparation(.requested, flight: flight, start: start, joined: joined)
+        }
+        do {
+            try await flight.task.value
+            guard generation == self.lifecycleGeneration, self.isReady, self.readyModel == model else {
+                throw LLMServiceError.preparationInvalidated
+            }
+            self.recordPreparation(.completed, flight: flight, start: start, joined: joined)
+        } catch {
+            self.recordPreparation(.failed, flight: flight, start: start, joined: joined)
+            if self.preparationFlight?.id == flight.id { self.preparationFlight = nil }
+            throw error
+        }
+        if self.preparationFlight?.id == flight.id { self.preparationFlight = nil }
+    }
+
+    private func recordPreparation(_ phase: LLMPreparationEvent.Phase, flight: PreparationFlight, start: Double, joined: Bool) {
+        let duration = max(0, Int((self.monotonicNow() - start) * 1000))
+        let disposition = joined ? "joined" : "started"
+        self.logger.notice("LLM_PREPARATION phase=\(phase.rawValue, privacy: .public) disposition=\(disposition, privacy: .public) flight=\(flight.id.uuidString, privacy: .public) model=\(flight.model.rawValue, privacy: .public) duration_ms=\(duration, privacy: .public)")
+        self.preparationObserver(LLMPreparationEvent(phase: phase, flightID: flight.id, model: flight.model, durationMilliseconds: duration, joined: joined))
+    }
+
+    private func performPreparation(for model: ModelIdentifier, generation: UInt64, id: UUID) async throws {
+        var prepared: LLMPreparedModel?
+        if let injectedModelLoader {
+            prepared = try await injectedModelLoader(model)
+        } else {
+            prepared = try await self.loadProductionModel(for: model)
+        }
+        let currentModel = await self.modelSource()
+        guard generation == self.lifecycleGeneration, model == currentModel,
+              self.preparationFlight?.id == id else {
+            let retired = LLMRuntimeRetirement(prepared?.runtime)
+            prepared = nil
+            await MLXMetalGate.shared.withExclusiveAccess { await retired.dispose() }
+            throw LLMServiceError.preparationInvalidated
+        }
+        // The runtime owns the container too; publish the entire bundle atomically.
+        self.runtimeBackend = prepared!.backend
+        self.generationRuntime = prepared!.runtime
+        self.readyModel = model
+        self.isReady = true
+    }
+
+    private func loadProductionModel(for model: ModelIdentifier) async throws -> LLMPreparedModel {
+        guard self.checkMemoryAvailable(for: model) else { throw LLMServiceError.insufficientMemory }
+        guard let modelPath = await ModelManager.shared.pathForModel(model) else { throw LLMServiceError.modelNotFound }
+        guard model.isRuntimeSupported else {
             throw LLMServiceError.generationFailed(
-                "\(primaryLLM.displayName) is not yet supported by the local inference engine. " +
-                "Please select a different model in the menu bar."
+                "\(model.displayName) is not yet supported by the local inference engine. Please select a different model in the menu bar."
             )
         }
-
-        let backend = Self.runtimeBackend(for: primaryLLM)
-        let container: ModelContainer
-        do {
-            switch backend {
-            case .mlxLLM:
-                container = try await LLMModelFactory.shared.loadContainer(configuration: configuration)
-            case .mlxVLM:
-                container = try await VLMModelFactory.shared.loadContainer(configuration: configuration)
+        let configuration = ModelConfiguration(directory: modelPath)
+        let backend = Self.runtimeBackend(for: model)
+        return try await MLXMetalGate.shared.withExclusiveAccess {
+            // Loading and the allocator limit must not overlap generation or retirement.
+            GPU.set(cacheLimit: 512 * 1024 * 1024)
+            do {
+                let container: ModelContainer
+                switch backend {
+                case .mlxLLM:
+                    container = try await LLMModelFactory.shared.loadContainer(configuration: configuration)
+                case .mlxVLM:
+                    container = try await VLMModelFactory.shared.loadContainer(configuration: configuration)
+                }
+                return LLMPreparedModel(runtime: ModelContainerGenerationRuntime(container: container), backend: backend)
+            } catch {
+                Stream.gpu.synchronize()
+                GPU.clearCache()
+                if let factoryError = error as? ModelFactoryError {
+                    throw LLMServiceError.generationFailed(factoryError.localizedDescription ?? factoryError.errorDescription ?? "Unsupported model architecture.")
+                }
+                throw error
             }
-        } catch let error as ModelFactoryError {
-            throw LLMServiceError.generationFailed(error.localizedDescription ?? error.errorDescription ?? "Unsupported model architecture.")
         }
-        
-        self.modelContainer = container
-        self.runtimeBackend = backend
-        self.generationRuntime = ModelContainerGenerationRuntime(container: container)
-        self.isReady = true
-        
-        // Limit GPU cache to prevent unbounded memory growth (BUG-005)
-        // MLX caches Metal buffers for reuse, but without a limit this can grow to 15GB+
-        // 512MB is generous for buffer reuse while preventing excessive accumulation
-        GPU.set(cacheLimit: 512 * 1024 * 1024)
-        logger.info("GPU cache limit set to 512MB")
-        
-        logger.info("LLM model loaded: \(primaryLLM.displayName)")
+    }
+
+    /// Invalidate synchronously before the gate hop; never mutate newer state afterwards.
+    func invalidatePreparation() async {
+        self.lifecycleGeneration &+= 1
+        self.preparationFlight = nil
+        self.readyModel = nil
+        self.isReady = false
+        self.isWarmedUp = false
+        self.runtimeBackend = .mlxLLM
+        guard self.generationRuntime != nil else { return }
+        let retired = LLMRuntimeRetirement(self.generationRuntime)
+        self.generationRuntime = nil
+        await MLXMetalGate.shared.withExclusiveAccess { await retired.dispose() }
     }
     
     /// Warmup the model for faster first inference
@@ -309,20 +455,11 @@ actor LLMService: LLMServicing {
     
     /// Unload the model to free memory
     func unload() async {
-        guard isReady else { return }
+        let wasReady = isReady
+        await self.invalidatePreparation()
+        guard wasReady else { return }
 
         logger.info("Unloading LLM model...")
-
-        // Clear GPU buffers inside the gate to prevent race with in-flight generation.
-        await MLXMetalGate.shared.withExclusiveAccess {
-            GPU.clearCache()
-        }
-
-        modelContainer = nil
-        generationRuntime = nil
-        isReady = false
-        isWarmedUp = false
-        runtimeBackend = .mlxLLM
 
         logger.info("LLM model unloaded")
 
@@ -336,13 +473,9 @@ actor LLMService: LLMServicing {
         // Calling GPU APIs on an uninitialized MLX Metal context causes an
         // async GPU crash that manifests in whichever test is running at the
         // time the Metal driver processes the bad command.
-        guard isReady else { return }
-
-        // Wrap in MLXMetalGate to prevent race with runGeneration.
-        // GPU.clearCache() MUST be inside the lock — if called outside, a new generation
-        // could start between lock release and cache clear, causing Metal buffer corruption.
+        guard isReady, let runtime = self.generationRuntime else { return }
         await MLXMetalGate.shared.withExclusiveAccess {
-            GPU.clearCache()
+            await runtime.cleanup()
         }
     }
     
