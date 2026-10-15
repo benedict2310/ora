@@ -54,6 +54,8 @@ struct LLMGenerationParameters: Sendable {
 
 protocol LLMGenerationRuntime: Sendable {
     func makeCache(parameters: LLMGenerationParameters) async -> LLMRequestCache
+    /// Nonthrowing cleanup, called under the Metal gate after request state is released.
+    func cleanup() async
     func generate(
         request: LLMPreparedRequest,
         cache: LLMRequestCache,
@@ -78,6 +80,12 @@ private final class ModelContainerGenerationRuntime: LLMGenerationRuntime, Senda
                 topP: parameters.topP
             )))
         }
+    }
+
+    func cleanup() async {
+        // Also drain work queued by preparation/prefill before a throw or cancellation.
+        Stream.gpu.synchronize()
+        GPU.clearCache()
     }
 
     func generate(
@@ -118,13 +126,15 @@ private final class ModelContainerGenerationRuntime: LLMGenerationRuntime, Senda
                 parameters: mlxParameters
             )
 
+            let (generations, generationTask) = MLXLMCommon.generateTask(
+                promptTokenCount: promptTokenCount,
+                modelConfiguration: context.configuration,
+                tokenizer: context.tokenizer,
+                iterator: iterator
+            )
             var tokenCount = 0
             var didLogFirstToken = false
-            for await generation in MLXLMCommon.generate(
-                input: input,
-                context: context,
-                iterator: iterator
-            ) {
+            for await generation in generations {
                 if Task.isCancelled { break }
                 if let chunk = generation.chunk {
                     if !didLogFirstToken {
@@ -141,7 +151,10 @@ private final class ModelContainerGenerationRuntime: LLMGenerationRuntime, Senda
                 }
             }
 
-            Stream.gpu.synchronize()
+            // A stream break alone does not finish the pinned runtime's producer.
+            // Join it before request state is released and GPU cleanup can run.
+            generationTask.cancel()
+            await generationTask.value
             return tokenCount
         }
     }
@@ -361,20 +374,36 @@ actor LLMService: LLMServicing {
 
         self.logger.debug("Generating with \(messages.count) messages")
         let chunkCount = try await MLXMetalGate.shared.withExclusiveAccess {
-            let requestCache = await runtime.makeCache(parameters: parameters)
-            return try await runtime.generate(
-                request: request,
-                cache: requestCache,
-                parameters: parameters,
-                emit: { chunk in
-                    continuation.yield(.token(chunk))
-                    return !Task.isCancelled
-                },
-                didReceiveFirstToken: { promptTokenCount in
-                    let ttft = (CFAbsoluteTimeGetCurrent() - generationStart) * 1000
-                    self.logger.info("⏱️ TTFT: \(String(format: "%.1f", ttft))ms (\(promptTokenCount) prompt tokens)")
-                }
-            )
+            // This nested operation owns all request-local cache references.
+            // Returning or unwinding it releases them before allocator cleanup.
+            func generateRequest() async throws -> Int {
+                let requestCache = await runtime.makeCache(parameters: parameters)
+                return try await runtime.generate(
+                    request: request,
+                    cache: requestCache,
+                    parameters: parameters,
+                    emit: { chunk in
+                        continuation.yield(.token(chunk))
+                        return !Task.isCancelled
+                    },
+                    didReceiveFirstToken: { promptTokenCount in
+                        let ttft = (CFAbsoluteTimeGetCurrent() - generationStart) * 1000
+                        self.logger.info("⏱️ TTFT: \(String(format: "%.1f", ttft))ms (\(promptTokenCount) prompt tokens)")
+                    }
+                )
+            }
+
+            let result: Int
+            do {
+                result = try await generateRequest()
+            } catch {
+                // Nonthrowing cleanup also runs in a cancelled task, without
+                // masking the original error or releasing the gate early.
+                await runtime.cleanup()
+                throw error
+            }
+            await runtime.cleanup()
+            return result
         }
 
         let totalTime = (CFAbsoluteTimeGetCurrent() - generationStart) * 1000

@@ -118,7 +118,8 @@ final class LLMServiceTests: XCTestCase {
         do {
             _ = try await collect(await service.generate(messages: messages, maxTokens: 2))
             XCTFail("Expected the injected failure after cache consumption")
-        } catch LLMServiceError.generationFailed {
+        } catch LLMServiceError.generationFailed(let reason) {
+            XCTAssertEqual(reason, "test failure", "Cleanup must not replace the original error")
             // The next call must not append this full prompt to the failed prefill.
         }
         let hasLiveCache = await runtime.hasLiveCache
@@ -160,6 +161,8 @@ final class LLMServiceTests: XCTestCase {
         _ = try await collect(await service.generate(messages: next, maxTokens: 2))
         let observedCancellation = await runtime.observedCancellation
         XCTAssertTrue(observedCancellation)
+        let cleanups = await runtime.cleanups
+        XCTAssertEqual(cleanups.map(\.taskWasCancelled), [true, false], "Consumer cancellation must still run cleanup")
         try await assertIsolatedRequests(runtime, service: service, prompts: [first, next])
     }
 
@@ -174,6 +177,8 @@ final class LLMServiceTests: XCTestCase {
         let allocations = await runtime.allocations
         XCTAssertTrue(records.isEmpty)
         XCTAssertEqual(allocations, 0)
+        let cleanups = await runtime.cleanups
+        XCTAssertTrue(cleanups.isEmpty, "No GPU cleanup before a runtime request starts")
     }
 
     func testTextRuntimeRejectsImagesBeforeAllocatingCache() async throws {
@@ -186,6 +191,8 @@ final class LLMServiceTests: XCTestCase {
         } catch LLMServiceError.unsupportedInput {}
         let allocations = await runtime.allocations
         XCTAssertEqual(allocations, 0)
+        let cleanups = await runtime.cleanups
+        XCTAssertTrue(cleanups.isEmpty)
     }
 
     func testVLMRuntimeReceivesCompleteMessagesIncludingImageReferences() async throws {
@@ -249,6 +256,13 @@ final class LLMServiceTests: XCTestCase {
             XCTAssertEqual(record.maxTokens, 2, file: file, line: line)
         }
         XCTAssertEqual(Set(records.map(\.allocation)).count, prompts.count, file: file, line: line)
+        let cleanups = await runtime.cleanups
+        XCTAssertEqual(cleanups.count, prompts.count, "Every runtime request must clean up exactly once", file: file, line: line)
+        for cleanup in cleanups {
+            XCTAssertTrue(cleanup.underMetalGate, "GPU cleanup must precede gate release", file: file, line: line)
+            XCTAssertTrue(cleanup.requestCacheReleased, "Request cache wrapper must be released before cleanup", file: file, line: line)
+            XCTAssertTrue(cleanup.kvCacheReleased, "Actual KV state must be released before cleanup", file: file, line: line)
+        }
     }
 
     private func collect(_ stream: AsyncThrowingStream<LLMDelta, Error>) async throws -> String {
@@ -313,11 +327,20 @@ private final class CountingKVCache: KVCache {
     }
 }
 
+private struct RuntimeCleanupRecord: Sendable {
+    let underMetalGate: Bool
+    let requestCacheReleased: Bool
+    let kvCacheReleased: Bool
+    let taskWasCancelled: Bool
+}
+
 private actor RecordingLLMRuntime: LLMGenerationRuntime {
     private(set) var records: [RuntimeRecord] = []
+    private(set) var cleanups: [RuntimeCleanupRecord] = []
     private(set) var allocations = 0
     private(set) var observedCancellation = false
     private weak var lastCache: LLMRequestCache?
+    private weak var lastKVCache: CountingKVCache?
     var hasLiveCache: Bool { self.lastCache != nil }
     private var failuresRemaining: Int
     private let suspendFirst: Bool
@@ -334,6 +357,15 @@ private actor RecordingLLMRuntime: LLMGenerationRuntime {
         return LLMRequestCache(storage: [CountingKVCache(allocation: self.allocations)])
     }
 
+    func cleanup() async {
+        self.cleanups.append(RuntimeCleanupRecord(
+            underMetalGate: await MLXMetalGate.shared.isAcquired,
+            requestCacheReleased: self.lastCache == nil,
+            kvCacheReleased: self.lastKVCache == nil,
+            taskWasCancelled: Task.isCancelled
+        ))
+    }
+
     func generate(
         request: LLMPreparedRequest,
         cache: LLMRequestCache,
@@ -343,6 +375,7 @@ private actor RecordingLLMRuntime: LLMGenerationRuntime {
     ) async throws -> Int {
         self.lastCache = cache
         let state = try XCTUnwrap(cache.storage.first as? CountingKVCache)
+        self.lastKVCache = state
         let initialOffset = state.offset
         let input = Array(request.fallbackPrompt.utf8)
         state.consume(input)

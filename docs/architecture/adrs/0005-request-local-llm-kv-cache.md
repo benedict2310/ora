@@ -20,8 +20,12 @@ and that same cache to `TokenIterator`.
 [Model-free tests](../../../OraTests/LLM/LLMServiceTests.swift) consume deterministic
 UTF-8 input units into a CPU-only implementation of the pinned `KVCache` interface
 and advance its offset. They detect service-level persistent-cache reuse, including
-retry and stream-consumer cancellation. They do not execute model tokenization,
-image processing, or Metal inference, and make no throughput or speedup claim.
+retry and stream-consumer cancellation. The fake records invocations of the
+production-used cleanup hook, verifying that each request cleans up exactly once
+under the gate after weak references to both its wrapper and actual KV state are
+dead, including error/cancel exits.
+Tests do not execute model tokenization, image processing, or Metal inference,
+and make no throughput or speedup claim.
 
 ## Context and trade-off
 
@@ -32,8 +36,18 @@ intentionally deferred; request-local caches trade potential reuse for a simple,
 correct baseline and bounded ownership.
 
 GPU serialization through `MLXMetalGate`, the 512 MiB allocator cache limit,
-memory checks, stop-token handling, and guarded GPU cleanup remain unchanged.
-The allocator buffer cache is separate from attention KV state.
+memory checks, stop-token handling, and guarded explicit `clearCache` remain
+unchanged. The allocator buffer cache is separate from attention KV state.
+
+Every foreground runtime request now finishes or unwinds its nested cache-owning
+operation before nonthrowing cleanup runs under the same held Metal gate. Cleanup
+synchronizes queued GPU work (including preparation/prefill failure paths), then
+calls `GPU.clearCache()` before releasing the gate, on success, error, or consumer
+cancellation. The model runtime retains the producer handle returned by the same
+underlying `generateTask` API, cancels and joins it before returning, so an early
+stream exit cannot leave it using request KV state during cleanup. Cleanup does
+not replace the original error. Requests rejected before runtime/cache creation
+do not initialize or touch GPU cleanup.
 
 ## Contract evidence
 
@@ -46,6 +60,9 @@ The [locked graph](../../../Package.resolved) pins `mlx-swift-lm` 2.31.3 at
   prefills the full supplied text against that cache.
 - [Qwen3 VL preparation](https://github.com/ml-explore/mlx-swift-lm/blob/25b00d4e22e61ec9c41efda47990cd2084ec87ff/Libraries/MLXVLM/Models/Qwen3VL.swift#L1608-L1688)
   likewise supplies the full text/image embeddings and cache to the language model.
+- [Stream/producer lifetime](https://github.com/ml-explore/mlx-swift-lm/blob/25b00d4e22e61ec9c41efda47990cd2084ec87ff/Libraries/MLXLMCommon/Evaluate.swift#L1101-L1151):
+  the stream-only wrapper delegates to `generateTask` and discards its handle;
+  early termination can leave the producer using the cache until that task is joined.
 
 Prefix reuse would require a separately validated token-prefix and multimodal
 state contract; no such reuse is introduced here.
