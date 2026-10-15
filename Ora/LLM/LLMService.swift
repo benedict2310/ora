@@ -28,6 +28,138 @@ enum LocalRuntimeBackend: Sendable, Equatable {
     }
 }
 
+struct LLMPreparedRequest: Sendable {
+    let messages: [LLMMessage]
+    let chatMessages: [[String: any Sendable]]
+    let fallbackPrompt: String
+    let runtimeBackend: LocalRuntimeBackend
+}
+
+/// Transfers the actual model cache between the factory and generation runtime.
+/// KVCache is not Sendable: creation, access and release must remain inside
+/// MLXMetalGate's exclusive scope. Neither the service nor runtime retains it.
+final class LLMRequestCache: @unchecked Sendable {
+    let storage: [KVCache]
+
+    init(storage: [KVCache]) {
+        self.storage = storage
+    }
+}
+
+struct LLMGenerationParameters: Sendable {
+    let maxTokens: Int
+    let temperature: Float
+    let topP: Float
+}
+
+protocol LLMGenerationRuntime: Sendable {
+    func makeCache(parameters: LLMGenerationParameters) async -> LLMRequestCache
+    /// Nonthrowing cleanup, called under the Metal gate after request state is released.
+    func cleanup() async
+    func generate(
+        request: LLMPreparedRequest,
+        cache: LLMRequestCache,
+        parameters: LLMGenerationParameters,
+        emit: @escaping @Sendable (String) -> Bool,
+        didReceiveFirstToken: @escaping @Sendable (Int) -> Void
+    ) async throws -> Int
+}
+
+private final class ModelContainerGenerationRuntime: LLMGenerationRuntime, Sendable {
+    let container: ModelContainer
+
+    init(container: ModelContainer) {
+        self.container = container
+    }
+
+    func makeCache(parameters: LLMGenerationParameters) async -> LLMRequestCache {
+        await container.perform { context in
+            LLMRequestCache(storage: context.model.newCache(parameters: GenerateParameters(
+                maxTokens: parameters.maxTokens,
+                temperature: parameters.temperature,
+                topP: parameters.topP
+            )))
+        }
+    }
+
+    func cleanup() async {
+        // Also drain work queued by preparation/prefill before a throw or cancellation.
+        Stream.gpu.synchronize()
+        GPU.clearCache()
+    }
+
+    func generate(
+        request: LLMPreparedRequest,
+        cache: LLMRequestCache,
+        parameters: LLMGenerationParameters,
+        emit: @escaping @Sendable (String) -> Bool,
+        didReceiveFirstToken: @escaping @Sendable (Int) -> Void
+    ) async throws -> Int {
+        let mlxParameters = GenerateParameters(
+            maxTokens: parameters.maxTokens,
+            temperature: parameters.temperature,
+            topP: parameters.topP
+        )
+        return try await container.perform { context -> Int in
+            let input: LMInput
+            let promptTokenCount: Int
+            switch request.runtimeBackend {
+            case .mlxLLM:
+                let inputTokens: [Int]
+                do {
+                    inputTokens = try context.tokenizer.applyChatTemplate(messages: request.chatMessages)
+                } catch {
+                    inputTokens = context.tokenizer.encode(text: request.fallbackPrompt)
+                }
+                input = LMInput(tokens: MLXArray(inputTokens))
+                promptTokenCount = inputTokens.count
+            case .mlxVLM:
+                let vlmUserInput = try LLMService.makeVLMUserInput(from: request.messages)
+                input = try await context.processor.prepare(input: vlmUserInput)
+                promptTokenCount = input.text.tokens.size
+            }
+
+            let iterator = try TokenIterator(
+                input: input,
+                model: context.model,
+                cache: cache.storage,
+                parameters: mlxParameters
+            )
+
+            let (generations, generationTask) = MLXLMCommon.generateTask(
+                promptTokenCount: promptTokenCount,
+                modelConfiguration: context.configuration,
+                tokenizer: context.tokenizer,
+                iterator: iterator
+            )
+            var tokenCount = 0
+            var didLogFirstToken = false
+            for await generation in generations {
+                if Task.isCancelled { break }
+                if let chunk = generation.chunk {
+                    if !didLogFirstToken {
+                        didLogFirstToken = true
+                        didReceiveFirstToken(promptTokenCount)
+                    }
+                    tokenCount += 1
+                    if !emit(chunk) { break }
+                    if chunk.contains("<|im_end|>") ||
+                       chunk.contains("<|endoftext|>") ||
+                       chunk.contains("</tool_call>") {
+                        break
+                    }
+                }
+            }
+
+            // A stream break alone does not finish the pinned runtime's producer.
+            // Join it before request state is released and GPU cleanup can run.
+            generationTask.cancel()
+            await generationTask.value
+            return tokenCount
+        }
+    }
+}
+
 /// MLX-based LLM service
 actor LLMService: LLMServicing {
     
@@ -43,24 +175,21 @@ actor LLMService: LLMServicing {
     private var isReady = false
     private var isWarmedUp = false
     private var runtimeBackend: LocalRuntimeBackend = .mlxLLM
-    
-    /// Persistent KV cache for multi-turn conversations
-    /// Created on first generation, reused across turns, cleared on session end
-    /// 
-    /// Note: Using nonisolated(unsafe) because KVCache is not Sendable, but we ensure
-    /// thread-safe access via:
-    /// 1. MLXMetalGate.shared.withExclusiveAccess serializes all GPU operations
-    /// 2. All cache mutations happen within container.perform blocks
-    /// 3. Cache is only accessed from within this actor
-    nonisolated(unsafe) private var kvCache: [KVCache]?
+    private var generationRuntime: (any LLMGenerationRuntime)?
     
     // Configuration
     private let temperature: Float = 0.7
     private let topP: Float = 0.9
     
     // MARK: - Initialization
-    
+
     private init() {}
+
+    init(runtime: any LLMGenerationRuntime, isReady: Bool = true, backend: LocalRuntimeBackend = .mlxLLM) {
+        self.generationRuntime = runtime
+        self.isReady = isReady
+        self.runtimeBackend = backend
+    }
     
     // MARK: - Public API
     
@@ -108,6 +237,7 @@ actor LLMService: LLMServicing {
         
         self.modelContainer = container
         self.runtimeBackend = backend
+        self.generationRuntime = ModelContainerGenerationRuntime(container: container)
         self.isReady = true
         
         // Limit GPU cache to prevent unbounded memory growth (BUG-005)
@@ -183,13 +313,13 @@ actor LLMService: LLMServicing {
 
         logger.info("Unloading LLM model...")
 
-        // Clear KV cache and GPU buffers inside the gate to prevent race with in-flight generation.
+        // Clear GPU buffers inside the gate to prevent race with in-flight generation.
         await MLXMetalGate.shared.withExclusiveAccess {
-            self.kvCache = nil
             GPU.clearCache()
         }
 
         modelContainer = nil
+        generationRuntime = nil
         isReady = false
         isWarmedUp = false
         runtimeBackend = .mlxLLM
@@ -199,8 +329,8 @@ actor LLMService: LLMServicing {
         NotificationCenter.default.post(name: Notification.Name("LLMModelUnloaded"), object: nil)
     }
     
-    /// Clear the KV cache to start fresh for a new session
-    /// Call this when ending a session or starting a new conversation
+    /// Clear GPU buffers when ending a session or starting a new conversation.
+    /// Foreground KV caches are request-local and discarded automatically.
     func clearCache() async {
         // Guard against calling GPU.clearCache() before any model is loaded.
         // Calling GPU APIs on an uninitialized MLX Metal context causes an
@@ -212,10 +342,6 @@ actor LLMService: LLMServicing {
         // GPU.clearCache() MUST be inside the lock — if called outside, a new generation
         // could start between lock release and cache clear, causing Metal buffer corruption.
         await MLXMetalGate.shared.withExclusiveAccess {
-            if self.kvCache != nil {
-                self.logger.info("Clearing KV cache")
-                self.kvCache = nil
-            }
             GPU.clearCache()
         }
     }
@@ -227,7 +353,7 @@ actor LLMService: LLMServicing {
         maxTokens: Int,
         continuation: AsyncThrowingStream<LLMDelta, Error>.Continuation
     ) async throws {
-        guard isReady, let container = modelContainer else {
+        guard isReady, let runtime = generationRuntime else {
             throw LLMServiceError.notReady
         }
 
@@ -236,126 +362,56 @@ actor LLMService: LLMServicing {
                 "The local model currently supports text-only input. Remove image attachments and try again."
             )
         }
-        
-        let chatMessages: [[String: any Sendable]] = messages.map { msg in
-            ["role": msg.role.rawValue, "content": msg.textContent]
-        }
-        
-        // Pre-compute fallback prompt outside the closure to avoid actor isolation issues
-        let fallbackPrompt = formatMessagesLegacy(messages)
-        
-        self.logger.debug("Generating with \(messages.count) messages")
-        
-        let parameters = GenerateParameters(
-            maxTokens: maxTokens,
-            temperature: temperature,
-            topP: topP
-        )
-        let runtimeBackend = self.runtimeBackend
-        
-        // Track timing for TTFT measurement
-        let generationStart = CFAbsoluteTimeGetCurrent()
-        
-        // Use the new perform API with ModelContext
-        // Wrap in MLXMetalGate to serialize GPU access with TTS
-        let (tokenCount, isNewCache, promptTokenCount) = try await MLXMetalGate.shared.withExclusiveAccess {
-            try await container.perform { context -> (Int, Bool, Int) in
-                let input: LMInput
-                let promptTokenCount: Int
-                switch runtimeBackend {
-                case .mlxLLM:
-                    // Use applyChatTemplate to properly encode special tokens
-                    // This ensures <|im_start|> becomes token 151644 (not multiple text tokens)
-                    let inputTokens: [Int]
-                    do {
-                        inputTokens = try context.tokenizer.applyChatTemplate(messages: chatMessages)
-                    } catch {
-                        // Fallback to manual encoding if chat template fails
-                        // This shouldn't happen with Qwen models but provides safety
-                        // Note: fallbackPrompt is pre-computed above to avoid actor isolation issues
-                        inputTokens = context.tokenizer.encode(text: fallbackPrompt)
-                    }
-                    input = LMInput(tokens: MLXArray(inputTokens))
-                    promptTokenCount = inputTokens.count
-                case .mlxVLM:
-                    let vlmUserInput = try Self.makeVLMUserInput(from: messages)
-                    input = try await context.processor.prepare(input: vlmUserInput)
-                    promptTokenCount = input.text.tokens.size
-                }
-                
-                // Initialize cache on first generation, reuse on subsequent
-                let isNewCache: Bool
-                if self.kvCache == nil {
-                    self.logger.info("Creating new KV cache for session")
-                    self.kvCache = context.model.newCache(parameters: parameters)
-                    isNewCache = true
-                } else {
-                    let offset = self.kvCache?.first?.offset ?? 0
-                    self.logger.debug("Reusing existing KV cache (offset: \(offset))")
-                    isNewCache = false
-                }
-                
-                // Create iterator with persistent cache
-                let iterator = try TokenIterator(
-                    input: input,
-                    model: context.model,
-                    cache: self.kvCache,
-                    parameters: parameters
-                )
-                
-                // Track tokens and TTFT
-                var tokenCount = 0
-                var ttftLogged = false
-                
-                // Stream tokens using the modern async API
-                for await generation in MLXLMCommon.generate(
-                    input: input,
-                    context: context,
-                    iterator: iterator
-                ) {
-                    if Task.isCancelled { break }
-                    
-                    if let chunk = generation.chunk {
-                        // Log TTFT on first token
-                        if !ttftLogged {
-                            let ttft = (CFAbsoluteTimeGetCurrent() - generationStart) * 1000
-                            let cacheStatus = isNewCache ? "new cache" : "cached"
-                            self.logger.info("⏱️ TTFT: \(String(format: "%.1f", ttft))ms (\(cacheStatus), \(promptTokenCount) prompt tokens)")
-                            ttftLogged = true
-                        }
-                        
-                        tokenCount += 1
-                        continuation.yield(.token(chunk))
-                        
-                        // Stop on end-of-turn tokens (Qwen 2.5 and Qwen 3 compatible)
-                        // Qwen 3 also uses </tool_call> for tool call completion
-                        if chunk.contains("<|im_end|>") || 
-                           chunk.contains("<|endoftext|>") ||
-                           chunk.contains("</tool_call>") {
-                            break
-                        }
-                    }
-                }
-                
-                // Synchronize GPU to ensure all Metal work is complete before returning
-                // This prevents race conditions when starting a new generation immediately after
-                Stream.gpu.synchronize()
-                
-                return (tokenCount, isNewCache, promptTokenCount)
-            }
-        }
-        
-        // Log generation stats
-        let totalTime = (CFAbsoluteTimeGetCurrent() - generationStart) * 1000
-        let tokensPerSec = tokenCount > 0 ? Double(tokenCount) / (totalTime / 1000) : 0
-        self.logger.info("⏱️ Generation complete: \(tokenCount) tokens in \(String(format: "%.1f", totalTime))ms (\(String(format: "%.1f", tokensPerSec)) tok/s)")
 
-        
-        // Note: GPU.clearCache() is intentionally NOT called here (M.02 optimization)
-        // The 512MB cache limit allows buffer reuse across generations for faster TTFT.
-        // Cache is cleared at session end via clearCache() and when app backgrounds.
-        
-        continuation.yield(.completed(totalTokens: tokenCount))
+        let request = LLMPreparedRequest(
+            messages: messages,
+            chatMessages: messages.map { ["role": $0.role.rawValue, "content": $0.textContent] },
+            fallbackPrompt: formatMessagesLegacy(messages),
+            runtimeBackend: runtimeBackend
+        )
+        let parameters = LLMGenerationParameters(maxTokens: maxTokens, temperature: temperature, topP: topP)
+        let generationStart = CFAbsoluteTimeGetCurrent()
+
+        self.logger.debug("Generating with \(messages.count) messages")
+        let chunkCount = try await MLXMetalGate.shared.withExclusiveAccess {
+            // This nested operation owns all request-local cache references.
+            // Returning or unwinding it releases them before allocator cleanup.
+            func generateRequest() async throws -> Int {
+                let requestCache = await runtime.makeCache(parameters: parameters)
+                return try await runtime.generate(
+                    request: request,
+                    cache: requestCache,
+                    parameters: parameters,
+                    emit: { chunk in
+                        continuation.yield(.token(chunk))
+                        return !Task.isCancelled
+                    },
+                    didReceiveFirstToken: { promptTokenCount in
+                        let ttft = (CFAbsoluteTimeGetCurrent() - generationStart) * 1000
+                        self.logger.info("⏱️ TTFT: \(String(format: "%.1f", ttft))ms (\(promptTokenCount) prompt tokens)")
+                    }
+                )
+            }
+
+            let result: Int
+            do {
+                result = try await generateRequest()
+            } catch {
+                // Nonthrowing cleanup also runs in a cancelled task, without
+                // masking the original error or releasing the gate early.
+                await runtime.cleanup()
+                throw error
+            }
+            await runtime.cleanup()
+            return result
+        }
+
+        let totalTime = (CFAbsoluteTimeGetCurrent() - generationStart) * 1000
+        let chunksPerSec = chunkCount > 0 ? Double(chunkCount) / (totalTime / 1000) : 0
+        self.logger.info("⏱️ Generation complete: \(chunkCount) decoded chunks in \(String(format: "%.1f", totalTime))ms (\(String(format: "%.1f", chunksPerSec)) chunks/s)")
+
+        // Preserve the legacy delta field; this count represents decoded chunks.
+        continuation.yield(.completed(totalTokens: chunkCount))
         continuation.finish()
     }
     
@@ -380,7 +436,7 @@ actor LLMService: LLMServicing {
         return formatMessagesLegacy(messages)
     }
 
-    nonisolated private static func makeVLMUserInput(from messages: [LLMMessage]) throws -> UserInput {
+    nonisolated static func makeVLMUserInput(from messages: [LLMMessage]) throws -> UserInput {
         let chat = try messages.map { message in
             let images = try message.imageAttachments.map { imageAttachment in
                 let imageURL = URL(fileURLWithPath: imageAttachment.stagedFilePath)
@@ -418,8 +474,7 @@ actor LLMService: LLMServicing {
     /// Generate a one-shot completion with an isolated KV cache.
     ///
     /// Creates a fresh KV cache that is discarded after generation completes.
-    /// This prevents background work (e.g., summary generation) from corrupting
-    /// the foreground conversation's persistent KV cache.
+    /// This keeps one-shot work isolated from foreground request state.
     func generateOneShot(prompt: String, maxTokens: Int = 800) async throws -> String {
         guard isReady, let container = modelContainer else {
             try await self.prepare()
@@ -458,7 +513,7 @@ actor LLMService: LLMServicing {
                 let inputTokens = context.tokenizer.encode(text: prompt)
                 let input = LMInput(tokens: MLXArray(inputTokens))
 
-                // Create a fresh KV cache - do NOT touch self.kvCache
+                // Create a fresh KV cache isolated from foreground requests.
                 let freshCache = context.model.newCache(parameters: parameters)
 
                 let iterator = try TokenIterator(

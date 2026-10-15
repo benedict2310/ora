@@ -6,6 +6,8 @@
 //
 
 import XCTest
+import MLX
+import MLXLMCommon
 @testable import Ora
 
 final class LLMServiceTests: XCTestCase {
@@ -93,7 +95,318 @@ final class LLMServiceTests: XCTestCase {
         await service.clearCache()
         // If we get here without crashing, test passes
     }
-    
+
+    func testGenerateUsesFreshCacheAndCompletePromptForEveryTurn() async throws {
+        let runtime = RecordingLLMRuntime()
+        let service = LLMService(runtime: runtime)
+        let first = [LLMMessage(role: .system, content: "system one"), LLMMessage(role: .user, content: "first")]
+        let second = first + [LLMMessage(role: .assistant, content: "reply"), LLMMessage(role: .user, content: "second")]
+
+        for messages in [first, second] {
+            let output = try await collect(await service.generate(messages: messages, maxTokens: 2))
+            XCTAssertEqual(output, "ok")
+            let hasLiveCache = await runtime.hasLiveCache
+            XCTAssertFalse(hasLiveCache, "Completed request must release its cache")
+        }
+        try await assertIsolatedRequests(runtime, service: service, prompts: [first, second])
+    }
+
+    func testGenerateRetriesSamePromptAfterPartialPrefillErrorWithFreshCache() async throws {
+        let runtime = RecordingLLMRuntime(failuresRemaining: 1)
+        let service = LLMService(runtime: runtime)
+        let messages = [LLMMessage(role: .system, content: "one"), LLMMessage(role: .user, content: "retry")]
+        do {
+            _ = try await collect(await service.generate(messages: messages, maxTokens: 2))
+            XCTFail("Expected the injected failure after cache consumption")
+        } catch LLMServiceError.generationFailed(let reason) {
+            XCTAssertEqual(reason, "test failure", "Cleanup must not replace the original error")
+            // The next call must not append this full prompt to the failed prefill.
+        }
+        let hasLiveCache = await runtime.hasLiveCache
+        XCTAssertFalse(hasLiveCache)
+        _ = try await collect(await service.generate(messages: messages, maxTokens: 2))
+        try await assertIsolatedRequests(runtime, service: service, prompts: [messages, messages])
+    }
+
+    func testGenerateTrimmedHistoryAndChangedSystemPromptUseFreshCache() async throws {
+        let runtime = RecordingLLMRuntime()
+        let service = LLMService(runtime: runtime)
+        let first = [LLMMessage(role: .system, content: "one"), LLMMessage(role: .user, content: "old"),
+                     LLMMessage(role: .assistant, content: "reply"), LLMMessage(role: .user, content: "recent")]
+        let trimmed = [first[0], first[3]]
+        let changedSystem = [LLMMessage(role: .system, content: "two"), first[3]]
+        for messages in [first, trimmed, changedSystem] {
+            _ = try await collect(await service.generate(messages: messages, maxTokens: 2))
+        }
+        try await assertIsolatedRequests(runtime, service: service, prompts: [first, trimmed, changedSystem])
+    }
+
+    func testConsumerCancellationStopsProducerAndNextRequestStartsFresh() async throws {
+        let stopped = expectation(description: "Producer observes consumer cancellation")
+        let received = expectation(description: "Consumer receives first chunk")
+        let runtime = RecordingLLMRuntime(suspendFirst: true, firstRequestStopped: stopped)
+        let service = LLMService(runtime: runtime)
+        let first = [LLMMessage(role: .user, content: "cancel")]
+        let stream = await service.generate(messages: first, maxTokens: 2)
+        let consumer = Task {
+            for try await delta in stream {
+                if case .token = delta { received.fulfill() }
+            }
+        }
+        await fulfillment(of: [received], timeout: 2)
+        consumer.cancel()
+        _ = await consumer.result
+        await fulfillment(of: [stopped], timeout: 2)
+        let next = [LLMMessage(role: .user, content: "next")]
+        _ = try await collect(await service.generate(messages: next, maxTokens: 2))
+        let observedCancellation = await runtime.observedCancellation
+        XCTAssertTrue(observedCancellation)
+        let cleanups = await runtime.cleanups
+        XCTAssertEqual(cleanups.map(\.taskWasCancelled), [true, false], "Consumer cancellation must still run cleanup")
+        try await assertIsolatedRequests(runtime, service: service, prompts: [first, next])
+    }
+
+    func testGenerateNotReadyDoesNotAllocateCache() async throws {
+        let runtime = RecordingLLMRuntime()
+        let service = LLMService(runtime: runtime, isReady: false)
+        do {
+            _ = try await collect(await service.generate(messages: [], maxTokens: 2))
+            XCTFail("Expected notReady")
+        } catch LLMServiceError.notReady {}
+        let records = await runtime.records
+        let allocations = await runtime.allocations
+        XCTAssertTrue(records.isEmpty)
+        XCTAssertEqual(allocations, 0)
+        let cleanups = await runtime.cleanups
+        XCTAssertTrue(cleanups.isEmpty, "No GPU cleanup before a runtime request starts")
+    }
+
+    func testTextRuntimeRejectsImagesBeforeAllocatingCache() async throws {
+        let runtime = RecordingLLMRuntime()
+        let service = LLMService(runtime: runtime)
+        let image = LLMImageAttachmentReference(stagedFilePath: "/unused.png", mimeType: "image/png")
+        do {
+            _ = try await collect(await service.generate(messages: [LLMMessage(role: .user, contentParts: [.image(image)])], maxTokens: 2))
+            XCTFail("Text runtime must reject image attachments")
+        } catch LLMServiceError.unsupportedInput {}
+        let allocations = await runtime.allocations
+        XCTAssertEqual(allocations, 0)
+        let cleanups = await runtime.cleanups
+        XCTAssertTrue(cleanups.isEmpty)
+    }
+
+    func testVLMRuntimeReceivesCompleteMessagesIncludingImageReferences() async throws {
+        let runtime = RecordingLLMRuntime()
+        let service = LLMService(runtime: runtime, backend: .mlxVLM)
+        let image = LLMImageAttachmentReference(stagedFilePath: "/unused.png", mimeType: "image/png")
+        let messages = [LLMMessage(role: .system, content: "describe"),
+                        LLMMessage(role: .user, contentParts: [.text("image"), .image(image)])]
+        _ = try await collect(await service.generate(messages: messages, maxTokens: 2))
+        try await assertIsolatedRequests(runtime, service: service, prompts: [messages])
+        let records = await runtime.records
+        XCTAssertEqual(records.first?.request.runtimeBackend, .mlxVLM)
+        XCTAssertEqual(records.first?.request.messages.last?.imageAttachments, [image])
+    }
+
+    func testVLMUserInputPreservesRolesTextAndStagedImageURL() throws {
+        let imageURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
+        // Preparation passes a staged URL, not decoded pixels, to the processor.
+        try Data().write(to: imageURL)
+        defer { try? FileManager.default.removeItem(at: imageURL) }
+        let image = LLMImageAttachmentReference(stagedFilePath: imageURL.path, mimeType: "image/png")
+        let messages = [LLMMessage(role: .system, content: "system"),
+                        LLMMessage(role: .user, contentParts: [.text("look"), .image(image)]),
+                        LLMMessage(role: .assistant, content: "reply"), LLMMessage(role: .tool, content: "tool")]
+        let input = try LLMService.makeVLMUserInput(from: messages)
+        guard case .chat(let chat) = input.prompt else { return XCTFail("Expected structured VLM chat") }
+        XCTAssertEqual(chat.map { $0.role.rawValue }, messages.map { $0.role.rawValue })
+        XCTAssertEqual(chat.map(\.content), messages.map(\.textContent))
+        XCTAssertEqual(chat.map { $0.images.count }, [0, 1, 0, 0])
+        guard case .url(let stagedURL) = try XCTUnwrap(input.images.first) else { return XCTFail("Expected staged image URL") }
+        XCTAssertEqual(stagedURL, imageURL)
+    }
+
+    func testVLMUserInputRejectsMissingStagedImage() throws {
+        let missing = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).path
+        let image = LLMImageAttachmentReference(stagedFilePath: missing, mimeType: "image/png")
+        XCTAssertThrowsError(try LLMService.makeVLMUserInput(from: [LLMMessage(role: .user, contentParts: [.image(image)])])) { error in
+            guard case LLMServiceError.unsupportedInput = error else { return XCTFail("Unexpected error: \(error)") }
+        }
+    }
+
+    private func assertIsolatedRequests(
+        _ runtime: RecordingLLMRuntime,
+        service: LLMService,
+        prompts: [[LLMMessage]],
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async throws {
+        let records = await runtime.records
+        XCTAssertEqual(records.count, prompts.count, file: file, line: line)
+        for (record, messages) in zip(records, prompts) {
+            let expected = Array(await service.formatMessages(messages).utf8)
+            XCTAssertEqual(record.request.messages, messages, file: file, line: line)
+            XCTAssertEqual(record.request.chatMessages.compactMap { $0["role"] as? String }, messages.map { $0.role.rawValue }, file: file, line: line)
+            XCTAssertEqual(record.request.chatMessages.compactMap { $0["content"] as? String }, messages.map(\.textContent), file: file, line: line)
+            XCTAssertEqual(record.initialOffset, 0, file: file, line: line)
+            XCTAssertEqual(record.consumedInput, expected, file: file, line: line)
+            XCTAssertEqual(record.cacheInput, expected, "Cache must contain the complete input exactly once, not prior history", file: file, line: line)
+            XCTAssertEqual(record.finalOffset, expected.count + 1, file: file, line: line)
+            XCTAssertTrue(record.underMetalGate, file: file, line: line)
+            XCTAssertEqual(record.maxTokens, 2, file: file, line: line)
+        }
+        XCTAssertEqual(Set(records.map(\.allocation)).count, prompts.count, file: file, line: line)
+        let cleanups = await runtime.cleanups
+        XCTAssertEqual(cleanups.count, prompts.count, "Every runtime request must clean up exactly once", file: file, line: line)
+        for cleanup in cleanups {
+            XCTAssertTrue(cleanup.underMetalGate, "GPU cleanup must precede gate release", file: file, line: line)
+            XCTAssertTrue(cleanup.requestCacheReleased, "Request cache wrapper must be released before cleanup", file: file, line: line)
+            XCTAssertTrue(cleanup.kvCacheReleased, "Actual KV state must be released before cleanup", file: file, line: line)
+        }
+    }
+
+    private func collect(_ stream: AsyncThrowingStream<LLMDelta, Error>) async throws -> String {
+        var result = ""
+        var completions = 0
+        for try await delta in stream {
+            switch delta {
+            case .token(let token): result += token
+            case .completed(let count):
+                XCTAssertEqual(count, 1)
+                completions += 1
+            }
+        }
+        XCTAssertEqual(completions, 1, "Successful generation must complete exactly once")
+        return result
+    }
+}
+
+private struct RuntimeRecord: Sendable {
+    let allocation: Int
+    let initialOffset: Int
+    let request: LLMPreparedRequest
+    let consumedInput: [UInt8]
+    let cacheInput: [UInt8]
+    let finalOffset: Int
+    let underMetalGate: Bool
+    let maxTokens: Int
+}
+
+/// CPU-only cache using the pinned library's actual KVCache interface. Input
+/// units are deterministic UTF-8 bytes, NOT claims about model tokenization.
+private final class CountingKVCache: KVCache {
+    let allocation: Int
+    var input: [UInt8] = []
+    var offset = 0
+    var maxSize: Int? { nil }
+    var state: [MLXArray] = []
+    var metaState: [String] = []
+    var isTrimmable: Bool { false }
+
+    init(allocation: Int) {
+        self.allocation = allocation
+    }
+
+    func consume(_ input: [UInt8]) {
+        self.input += input
+        self.offset += input.count + 1 // Full prefill plus one generated unit.
+    }
+
+    func innerState() -> [MLXArray] { [] }
+    func trim(_ n: Int) -> Int { 0 }
+    func copy() -> any KVCache {
+        let result = CountingKVCache(allocation: self.allocation)
+        result.input = self.input
+        result.offset = self.offset
+        return result
+    }
+    func makeMask(n: Int, windowSize: Int?, returnArray: Bool) -> MLXFast.ScaledDotProductAttentionMaskMode { .none }
+    func update(keys: MLXArray, values: MLXArray) -> (MLXArray, MLXArray) {
+        XCTFail("CPU-only runtime must not perform tensor operations")
+        return (keys, values)
+    }
+}
+
+private struct RuntimeCleanupRecord: Sendable {
+    let underMetalGate: Bool
+    let requestCacheReleased: Bool
+    let kvCacheReleased: Bool
+    let taskWasCancelled: Bool
+}
+
+private actor RecordingLLMRuntime: LLMGenerationRuntime {
+    private(set) var records: [RuntimeRecord] = []
+    private(set) var cleanups: [RuntimeCleanupRecord] = []
+    private(set) var allocations = 0
+    private(set) var observedCancellation = false
+    private weak var lastCache: LLMRequestCache?
+    private weak var lastKVCache: CountingKVCache?
+    var hasLiveCache: Bool { self.lastCache != nil }
+    private var failuresRemaining: Int
+    private let suspendFirst: Bool
+    private let firstRequestStopped: XCTestExpectation?
+
+    init(failuresRemaining: Int = 0, suspendFirst: Bool = false, firstRequestStopped: XCTestExpectation? = nil) {
+        self.failuresRemaining = failuresRemaining
+        self.suspendFirst = suspendFirst
+        self.firstRequestStopped = firstRequestStopped
+    }
+
+    func makeCache(parameters: LLMGenerationParameters) async -> LLMRequestCache {
+        self.allocations += 1
+        return LLMRequestCache(storage: [CountingKVCache(allocation: self.allocations)])
+    }
+
+    func cleanup() async {
+        self.cleanups.append(RuntimeCleanupRecord(
+            underMetalGate: await MLXMetalGate.shared.isAcquired,
+            requestCacheReleased: self.lastCache == nil,
+            kvCacheReleased: self.lastKVCache == nil,
+            taskWasCancelled: Task.isCancelled
+        ))
+    }
+
+    func generate(
+        request: LLMPreparedRequest,
+        cache: LLMRequestCache,
+        parameters: LLMGenerationParameters,
+        emit: @escaping @Sendable (String) -> Bool,
+        didReceiveFirstToken: @escaping @Sendable (Int) -> Void
+    ) async throws -> Int {
+        self.lastCache = cache
+        let state = try XCTUnwrap(cache.storage.first as? CountingKVCache)
+        self.lastKVCache = state
+        let initialOffset = state.offset
+        let input = Array(request.fallbackPrompt.utf8)
+        state.consume(input)
+        records.append(RuntimeRecord(
+            allocation: state.allocation,
+            initialOffset: initialOffset,
+            request: request,
+            consumedInput: input,
+            cacheInput: state.input,
+            finalOffset: state.offset,
+            underMetalGate: await MLXMetalGate.shared.isAcquired,
+            maxTokens: parameters.maxTokens
+        ))
+        if self.failuresRemaining > 0 {
+            self.failuresRemaining -= 1
+            throw LLMServiceError.generationFailed("test failure")
+        }
+        didReceiveFirstToken(input.count)
+        guard emit("ok") else { return 1 }
+        if self.suspendFirst && self.records.count == 1 {
+            do {
+                try await Task.sleep(for: .seconds(60))
+                XCTFail("Consumer cancellation did not stop generation")
+            } catch is CancellationError {
+                self.observedCancellation = Task.isCancelled
+                self.firstRequestStopped?.fulfill()
+                throw CancellationError()
+            }
+        }
+        return 1
+    }
 }
 
 // MARK: - Model Integration Tests
@@ -161,7 +474,7 @@ final class LLMModelIntegrationTests: XCTestCase {
         await service.unload()
     }
 
-    func testKVCacheReuse() async throws {
+    func testRequestLocalGenerationAcrossConversationTurns() async throws {
         try IntegrationTestGate.requireModelTestsEnabled()
         let service = LLMService.shared
         let modelManager = ModelManager.shared
